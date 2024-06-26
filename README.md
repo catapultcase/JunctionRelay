@@ -5,3 +5,7 @@
 Likewise, **TestClient** has 2 python scripts (and a .bat that launches both) that simulate HTTP services that receive the data from JunctionRelay, over ports 5000 and 5005. Add 'Generic HTTP Sender' as the data target and enter URL of http://localhost:5000/data.json (change port as needed)
 
 To download the latest release of JunctionRelay (alpha), click the **Releases** on the right hand panel.
+
+NOTE:
+- Windows Defender false positives are possible/likely, presumably due to sensor reading and not being submitted for verification yet.
+- Even if false positive doesn't occur, it's likely you'll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos and DataTargets.
