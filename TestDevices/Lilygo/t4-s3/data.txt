@@ -1,0 +1,10 @@
+{
+    "disk1_read": 1500000000,
+    "disk1_write": 1000000000,
+    "disk2_read": 2000000000,
+    "disk2_write": 1800000000,
+    "disk3_read": 1200000000,
+    "disk3_write": 1300000000,
+    "disk4_read": 1400000000,
+    "disk4_write": 1600000000
+}
