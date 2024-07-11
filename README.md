@@ -4,20 +4,6 @@ http://junctionrelay.com
 
 **Current Alpha:** [Junction Relay v0.3.7-Alpha](https://github.com/catapultcase/JunctionRelay/releases)
 
-- As an alpha/beta release, the code is currently unsigned – the application will be submitted for code signing certification when v1.0 launches.
-- Windows Defender false positives are possible/likely.
-- Even if a false positive doesn’t occur, it’s likely you’ll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos, and DataTargets. This can be done by right-clicking on a DLL, selecting Properties, and pressing ‘Unblock’.
-
-**Known bugs:**
-
-- Data Sources and Targets can detect connection failures, but do not automatically close/stop the connection or junction currently. They will retry the connection until the retry limit is hit.
-- Changes made to a junction persist throughout the application, even if you don't hit the 'Save' button - closing the app/reloading will restore the true saved settings. Todo is to implement 'your changes will be lost' if you don't save event, and clear the unsaved changes. Best practice - always save your changes to commit them.
-- You cannot refresh sensor data from within a junction right now.
-- You cannot edit the formula for a brand new formula field. You need to save/close/reopen the junction first.
-- Payload preview doesn't load for brand new junctions. You need to save/close/reopen the junction first. It will not display content when 'show length' is false, but it will work.
-- It's possible to cause duplicate records on the mainoverview UI. Click path unknown.
-- Resetting sensor tag will sometimes reset the wrong sensor.
-
 **Testing Tools:**
 
 Unraid docker is available [here](https://github.com/catapultcase/JunctionRelayAgent_Unraid).
