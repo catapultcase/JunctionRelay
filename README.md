@@ -1,6 +1,4 @@
-# Junction Relay
-
-http://junctionrelay.com
+# [Junction Relay](http://junctionrelay.com)
 
 **Current Alpha:** [Junction Relay v0.3.7-Alpha](https://github.com/catapultcase/JunctionRelay/releases)
 
