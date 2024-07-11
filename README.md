@@ -4,9 +4,9 @@ http://junctionrelay.com
 
 **Current Alpha:** [Junction Relay v0.3.7-Alpha](https://github.com/catapultcase/JunctionRelay/releases)
 
-- As a beta release, the code is currently unsigned – the application will be submitted for code signing certification when v1.0 launches.
-• Windows Defender false positives are possible/likely.
-• Even if a false positive doesn’t occur, it’s likely you’ll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos, and DataTargets. This can be done by right-clicking on a DLL, selecting Properties, and pressing ‘Unblock’.
+- As an alpha/beta release, the code is currently unsigned – the application will be submitted for code signing certification when v1.0 launches.
+- Windows Defender false positives are possible/likely.
+- Even if a false positive doesn’t occur, it’s likely you’ll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos, and DataTargets. This can be done by right-clicking on a DLL, selecting Properties, and pressing ‘Unblock’.
 
 **Known bugs:**
 
