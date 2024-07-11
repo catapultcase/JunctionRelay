@@ -27,3 +27,6 @@ http://junctionrelay.com
 - [Elecrow 7" ESP32 TFT](https://www.elecrow.com/esp32-display-7-inch-hmi-display-rgb-tft-lcd-touch-screen-support-lvgl.html?gad_source=1&gclid=Cj0KCQjwhb60BhClARIsABGGtw_E4hBQbKg1bA7LxD5juA1-ofPMn3kHmHzKcoNzTT2WczSiiXNT5L4aAkFuEALw_wcB)
 
 To download the latest release of JunctionRelay (alpha), check out **[Releases](https://github.com/catapultcase/JunctionRelay/releases)**.
+
+![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/UnraidDash.jpg)
+![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/Panel.jpg)
