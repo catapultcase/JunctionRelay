@@ -28,5 +28,7 @@ http://junctionrelay.com
 
 To download the latest release of JunctionRelay (alpha), check out **[Releases](https://github.com/catapultcase/JunctionRelay/releases)**.
 
+![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/JR1.jpg)
+![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/JR2.jpg)
 ![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/UnraidDash.jpg)
 ![alt text](https://github.com/catapultcase/JunctionRelay/blob/main/Panel.jpg)
