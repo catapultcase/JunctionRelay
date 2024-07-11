@@ -18,9 +18,9 @@ http://junctionrelay.com
 
 **Testing Tools:**
 
-**TestServer** folder has 3 python scritps (and a .bat that launches all 3) which simulate HTTP services that broadcast fake sensors over ports 5001, 5002 and 5003. To connect to them in JunctionRelay, add the 'Generic HTTP Server' data source and enter a URL of http://localhost:5001/data.json (change the port as needed). You do not need to populate any of the other fields.
+**TestServer** folder has python scritps which simulate HTTP services to broadcast fake sensors over ports 5001, 5002 and 5003. To connect to them in JunctionRelay, add the 'Generic HTTP Server' data source and enter a URL of http://localhost:5001/data.json (change the port as needed). You do not need to populate any of the other fields.
 
-**TestClient** folder has 2 python scripts (and a .bat that launches both) that simulate HTTP services that receive the data from JunctionRelay, over ports 5000 and 5005. Add 'Generic HTTP Client' as the data target and enter URL of http://localhost:5000/data.json (change port as needed)
+**TestClient** folder has python scripts to simulate HTTP services that receive the data from JunctionRelay, over ports 5000 and 5005. Add 'Generic HTTP Client' as the data target and enter URL of http://localhost:5000/data.json (change port as needed)
 
 **TestDevices** folder has 2 ardruno projects for the following devices:
 - [Lilygo T4-S3 OLED Display](https://www.lilygo.cc/products/t4-s3)
