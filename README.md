@@ -16,10 +16,14 @@ http://junctionrelay.com
 - It's possible to cause duplicate records on the mainoverview UI. Click path unknown.
 - Resetting sensor tag will sometimes reset the wrong sensor.
 
-**Testing Tools**
+**Testing Tools:**
 
-**TestServer** has 3 python scritps (and a .bat that launches all 3) which simulate HTTP services that broadcast fake sensors over ports 5001, 5002 and 5003. To connect to them in JunctionRelay, add the 'Generic HTTP Server' data source and enter a URL of http://localhost:5001/data.json (change the port as needed). You do not need to populate any of the other fields.
+**TestServer** folder has 3 python scritps (and a .bat that launches all 3) which simulate HTTP services that broadcast fake sensors over ports 5001, 5002 and 5003. To connect to them in JunctionRelay, add the 'Generic HTTP Server' data source and enter a URL of http://localhost:5001/data.json (change the port as needed). You do not need to populate any of the other fields.
 
-Likewise, **TestClient** has 2 python scripts (and a .bat that launches both) that simulate HTTP services that receive the data from JunctionRelay, over ports 5000 and 5005. Add 'Generic HTTP Client' as the data target and enter URL of http://localhost:5000/data.json (change port as needed)
+**TestClient** folder has 2 python scripts (and a .bat that launches both) that simulate HTTP services that receive the data from JunctionRelay, over ports 5000 and 5005. Add 'Generic HTTP Client' as the data target and enter URL of http://localhost:5000/data.json (change port as needed)
+
+**TestDevices** folder has 2 ardruno projects for the following devices:
+- [Lilygo T4-S3 OLED Display](https://www.lilygo.cc/products/t4-s3)
+- [Elecrow 7" ESP32 TFT](https://www.elecrow.com/esp32-display-7-inch-hmi-display-rgb-tft-lcd-touch-screen-support-lvgl.html?gad_source=1&gclid=Cj0KCQjwhb60BhClARIsABGGtw_E4hBQbKg1bA7LxD5juA1-ofPMn3kHmHzKcoNzTT2WczSiiXNT5L4aAkFuEALw_wcB)
 
 To download the latest release of JunctionRelay (alpha), click the **Releases** on the right hand panel.
