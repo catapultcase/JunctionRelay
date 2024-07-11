@@ -4,8 +4,7 @@ http://junctionrelay.com
 
 **Current Alpha:** Junction Relay v0.3.7-Alpha
 
-- Windows Defender false positives are possible/likely, presumably due to sensor reading and not being submitted for verification yet.
-- Even if false positive doesn't occur, it's likely you'll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos and DataTargets.
+- Windows Defender false positives are possible/likely. Even if false positive doesn't occur, it's likely you'll need to unblock the DLLs contained in the folders DataSources, DataSourceTargetCombos and DataTargets.
 
 **Known bugs:**
 
