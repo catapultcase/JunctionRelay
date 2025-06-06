@@ -1,6 +1,6 @@
 # Junction Relay
 
-**Junction Relay** is a modular, open-source platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
+**Junction Relay** is a modular platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
 
 🔗 [Visit junctionrelay.com](https://junctionrelay.com)
 
@@ -51,29 +51,6 @@ Junction Relay includes out-of-the-box collectors for:
 
 ---
 
-## 🤝 Contributing
-
-We welcome contributions from the community!
-
-Whether it's fixing a bug, adding a new feature, improving documentation, or building a new data collector, your input helps Junction Relay grow.
-
-- 🧩 Open an [Issue](https://github.com/catapultcase/JunctionRelay/issues) for bugs, feature requests, or questions  
-- 🔀 Submit a [Pull Request](https://github.com/catapultcase/JunctionRelay/pulls) with your improvements  
-- 💬 Join the conversation in [Discussions](https://github.com/catapultcase/JunctionRelay/discussions)
-
-Please review our [Contribution Guidelines](./CONTRIBUTING.md) before submitting a PR.
-
-By contributing, you agree that your code will be released under the same [GPLv3 license](./LICENSE) as the rest of the project.
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Docker & Docker Compose  
-- Node.js (for local frontend development)  
-- .NET 8 SDK (for local backend development)  
 
 ### Deployment via Docker
 
