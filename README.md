@@ -2,6 +2,8 @@
 
 **Junction Relay** is a modular platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
 
+Note that the code for ESP32 devices is open-source, but currently the backend is not.
+
 🔗 [Visit junctionrelay.com](https://junctionrelay.com)
 
 ---
