@@ -34,8 +34,8 @@ This allows you to **consolidate data** from your smart home, PC hardware, serve
 - 🔄 **Multi-Protocol Output** — Supports LVGL, MQTT, and custom formats
 - 🖥️ **Visual Screen Editor** — Build LVGL-based UI layouts directly from the web
 - 🔌 **Device Discovery** — Scan the network for compatible hardware and manage them remotely
-- 🚀 **OTA Firmware Flashing** — Push firmware updates to supported devices wirelessly
-- 🔋 Optimized for low-power hardware like the ESP32-S3
+- 🚀 **OTA Firmware Flashing** — Push official Junction Relay firmware to supported devices wirelessly
+- 🔋 **Optimized for low-power hardware like the ESP32-S3
 
 ---
 
