@@ -3,6 +3,7 @@
 
 #include <Arduino.h>  
 #include <ArduinoJson.h>  
+#include <Wire.h>  // Add Wire library for TwoWire type
 #ifndef LV_CONF_INCLUDE_SIMPLE
 #define LV_CONF_INCLUDE_SIMPLE
 #endif
@@ -25,6 +26,10 @@ public:
 
     // Return a device name for LVGL display purposes
     virtual const char* getName() = 0;
+
+    // --- I2C Interface Abstraction ---
+    // Return which I2C interface this device uses (Wire, Wire1, etc.)
+    virtual TwoWire* getI2CInterface() = 0;
 
     // --- NeoPixel Configuration Methods ---
     // Load NeoPixel pin configuration from preferences

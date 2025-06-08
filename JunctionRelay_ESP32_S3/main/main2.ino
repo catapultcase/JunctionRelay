@@ -13,7 +13,7 @@ ConnectionManager connManager;
 // 3 = Adafruit QtPy ESP32-S3
 // 4 = Adafruit Matrix ESP32-S3
 // 5 = Adafruit Feather ESP32-S3
-#define DEVICE_SELECTION 3
+#define DEVICE_SELECTION 4
 
 #if DEVICE_SELECTION == 0
   // #include "Device_LilyGoT4.h"
@@ -80,10 +80,14 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
 
+  // Initialize I2C using device abstraction - NO hardcoded device logic!
   #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    // Let each device handle its own I2C initialization in device.begin()
-    // This is more flexible and device-agnostic
-    Serial.println("[DEBUG] I2C will be initialized by device.begin()");
+    TwoWire* deviceI2C = device.getI2CInterface();
+    if (deviceI2C != nullptr) {
+      deviceI2C->begin();
+      deviceI2C->setClock(400000);
+      Serial.printf("[DEBUG] I2C initialized for %s\n", device.getName());
+    }
   #endif
 
   Serial.println("===========================");
@@ -92,7 +96,7 @@ void setup() {
   Serial.println("===========================");
 
   // First initialize the device hardware
-  // NOTE: I2C and NeoPixels are now initialized inside device.begin()
+  // NOTE: I2C is now initialized above, NeoPixels are initialized inside device.begin()
   if (!device.begin()) {
     Serial.println("[ERROR] Device initialization failed!");
     while (true) delay(1000);

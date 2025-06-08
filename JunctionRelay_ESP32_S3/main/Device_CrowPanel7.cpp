@@ -19,36 +19,48 @@ Device_CrowPanel7::CustomLGFX::CustomLGFX() {
 
     auto bus_cfg = _bus_instance.config();
     bus_cfg.panel = &_panel_instance;
-    bus_cfg.pin_d0  = GPIO_NUM_15;
-    bus_cfg.pin_d1  = GPIO_NUM_7;
-    bus_cfg.pin_d2  = GPIO_NUM_6;
-    bus_cfg.pin_d3  = GPIO_NUM_5;
-    bus_cfg.pin_d4  = GPIO_NUM_4;
-    bus_cfg.pin_d5  = GPIO_NUM_9;
-    bus_cfg.pin_d6  = GPIO_NUM_46;
-    bus_cfg.pin_d7  = GPIO_NUM_3;
-    bus_cfg.pin_d8  = GPIO_NUM_8;
-    bus_cfg.pin_d9  = GPIO_NUM_16;
-    bus_cfg.pin_d10 = GPIO_NUM_1;
-    bus_cfg.pin_d11 = GPIO_NUM_14;
-    bus_cfg.pin_d12 = GPIO_NUM_21;
-    bus_cfg.pin_d13 = GPIO_NUM_47;
-    bus_cfg.pin_d14 = GPIO_NUM_48;
-    bus_cfg.pin_d15 = GPIO_NUM_45;
+
+    // CrowPanel7 specific pin configuration
+    bus_cfg.pin_d0  = GPIO_NUM_15;  // B0
+    bus_cfg.pin_d1  = GPIO_NUM_7;   // B1
+    bus_cfg.pin_d2  = GPIO_NUM_6;   // B2
+    bus_cfg.pin_d3  = GPIO_NUM_5;   // B3
+    bus_cfg.pin_d4  = GPIO_NUM_4;   // B4
+
+    bus_cfg.pin_d5  = GPIO_NUM_9;   // G0
+    bus_cfg.pin_d6  = GPIO_NUM_46;  // G1
+    bus_cfg.pin_d7  = GPIO_NUM_3;   // G2
+    bus_cfg.pin_d8  = GPIO_NUM_8;   // G3
+    bus_cfg.pin_d9  = GPIO_NUM_16;  // G4
+    bus_cfg.pin_d10 = GPIO_NUM_1;   // G5
+
+    bus_cfg.pin_d11 = GPIO_NUM_14;  // R0
+    bus_cfg.pin_d12 = GPIO_NUM_21;  // R1
+    bus_cfg.pin_d13 = GPIO_NUM_47;  // R2
+    bus_cfg.pin_d14 = GPIO_NUM_48;  // R3
+    bus_cfg.pin_d15 = GPIO_NUM_45;  // R4
+
     bus_cfg.pin_henable = GPIO_NUM_41;
     bus_cfg.pin_vsync   = GPIO_NUM_40;
     bus_cfg.pin_hsync   = GPIO_NUM_39;
     bus_cfg.pin_pclk    = GPIO_NUM_0;
     bus_cfg.freq_write  = 15000000;
+
+    // CrowPanel7 specific timing parameters
     bus_cfg.hsync_polarity    = 0;
     bus_cfg.hsync_front_porch = 40;
     bus_cfg.hsync_pulse_width = 48;
     bus_cfg.hsync_back_porch  = 40;
+
     bus_cfg.vsync_polarity    = 0;
     bus_cfg.vsync_front_porch = 1;
     bus_cfg.vsync_pulse_width = 31;
     bus_cfg.vsync_back_porch  = 13;
+
     bus_cfg.pclk_active_neg   = 1;
+    bus_cfg.de_idle_high      = 0;
+    bus_cfg.pclk_idle_high    = 0;
+
     _bus_instance.config(bus_cfg);
 
     auto light_cfg = _light_instance.config();
@@ -67,6 +79,7 @@ Device_CrowPanel7::Device_CrowPanel7(ConnectionManager* connMgr) : rotation(0), 
 bool Device_CrowPanel7::begin() {
     Serial.println("[DEBUG] Initializing CrowPanel7...");
 
+    // Initialize hardware first
     pinMode(38, OUTPUT); digitalWrite(38, LOW);
     pinMode(17, OUTPUT); digitalWrite(17, LOW);
     pinMode(18, OUTPUT); digitalWrite(18, LOW);
@@ -97,13 +110,12 @@ bool Device_CrowPanel7::begin() {
     ledcAttachPin(2, 1);
     ledcWrite(1, 255); // Max brightness
 
-    // Remove LVGL initialization - this is now done in main.ino
-    // lv_init();  <-- REMOVE THIS LINE
-
+    // Return success even before LVGL setup
+    // The LVGL-specific initialization will happen in initLVGLHelper()
     return true;
 }
 
-// Add new method to initialize LVGL display helpers
+// New method to init LVGL display helpers after LVGL is initialized
 void Device_CrowPanel7::initLVGLHelper() {
     // Create and initialize LVGL display buffer
     static lv_color_t draw_buf_mem[800 * 480 / 15];
@@ -120,7 +132,6 @@ void Device_CrowPanel7::initLVGLHelper() {
     lv_disp_drv_register(&disp_drv);
 
     // Initialize and register the touch input driver
-    touch_init();
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = my_touchpad_read;

@@ -59,7 +59,7 @@ public:
 
     // I2C methods - Feather uses Wire (primary I2C)
     String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() { return &Wire; }
+    TwoWire* getI2CInterface() override;  // Implement base class method
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -102,9 +102,8 @@ private:
     #endif
 
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    static void quadDisplayTask(void* parameter);
-    static TaskHandle_t quadDisplayTaskHandle;
     TaskHandle_t i2cInitTaskHandle;
+    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
     bool detectedQuadDisplay;
     #endif
 

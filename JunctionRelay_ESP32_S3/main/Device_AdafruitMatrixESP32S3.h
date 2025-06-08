@@ -36,36 +36,37 @@
 #define MATRIX_HEIGHT 32
 
 #include "DeviceConfig.h"
-#include "Utils.h"  // Already included but make sure it's here
+#include "Utils.h"
 #include <Adafruit_GFX.h>
-#include <Adafruit_Protomatter.h>  // Correct library for RGBMatrix
-#include "Manager_Matrix.h"  // Include the manager header
+#include <Adafruit_Protomatter.h>
+#include "Manager_Matrix.h"
 
 // Forward declaration
 class ConnectionManager;
 
 // RGB Matrix Pin assignments (defined in the cpp file)
-extern uint8_t rgbPins[];    // RGB channels (Red, Green, Blue)
-extern uint8_t addrPins[];   // Address pins
-extern uint8_t clockPin;     // Clock pin
-extern uint8_t latchPin;     // Latch pin
-extern uint8_t oePin;        // Output enable pin
+extern uint8_t rgbPins[];
+extern uint8_t addrPins[];
+extern uint8_t clockPin;
+extern uint8_t latchPin;
+extern uint8_t oePin;
 
 class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
 public:
-    Device_AdafruitMatrixESP32S3(ConnectionManager* connMgr);  // Updated constructor
+    Device_AdafruitMatrixESP32S3(ConnectionManager* connMgr);
 
-    bool begin();  // Initialize the matrix
-    const char* getName();
+    bool begin() override;
+    const char* getName() override;
 
-    void setRotation(uint8_t rotation);
-    uint8_t getRotation();
-    int width();
-    int height();
+    void setRotation(uint8_t rotation) override;
+    uint8_t getRotation() override;
+    int width() override;
+    int height() override;
 
-    String performI2CScan();
+    // I2C interface (not used by this device, but required by DeviceConfig)
+    TwoWire* getI2CInterface() override;
 
-    // New method to display text on the matrix
+    // Test method to display text on the matrix
     void testText(const char* text);
 
     // Override runtime getters for device capabilities
@@ -91,17 +92,15 @@ public:
     // Device info methods
     virtual const char* getDeviceModel() const override { return DEVICE_MODEL; }
     virtual const char* getDeviceManufacturer() const override { return DEVICE_MANUFACTURER; }
-    virtual const char* getFirmwareVersion() const override { return ::getFirmwareVersion(); }  // Use the utility function
+    virtual const char* getFirmwareVersion() const override { return ::getFirmwareVersion(); }
     virtual bool getCustomFirmware() const override { return DEVICE_HAS_CUSTOM_FIRMWARE; }
     virtual const char* getMCU() const override { return DEVICE_MCU; }
     virtual const char* getWirelessConnectivity() const override { return DEVICE_WIRELESS_CONNECTIVITY; }
     virtual const char* getFlash() const override { return DEVICE_FLASH; }
     virtual const char* getPSRAM() const override { return DEVICE_PSRAM; }
-
     virtual const char* getUniqueIdentifier() const override {
-        // Use the utility function to get the MAC address in the correct format
-        static String macStr = getFormattedMacAddress();  // Call the utility function
-        return macStr.c_str();  // Return the MAC address as a C-style string
+        static String macStr = getFormattedMacAddress();
+        return macStr.c_str();
     }
 
 private:

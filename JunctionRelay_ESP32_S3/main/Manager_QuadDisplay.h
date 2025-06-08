@@ -4,25 +4,35 @@
 #include "Adafruit_LEDBackpack.h"
 #include "ScreenDestination.h"
 #include <ArduinoJson.h>
+#include <Wire.h>
 #include <queue>
+#include <map>
 
 class Manager_QuadDisplay : public ScreenDestination {
 public:
     // Static method to get the singleton instance
-    static Manager_QuadDisplay* getInstance(uint8_t i2cAddress = 0x70);
+    static Manager_QuadDisplay* getInstance(TwoWire* wireInterface = &Wire);
+    
+    // Static cleanup method
+    static void cleanup();
     
     void begin();
+    void addDisplay(uint8_t i2cAddress);
     void showReadyScreen();
 
-    void clearDisplay();
-    void setBrightness(uint8_t brightness);
-    void printText(const char *text);
-    void printNumber(int number);
+    void clearDisplay(uint8_t address = 0);  // 0 = all displays
+    void setBrightness(uint8_t brightness, uint8_t address = 0);  // 0 = all displays
+    void printText(const char *text, uint8_t address = 0);  // 0 = all displays
+    void printNumber(int number, uint8_t address = 0);  // 0 = all displays
 
-    void setScrollingText(const char* text);
-    void setScrollingActive(bool active);
+    void setScrollingText(const char* text, uint8_t address = 0);  // 0 = all displays
+    void setScrollingActive(bool active, uint8_t address = 0);  // 0 = all displays
     void updateScrollingText();
-    void setStaticText(const char* text);
+    void setStaticText(const char* text, uint8_t address = 0);  // 0 = all displays
+
+    // Get list of all detected display addresses
+    std::vector<uint8_t> getDisplayAddresses() const;
+    bool hasDisplay(uint8_t address) const;
 
     // ScreenDestination interface
     String getScreenId() const override;
@@ -34,28 +44,37 @@ public:
 
 private:
     // Private constructor for singleton pattern
-    explicit Manager_QuadDisplay(uint8_t i2cAddress);
+    explicit Manager_QuadDisplay(TwoWire* wireInterface);
     
     // Static instance pointer
     static Manager_QuadDisplay* instance;
     
-    Adafruit_AlphaNum4 display;
-    uint8_t i2cAddr;
-    bool initialized;
-
-    bool scrollingActive = false;
-    String scrollText;
-    int scrollIndex = 0;
-    unsigned long lastScrollUpdate = 0;
+    struct DisplayInfo {
+        Adafruit_AlphaNum4 display;
+        bool initialized;
+        bool scrollingActive;
+        String scrollText;
+        int scrollIndex;
+        unsigned long lastScrollUpdate;
+        String staticText;
+        std::queue<String> frameQueue;
+        
+        DisplayInfo() : initialized(false), scrollingActive(false), 
+                       scrollIndex(0), lastScrollUpdate(0) {}
+    };
+    
+    std::map<uint8_t, DisplayInfo> displays;  // address -> display info
+    TwoWire* wireInterface;
     const unsigned long scrollDelay = 250;
-
-    String staticText;
-
-    std::queue<String> frameQueue;
     const size_t maxQueueSize = 10;
 
-    void processNextFrame();
-    void queueTextFrame(const String& text);
+    void processNextFrame(uint8_t address);
+    void queueTextFrame(const String& text, uint8_t address);
+    void updateScrollingText(uint8_t address);
+    
+    // Helper methods for address handling
+    void executeOnDisplay(uint8_t address, std::function<void(uint8_t)> func);
+    void executeOnAllDisplays(std::function<void(uint8_t)> func);
 };
 
 #endif // MANAGER_QUADDISPLAY_H

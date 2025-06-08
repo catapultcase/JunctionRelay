@@ -71,17 +71,45 @@ void Layout_DefaultHomeScreen::create(const JsonDocument &cfg) {
     lv_obj_set_style_text_color(mStatusLabel, lv_color_make(0xFF,0xFF,0x00), LV_PART_MAIN);
     lv_obj_set_style_text_font(mStatusLabel, &lv_font_montserrat_24, LV_PART_MAIN);
     lv_obj_align(mStatusLabel, LV_ALIGN_TOP_LEFT, 0, 40);
-    ConnectionStatus status = mDisplayManager->getConnectionManager().getConnectionStatus();
-        String currentStatus = 
+
+    // Check if WiFi credentials are stored
+    Preferences prefs;
+    prefs.begin("connConfig", true); // Read-only
+    String storedSSID = prefs.getString("ssid", "");
+    String connMode = prefs.getString("connMode", "");
+    prefs.end();
+
+    String currentStatus;
+
+    // If no WiFi credentials are stored, show captive portal instructions
+    if (storedSSID.isEmpty() && connMode != "espnow") {
+        String macAddress = getFormattedMacAddress();
+        // Remove colons from MAC for the SSID (matches captivePortalManager behavior)
+        macAddress.replace(":", "");
+        
+        currentStatus = "No WiFi configured\n\n";
+        currentStatus += "Connect to hotspot:\n";
+        currentStatus += "\"JunctionRelay_Config_" + macAddress + "\"\n\n";
+        currentStatus += "Then visit:\n";
+        currentStatus += "http://192.168.4.1\n";
+        currentStatus += "to configure WiFi";
+    } else {
+        // Show normal connection status
+        ConnectionStatus status = mDisplayManager->getConnectionManager().getConnectionStatus();
+        currentStatus = 
             String("ESP-NOW: ") + (status.espNowActive ? "Active\n" : "Inactive\n") +
             "WiFi: " + (status.wifiConnected ? "Connected\n" : "Disconnected\n");
 
-    if (status.wifiConnected) {
-        currentStatus += "IP: " + status.ipAddress + "\n";
-        currentStatus += "MAC: " + status.macAddress + "\n";
+        if (status.wifiConnected) {
+            currentStatus += "IP: " + status.ipAddress + "\n";
+            currentStatus += "MAC: " + status.macAddress + "\n";
+        } else if (!storedSSID.isEmpty()) {
+            currentStatus += "Connecting to: " + storedSSID + "\n";
+        }
+
+        currentStatus += "MQTT: " + String(status.mqttConnected ? "Connected\n" : "Disconnected\n");
     }
 
-currentStatus += "MQTT: " + String(status.mqttConnected ? "Connected\n" : "Disconnected\n");
     lv_label_set_text(mStatusLabel, currentStatus.c_str());
 
     // Rotate button
@@ -130,10 +158,54 @@ void Layout_DefaultHomeScreen::destroy() {
 
 void Layout_DefaultHomeScreen::update(const JsonDocument &sensorDoc) {
     if (!mIsCreated || !mStatusLabel) return;
+    
+    // If sensor document contains explicit status, use it
     if (sensorDoc.containsKey("status")) {
         String status = sensorDoc["status"].as<String>();
         lv_label_set_text(mStatusLabel, status.c_str());
+        return;
     }
+    
+    // Otherwise, refresh the connection status display
+    // Check if WiFi credentials are stored
+    Preferences prefs;
+    prefs.begin("connConfig", true); // Read-only
+    String storedSSID = prefs.getString("ssid", "");
+    String connMode = prefs.getString("connMode", "");
+    prefs.end();
+
+    String currentStatus;
+
+    // If no WiFi credentials are stored, show captive portal instructions
+    if (storedSSID.isEmpty() && connMode != "espnow") {
+        String macAddress = getFormattedMacAddress();
+        // Remove colons from MAC for the SSID (matches captivePortalManager behavior)
+        macAddress.replace(":", "");
+        
+        currentStatus = "No WiFi configured\n\n";
+        currentStatus += "Connect to hotspot:\n";
+        currentStatus += "\"JunctionRelay_Config_" + macAddress + "\"\n\n";
+        currentStatus += "Then visit:\n";
+        currentStatus += "http://192.168.4.1\n";
+        currentStatus += "to configure WiFi";
+    } else {
+        // Show normal connection status
+        ConnectionStatus status = mDisplayManager->getConnectionManager().getConnectionStatus();
+        currentStatus = 
+            String("ESP-NOW: ") + (status.espNowActive ? "Active\n" : "Inactive\n") +
+            "WiFi: " + (status.wifiConnected ? "Connected\n" : "Disconnected\n");
+
+        if (status.wifiConnected) {
+            currentStatus += "IP: " + status.ipAddress + "\n";
+            currentStatus += "MAC: " + status.macAddress + "\n";
+        } else if (!storedSSID.isEmpty()) {
+            currentStatus += "Connecting to: " + storedSSID + "\n";
+        }
+
+        currentStatus += "MQTT: " + String(status.mqttConnected ? "Connected\n" : "Disconnected\n");
+    }
+
+    lv_label_set_text(mStatusLabel, currentStatus.c_str());
 }
 
 lv_obj_t* Layout_DefaultHomeScreen::getScreen() const {

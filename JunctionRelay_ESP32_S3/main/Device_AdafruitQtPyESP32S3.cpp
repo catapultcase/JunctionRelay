@@ -10,11 +10,6 @@
     #include "Manager_NeoPixels.h"
 #endif
 
-// Static task handle for QuadDisplay
-#if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-TaskHandle_t Device_AdafruitQtPyESP32S3::quadDisplayTaskHandle = NULL;
-#endif
-
 Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(ConnectionManager* connMgr)
 : connMgr(connMgr)
 {
@@ -25,6 +20,7 @@ Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(ConnectionManager* connMg
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     detectedQuadDisplay = false;
     i2cInitTaskHandle = NULL;
+    quadDisplayTaskHandle = NULL;
     #endif
 
     // Initialize NeoPixel pin defaults
@@ -92,43 +88,6 @@ void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
 }
 #endif
 
-#if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-void Device_AdafruitQtPyESP32S3::quadDisplayTask(void* parameter) {
-    Serial.println("[MANAGER_QUADDISPLAY][INFO] Task started on core 1");
-    
-    uint8_t i2cAddress = *((uint8_t*)parameter);
-    free(parameter);
-    
-    Wire1.setClock(400000);  // Maximum I2C speed: 400kHz
-    
-    Manager_QuadDisplay* quadDisplay = Manager_QuadDisplay::getInstance(i2cAddress);
-    quadDisplay->begin();
-    
-    Serial.printf("[MANAGER_QUADDISPLAY][INFO] Initialized on core 1 with address 0x%02X\n", i2cAddress);
-    
-    uint32_t lastMemoryCheck = 0;
-    const uint32_t memoryCheckInterval = 30000;
-    
-    while (true) {
-        uint32_t currentMillis = millis();
-        if (currentMillis - lastMemoryCheck > memoryCheckInterval) {
-            lastMemoryCheck = currentMillis;
-            
-            if (uxTaskGetStackHighWaterMark(NULL) < 500) {
-                Serial.println("[MANAGER_QUADDISPLAY][WARNING] Stack space critically low!");
-            }
-            
-            if (ESP.getMaxAllocHeap() < 10000) {
-                Serial.println("[MANAGER_QUADDISPLAY][WARNING] Heap fragmentation detected!");
-            }
-        }
-        
-        quadDisplay->update();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-#endif
-
 bool Device_AdafruitQtPyESP32S3::begin() {
     Serial.println("[DEBUG][DEVICE] Initializing Adafruit QtPy ESP32-S3...");
 
@@ -172,30 +131,6 @@ bool Device_AdafruitQtPyESP32S3::begin() {
     String scanResult = performI2CScan(doc);
     Serial.print("[DEBUG] I2C scan result at boot: ");
     Serial.println(scanResult);
-    
-    if (detectedQuadDisplay) {
-        Serial.println("[DEBUG][DEVICE] QuadDisplay detected, launching task on core 1...");
-        
-        uint8_t* taskParam = (uint8_t*)malloc(sizeof(uint8_t));
-        *taskParam = 0x70;
-        
-        xTaskCreatePinnedToCore(
-            quadDisplayTask,
-            "QuadDisplayTask",
-            4096,
-            taskParam,
-            1,
-            &quadDisplayTaskHandle,
-            1
-        );
-        
-        if (quadDisplayTaskHandle == NULL) {
-            Serial.println("[ERROR] Failed to create QuadDisplay task on core 1");
-            free(taskParam);
-        } else {
-            Serial.println("[DEBUG][DEVICE] QuadDisplay initialization queued on core 1");
-        }
-    }
     #endif
 
     Serial.println("[DEBUG][DEVICE] Adafruit QtPy ESP32-S3 initialization complete.");
@@ -223,21 +158,91 @@ int Device_AdafruitQtPyESP32S3::height() {
     return 0;  
 }
 
+// Implement I2C interface method
+TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
+    return &Wire1;  // QtPy uses Wire1
+}
+
 String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc) {
-    Serial.println("[DEBUG][I2C] Starting I2C scan on Wire1...");
+    Serial.println("[DEBUG][I2C] Starting I2C scan...");
     
-    // Use the enhanced scanner with device recognition - it will handle Wire1 initialization
-    String result = I2CScanner::scanAndConfigureDevices(Wire1, doc, "qtpy");
+    // Ensure Wire1 is properly initialized first
+    Serial.println("[DEBUG][I2C] Initializing Wire1 interface...");
+    Wire1.begin(41, 40);  // QtPy STEMMA QT pins
+    Wire1.setClock(400000);
+    delay(100);  // Stabilization delay
+    
+    // Run enhanced scanner with device recognition
+    Serial.println("[DEBUG][I2C] Running I2C scan with device recognition...");
+    String scanResult = I2CScanner::scanAndConfigureDevices(Wire1, doc, "qtpy");
+    Serial.printf("[DEBUG][I2C] Scan result: %s\n", scanResult.c_str());
     
     // Check what was found and initialize accordingly
     bool foundSeesaw = doc["FoundSeesaw"] | false;
     bool foundQuadDisplay = doc["FoundQuadDisplay"] | false;
     
+    Serial.printf("[DEBUG][I2C] Scan results: Seesaw=%s, QuadDisplay=%s\n", 
+                  foundSeesaw ? "YES" : "NO", 
+                  foundQuadDisplay ? "YES" : "NO");
+    
+    // Initialize Quad Displays using singleton manager
     if (foundQuadDisplay) {
+        Serial.println("[DEBUG][I2C] Setting up Quad Display manager...");
+        
+        // Get the singleton manager instance
+        Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(&Wire1);
+        
+        // Add all detected displays to the manager
+        if (doc.containsKey("Screens")) {
+            JsonArray screens = doc["Screens"];
+            for (JsonObject screen : screens) {
+                if (screen.containsKey("ScreenType") && 
+                    screen["ScreenType"].as<String>() == "Alpha Quad LCD") {
+                    
+                    // Extract I2C address from the screen configuration
+                    String i2cAddrStr = screen["I2CAddress"];
+                    uint8_t quadAddr = (uint8_t)strtol(i2cAddrStr.c_str(), NULL, 16);
+                    
+                    Serial.printf("[DEBUG][I2C] Adding Quad Display at address 0x%02X to manager\n", quadAddr);
+                    quadManager->addDisplay(quadAddr);
+                }
+            }
+        }
+        
+        // Create single task for the quad display manager
+        xTaskCreatePinnedToCore(
+            [](void* param) {
+                Manager_QuadDisplay* manager = static_cast<Manager_QuadDisplay*>(param);
+                Serial.println("[QuadDisplayTask] Starting singleton manager task");
+                
+                // Initialize all displays
+                manager->begin();
+                
+                // Main update loop
+                while (true) {
+                    manager->update();
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+            },
+            "QuadDisplayTask",
+            4096,
+            quadManager,
+            1,
+            &quadDisplayTaskHandle,
+            1
+        );
+        
+        if (quadDisplayTaskHandle == NULL) {
+            Serial.println("[ERROR] Failed to create QuadDisplay manager task");
+        } else {
+            Serial.printf("[DEBUG][I2C] Created QuadDisplay manager task for %d displays\n", 
+                         quadManager->getDisplayAddresses().size());
+        }
+        
         detectedQuadDisplay = true;
-        Serial.println("[DEBUG][I2C] QuadDisplay will be initialized in task");
     }
     
+    // Seesaw initialization (unchanged)
     if (foundSeesaw) {
         Serial.println("[DEBUG][I2C] Seesaw found, initializing shared I2C manager...");
         
@@ -246,7 +251,6 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
                 ConnectionManager* cm = static_cast<ConnectionManager*>(param);
                 Serial.printf("[I2CInitTask] Running on core %d\n", xPortGetCoreID());
                 
-                // Initialize the shared I2C manager with Wire1 interface (like old code)
                 Manager_I2C* i2cManager = Manager_I2C::getInstance(cm, &Wire1);
                 if (i2cManager) {
                     i2cManager->begin();
@@ -276,5 +280,5 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     doc.remove("FoundSeesaw");
     doc.remove("FoundQuadDisplay");
     
-    return result;
+    return scanResult;
 }

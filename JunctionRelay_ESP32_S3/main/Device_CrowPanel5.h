@@ -63,6 +63,11 @@ public:
   // Return device name
   const char* getName() override;
 
+  // I2C interface (not used by this device, but required by DeviceConfig)
+  virtual TwoWire* getI2CInterface() override { 
+    return &Wire; // Return default Wire even though device doesn't use external I2C
+  }
+
   // LVGL flush callback function
   static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
   // LVGL touch callback function

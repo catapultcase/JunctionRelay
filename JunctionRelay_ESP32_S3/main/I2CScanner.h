@@ -14,59 +14,49 @@ struct I2CDeviceInfo {
 
 class I2CScanner {
 public:
-    // Basic scan method
-    static String scanI2CDevices(TwoWire& wireInterface) {
-        String result = "";
-        Serial.println("[DEBUG][I2CScanner] Starting I2C scan...");
-        
-        for (uint8_t addr = 1; addr < 127; addr++) {
-            wireInterface.beginTransmission(addr);
-            uint8_t error = wireInterface.endTransmission();
-            
-            if (error == 0) {
-                result += String("Device found at address 0x") + (addr < 16 ? "0" : "") + String(addr, HEX) + " ";
-                Serial.printf("[DEBUG][I2CScanner] Device found at address 0x%02X\n", addr);
-            }
-            delay(10);
-        }
-        
-        if (result.length() == 0) {
-            result = "No I2C devices found.";
-            Serial.println("[DEBUG][I2CScanner] No I2C devices found.");
-        }
-        
-        return result;
-    }
+
     
     // Enhanced scan with device recognition and JSON population
     static String scanAndConfigureDevices(TwoWire& wireInterface, StaticJsonDocument<2048>& doc, const String& devicePrefix) {
-        Serial.println("[DEBUG][I2CScanner] Starting enhanced I2C scan with device recognition...");
+        Serial.println("[DEBUG][I2CScanner] Starting I2C scan with device recognition...");
+        Serial.flush();
         
-        // Initialize Wire interface explicitly like the old working code
+        // Use the Wire interface as already configured by the device - but ensure it's initialized
+        String interfaceName = (&wireInterface == &Wire1) ? "Wire1" : "Wire";
+        Serial.printf("[DEBUG][I2CScanner] Using %s interface for device prefix: %s\n", 
+                      interfaceName.c_str(), devicePrefix.c_str());
+        
+        // Ensure I2C is properly initialized (defensive programming)
         if (&wireInterface == &Wire1) {
-            // QtPy STEMMA QT pins
-            Serial.println("[DEBUG][I2CScanner] Initializing Wire1 for QtPy (SDA=41, SCL=40)");
+            Serial.println("[DEBUG][I2CScanner] Ensuring Wire1 is initialized (SDA=41, SCL=40)");
             wireInterface.begin(41, 40);
             wireInterface.setClock(400000);
         } else {
-            // Feather default I2C pins
-            Serial.println("[DEBUG][I2CScanner] Initializing Wire for Feather (default pins)");
+            Serial.println("[DEBUG][I2CScanner] Ensuring Wire is initialized (default pins)");
             wireInterface.begin();
             wireInterface.setClock(400000);
         }
         
-        delay(100);  // Give I2C time to stabilize like old code
+        Serial.flush();
+        delay(100);  // Give I2C time to stabilize after (re)initialization
         
         String result = "[";
         int nDevices = 0;
         bool foundSeesaw = false;
         bool foundQuadDisplay = false;
         
+        // Ensure JSON arrays exist
+        if (!doc.containsKey("Screens")) {
+            doc.createNestedArray("Screens");
+        }
         JsonArray screens = doc["Screens"].as<JsonArray>();
         JsonArray i2cDevices = doc.createNestedArray("I2cDevices");
         
-        for (uint8_t address = 1; address < 127; address++) {
-            wireInterface.beginTransmission(address);
+        Serial.println("[DEBUG][I2CScanner] Starting address scan...");
+        Serial.flush();
+        
+        for (int address = 1; address < 127; address++) {
+            wireInterface.beginTransmission((uint8_t)address);
             uint8_t error = wireInterface.endTransmission();
 
             if (error == 0) {
@@ -74,26 +64,56 @@ public:
                 result += "0x" + String(address, HEX);
                 nDevices++;
 
-                Serial.printf("[DEBUG][I2CScanner] Processing device at address 0x%02X\n", address);
+                Serial.printf("[DEBUG][I2CScanner] *** DEVICE FOUND *** at address 0x%02X\n", address);
+                Serial.flush();
 
                 // Identify and configure known devices
-                I2CDeviceInfo deviceInfo = identifyDevice(address);
+                I2CDeviceInfo deviceInfo = identifyDevice((uint8_t)address);
+                
+                Serial.printf("[DEBUG][I2CScanner] Device identified as: %s\n", deviceInfo.deviceType.c_str());
+                Serial.flush();
                 
                 if (deviceInfo.deviceType != "Unknown") {
                     if (deviceInfo.deviceType == "Seesaw_Encoder") {
                         configureSeesawDevice(i2cDevices, devicePrefix);
                         foundSeesaw = true;
+                        Serial.println("[DEBUG][I2CScanner] Configured Seesaw device");
                     }
                     else if (deviceInfo.deviceType == "QuadDisplay") {
-                        configureQuadDisplayDevice(screens, address);
+                        configureQuadDisplayDevice(screens, (uint8_t)address);
                         foundQuadDisplay = true;
+                        Serial.printf("[DEBUG][I2CScanner] Configured Quad display at 0x%02X\n", address);
                     }
+                    Serial.flush();
+                } else {
+                    // Log unknown devices for debugging
+                    Serial.printf("[DEBUG][I2CScanner] Unknown device at 0x%02X\n", address);
+                    Serial.flush();
                 }
             }
+            
+            // Minimal delay like the working scanner
+            delay(10);
+        }
+        
+        // Specifically check for Quad display addresses with detailed logging
+        Serial.println("[DEBUG][I2CScanner] Checking specifically for Quad displays (0x70-0x77):");
+        Serial.flush();
+        for (int addr = 0x70; addr <= 0x77; addr++) {
+            wireInterface.beginTransmission((uint8_t)addr);
+            uint8_t error = wireInterface.endTransmission();
+            if (error == 0) {
+                Serial.printf("[DEBUG][I2CScanner] ✓ Found device at Quad display address 0x%02X\n", addr);
+            } else {
+                Serial.printf("[DEBUG][I2CScanner] ✗ No device at 0x%02X (error: %d)\n", addr, error);
+            }
+            Serial.flush();
+            delay(10);
         }
 
         result += "]";
-        Serial.printf("[DEBUG][I2CScanner] I2C scan complete. Found %d devices: %s\n", nDevices, result.c_str());
+        Serial.printf("[DEBUG][I2CScanner] === SCAN COMPLETE === Found %d devices: %s\n", nDevices, result.c_str());
+        Serial.flush();
         
         // Return flags for what was found
         doc["FoundSeesaw"] = foundSeesaw;
@@ -109,23 +129,22 @@ private:
         info.requiresManager = false;
         info.isDisplay = false;
         
-        switch (address) {
-            case 0x36:
-                info.deviceType = "Seesaw_Encoder";
-                info.displayName = "Seesaw Encoder with Button";
-                info.requiresManager = true;
-                info.isDisplay = false;
-                break;
-            case 0x70:
-                info.deviceType = "QuadDisplay";
-                info.displayName = "Adafruit Quad Alphanumeric Display";
-                info.requiresManager = false;
-                info.isDisplay = true;
-                break;
-            default:
-                info.deviceType = "Unknown";
-                info.displayName = "Unknown I2C Device";
-                break;
+        if (address == 0x36) {
+            info.deviceType = "Seesaw_Encoder";
+            info.displayName = "Seesaw Encoder with Button";
+            info.requiresManager = true;
+            info.isDisplay = false;
+        }
+        // All possible HT16K33 addresses for Quad displays (0x70-0x77)
+        else if (address >= 0x70 && address <= 0x77) {
+            info.deviceType = "QuadDisplay";
+            info.displayName = "Adafruit Quad Alphanumeric Display";
+            info.requiresManager = false;
+            info.isDisplay = true;
+        }
+        else {
+            info.deviceType = "Unknown";
+            info.displayName = "Unknown I2C Device";
         }
         
         return info;
@@ -156,12 +175,13 @@ private:
     }
     
     static void configureQuadDisplayDevice(JsonArray& screens, uint8_t address) {
-        Serial.println("[DEBUG][I2CScanner] Configuring Quad Display device");
+        Serial.printf("[DEBUG][I2CScanner] Configuring Quad Display device at 0x%02X\n", address);
         
         JsonObject screen = screens.createNestedObject();
         screen["ScreenKey"] = "0x" + String(address, HEX);
-        screen["DisplayName"] = "Quad Display";
+        screen["DisplayName"] = "Quad Display (0x" + String(address, HEX) + ")";
         screen["ScreenType"] = "Alpha Quad LCD";
+        screen["I2CAddress"] = "0x" + String(address, HEX);
         screen["SupportsConfigPayloads"] = true;
         screen["SupportsSensorPayloads"] = true;
     }

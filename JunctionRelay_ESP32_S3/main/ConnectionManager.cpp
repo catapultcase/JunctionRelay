@@ -9,6 +9,33 @@
 #include "Manager_Matrix.h"
 #include "Manager_MQTT.h"
 #include "Manager_NeoPixels.h"
+#include "utils.h"
+
+// ESP32-S3 analog pin compatibility (add right after includes)
+#ifndef A0
+#define A0 1
+#endif
+#ifndef A1  
+#define A1 2
+#endif
+#ifndef A2
+#define A2 3
+#endif
+#ifndef A3
+#define A3 4
+#endif
+#ifndef A4
+#define A4 5
+#endif
+#ifndef A5
+#define A5 6
+#endif
+#ifndef A6
+#define A6 7
+#endif
+#ifndef A7
+#define A7 8
+#endif
 
 const char* ConnectionManager::defaultSSID = "JunctionRelay_Config";
 
@@ -245,21 +272,62 @@ void ConnectionManager::init() {
             if (gConnMgr) gConnMgr->handleIncomingDataChunkPrefix(data, len);
         }
     );
+
     server.on("/api/device/capabilities", HTTP_GET,
         [](AsyncWebServerRequest* req){
             req->send(200, "application/json", gConnMgr->getDeviceCapabilities());
         }
     );
+
     server.on("/api/device/info", HTTP_GET,
         [](AsyncWebServerRequest* req){
             req->send(200, "application/json", gConnMgr->getDeviceInfo());
         }
     );
+
     server.on("/api/device/preferences", HTTP_GET,
         [](AsyncWebServerRequest* req){
             req->send(200, "application/json", gConnMgr->getCurrentPreferences());
         }
     );
+
+    // NEW: Add firmware hash endpoints here
+    server.on("/firmware-hash", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            Serial.println("[ENDPOINT] Firmware hash requested");
+            String response = getFirmwareInfoJson();
+            req->send(200, "application/json", response);
+        }
+    );
+
+    server.on("/hash", HTTP_GET,
+    [](AsyncWebServerRequest* req){
+        String hash = getFirmwareHash();
+        req->send(200, "text/plain", hash);
+    }
+    );
+
+    // Heartbeat 
+
+    server.on("/heartbeat", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            Serial.println("[HEARTBEAT] Health check requested");
+            
+            // Create JSON response with device identification using utils
+            String mac = getFormattedMacAddress();
+            String response = "{";
+            response += "\"status\":\"OK\",";
+            response += "\"mac\":\"" + mac + "\",";
+            response += "\"firmware\":\"" + String(getFirmwareVersion()) + "\",";
+            response += "\"uptime\":" + String(millis()) + ",";
+            response += "\"free_heap\":" + String(ESP.getFreeHeap());
+            response += "}";
+            
+            Serial.printf("[HEARTBEAT] Responding with MAC: %s\n", mac.c_str());
+            req->send(200, "application/json", response);
+        }
+    );
+
     server.on("/api/device/set-preferences", HTTP_POST,
         [](AsyncWebServerRequest* req){
             // This will be called after the body is received
@@ -291,13 +359,14 @@ void ConnectionManager::init() {
             
             Serial.printf("[DEBUG] Total body length so far: %d\n", tempPostBodyLen);
         }
-    );  
+    );
+
     server.on("/api/ota/firmware", HTTP_POST,
         // onRequestComplete
         [](AsyncWebServerRequest* req) {
             bool ok = !Update.hasError();
             req->send(ok ? 200 : 500, "text/plain",
-                      ok ? "Update OK" : String("FAIL: ") + Update.errorString());
+                    ok ? "Update OK" : String("FAIL: ") + Update.errorString());
             if (ok) {
                 delay(2000);
                 ESP.restart();
@@ -305,7 +374,7 @@ void ConnectionManager::init() {
         },
         // onUpload
         [](AsyncWebServerRequest* req, const String&, size_t idx,
-           uint8_t* data, size_t len, bool final)
+        uint8_t* data, size_t len, bool final)
         {
             if (idx == 0) {
                 Update.begin(UPDATE_SIZE_UNKNOWN);
@@ -316,6 +385,7 @@ void ConnectionManager::init() {
             }
         }
     );
+
     server.begin();
 
     // 4️⃣.b ConnectionStatus JSON endpoint
@@ -623,12 +693,17 @@ void ConnectionManager::handleScreenId(const char* screenId, const StaticJsonDoc
                 // Parse "0x70" to 112
                 uint8_t i2cAddress = strtol(screenId, nullptr, 0);  
                 
-                // Get the singleton instance with the specific I2C address
-                Manager_QuadDisplay* quadDisplay = Manager_QuadDisplay::getInstance(i2cAddress);
+                // Get the correct Wire interface from the device
+                TwoWire* wireInterface = devicePtr->getI2CInterface();
+                
+                // Get the singleton instance with the correct Wire interface
+                Manager_QuadDisplay* quadDisplay = Manager_QuadDisplay::getInstance(wireInterface);
                 screenRouter->registerScreen(quadDisplay);
                 quadDisplays[screenId] = quadDisplay;
 
-                Serial.printf("[ConnectionManager] 🔧 Registered Quad display at %s (I2C 0x%02X)\n", screenId, i2cAddress);
+                Serial.printf("[ConnectionManager] 🔧 Registered Quad display at %s (I2C 0x%02X) using %s\n", 
+                             screenId, i2cAddress, 
+                             (wireInterface == &Wire1) ? "Wire1" : "Wire");
             } else {
                 Serial.printf("[ConnectionManager] ✅ Quad display for screenId '%s' already registered\n", screenId);
             }

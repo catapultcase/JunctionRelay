@@ -1,6 +1,3 @@
-// ========================================
-// Device_AdafruitQtPyESP32S3.h - Updated Header
-// ========================================
 #ifndef DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
 #define DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
 
@@ -71,7 +68,7 @@ public:
 
     // I2C methods
     String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() { return &Wire1; }  // QtPy uses Wire1
+    TwoWire* getI2CInterface() override;  // Implement base class method
 
     // NeoPixel configuration methods
     void loadNeoPixelPreferences();
@@ -120,9 +117,8 @@ private:
     #endif
 
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    static void quadDisplayTask(void* parameter);
-    static TaskHandle_t quadDisplayTaskHandle;
     TaskHandle_t i2cInitTaskHandle;
+    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
     bool detectedQuadDisplay;
     #endif
 
@@ -138,4 +134,4 @@ public:
     int getNeoPixelNum() { return EXTERNAL_NUMPIXELS; }
 };
 
-#endif // DEVICE_ADAFRUIT_QT_PYESP32S3_H
+#endif // DEVICE_ADAFRUIT_QT_PY_ESP32S3_H

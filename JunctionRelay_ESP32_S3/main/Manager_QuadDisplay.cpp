@@ -6,38 +6,81 @@
 Manager_QuadDisplay* Manager_QuadDisplay::instance = nullptr;
 
 // Static method to get the singleton instance
-Manager_QuadDisplay* Manager_QuadDisplay::getInstance(uint8_t i2cAddress) {
+Manager_QuadDisplay* Manager_QuadDisplay::getInstance(TwoWire* wireInterface) {
     if (instance == nullptr) {
-        instance = new Manager_QuadDisplay(i2cAddress);
+        instance = new Manager_QuadDisplay(wireInterface);
+        Serial.printf("[DEBUG][QuadDisplay] Created singleton instance with interface: %s\n", 
+                     (wireInterface == &Wire1) ? "Wire1" : "Wire");
     }
     return instance;
 }
 
+// Static cleanup method
+void Manager_QuadDisplay::cleanup() {
+    if (instance != nullptr) {
+        Serial.printf("[DEBUG][QuadDisplay] Cleaning up singleton with %d displays\n", instance->displays.size());
+        delete instance;
+        instance = nullptr;
+    }
+}
+
 // Private constructor for singleton pattern
-Manager_QuadDisplay::Manager_QuadDisplay(uint8_t i2cAddress)
-    : i2cAddr(i2cAddress), initialized(false) {
-    // Nothing else to initialize
+Manager_QuadDisplay::Manager_QuadDisplay(TwoWire* wireInterface)
+    : wireInterface(wireInterface) {
+    Serial.println("[DEBUG][QuadDisplay] Singleton constructor called");
 }
 
 void Manager_QuadDisplay::begin() {
-    if (initialized) {
-        return;  // Skip initialization if already done
-    }
-
-    display.begin(i2cAddr, &Wire1);  // Uses the dynamic address
-    clearDisplay();
-    setBrightness(15);
-    initialized = true;
+    Serial.printf("[DEBUG][QuadDisplay] Beginning initialization for %d displays\n", displays.size());
     
-    // Display firmware version similar to Matrix implementation
+    for (auto& pair : displays) {
+        uint8_t address = pair.first;
+        DisplayInfo& info = pair.second;
+        
+        if (info.initialized) {
+            Serial.printf("[DEBUG][QuadDisplay] Display 0x%02X already initialized\n", address);
+            continue;
+        }
+        
+        Serial.printf("[DEBUG][QuadDisplay] Initializing display at 0x%02X\n", address);
+        
+        // Test I2C communication
+        wireInterface->beginTransmission(address);
+        int error = wireInterface->endTransmission();
+        
+        if (error != 0) {
+            Serial.printf("[ERROR][QuadDisplay] I2C communication failed for 0x%02X (error: %d)\n", address, error);
+            continue;
+        }
+        
+        // Initialize the display
+        bool beginResult = info.display.begin(address, wireInterface);
+        if (!beginResult) {
+            Serial.printf("[ERROR][QuadDisplay] Display initialization failed for 0x%02X\n", address);
+            continue;
+        }
+        
+        info.display.clear();
+        info.display.setBrightness(15);
+        info.display.writeDisplay();
+        info.initialized = true;
+        
+        Serial.printf("[DEBUG][QuadDisplay] Successfully initialized display at 0x%02X\n", address);
+    }
+    
     showReadyScreen();
 }
 
+void Manager_QuadDisplay::addDisplay(uint8_t i2cAddress) {
+    if (displays.find(i2cAddress) == displays.end()) {
+        displays[i2cAddress] = DisplayInfo();
+        Serial.printf("[DEBUG][QuadDisplay] Added display at address 0x%02X\n", i2cAddress);
+    } else {
+        Serial.printf("[DEBUG][QuadDisplay] Display 0x%02X already exists\n", i2cAddress);
+    }
+}
+
 void Manager_QuadDisplay::showReadyScreen() {
-    if (!initialized) return;
-    
-    clearDisplay();
-    
     // Get the full firmware version string
     const char* fullVersion = getFirmwareVersion();
     
@@ -46,139 +89,201 @@ void Manager_QuadDisplay::showReadyScreen() {
     
     // If version starts with "JunctionRelay", extract just the version part
     if (strncmp(fullVersion, "JunctionRelay", 13) == 0) {
-        // Extract version number after "JunctionRelay" prefix
         const char* versionPart = fullVersion + 13;
-        
-        // Skip any leading spaces
         while (*versionPart == ' ' && *versionPart != '\0') {
             versionPart++;
         }
-        
-        // Add the version part to the scrolling content
         scrollingContent += versionPart;
     } else {
-        // If not using JunctionRelay prefix, use the full version
         scrollingContent += fullVersion;
     }
     
-    // Add some spacing at the end for readability when scrolling loops
-    scrollingContent += "   ";
-    
-    // Clear the frame queue to ensure sensor values will be displayed
-    frameQueue = std::queue<String>();
-    
-    // Set the combined text as scrolling text
-    setScrollingText(scrollingContent.c_str());
-}
-
-void Manager_QuadDisplay::clearDisplay() {
-    if (!initialized) return;
-    
-    display.clear();
-    display.writeDisplay();
-}
-
-void Manager_QuadDisplay::setBrightness(uint8_t brightness) {
-    if (!initialized) return;
-    
-    display.setBrightness(brightness);
-    display.writeDisplay();
-}
-
-void Manager_QuadDisplay::printText(const char *text) {
-    if (!initialized) return;
-    
-    display.clear();
-    for (uint8_t i = 0; i < 4; i++) {
-        char c = text[i];
-        if (c == '\0') break;
-        display.writeDigitAscii(i, c);
-    }
-    display.writeDisplay();
-}
-
-void Manager_QuadDisplay::processNextFrame() {
-    if (!initialized) return;
-    
-    if (!frameQueue.empty()) {
-        // Stop any scrolling text when we process frames
-        if (scrollingActive) {
-            scrollingActive = false;
+    // If multiple displays, add address to distinguish them
+    if (displays.size() > 1) {
+        for (auto& pair : displays) {
+            uint8_t address = pair.first;
+            String addressContent = scrollingContent + " @" + String(address, HEX) + "   ";
+            setScrollingText(addressContent.c_str(), address);
         }
-        
-        String next = frameQueue.front();
-        frameQueue.pop();
-        printText(next.c_str());
+    } else {
+        scrollingContent += "   ";
+        setScrollingText(scrollingContent.c_str(), 0);  // Apply to all (single display)
     }
 }
 
-void Manager_QuadDisplay::queueTextFrame(const String& text) {
-    if (!initialized) return;
-    
-    if (frameQueue.size() >= maxQueueSize) {
-        frameQueue.pop();  // Drop the oldest frame if the queue is full
+std::vector<uint8_t> Manager_QuadDisplay::getDisplayAddresses() const {
+    std::vector<uint8_t> addresses;
+    for (const auto& pair : displays) {
+        addresses.push_back(pair.first);
     }
-    frameQueue.push(text);
+    return addresses;
 }
 
-void Manager_QuadDisplay::printNumber(int number) {
-    if (!initialized) return;
-    
+bool Manager_QuadDisplay::hasDisplay(uint8_t address) const {
+    return displays.find(address) != displays.end();
+}
+
+void Manager_QuadDisplay::executeOnDisplay(uint8_t address, std::function<void(uint8_t)> func) {
+    if (address == 0) {
+        // Execute on all displays
+        executeOnAllDisplays(func);
+    } else {
+        // Execute on specific display
+        auto it = displays.find(address);
+        if (it != displays.end() && it->second.initialized) {
+            func(address);
+        }
+    }
+}
+
+void Manager_QuadDisplay::executeOnAllDisplays(std::function<void(uint8_t)> func) {
+    for (auto& pair : displays) {
+        if (pair.second.initialized) {
+            func(pair.first);
+        }
+    }
+}
+
+void Manager_QuadDisplay::clearDisplay(uint8_t address) {
+    executeOnDisplay(address, [this](uint8_t addr) {
+        auto& info = displays[addr];
+        info.display.clear();
+        info.display.writeDisplay();
+    });
+}
+
+void Manager_QuadDisplay::setBrightness(uint8_t brightness, uint8_t address) {
+    executeOnDisplay(address, [this, brightness](uint8_t addr) {
+        auto& info = displays[addr];
+        info.display.setBrightness(brightness);
+        info.display.writeDisplay();
+    });
+}
+
+void Manager_QuadDisplay::printText(const char *text, uint8_t address) {
+    executeOnDisplay(address, [this, text](uint8_t addr) {
+        auto& info = displays[addr];
+        info.display.clear();
+        for (uint8_t i = 0; i < 4; i++) {
+            char c = text[i];
+            if (c == '\0') break;
+            info.display.writeDigitAscii(i, c);
+        }
+        info.display.writeDisplay();
+    });
+}
+
+void Manager_QuadDisplay::printNumber(int number, uint8_t address) {
     char buf[5];
     snprintf(buf, sizeof(buf), "%4d", number);
-    printText(buf);
+    printText(buf, address);
 }
 
-void Manager_QuadDisplay::setScrollingText(const char* text) {
-    if (!initialized) return;
-    
-    scrollText = String(text);
-    scrollIndex = 0;
-    scrollingActive = true;
+void Manager_QuadDisplay::setScrollingText(const char* text, uint8_t address) {
+    executeOnDisplay(address, [this, text](uint8_t addr) {
+        auto& info = displays[addr];
+        info.scrollText = String(text);
+        info.scrollIndex = 0;
+        info.scrollingActive = true;
+        // Clear frame queue when setting new scrolling text
+        info.frameQueue = std::queue<String>();
+    });
 }
 
-void Manager_QuadDisplay::setScrollingActive(bool active) {
-    if (!initialized) return;
-    
-    scrollingActive = active;
+void Manager_QuadDisplay::setScrollingActive(bool active, uint8_t address) {
+    executeOnDisplay(address, [this, active](uint8_t addr) {
+        displays[addr].scrollingActive = active;
+    });
+}
+
+void Manager_QuadDisplay::setStaticText(const char* text, uint8_t address) {
+    executeOnDisplay(address, [this, text](uint8_t addr) {
+        auto& info = displays[addr];
+        info.staticText = String(text);
+        info.scrollingActive = false;
+        printText(info.staticText.c_str(), addr);
+    });
 }
 
 void Manager_QuadDisplay::updateScrollingText() {
-    if (!initialized || !scrollingActive || scrollText.length() == 0) return;
-
     unsigned long currentTime = millis();
-    if (currentTime - lastScrollUpdate < scrollDelay) return;
-    lastScrollUpdate = currentTime;
-
-    display.clear();
-    for (int i = 0; i < 4; i++) {
-        int charIndex = (scrollIndex + i) % scrollText.length();
-        display.writeDigitAscii(i, scrollText.charAt(charIndex));
-    }
-    display.writeDisplay();
-
-    scrollIndex = (scrollIndex + 1) % scrollText.length();
-}
-
-void Manager_QuadDisplay::setStaticText(const char* text) {
-    if (!initialized) return;
     
-    staticText = String(text);
-    scrollingActive = false;
-    printText(staticText.c_str());
+    for (auto& pair : displays) {
+        uint8_t address = pair.first;
+        DisplayInfo& info = pair.second;
+        
+        if (!info.initialized || !info.scrollingActive || info.scrollText.length() == 0) 
+            continue;
+        
+        if (currentTime - info.lastScrollUpdate < scrollDelay) 
+            continue;
+            
+        info.lastScrollUpdate = currentTime;
+        updateScrollingText(address);
+    }
 }
 
-// -------- ScreenDestination Implementation --------
+void Manager_QuadDisplay::updateScrollingText(uint8_t address) {
+    auto it = displays.find(address);
+    if (it == displays.end() || !it->second.initialized) return;
+    
+    DisplayInfo& info = it->second;
+    
+    info.display.clear();
+    for (int i = 0; i < 4; i++) {
+        int charIndex = (info.scrollIndex + i) % info.scrollText.length();
+        char c = info.scrollText.charAt(charIndex);
+        info.display.writeDigitAscii(i, c);
+    }
+    info.display.writeDisplay();
+    info.scrollIndex = (info.scrollIndex + 1) % info.scrollText.length();
+}
 
+void Manager_QuadDisplay::processNextFrame(uint8_t address) {
+    auto it = displays.find(address);
+    if (it == displays.end() || !it->second.initialized) return;
+    
+    DisplayInfo& info = it->second;
+    if (!info.frameQueue.empty()) {
+        if (info.scrollingActive) {
+            info.scrollingActive = false;
+        }
+        
+        String next = info.frameQueue.front();
+        info.frameQueue.pop();
+        printText(next.c_str(), address);
+    }
+}
+
+void Manager_QuadDisplay::queueTextFrame(const String& text, uint8_t address) {
+    auto it = displays.find(address);
+    if (it == displays.end() || !it->second.initialized) return;
+    
+    DisplayInfo& info = it->second;
+    if (info.frameQueue.size() >= maxQueueSize) {
+        info.frameQueue.pop();
+    }
+    info.frameQueue.push(text);
+}
+
+// ScreenDestination Implementation
 String Manager_QuadDisplay::getScreenId() const {
-    // Return dynamic ID based on I2C address, e.g. "0x70"
-    char buf[6];
-    snprintf(buf, sizeof(buf), "0x%02X", i2cAddr);
-    return String(buf);
+    if (displays.size() == 1) {
+        char buf[6];
+        snprintf(buf, sizeof(buf), "0x%02X", displays.begin()->first);
+        return String(buf);
+    }
+    return "quad_multi";  // Multiple displays
 }
 
 bool Manager_QuadDisplay::matchesScreenId(const String& screenId, const JsonDocument& doc) const {
-    return (screenId == getScreenId());
+    // Handle specific address
+    if (screenId.startsWith("0x")) {
+        uint8_t addr = (uint8_t)strtol(screenId.c_str(), NULL, 16);
+        return hasDisplay(addr);
+    }
+    // Handle multi-display case
+    return (screenId == "quad_multi" && displays.size() > 1);
 }
 
 const char* Manager_QuadDisplay::getConfigKey() const {
@@ -186,69 +291,64 @@ const char* Manager_QuadDisplay::getConfigKey() const {
 }
 
 void Manager_QuadDisplay::applyConfig(const JsonDocument& configDoc) {
-    if (!initialized) return;
+    // Apply to specific display or all displays based on config
+    uint8_t targetAddress = 0;  // Default to all
+    
+    if (configDoc.containsKey("address")) {
+        const char* addrStr = configDoc["address"];
+        targetAddress = (uint8_t)strtol(addrStr, NULL, 16);
+    }
     
     if (configDoc.containsKey("scroll")) {
-        setScrollingText(configDoc["scroll"]);
+        setScrollingText(configDoc["scroll"], targetAddress);
     } else if (configDoc.containsKey("static")) {
-        setStaticText(configDoc["static"]);
+        setStaticText(configDoc["static"], targetAddress);
     }
 
     if (configDoc.containsKey("brightness")) {
-        setBrightness(configDoc["brightness"]);
+        setBrightness(configDoc["brightness"], targetAddress);
     }
 }
 
 void Manager_QuadDisplay::update() {
-    if (!initialized) return;
-    
-    // Handle frame queue with ultra-minimal delay
     static unsigned long lastFrameUpdate = 0;
-    const unsigned long frameDelay = 10;  // 10ms between displayed values - as requested
+    const unsigned long frameDelay = 10;
     
-    // Process the queue if there are items
-    if (!frameQueue.empty()) {
-        // If scrolling is active but we have items in queue, disable scrolling permanently
-        if (scrollingActive) {
-            scrollingActive = false;
+    // Process frame queues for all displays
+    bool hasFrames = false;
+    for (auto& pair : displays) {
+        if (!pair.second.frameQueue.empty()) {
+            hasFrames = true;
+            break;
         }
-        
-        if (millis() - lastFrameUpdate > frameDelay) {
-            processNextFrame();
-            lastFrameUpdate = millis();
+    }
+    
+    if (hasFrames && (millis() - lastFrameUpdate > frameDelay)) {
+        for (auto& pair : displays) {
+            processNextFrame(pair.first);
         }
+        lastFrameUpdate = millis();
         return;
     }
     
-    // Only update scrolling text if the queue is empty AND we haven't received any sensor data yet
-    static bool receivedSensorData = false;
-    
-    if (!receivedSensorData && scrollingActive) {
-        updateScrollingText();
-    }
+    // Update scrolling text for all displays
+    updateScrollingText();
 }
 
 void Manager_QuadDisplay::updateSensorData(const JsonDocument& sensorDoc) {
-    if (!initialized) return;
-    
     if (!sensorDoc.containsKey("sensors")) return;
 
     JsonObjectConst sensors = sensorDoc["sensors"];
     
-    // Process each sensor in the payload - we only care about the most recent one
     for (JsonPairConst kv : sensors) {
-        // Get the array of values
         JsonArrayConst dataArray = kv.value().as<JsonArrayConst>();
         if (dataArray.size() == 0) continue;
         
-        // Get first data item
         JsonObjectConst dataItem = dataArray[0];
         
-        // Check for Value field
         if (dataItem.containsKey("Value")) {
             const char* value = dataItem["Value"];
             
-            // Format display text based on whether Unit is available
             String displayText;
             if (dataItem.containsKey("Unit")) {
                 const char* unit = dataItem["Unit"];
@@ -258,18 +358,9 @@ void Manager_QuadDisplay::updateSensorData(const JsonDocument& sensorDoc) {
             }
             
             if (displayText.length() > 0) {
-                // Signal that we've received sensor data - disable welcome message on first data
-                static bool firstSensorReceived = false;
-                if (!firstSensorReceived) {
-                    firstSensorReceived = true;
-                    scrollingActive = false;
-                    clearDisplay();
-                }
-                
-                // Always display immediately for ultra-high speed updates
-                printText(displayText.c_str());
-                
-                // Skip queue system entirely for maximum speed
+                // Stop scrolling and show sensor data on all displays
+                setScrollingActive(false, 0);
+                printText(displayText.c_str(), 0);
                 return;
             }
         }
