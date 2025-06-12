@@ -1,1 +1,0 @@
-.\upload_docker_and_github.ps1
