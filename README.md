@@ -101,38 +101,6 @@ docker run -p 7180:7180 junctionrelay
 
 ---
 
-## 🚀 Quick Start with Docker Hub
-
-You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
-
-```bash
-docker run -d \
-  --name junctionrelay \
-  -p 7180:7180 \
-  catapultcase/junctionrelay:latest
-```
-
-This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
-
-🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
-
-> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
-
----
-
-## 🛠️ Build from Source (Optional)
-
-Prefer to build it yourself? Clone the repo and build the image manually:
-
-```bash
-git clone https://github.com/catapultcase/JunctionRelay.git
-cd JunctionRelay
-docker build -t junctionrelay .
-docker run -p 7180:7180 junctionrelay
-```
-
----
-
 ## 📸 Screenshots
 
 #### Plotters

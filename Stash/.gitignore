@@ -1,0 +1,83 @@
+# =============================
+# Build results
+# =============================
+bin/
+obj/
+out/
+JunctionRelay_ESP32_S3_DEV/main2/build/
+JunctionRelay_ESP32_DEV/main3/build/
+
+
+# =============================
+# Visual Studio
+# =============================
+.vs/
+*.user
+*.suo
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# =============================
+# JetBrains Rider
+# =============================
+.idea/
+
+# =============================
+# ASP.NET / .NET-specific
+# =============================
+project.lock.json
+project.fragment.lock.json
+*.pdb
+*.cache
+*.dll
+*.exe
+
+# =============================
+# User-specific + OS artifacts
+# =============================
+*.swp
+*.bak
+*.tmp
+*.log
+*.orig
+*.DS_Store
+Thumbs.db
+
+# =============================
+# IIS + VS launch settings
+# =============================
+*.publishsettings
+Properties/launchSettings.json
+
+# =============================
+# Frontend (Node/NPM)
+# =============================
+**/node_modules/
+**/bower_components/
+npm-debug.log
+
+# =============================
+# Docker
+# =============================
+docker-compose.*
+Dockerfile*
+.dockerignore
+
+# =============================
+# Databases / Tools
+# =============================
+*.dbmdl
+*.jfm
+
+# =============================
+# Environment/Secrets
+# =============================
+*.env
+secrets.dev.yaml
+values.dev.yaml
+
+# =============================
+# Git internals (safe to include)
+# =============================
+.git/
