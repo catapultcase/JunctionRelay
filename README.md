@@ -109,9 +109,27 @@ npm run build
 cd ..
 ```
 
-> 💡 This step ensures the frontend assets are built and available for the backend to serve.
+> 💡 This generates the production-ready frontend in `junctionrelaywebui/build`.
 
-### ⚙️ 3. Run the server
+### 📁 3. Copy frontend build to backend `wwwroot/static`
+
+The backend expects static assets to be present in `JunctionRelay_Server/wwwroot/static`, but this folder is excluded from Git (`.gitignore`).
+
+You **must manually copy** the frontend build output into the backend’s static directory:
+
+#### On Windows:
+```bash
+xcopy /E /I /Y junctionrelaywebui\build JunctionRelay_Server\wwwroot\static
+```
+
+#### On macOS/Linux:
+```bash
+cp -r junctionrelaywebui/build/* JunctionRelay_Server/wwwroot/static/
+```
+
+> ⚠️ If you skip this step, the web interface will not load correctly when running the backend.
+
+### ⚙️ 4. Run the server
 
 ```bash
 dotnet run
