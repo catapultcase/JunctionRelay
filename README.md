@@ -1,4 +1,3 @@
-
 # Junction Relay
 
 **Junction Relay** is an open-source modular platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
@@ -90,14 +89,35 @@ This pulls the latest version of Junction Relay and exposes the web interface at
 
 ## 🛠️ Build from Source (Optional)
 
-Prefer to build it yourself? Clone the repo and build the image manually:
+Prefer to build it yourself? You can compile and run the backend and frontend locally:
+
+### 🧱 1. Clone the repository
 
 ```bash
 git clone https://github.com/catapultcase/JunctionRelay.git
-cd JunctionRelay
-docker build -t junctionrelay .
-docker run -p 7180:7180 junctionrelay
+cd JunctionRelay\JunctionRelay_Server
 ```
+
+### 🌐 2. Install frontend dependencies
+
+The React-based Web UI is located in `junctionrelaywebui`. Before running the backend, install the required frontend dependencies:
+
+```bash
+cd junctionrelaywebui
+npm install
+npm run build
+cd ..
+```
+
+> 💡 This step ensures the frontend assets are built and available for the backend to serve.
+
+### ⚙️ 3. Run the server
+
+```bash
+dotnet run
+```
+
+Once running, navigate to [http://localhost:7180](http://localhost:7180) to access the web interface.
 
 ---
 
