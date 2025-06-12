@@ -6,9 +6,11 @@
 #include <Adafruit_NeoPixel.h>
 #include "Manager_I2C.h"
 #include "I2CScanner.h"
+#include <vector>
 
 #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     #include "Manager_QuadDisplay.h"
+    #include "Manager_Charlieplex.h"
 #endif
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
@@ -104,7 +106,9 @@ private:
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     TaskHandle_t i2cInitTaskHandle;
     TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
+    TaskHandle_t charlieDisplayTaskHandle;  // Task for Charlieplex manager
     bool detectedQuadDisplay;
+    bool detectedCharlieDisplay;
     #endif
 
     ConnectionManager* connMgr;

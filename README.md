@@ -1,8 +1,7 @@
+
 # Junction Relay
 
-**Junction Relay** is a modular platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
-
-The example ESP32 S3 device firmware is open-source and available for customization and integration.
+**Junction Relay** is an open-source modular platform for real-time device and sensor coordination. Built for rapid deployment via Docker, it features a robust `.NET 8` backend and a modern React frontend for managing dynamic layouts, sensor data flows, and device orchestration across smart infrastructure.
 
 🔗 [Visit junctionrelay.com](https://junctionrelay.com)
 
@@ -53,18 +52,56 @@ Junction Relay includes out-of-the-box collectors for:
 
 ---
 
+## 🚀 Quick Start with Docker Hub
 
-### Deployment via Docker
+You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
+
+```bash
+docker run -d \
+  --name junctionrelay \
+  -p 7180:7180 \
+  catapultcase/junctionrelay:latest
+```
+
+This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
+
+🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
+
+> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
+
+---
+
+## 🛠️ Build from Source (Optional)
+
+Prefer to build it yourself? Clone the repo and build the image manually:
 
 ```bash
 git clone https://github.com/catapultcase/JunctionRelay.git
 cd JunctionRelay
 docker build -t junctionrelay .
 docker run -p 7180:7180 junctionrelay
-
 ```
 
-### Screenshots
+---
+
+## 🔌 ESP Device Protocols
+
+Junction Relay supports a wide range of communication protocols to interact with ESP32-based devices. This gives you flexibility depending on your hardware setup and reliability requirements:
+
+| Protocol     | Description                                                                 |
+|--------------|-----------------------------------------------------------------------------|
+| 🌐 **Ethernet**   | Reliable and low-latency. Ideal for stationary or high-performance setups using devices like the WESP32. |
+| 📶 **Wi-Fi**      | Most common option. Easy to configure and works well for mobile or wireless sensor nodes. |
+| 🔌 **COM / Serial** | Direct USB or UART connection. Useful for debugging or permanent wired installations. |
+| 🔄 **WebSockets** | Full-duplex, low-latency communication with the backend. Perfect for real-time data and UI updates. |
+| 🌐 **HTTP**       | Lightweight and easy to integrate. Devices can push or pull updates from RESTful endpoints. |
+| 📡 **MQTT**       | Publish/subscribe protocol for loosely coupled sensor networks. Compatible with external brokers. |
+
+You can configure the protocol per device depending on its capabilities and purpose. Many devices support fallback modes (e.g. Wi-Fi → Ethernet), and all communication methods can coexist within the same Junction Relay instance.
+
+---
+
+## 📸 Screenshots
 
 #### Plotters
 ![Plotters](./assets/Plotters.jpg)

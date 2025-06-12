@@ -1,7 +1,7 @@
 #ifndef CAPTIVE_PORTAL_MANAGER_H
 #define CAPTIVE_PORTAL_MANAGER_H
 
-#include <FreeRTOS.h>   // <-- Include FreeRTOS first
+#include "freertos/FreeRTOS.h"
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>

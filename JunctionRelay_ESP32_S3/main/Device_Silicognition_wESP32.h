@@ -1,10 +1,9 @@
-#ifndef DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
-#define DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
+#ifndef DEVICE_SILICOGNITION_WESP32_H
+#define DEVICE_SILICOGNITION_WESP32_H
 
 #include "DeviceConfig.h"
 #include "Utils.h"
-#include <Adafruit_NeoPixel.h>
-#include "Manager_NeoPixels.h" 
+#include <ETH.h>
 #include "Manager_I2C.h"
 #include "I2CScanner.h"
 #include <Preferences.h>
@@ -14,50 +13,72 @@
     #include "Manager_Charlieplex.h"
 #endif
 
-#define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "QT Py ESP32-S3"
-#define DEVICE_MANUFACTURER             "Adafruit"
+#if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    #include "Manager_NeoPixels.h"
+#endif
+
+#define DEVICE_CLASS                    "JunctionRelay Gateway"
+#define DEVICE_MODEL                    "wESP32"
+#define DEVICE_MANUFACTURER             "Silicognition LLC"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
-#define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "4 MB"
-#define DEVICE_PSRAM                    "2 MB"
+#define DEVICE_MCU                      "ESP32 Dual Core 240MHz Tensilica processor"
+#define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE) + Ethernet"
+#define DEVICE_FLASH                    "16 MB"
+#define DEVICE_PSRAM                    "4 MB"
 
 // Define capabilities for this device
 #define DEVICE_HAS_ONBOARD_SCREEN       0 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
 #define DEVICE_HAS_EXTERNAL_MATRIX      0
-#define DEVICE_HAS_EXTERNAL_NEOPIXELS   1 
+#define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_WIFI            1
-#define DEVICE_SUPPORTS_BLE             0
+#define DEVICE_SUPPORTS_ETHERNET        1
+#define DEVICE_SUPPORTS_BLE             1
 #define DEVICE_SUPPORTS_USB             1
 #define DEVICE_SUPPORTS_ESPNOW          1
 #define DEVICE_SUPPORTS_HTTP            1
 #define DEVICE_SUPPORTS_MQTT            1
 #define DEVICE_SUPPORTS_WEBSOCKETS      1
 #define DEVICE_HAS_SPEAKER              0
-#define DEVICE_HAS_MICROSD              0
-#define DEVICE_IS_GATEWAY               0
+#define DEVICE_HAS_MICROSD              1
+#define DEVICE_IS_GATEWAY               1
 
-#if DEVICE_HAS_ONBOARD_RGB_LED
-    #define PIN_NEOPIXEL 39
-    #define NUMPIXELS 1
-#endif
+// wESP32 specific pin definitions
+#define PIN_ONBOARD_LED     2
+#define PIN_BOOT_BUTTON     0
+
+// Ethernet configuration for wESP32
+#define ETH_PHY_TYPE        ETH_PHY_RTL8201
+#define ETH_PHY_ADDR        0
+#define ETH_PHY_MDC         16
+#define ETH_PHY_MDIO        17
+#define ETH_PHY_POWER       -1
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN
+
+// I2C pins for wESP32
+#define I2C_SDA             21
+#define I2C_SCL             22
+
+// MicroSD pins
+#define SD_CS               5
+#define SD_MOSI             23
+#define SD_MISO             19
+#define SD_SCK              18
 
 #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     // Default pins - will be overridden by preferences
-    #define DEFAULT_EXTERNAL_PIN_1 35
-    #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
+    #define DEFAULT_EXTERNAL_PIN_1 33
+    #define DEFAULT_EXTERNAL_PIN_2 32
     #define EXTERNAL_NUMPIXELS 128
 #endif
 
-class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
+class Device_Silicognition_wESP32 : public DeviceConfig {
 public:
-    Device_AdafruitQtPyESP32S3(ConnectionManager* connMgr);
+    Device_Silicognition_wESP32(ConnectionManager* connMgr);
 
     bool begin();  
     const char* getName();
@@ -69,13 +90,23 @@ public:
 
     // I2C methods
     String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() override;  // Implement base class method
+    TwoWire* getI2CInterface() override;
+
+    // Ethernet methods
+    bool initializeEthernet();
+    bool isEthernetConnected();
+    IPAddress getEthernetIP();
+    String getEthernetMAC();
+    void printEthernetStatus();
 
     // NeoPixel configuration methods
     void loadNeoPixelPreferences();
     void saveNeoPixelPreferences();
     int getNeoPixelPin(int index = 0);
     void setNeoPixelPin(int pin, int index = 0);
+
+    // Button methods
+    bool isBootButtonPressed();
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -87,6 +118,7 @@ public:
     virtual bool hasButtons() const override { return DEVICE_HAS_BUTTONS; }
     virtual bool hasBattery() const override { return DEVICE_HAS_BATTERY; }
     virtual bool supportsWiFi() const override { return DEVICE_SUPPORTS_WIFI; }
+    virtual bool supportsEthernet() const override { return DEVICE_SUPPORTS_ETHERNET; }
     virtual bool supportsBLE() const override { return DEVICE_SUPPORTS_BLE; }
     virtual bool supportsUSB() const override { return DEVICE_SUPPORTS_USB; }
     virtual bool supportsESPNow() const override { return DEVICE_SUPPORTS_ESPNOW; }
@@ -113,28 +145,39 @@ public:
     }
 
 private:
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Adafruit_NeoPixel onboardPixel;
-    #endif
-
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     TaskHandle_t i2cInitTaskHandle;
-    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
-    TaskHandle_t charlieDisplayTaskHandle;  // Task for Charlieplex manager
+    TaskHandle_t quadDisplayTaskHandle;
+    TaskHandle_t charlieDisplayTaskHandle;
     bool detectedQuadDisplay;
     bool detectedCharlieDisplay;
     #endif
 
     ConnectionManager* connMgr;
     
+    // Ethernet status
+    bool ethernetConnected;
+    bool ethernetInitialized;
+    
     // NeoPixel pin configuration stored in preferences
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     int externalNeoPixelPin1;
-    int externalNeoPixelPin2;  // Stub for future use
+    int externalNeoPixelPin2;
+    #endif
+
+    // Ethernet event handler
+    static void WiFiEvent(WiFiEvent_t event);
+    static Device_Silicognition_wESP32* instance; // For static event handler
 
 public:
     // Legacy support - uses pin 1
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     int getNeoPixelPin() { return getNeoPixelPin(0); }
     int getNeoPixelNum() { return EXTERNAL_NUMPIXELS; }
+    #else
+    int getNeoPixelPin() { return -1; }
+    int getNeoPixelNum() { return 0; }
+    #endif
 };
 
-#endif // DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
+#endif // DEVICE_SILICOGNITION_WESP32_H

@@ -13,10 +13,15 @@
 #include "DeviceConfig.h"
 #include "CaptivePortalManager.h"
 #include "ScreenRouter.h"
+#include "Manager_Charlieplex.h"
 #include "Manager_QuadDisplay.h"
 #include "Manager_Matrix.h"
 #include "Manager_NeoPixels.h"
+#include "Manager_ESPNOW.h"
 #include "Utils.h"
+
+// Battery monitoring
+#include "Adafruit_MAX1704X.h"
 
 // forward-declare MQTT manager to avoid circular include
 class Manager_MQTT;
@@ -28,17 +33,21 @@ struct ConnectionStatus {
     bool   espNowActive;
     bool   wifiConnected;
     bool   mqttConnected;
-    String ipAddress;    // valid if wifiConnected
-    String macAddress;   // valid if wifiConnected
+    bool   ethernetConnected;
+    String ipAddress;
+    String macAddress;
+    String ethernetIP;
+    String ethernetMAC;
 };
 
 class ConnectionManager {
 public:
     ConnectionManager();
+    ~ConnectionManager();
 
     // Core lifecycle
     void init();
-    void handleConnection();                    // call from loop()
+    void handleConnection();
     void handleSerialData();
     void handleIncomingDataChunkPrefix(uint8_t* data, size_t len);
     void handleIncomingDataChunk(uint8_t* data, size_t len);
@@ -49,6 +58,9 @@ public:
     void emitStatus();
     using StatusCb = std::function<void(const ConnectionStatus&)>;
     void setStatusUpdateCallback(StatusCb cb);
+
+    // Network availability check
+    bool isNetworkAvailable() const;
 
     // Modes
     bool   isEspNowActive() const { return connMode == "espnow"; }
@@ -67,11 +79,26 @@ public:
     void            reconnectMQTT();
     Manager_MQTT*   getMqttManager() { return mqttManager; }
 
+    // ESP-NOW management
+    Manager_ESPNOW* getESPNowManager() { return espnowManager; }
+    bool            isESPNowInitialized() const { return espnowManager && espnowManager->isInitialized(); }
+
     // HTTP API
     String getDeviceCapabilities();
     String getDeviceInfo();
     String getCurrentPreferences();
+    String getSystemStats();
+    String getSystemStatsLightweight();
+    void   getSystemStatsAsync(AsyncWebServerRequest* request);
+    void   getSystemStatsLightweightAsync(AsyncWebServerRequest* request);
     void   handleSetPreferences(AsyncWebServerRequest* req);
+
+    // Configuration state management
+    void resetConfigState();
+    
+    // Battery management
+    void initBattery();
+    bool isBatteryAvailable() const { return batteryInitialized; }
 
     // Display offload
     void setScreenRouter(ScreenRouter* router) { screenRouter = router; }
@@ -89,16 +116,25 @@ public:
     String mqttUserName;
     String mqttPassword;
 
+    // Configuration state tracking (public so tasks can access)
+    bool hasReceivedConfig = false;
+    unsigned long lastConfigTimestamp = 0;
+    uint32_t configCount = 0;
+
+    // Battery monitoring (public so accessible from stats)
+    Adafruit_MAX17048 maxlipo;
+    bool batteryInitialized = false;
+
 private:
     
     // Sensor processing queue and task
     static QueueHandle_t sensorQueue;
-    static const int SENSOR_QUEUE_SIZE = 5;  // Maximum number of sensor payloads in queue
+    static const int SENSOR_QUEUE_SIZE = 30;
     static TaskHandle_t sensorProcessingTaskHandle;
     
     // Config processing queue and task
     static QueueHandle_t configQueue;
-    static const int CONFIG_QUEUE_SIZE = 3;  // Maximum number of config payloads in queue
+    static const int CONFIG_QUEUE_SIZE = 3;
     static TaskHandle_t configProcessingTaskHandle;
 
     // Helper methods
@@ -133,10 +169,14 @@ private:
     // MQTT
     Manager_MQTT*                        mqttManager  = nullptr;
 
+    // ESP-NOW manager
+    Manager_ESPNOW*                      espnowManager = nullptr;
+
     // Dynamically registered displays
-    std::map<String, Manager_QuadDisplay*> quadDisplays;
-    std::map<String, Manager_Matrix*>      matrixDisplays;
-    std::map<String, Manager_NeoPixels*>   neopixelDisplays;
+    std::map<String, Manager_Charlieplex*>   charlieDisplays;
+    std::map<String, Manager_QuadDisplay*>    quadDisplays;
+    std::map<String, Manager_Matrix*>         matrixDisplays;
+    std::map<String, Manager_NeoPixels*>      neopixelDisplays;
 };
 
 #endif // CONNECTION_MANAGER_H

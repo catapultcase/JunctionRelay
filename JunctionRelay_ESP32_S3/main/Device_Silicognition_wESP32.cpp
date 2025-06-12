@@ -1,5 +1,8 @@
-#include "Device_AdafruitQtPyESP32S3.h"
+#include "Device_Silicognition_wESP32.h"
 #include "Utils.h"
+
+// Static instance pointer for event handler
+Device_Silicognition_wESP32* Device_Silicognition_wESP32::instance = nullptr;
 
 // Make sure we have all required managers included
 #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
@@ -11,12 +14,11 @@
     #include "Manager_NeoPixels.h"
 #endif
 
-Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(ConnectionManager* connMgr)
-: connMgr(connMgr)
+Device_Silicognition_wESP32::Device_Silicognition_wESP32(ConnectionManager* connMgr)
+: connMgr(connMgr), ethernetConnected(false), ethernetInitialized(false)
 {
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    onboardPixel = Adafruit_NeoPixel(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-    #endif
+    // Set static instance for event handler
+    instance = this;
 
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     detectedQuadDisplay = false;
@@ -27,12 +29,14 @@ Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(ConnectionManager* connMg
     #endif
 
     // Initialize NeoPixel pin defaults
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     externalNeoPixelPin1 = DEFAULT_EXTERNAL_PIN_1;
     externalNeoPixelPin2 = DEFAULT_EXTERNAL_PIN_2;
+    #endif
 }
 
 #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-void Device_AdafruitQtPyESP32S3::loadNeoPixelPreferences() {
+void Device_Silicognition_wESP32::loadNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", true); // Read-only mode
     
@@ -45,7 +49,7 @@ void Device_AdafruitQtPyESP32S3::loadNeoPixelPreferences() {
                   externalNeoPixelPin1, externalNeoPixelPin2);
 }
 
-void Device_AdafruitQtPyESP32S3::saveNeoPixelPreferences() {
+void Device_Silicognition_wESP32::saveNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", false); // Read-write mode
     
@@ -58,7 +62,7 @@ void Device_AdafruitQtPyESP32S3::saveNeoPixelPreferences() {
                   externalNeoPixelPin1, externalNeoPixelPin2);
 }
 
-int Device_AdafruitQtPyESP32S3::getNeoPixelPin(int index) {
+int Device_Silicognition_wESP32::getNeoPixelPin(int index) {
     switch(index) {
         case 0:
             return externalNeoPixelPin1;
@@ -70,7 +74,7 @@ int Device_AdafruitQtPyESP32S3::getNeoPixelPin(int index) {
     }
 }
 
-void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
+void Device_Silicognition_wESP32::setNeoPixelPin(int pin, int index) {
     switch(index) {
         case 0:
             if (externalNeoPixelPin1 != pin) {
@@ -89,32 +93,156 @@ void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
             break;
     }
 }
+#else
+// Stub implementations when NeoPixels are disabled
+void Device_Silicognition_wESP32::loadNeoPixelPreferences() {
+    // Do nothing - NeoPixels disabled
+}
+
+void Device_Silicognition_wESP32::saveNeoPixelPreferences() {
+    // Do nothing - NeoPixels disabled
+}
+
+int Device_Silicognition_wESP32::getNeoPixelPin(int index) {
+    return -1; // Invalid pin - NeoPixels disabled
+}
+
+void Device_Silicognition_wESP32::setNeoPixelPin(int pin, int index) {
+    // Do nothing - NeoPixels disabled
+}
 #endif
 
-bool Device_AdafruitQtPyESP32S3::begin() {
-    Serial.println("[DEBUG][DEVICE] Initializing Adafruit QtPy ESP32-S3...");
+// Static Ethernet event handler
+void Device_Silicognition_wESP32::WiFiEvent(WiFiEvent_t event) {
+    if (!instance) return;
+    
+    switch (event) {
+        case ARDUINO_EVENT_ETH_START:
+            Serial.println("[DEBUG][ETH] Ethernet Started");
+            ETH.setHostname("wesp32-gateway");
+            break;
+            
+        case ARDUINO_EVENT_ETH_CONNECTED:
+            Serial.println("[DEBUG][ETH] Ethernet Connected");
+            break;
+            
+        case ARDUINO_EVENT_ETH_GOT_IP:
+            Serial.printf("[DEBUG][ETH] Ethernet Got IP: %s\n", ETH.localIP().toString().c_str());
+            Serial.printf("[DEBUG][ETH] Ethernet MAC: %s\n", ETH.macAddress().c_str());
+            Serial.printf("[DEBUG][ETH] Link Speed: %d Mbps\n", ETH.linkSpeed());
+            Serial.printf("[DEBUG][ETH] Full Duplex: %s\n", ETH.fullDuplex() ? "Yes" : "No");
+            instance->ethernetConnected = true;
+            break;
+            
+        case ARDUINO_EVENT_ETH_DISCONNECTED:
+            Serial.println("[DEBUG][ETH] Ethernet Disconnected");
+            instance->ethernetConnected = false;
+            break;
+            
+        case ARDUINO_EVENT_ETH_STOP:
+            Serial.println("[DEBUG][ETH] Ethernet Stopped");
+            instance->ethernetConnected = false;
+            break;
+            
+        default:
+            break;
+    }
+}
+
+bool Device_Silicognition_wESP32::initializeEthernet() {
+    if (ethernetInitialized) {
+        return ethernetConnected;
+    }
+    
+    Serial.println("[DEBUG][ETH] Initializing Ethernet...");
+    
+    // Register event handler
+    WiFi.onEvent(WiFiEvent);
+    
+    // Give hardware time to settle
+    delay(100);
+    
+    // Initialize Ethernet with RTL8201 PHY (wESP32 rev 7+)
+    // For Arduino-ESP32 2.x: ETH.begin(phy_addr, power_pin, mdc_pin, mdio_pin, phy_type, clock_mode)
+    bool success = ETH.begin(ETH_PHY_ADDR, ETH_PHY_POWER, ETH_PHY_MDC, ETH_PHY_MDIO, ETH_PHY_TYPE, ETH_CLK_MODE);
+    
+    if (success) {
+        Serial.println("[DEBUG][ETH] Ethernet initialization successful");
+        ethernetInitialized = true;
+        
+        // Wait a bit for connection
+        unsigned long startTime = millis();
+        while (!ethernetConnected && (millis() - startTime < 10000)) {
+            delay(100);
+        }
+        
+        if (ethernetConnected) {
+            printEthernetStatus();
+        } else {
+            Serial.println("[WARNING][ETH] Ethernet initialized but no connection established");
+        }
+    } else {
+        Serial.println("[ERROR][ETH] Failed to initialize Ethernet");
+    }
+    
+    return success;
+}
+
+bool Device_Silicognition_wESP32::isEthernetConnected() {
+    return ethernetConnected && ETH.linkUp();
+}
+
+IPAddress Device_Silicognition_wESP32::getEthernetIP() {
+    return ETH.localIP();
+}
+
+String Device_Silicognition_wESP32::getEthernetMAC() {
+    return ETH.macAddress();
+}
+
+void Device_Silicognition_wESP32::printEthernetStatus() {
+    Serial.println("[DEBUG][ETH] === Ethernet Status ===");
+    Serial.printf("[DEBUG][ETH] Connected: %s\n", isEthernetConnected() ? "Yes" : "No");
+    Serial.printf("[DEBUG][ETH] IP Address: %s\n", ETH.localIP().toString().c_str());
+    Serial.printf("[DEBUG][ETH] Subnet Mask: %s\n", ETH.subnetMask().toString().c_str());
+    Serial.printf("[DEBUG][ETH] Gateway: %s\n", ETH.gatewayIP().toString().c_str());
+    Serial.printf("[DEBUG][ETH] DNS: %s\n", ETH.dnsIP().toString().c_str());
+    Serial.printf("[DEBUG][ETH] MAC Address: %s\n", ETH.macAddress().c_str());
+    Serial.printf("[DEBUG][ETH] Link Speed: %d Mbps\n", ETH.linkSpeed());
+    Serial.printf("[DEBUG][ETH] Full Duplex: %s\n", ETH.fullDuplex() ? "Yes" : "No");
+    Serial.println("[DEBUG][ETH] ========================");
+}
+
+#if DEVICE_HAS_BUTTONS
+bool Device_Silicognition_wESP32::isBootButtonPressed() {
+    return digitalRead(PIN_BOOT_BUTTON) == LOW;
+}
+#else
+bool Device_Silicognition_wESP32::isBootButtonPressed() {
+    return false; // No button - always return false
+}
+#endif
+
+bool Device_Silicognition_wESP32::begin() {
+    Serial.println("[DEBUG][DEVICE] Initializing Silicognition wESP32...");
+
+    // Initialize onboard LED
+    #if DEVICE_HAS_ONBOARD_LED
+    pinMode(PIN_ONBOARD_LED, OUTPUT);
+    digitalWrite(PIN_ONBOARD_LED, LOW);
+    Serial.println("[DEBUG][DEVICE] Onboard LED initialized");
+    #endif
+
+    // Initialize boot button
+    #if DEVICE_HAS_BUTTONS
+    pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
+    Serial.println("[DEBUG][DEVICE] Boot button initialized");
+    #endif
 
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     // Load NeoPixel pin configuration from preferences
     loadNeoPixelPreferences();
-    #endif
-
-    #if defined(NEOPIXEL_POWER)
-    pinMode(NEOPIXEL_POWER, OUTPUT);
-    digitalWrite(NEOPIXEL_POWER, HIGH);
-    Serial.println("[DEBUG][DEVICE] NeoPixel power pin enabled");
-    #endif
-
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Serial.println("[DEBUG][DEVICE] Initializing onboard NeoPixel...");
-    onboardPixel.begin();
-    onboardPixel.setBrightness(20);
-    onboardPixel.clear(); 
-    onboardPixel.show();
-    Serial.println("[DEBUG][DEVICE] Onboard NeoPixel initialized.");
-    #endif
-
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    
     Serial.println("[DEBUG][DEVICE] Initializing external NeoPixels manager...");
     Serial.printf("[DEBUG][DEVICE] Creating NeoPixel manager with pin %d, count %d\n", 
                   externalNeoPixelPin1, EXTERNAL_NUMPIXELS);
@@ -125,59 +253,80 @@ bool Device_AdafruitQtPyESP32S3::begin() {
     Serial.println("[DEBUG][DEVICE] External NeoPixels manager initialized.");
     
     neoManager->setCM5EffectActive(true);
-    neoManager->setCM5Color(0x0000FF);
+    neoManager->setCM5Color(0x00FF00); // Green for wESP32
     Serial.println("[DEBUG][DEVICE] NeoPixel test pattern activated.");
     #endif
 
+    // Initialize Ethernet
+    #if DEVICE_SUPPORTS_ETHERNET
+    Serial.println("[DEBUG][DEVICE] Initializing Ethernet connectivity...");
+    initializeEthernet();
+    #endif
+
+    // Initialize I2C and scan for devices
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
+    Serial.println("[DEBUG][DEVICE] Initializing I2C interface...");
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(400000);
+    
     StaticJsonDocument<2048> doc;
     String scanResult = performI2CScan(doc);
     Serial.print("[DEBUG] I2C scan result at boot: ");
     Serial.println(scanResult);
     #endif
 
-    Serial.println("[DEBUG][DEVICE] Adafruit QtPy ESP32-S3 initialization complete.");
+    // Flash LED to indicate successful initialization
+    #if DEVICE_HAS_ONBOARD_LED
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(PIN_ONBOARD_LED, HIGH);
+        delay(200);
+        digitalWrite(PIN_ONBOARD_LED, LOW);
+        delay(200);
+    }
+    #endif
+
+    Serial.println("[DEBUG][DEVICE] Silicognition wESP32 initialization complete.");
     return true;
 }
 
-const char* Device_AdafruitQtPyESP32S3::getName() {
-    return "Adafruit QtPy ESP32-S3";
+const char* Device_Silicognition_wESP32::getName() {
+    return "Silicognition wESP32";
 }
 
-void Device_AdafruitQtPyESP32S3::setRotation(uint8_t r) {
+void Device_Silicognition_wESP32::setRotation(uint8_t r) {
     Serial.print("[DEBUG][DEVICE] Rotation set to: ");
     Serial.println(r);
 }
 
-uint8_t Device_AdafruitQtPyESP32S3::getRotation() {
+uint8_t Device_Silicognition_wESP32::getRotation() {
     return 0;
 }
 
-int Device_AdafruitQtPyESP32S3::width() {
+int Device_Silicognition_wESP32::width() {
     return 0;  
 }
 
-int Device_AdafruitQtPyESP32S3::height() {
+int Device_Silicognition_wESP32::height() {
     return 0;  
 }
 
 // Implement I2C interface method
-TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
-    return &Wire1;  // QtPy uses Wire1
+TwoWire* Device_Silicognition_wESP32::getI2CInterface() {
+    return &Wire;  // wESP32 uses standard Wire interface
 }
 
-String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc) {
+String Device_Silicognition_wESP32::performI2CScan(StaticJsonDocument<2048>& doc) {
     Serial.println("[DEBUG][I2C] Starting I2C scan...");
     
-    // Ensure Wire1 is properly initialized first
-    Serial.println("[DEBUG][I2C] Initializing Wire1 interface...");
-    Wire1.begin(41, 40);  // QtPy STEMMA QT pins
-    Wire1.setClock(400000);
+    // Ensure Wire is properly initialized first
+    Serial.println("[DEBUG][I2C] Initializing Wire interface...");
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(400000);
     delay(100);  // Stabilization delay
     
     // Run enhanced scanner with device recognition
     Serial.println("[DEBUG][I2C] Running I2C scan with device recognition...");
-    String scanResult = I2CScanner::scanAndConfigureDevices(Wire1, doc, "qtpy");
+    String scanResult = I2CScanner::scanAndConfigureDevices(Wire, doc, "wesp32");
     Serial.printf("[DEBUG][I2C] Scan result: %s\n", scanResult.c_str());
     
     // Check what was found and initialize accordingly
@@ -190,8 +339,8 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     
     Serial.println("[DEBUG][I2C] Checking for Quad displays at addresses 0x70, 0x71, 0x72...");
     for (uint8_t addr : quadAddresses) {
-        Wire1.beginTransmission(addr);
-        if (Wire1.endTransmission() == 0) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
             Serial.printf("[DEBUG][I2C] Found potential Quad display at 0x%02X\n", addr);
             foundQuadDisplay = true;
             quadCount++;
@@ -205,8 +354,8 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     
     Serial.println("[DEBUG][I2C] Checking for Charlieplex displays at addresses 0x74, 0x75, 0x76...");
     for (uint8_t addr : charlieAddresses) {
-        Wire1.beginTransmission(addr);
-        if (Wire1.endTransmission() == 0) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
             Serial.printf("[DEBUG][I2C] Found potential Charlieplex display at 0x%02X\n", addr);
             foundCharlieplex = true;
             charlieCount++;
@@ -223,18 +372,18 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         Serial.println("[DEBUG][I2C] Setting up Quad Display manager...");
         
         // Get the singleton manager instance
-        Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(&Wire1);
+        Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(&Wire);
         
         // Add ONLY the detected quad displays (0x70, 0x71, 0x72)
         for (uint8_t addr : quadAddresses) {
-            Wire1.beginTransmission(addr);
-            if (Wire1.endTransmission() == 0) {
+            Wire.beginTransmission(addr);
+            if (Wire.endTransmission() == 0) {
                 Serial.printf("[DEBUG][I2C] Adding Quad Display at address 0x%02X to manager\n", addr);
                 quadManager->addDisplay(addr);
             }
         }
         
-        // Create single task for the quad display manager - NO update() calls needed
+        // Create single task for the quad display manager
         xTaskCreatePinnedToCore(
             [](void* param) {
                 Manager_QuadDisplay* manager = static_cast<Manager_QuadDisplay*>(param);
@@ -272,18 +421,18 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         Serial.println("[DEBUG][I2C] Setting up Charlieplex Display manager...");
         
         // Get the singleton manager instance
-        Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(&Wire1);
+        Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(&Wire);
         
         // Add ONLY the detected Charlieplex displays (0x74, 0x75, 0x76)
         for (uint8_t addr : charlieAddresses) {
-            Wire1.beginTransmission(addr);
-            if (Wire1.endTransmission() == 0) {
+            Wire.beginTransmission(addr);
+            if (Wire.endTransmission() == 0) {
                 Serial.printf("[DEBUG][I2C] Adding Charlieplex Display at address 0x%02X to manager\n", addr);
                 charlieManager->addDisplay(addr);
             }
         }
         
-        // Create single task for the Charlieplex display manager - NO update() calls needed
+        // Create single task for the Charlieplex display manager
         xTaskCreatePinnedToCore(
             [](void* param) {
                 Manager_Charlieplex* manager = static_cast<Manager_Charlieplex*>(param);
@@ -325,7 +474,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
                 ConnectionManager* cm = static_cast<ConnectionManager*>(param);
                 Serial.printf("[I2CInitTask] Running on core %d\n", xPortGetCoreID());
                 
-                Manager_I2C* i2cManager = Manager_I2C::getInstance(cm, &Wire1);
+                Manager_I2C* i2cManager = Manager_I2C::getInstance(cm, &Wire);
                 if (i2cManager) {
                     i2cManager->begin();
                     Serial.println("[I2CInitTask] Shared I2C Manager initialization complete");

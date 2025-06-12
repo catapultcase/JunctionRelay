@@ -53,6 +53,31 @@ public:
         // Default implementation does nothing for devices without NeoPixels
     }
 
+    // --- Ethernet Methods (for devices that support it) ---
+    virtual bool initializeEthernet() {
+        // Default implementation does nothing for devices without Ethernet
+        return false;
+    }
+    
+    virtual bool isEthernetConnected() {
+        // Default implementation returns false for devices without Ethernet
+        return false;
+    }
+    
+    virtual IPAddress getEthernetIP() {
+        // Default implementation returns invalid IP for devices without Ethernet
+        return IPAddress(0, 0, 0, 0);
+    }
+    
+    virtual String getEthernetMAC() {
+        // Default implementation returns empty string for devices without Ethernet
+        return "";
+    }
+    
+    virtual void printEthernetStatus() {
+        // Default implementation does nothing for devices without Ethernet
+    }
+
     // --- Device Info Getters ---
     virtual const char* getDeviceClass() const { return "Unknown Device Class"; }
     virtual const char* getDeviceModel() const { return "Unknown Model"; }
@@ -75,6 +100,7 @@ public:
     virtual bool hasButtons() const { return false; }
     virtual bool hasBattery() const { return false; }
     virtual bool supportsWiFi() const { return false; }
+    virtual bool supportsEthernet() const { return false; }
     virtual bool supportsBLE() const { return false; }
     virtual bool supportsUSB() const { return false; }
     virtual bool supportsESPNow() const { return false; }

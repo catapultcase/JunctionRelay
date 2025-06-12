@@ -5,11 +5,14 @@
 #include <esp_now.h>
 #include <ESPmDNS.h> 
 #include "DeviceConfig.h"
+#include "Manager_Charlieplex.h"
 #include "Manager_QuadDisplay.h"
 #include "Manager_Matrix.h"
 #include "Manager_MQTT.h"
 #include "Manager_NeoPixels.h"
 #include "utils.h"
+#include "Adafruit_MAX1704X.h"
+#include "Manager_ESPNOW.h"
 
 // ESP32-S3 analog pin compatibility (add right after includes)
 #ifndef A0
@@ -57,7 +60,12 @@ ConnectionManager::ConnectionManager()
     bytesRead(0),
     connMode(""),
     screenRouter(nullptr),
-    mqttManager(nullptr)
+    mqttManager(nullptr),
+    hasReceivedConfig(false),
+    lastConfigTimestamp(0),
+    configCount(0),
+    batteryInitialized(false),
+    espnowManager(nullptr)
 {
     gConnMgr = this;
     memset(prefixBuffer, 0, sizeof(prefixBuffer));
@@ -150,6 +158,13 @@ ConnectionManager::ConnectionManager()
                                         if (gConnMgr->screenRouter) {
                                             gConnMgr->screenRouter->routeConfig(staticDoc);
                                         }
+                                        
+                                        // ✅ ADDED: Mark that we've successfully received and processed a config
+                                        gConnMgr->hasReceivedConfig = true;
+                                        gConnMgr->lastConfigTimestamp = millis();
+                                        gConnMgr->configCount++;
+                                        
+                                        Serial.printf("[ConfigTask] ✅ Config applied. Total configs: %d\n", gConnMgr->configCount);
                                     }
                                 } catch (...) {
                                     Serial.println("[ConfigTask] ❌ Exception during config routing.");
@@ -183,7 +198,6 @@ ConnectionManager::ConnectionManager()
     }
 }
 
-// Method #1: Replace with this implementation of init()
 void ConnectionManager::init() {
     Serial.println("[ConnectionManager] Starting initialization...");
     
@@ -199,74 +213,116 @@ void ConnectionManager::init() {
     
     Serial.println("[ConnectionManager] Preferences loaded");
 
-    // 2️⃣ ESP-NOW?
-    if (connMode == "espnow") {
-        Serial.println("[init] Using ESP-NOW");
-        WiFi.mode(WIFI_OFF);
-        delay(100);
-        if (esp_now_init() != ESP_OK) {
-            Serial.println("[init] ESP-NOW init failed");
-            return;
+    initBattery();
+
+    // 2️⃣ Gateway mode setup - NEW SECTION for eth + gateway modes
+    if (connMode == "gateway" || connMode == "eth") {
+        Serial.println("[init] Setting up Gateway mode (Ethernet + ESP-NOW)");
+        
+        // Initialize ESP-NOW for forwarding
+        espnowManager = new Manager_ESPNOW(this);
+        
+        if (espnowManager->begin()) {
+            Serial.println("[init] ✅ ESP-NOW initialized for gateway forwarding");
+        } else {
+            Serial.println("[init] ❌ ESP-NOW initialization failed");
+            delete espnowManager;
+            espnowManager = nullptr;
         }
+        
         emitStatus();
-        return;
+        // Don't return early - continue to set up Ethernet, HTTP server, etc.
+    }
+    // 2.5️⃣ ESP-NOW-only mode setup - EXISTING SECTION
+    else if (connMode == "espnow") {
+        Serial.println("[init] Setting up ESP-NOW mode");
+        
+        // Create and initialize ESP-NOW manager
+        espnowManager = new Manager_ESPNOW(this);
+        
+        if (espnowManager->begin()) {
+            Serial.println("[init] ✅ ESP-NOW initialized successfully");
+            
+            // You can add default peers here if needed
+            // Example: espnowManager->addPeer("DC:DA:0C:28:30:BC", "TestDevice");
+            
+        } else {
+            Serial.println("[init] ❌ ESP-NOW initialization failed");
+            delete espnowManager;
+            espnowManager = nullptr;
+        }
+        
+        emitStatus();
+        return;  // Exit early for ESP-NOW mode
     }
 
-    // 3️⃣ Wi-Fi driver on Core 0 — blocking connect/remedies on Core 1
-    Serial.println("[ConnectionManager] Setting up WiFi in STA mode");
-    WiFi.mode(WIFI_STA);
-    
-    Serial.println("[ConnectionManager] Creating WiFi task...");
-    xTaskCreatePinnedToCore(
-        [](void *arg) {
-            Serial.println("[WiFiTask] Task started");
-            auto *cm = static_cast<ConnectionManager*>(arg);
-            const char* s = cm->ssid.c_str();
-            const char* p = cm->pass.c_str();
+    // 3️⃣ Wi-Fi setup - only if credentials are available
+    if (!ssid.isEmpty()) {
+        Serial.println("[ConnectionManager] Setting up WiFi in STA mode");
+        WiFi.mode(WIFI_STA);
+        
+        Serial.println("[ConnectionManager] Creating WiFi task...");
+        xTaskCreatePinnedToCore(
+            [](void *arg) {
+                Serial.println("[WiFiTask] Task started");
+                auto *cm = static_cast<ConnectionManager*>(arg);
+                const char* s = cm->ssid.c_str();
+                const char* p = cm->pass.c_str();
 
-            for (;;) {
-                if (WiFi.status() != WL_CONNECTED) {
-                    Serial.println("[WiFiTask] Connecting to Wi-Fi…");
-                    WiFi.begin(s, p);
+                for (;;) {
+                    if (WiFi.status() != WL_CONNECTED) {
+                        Serial.println("[WiFiTask] Connecting to Wi-Fi…");
+                        WiFi.begin(s, p);
 
-                    uint32_t start = millis();
-                    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-                        vTaskDelay(500 / portTICK_PERIOD_MS);
-                    }
-
-                    if (WiFi.status() == WL_CONNECTED) {
-                        Serial.print("[WiFiTask] Connected, IP=");
-                        Serial.println(WiFi.localIP());
-                        
-                        // Setup mDNS when WiFi connects
-                        String mac = getFormattedMacAddress();
-                        String host = "JunctionRelay_Device_" + mac;
-                        if (MDNS.begin(host.c_str())) {
-                            MDNS.addService("junctionrelay", "tcp", 80);
-                            Serial.printf("[WiFiTask] Started mDNS with hostname: %s\n", host.c_str());
-                        } else {
-                            Serial.println("[WiFiTask] Failed to start mDNS");
+                        uint32_t start = millis();
+                        while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+                            vTaskDelay(500 / portTICK_PERIOD_MS);
                         }
-                    } else {
-                        Serial.println("[WiFiTask] Failed, retry in 5s");
-                    }
-                    // Push updated status to UI
-                    cm->emitStatus();
-                }
-                vTaskDelay(5000 / portTICK_PERIOD_MS);
-            }
-        },
-        "WiFiTask",
-        4096,
-        this,
-        1,
-        nullptr,
-        1
-    );
 
-    // 4️⃣ HTTP endpoints (non-blocking)
-    server.on("/data", HTTP_POST,
-        [](AsyncWebServerRequest* req){ req->send(200, "text/plain", "OK"); },
+                        if (WiFi.status() == WL_CONNECTED) {
+                            Serial.print("[WiFiTask] Connected, IP=");
+                            Serial.println(WiFi.localIP());
+                            
+                            // Setup mDNS when WiFi connects
+                            String mac = getFormattedMacAddress();
+                            String host = "JunctionRelay_Device_" + mac;
+                            if (MDNS.begin(host.c_str())) {
+                                MDNS.addService("junctionrelay", "tcp", 80);
+                                Serial.printf("[WiFiTask] Started mDNS with hostname: %s\n", host.c_str());
+                            } else {
+                                Serial.println("[WiFiTask] Failed to start mDNS");
+                            }
+                        } else {
+                            Serial.println("[WiFiTask] Failed, retry in 5s");
+                        }
+                        // Push updated status to UI
+                        cm->emitStatus();
+                    }
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                }
+            },
+            "WiFiTask",
+            4096,
+            this,
+            1,
+            nullptr,
+            1
+        );
+    } else {
+        Serial.println("[ConnectionManager] No WiFi credentials found, keeping WiFi in STA mode for ESP-NOW");
+        // DON'T call WiFi.mode(WIFI_OFF) - it breaks ESP-NOW!
+        // WiFi is already in STA mode from ESP-NOW initialization
+    }
+
+    // 4️⃣ HTTP endpoints (non-blocking) - Standardized API
+    server.on("/api/data", HTTP_POST,
+        [](AsyncWebServerRequest* req){ 
+            // Add keep-alive headers to the response
+            AsyncWebServerResponse *response = req->beginResponse(200, "text/plain", "OK");
+            response->addHeader("Connection", "keep-alive");
+            response->addHeader("Keep-Alive", "timeout=60, max=1000");
+            req->send(response);
+        },
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t, size_t) {
             if (gConnMgr) gConnMgr->handleIncomingDataChunkPrefix(data, len);
@@ -288,43 +344,6 @@ void ConnectionManager::init() {
     server.on("/api/device/preferences", HTTP_GET,
         [](AsyncWebServerRequest* req){
             req->send(200, "application/json", gConnMgr->getCurrentPreferences());
-        }
-    );
-
-    // NEW: Add firmware hash endpoints here
-    server.on("/firmware-hash", HTTP_GET,
-        [](AsyncWebServerRequest* req){
-            Serial.println("[ENDPOINT] Firmware hash requested");
-            String response = getFirmwareInfoJson();
-            req->send(200, "application/json", response);
-        }
-    );
-
-    server.on("/hash", HTTP_GET,
-    [](AsyncWebServerRequest* req){
-        String hash = getFirmwareHash();
-        req->send(200, "text/plain", hash);
-    }
-    );
-
-    // Heartbeat 
-
-    server.on("/heartbeat", HTTP_GET,
-        [](AsyncWebServerRequest* req){
-            Serial.println("[HEARTBEAT] Health check requested");
-            
-            // Create JSON response with device identification using utils
-            String mac = getFormattedMacAddress();
-            String response = "{";
-            response += "\"status\":\"OK\",";
-            response += "\"mac\":\"" + mac + "\",";
-            response += "\"firmware\":\"" + String(getFirmwareVersion()) + "\",";
-            response += "\"uptime\":" + String(millis()) + ",";
-            response += "\"free_heap\":" + String(ESP.getFreeHeap());
-            response += "}";
-            
-            Serial.printf("[HEARTBEAT] Responding with MAC: %s\n", mac.c_str());
-            req->send(200, "application/json", response);
         }
     );
 
@@ -361,6 +380,335 @@ void ConnectionManager::init() {
         }
     );
 
+    server.on("/api/firmware/hash", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            Serial.println("[ENDPOINT] Firmware hash requested");
+            String response = getFirmwareInfoJson();
+            req->send(200, "application/json", response);
+        }
+    );
+
+    server.on("/api/health/heartbeat", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            // Serial.println("[HEARTBEAT] Health check requested");
+            
+            String mac = getFormattedMacAddress();
+            String response = "{";
+            response += "\"status\":\"OK\",";
+            response += "\"mac\":\"" + mac + "\",";
+            response += "\"firmware\":\"" + String(getFirmwareVersion()) + "\",";
+            response += "\"uptime\":" + String(millis()) + ",";
+            response += "\"free_heap\":" + String(ESP.getFreeHeap());
+            response += "}";
+            
+            // Serial.printf("[HEARTBEAT] Responding with MAC: %s\n", mac.c_str());
+            req->send(200, "application/json", response);
+        }
+    );
+
+    server.on("/api/connection/status", HTTP_GET, [](AsyncWebServerRequest *req){
+        ConnectionStatus s = gConnMgr->getConnectionStatus();
+        DynamicJsonDocument doc(512);  // Increased size for Ethernet fields
+        doc["espNow"] = s.espNowActive;
+        doc["wifiUp"] = s.wifiConnected;
+        doc["mqttUp"] = s.mqttConnected;
+        doc["ethernetUp"] = s.ethernetConnected;  // NEW
+        doc["ip"] = s.ipAddress;
+        doc["mac"] = s.macAddress;
+        
+        // Add Ethernet info if available
+        if (s.ethernetConnected) {
+            doc["ethernetIP"] = s.ethernetIP;      // NEW
+            doc["ethernetMAC"] = s.ethernetMAC;    // NEW
+        }
+        
+        String out;
+        serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
+
+    server.on("/api/system/statslite", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            if (gConnMgr) {
+                // Async response with basic stats - no blocking!
+                gConnMgr->getSystemStatsLightweightAsync(req);
+            } else {
+                req->send(500, "application/json", "{\"error\":\"ConnectionManager not available\"}");
+            }
+        }
+    );
+
+    server.on("/api/system/stats", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            if (gConnMgr) {
+                // Async response with full stats - no blocking!
+                gConnMgr->getSystemStatsAsync(req);
+            } else {
+                req->send(500, "application/json", "{\"error\":\"ConnectionManager not available\"}");
+            }
+        }
+    );
+
+    server.on("/api/gateway/status", HTTP_GET, [](AsyncWebServerRequest *req){
+        if (!gConnMgr) {
+            req->send(500, "application/json", "{\"error\":\"Not available\"}");
+            return;
+        }
+        
+        StaticJsonDocument<256> doc;
+        doc["hasEthernet"] = gConnMgr->devicePtr && gConnMgr->devicePtr->supportsEthernet() && gConnMgr->devicePtr->isEthernetConnected();
+        doc["hasESPNow"] = gConnMgr->espnowManager && gConnMgr->espnowManager->isInitialized();
+        doc["canForward"] = doc["hasEthernet"] && doc["hasESPNow"];
+        doc["peerCount"] = gConnMgr->espnowManager ? gConnMgr->espnowManager->getPeerCount() : 0;
+        
+        String output;
+        serializeJson(doc, output);
+        req->send(200, "application/json", output);
+    });
+
+
+    server.on("/api/device/battery", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            if (gConnMgr && gConnMgr->isBatteryAvailable()) {
+                StaticJsonDocument<256> doc;
+                
+                float voltage = gConnMgr->maxlipo.cellVoltage();
+                float percent = gConnMgr->maxlipo.cellPercent();
+                
+                doc["available"] = true;
+                doc["voltage"] = round(voltage * 1000) / 1000.0;
+                doc["percent"] = round(percent * 10) / 10.0;
+                doc["isCharging"] = (voltage > 4.0);
+                doc["lowBattery"] = (percent < 20.0);
+                doc["criticalBattery"] = (percent < 10.0);
+                doc["timestamp"] = millis();
+                
+                // Battery health indicators
+                if (percent > 80) {
+                    doc["status"] = "excellent";
+                } else if (percent > 60) {
+                    doc["status"] = "good";
+                } else if (percent > 40) {
+                    doc["status"] = "fair";
+                } else if (percent > 20) {
+                    doc["status"] = "low";
+                } else {
+                    doc["status"] = "critical";
+                }
+                
+                String output;
+                serializeJson(doc, output);
+                req->send(200, "application/json", output);
+            } else {
+                req->send(404, "application/json", "{\"available\":false,\"message\":\"Battery monitoring not available\"}");
+            }
+        }
+    );
+
+    server.on("/api/system/reset-config", HTTP_POST,
+        [](AsyncWebServerRequest* req){
+            Serial.println("[CONFIG] Configuration reset requested");
+            if (gConnMgr) {
+                gConnMgr->resetConfigState();
+                req->send(200, "application/json", "{\"success\":true,\"message\":\"Configuration state reset\"}");
+            } else {
+                req->send(500, "application/json", "{\"error\":\"ConnectionManager not available\"}");
+            }
+        }
+    );
+
+    // ESP-NOW API endpoints - available in gateway/eth mode and when WiFi is enabled
+    // (Pure ESP-NOW mode has no HTTP server, so these are only for hybrid scenarios)
+    if (connMode != "espnow") {
+        server.on("/api/espnow/status", HTTP_GET,
+            [](AsyncWebServerRequest* req){
+                if (gConnMgr && gConnMgr->espnowManager) {
+                    String status = gConnMgr->espnowManager->getStatusJSON();
+                    req->send(200, "application/json", status);
+                } else {
+                    req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                }
+            }
+        );
+
+        server.on("/api/espnow/stats", HTTP_GET,
+            [](AsyncWebServerRequest* req){
+                if (gConnMgr && gConnMgr->espnowManager) {
+                    String stats = gConnMgr->espnowManager->getStatisticsJSON();
+                    req->send(200, "application/json", stats);
+                } else {
+                    req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                }
+            }
+        );
+
+        server.on("/api/espnow/peers", HTTP_POST,
+            [](AsyncWebServerRequest* req){
+                // Response will be sent after body is processed
+            },
+            NULL,
+            [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total){
+                if (index == 0) {
+                    tempPostBodyLen = 0;
+                    memset(tempPostBodyBuffer, 0, sizeof(tempPostBodyBuffer));
+                }
+                
+                if (tempPostBodyLen + len < sizeof(tempPostBodyBuffer)) {
+                    memcpy(tempPostBodyBuffer + tempPostBodyLen, data, len);
+                    tempPostBodyLen += len;
+                    tempPostBodyBuffer[tempPostBodyLen] = '\0';
+                }
+                
+                if (index + len == total) {
+                    // Process the complete body
+                    if (gConnMgr && gConnMgr->espnowManager) {
+                        DynamicJsonDocument doc(512);
+                        DeserializationError error = deserializeJson(doc, tempPostBodyBuffer, tempPostBodyLen);
+                        
+                        if (!error && doc.containsKey("mac")) {
+                            String macAddress = doc["mac"];
+                            String name = doc.containsKey("name") ? doc["name"].as<String>() : "";
+                            
+                            if (gConnMgr->espnowManager->addPeer(macAddress, name)) {
+                                req->send(200, "application/json", "{\"success\":true,\"message\":\"Peer added\"}");
+                            } else {
+                                req->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to add peer\"}");
+                            }
+                        } else {
+                            req->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON or missing mac field\"}");
+                        }
+                    } else {
+                        req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                    }
+                    
+                    // Clear the buffer
+                    tempPostBodyLen = 0;
+                }
+            }
+        );
+
+        server.on("/api/espnow/peers", HTTP_DELETE,
+            [](AsyncWebServerRequest* req){
+                if (gConnMgr && gConnMgr->espnowManager) {
+                    if (req->hasParam("mac")) {
+                        String macAddress = req->getParam("mac")->value();
+                        if (gConnMgr->espnowManager->removePeer(macAddress)) {
+                            req->send(200, "application/json", "{\"success\":true,\"message\":\"Peer removed\"}");
+                        } else {
+                            req->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to remove peer\"}");
+                        }
+                    } else {
+                        req->send(400, "application/json", "{\"success\":false,\"message\":\"MAC address parameter required\"}");
+                    }
+                } else {
+                    req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                }
+            }
+        );
+
+        server.on("/api/espnow/send", HTTP_POST,
+            [](AsyncWebServerRequest* req){
+                // Response will be sent after body is processed
+            },
+            NULL,
+            [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total){
+                if (index == 0) {
+                    tempPostBodyLen = 0;
+                    memset(tempPostBodyBuffer, 0, sizeof(tempPostBodyBuffer));
+                }
+                
+                if (tempPostBodyLen + len < sizeof(tempPostBodyBuffer)) {
+                    memcpy(tempPostBodyBuffer + tempPostBodyLen, data, len);
+                    tempPostBodyLen += len;
+                    tempPostBodyBuffer[tempPostBodyLen] = '\0';
+                }
+                
+                if (index + len == total) {
+                    // Process the complete body
+                    if (gConnMgr && gConnMgr->espnowManager) {
+                        DynamicJsonDocument doc(1024);
+                        DeserializationError error = deserializeJson(doc, tempPostBodyBuffer, tempPostBodyLen);
+                        
+                        if (!error && doc.containsKey("message")) {
+                            String message = doc["message"];
+                            bool success = false;
+                            
+                            if (doc.containsKey("mac")) {
+                                // Send to specific peer
+                                String macAddress = doc["mac"];
+                                success = gConnMgr->espnowManager->sendMessage(macAddress, message);
+                            } else if (doc.containsKey("broadcast") && doc["broadcast"]) {
+                                // Broadcast message
+                                success = gConnMgr->espnowManager->broadcastMessage(message);
+                            } else {
+                                req->send(400, "application/json", "{\"success\":false,\"message\":\"Either 'mac' or 'broadcast':true required\"}");
+                                tempPostBodyLen = 0;
+                                return;
+                            }
+                            
+                            if (success) {
+                                req->send(200, "application/json", "{\"success\":true,\"message\":\"Message sent\"}");
+                            } else {
+                                req->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to send message\"}");
+                            }
+                        } else {
+                            req->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON or missing message field\"}");
+                        }
+                    } else {
+                        req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                    }
+                    
+                    // Clear the buffer
+                    tempPostBodyLen = 0;
+                }
+            }
+        );
+
+        server.on("/api/espnow/messages", HTTP_GET,
+            [](AsyncWebServerRequest* req){
+                if (gConnMgr && gConnMgr->espnowManager) {
+                    int limit = -1;
+                    if (req->hasParam("limit")) {
+                        limit = req->getParam("limit")->value().toInt();
+                    }
+                    
+                    auto messages = gConnMgr->espnowManager->getMessageHistory(limit);
+                    
+                    DynamicJsonDocument doc(2048);
+                    JsonArray msgArray = doc.createNestedArray("messages");
+                    
+                    for (const auto& msg : messages) {
+                        JsonObject msgObj = msgArray.createNestedObject();
+                        msgObj["from"] = gConnMgr->espnowManager->macToString(msg.senderMac);
+                        msgObj["data"] = msg.data;
+                        msgObj["timestamp"] = msg.timestamp;
+                        msgObj["rssi"] = msg.rssi;
+                    }
+                    
+                    doc["count"] = messages.size();
+                    doc["timestamp"] = millis();
+                    
+                    String output;
+                    serializeJson(doc, output);
+                    req->send(200, "application/json", output);
+                } else {
+                    req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                }
+            }
+        );
+
+        server.on("/api/espnow/messages", HTTP_DELETE,
+            [](AsyncWebServerRequest* req){
+                if (gConnMgr && gConnMgr->espnowManager) {
+                    gConnMgr->espnowManager->clearMessageHistory();
+                    req->send(200, "application/json", "{\"success\":true,\"message\":\"Message history cleared\"}");
+                } else {
+                    req->send(404, "application/json", "{\"error\":\"ESP-NOW not initialized\"}");
+                }
+            }
+        );
+    }
+
     server.on("/api/ota/firmware", HTTP_POST,
         // onRequestComplete
         [](AsyncWebServerRequest* req) {
@@ -388,118 +736,158 @@ void ConnectionManager::init() {
 
     server.begin();
 
-    // 4️⃣.b ConnectionStatus JSON endpoint
-    server.on("/api/connection/status", HTTP_GET, [](AsyncWebServerRequest *req){
-        ConnectionStatus s = gConnMgr->getConnectionStatus();
-        DynamicJsonDocument doc(256);
-        doc["espNow"] = s.espNowActive;
-        doc["wifiUp"] = s.wifiConnected;
-        doc["mqttUp"] = s.mqttConnected;
-        doc["ip"]     = s.ipAddress;
-        doc["mac"]    = s.macAddress;
-        String out;
-        serializeJson(doc, out);
-        req->send(200, "application/json", out);
-    });
-
     // 5️⃣ MQTT task on Core 1
     if (!mqttBroker.isEmpty()) {
-    // Extract host and port
-    String host;
-    uint16_t port = 1883;  // Default MQTT port if not specified
-    
-    Serial.printf("[MQTT] Raw broker string: '%s'\n", mqttBroker.c_str());
-    
-    int colonPos = mqttBroker.indexOf(':');
-    if (colonPos >= 0) {
-        host = mqttBroker.substring(0, colonPos);
-        String portStr = mqttBroker.substring(colonPos + 1);
-        portStr.trim();
+        // Extract host and port
+        String host;
+        uint16_t port = 1883;  // Default MQTT port if not specified
         
-        if (portStr.length() > 0) {
-            int parsedPort = portStr.toInt();
-            if (parsedPort > 0 && parsedPort <= 65535) {
-                port = parsedPort;
-            } else {
-                Serial.printf("[MQTT] Invalid port '%s', using default 1883\n", portStr.c_str());
-            }
-        }
-    } else {
-        host = mqttBroker;  // No port specified, use just the host
-    }
-    
-    // Trim host
-    host.trim();
-    
-    Serial.printf("[MQTT] Extracted host: '%s', port: %d\n", host.c_str(), port);
-    
-    // Only create manager if we have a valid host
-    if (!host.isEmpty()) {
-        mqttManager = new Manager_MQTT(host.c_str(), port, this);
+        Serial.printf("[MQTT] Raw broker string: '%s'\n", mqttBroker.c_str());
         
-        xTaskCreatePinnedToCore(
-    [](void* arg){
-        auto *cm = static_cast<ConnectionManager*>(arg);
-        unsigned long lastStatusCheck = 0;
-        const unsigned long STATUS_CHECK_INTERVAL = 500; // 500ms between status checks
-        
-        for (;;) {
-            unsigned long now = millis();
-            bool shouldUpdateStatus = false;
+        int colonPos = mqttBroker.indexOf(':');
+        if (colonPos >= 0) {
+            host = mqttBroker.substring(0, colonPos);
+            String portStr = mqttBroker.substring(colonPos + 1);
+            portStr.trim();
             
-            // Only attempt MQTT if WiFi is connected
-            if (WiFi.status() == WL_CONNECTED) {
-                if (!cm->mqttManager->connected()) {
-                    Serial.println("[MQTTTask] Reconnecting…");
-                    cm->mqttManager->begin();
-                    shouldUpdateStatus = true; // Status definitely changed
+            if (portStr.length() > 0) {
+                int parsedPort = portStr.toInt();
+                if (parsedPort > 0 && parsedPort <= 65535) {
+                    port = parsedPort;
+                } else {
+                    Serial.printf("[MQTT] Invalid port '%s', using default 1883\n", portStr.c_str());
                 }
-                // No loop() call needed - ESP-MQTT is event-driven
-            } else {
-                Serial.println("[MQTTTask] Waiting for WiFi...");
-                shouldUpdateStatus = true; // Status changed (WiFi disconnected)
             }
-            
-            // Update status either on change or periodically
-            if (shouldUpdateStatus || (now - lastStatusCheck >= STATUS_CHECK_INTERVAL)) {
-                cm->emitStatus();
-                lastStatusCheck = now;
-            }
-            
-            // Simple delay - no need for different timing when connected
-            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Check every second
-        }
-    },
-    "MQTTTask",
-    8192,
-    this,
-    1,
-    nullptr,
-    1
-);
-    } else {
-        Serial.println("[MQTT] Empty host after parsing, cannot create MQTT manager");
-    }
-} else {
-    Serial.println("[MQTT] No broker configured, skipping MQTT setup");
-}
-
-    // 6️⃣ mDNS once STA is up (could also be inside WiFiTask)
-    if (WiFi.status() == WL_CONNECTED) {
-        String mac = getFormattedMacAddress();
-        String host = "JunctionRelay_Device_" + mac;
-        if (MDNS.begin(host.c_str())) {
-            MDNS.addService("junctionrelay", "tcp", 80);
-            Serial.printf("[init] Started mDNS with hostname: %s\n", host.c_str());
         } else {
-            Serial.println("[init] Failed to start mDNS");
+            host = mqttBroker;  // No port specified, use just the host
         }
+        
+        // Trim host
+        host.trim();
+        
+        Serial.printf("[MQTT] Extracted host: '%s', port: %d\n", host.c_str(), port);
+        
+        // Only create manager if we have a valid host
+        if (!host.isEmpty()) {
+            mqttManager = new Manager_MQTT(host.c_str(), port, this);
+            
+            xTaskCreatePinnedToCore(
+                [](void* arg){
+                    auto *cm = static_cast<ConnectionManager*>(arg);
+                    unsigned long lastStatusCheck = 0;
+                    const unsigned long STATUS_CHECK_INTERVAL = 500; // 500ms between status checks
+                    
+                    for (;;) {
+                        unsigned long now = millis();
+                        bool shouldUpdateStatus = false;
+                        bool networkAvailable = false;
+                        String networkType = "";
+                        
+                        // Check for network connectivity - WiFi OR Ethernet
+                        if (WiFi.status() == WL_CONNECTED) {
+                            networkAvailable = true;
+                            networkType = "WiFi";
+                        } else if (cm->devicePtr && cm->devicePtr->supportsEthernet() && cm->devicePtr->isEthernetConnected()) {
+                            networkAvailable = true;
+                            networkType = "Ethernet";
+                        }
+                        
+                        // Only attempt MQTT if network is available
+                        if (networkAvailable) {
+                            if (!cm->mqttManager->connected()) {
+                                Serial.printf("[MQTTTask] Reconnecting via %s…\n", networkType.c_str());
+                                cm->mqttManager->begin();
+                                shouldUpdateStatus = true; // Status definitely changed
+                            }
+                            // No loop() call needed - ESP-MQTT is event-driven
+                        } else {
+                            if (cm->mqttManager->connected()) {
+                                Serial.println("[MQTTTask] Network disconnected, MQTT will disconnect");
+                                shouldUpdateStatus = true;
+                            }
+                            Serial.println("[MQTTTask] Waiting for network (WiFi or Ethernet)...");
+                        }
+                        
+                        // Update status either on change or periodically
+                        if (shouldUpdateStatus || (now - lastStatusCheck >= STATUS_CHECK_INTERVAL)) {
+                            cm->emitStatus();
+                            lastStatusCheck = now;
+                        }
+                        
+                        // Simple delay - no need for different timing when connected
+                        vTaskDelay(1000 / portTICK_PERIOD_MS);  // Check every second
+                    }
+                },
+                "MQTTTask",
+                8192,
+                this,
+                1,
+                nullptr,
+                1
+            );
+        } else {
+            Serial.println("[MQTT] Empty host after parsing, cannot create MQTT manager");
+        }
+    } else {
+        Serial.println("[MQTT] No broker configured, skipping MQTT setup");
     }
+
+    // 6️⃣ mDNS monitoring task - handles both WiFi and Ethernet
+    xTaskCreatePinnedToCore(
+        [](void *arg) {
+            auto *cm = static_cast<ConnectionManager*>(arg);
+            bool mdnsInitialized = false;
+            
+            for (;;) {
+                bool networkUp = false;
+                String networkType = "";
+                
+                // Check WiFi
+                if (WiFi.status() == WL_CONNECTED) {
+                    networkUp = true;
+                    networkType = "WiFi";
+                }
+                // Check Ethernet
+                else if (cm->devicePtr && cm->devicePtr->supportsEthernet() && cm->devicePtr->isEthernetConnected()) {
+                    networkUp = true;
+                    networkType = "Ethernet";
+                }
+                
+                // Initialize mDNS when network comes up
+                if (networkUp && !mdnsInitialized) {
+                    String mac = getFormattedMacAddress();
+                    String host = "JunctionRelay_Device_" + mac;
+                    
+                    Serial.printf("[mDNSTask] Setting up mDNS for %s connection...\n", networkType.c_str());
+                    
+                    if (MDNS.begin(host.c_str())) {
+                        MDNS.addService("junctionrelay", "tcp", 80);
+                        Serial.printf("[mDNSTask] ✅ Started mDNS with hostname: %s (%s)\n", host.c_str(), networkType.c_str());
+                        mdnsInitialized = true;
+                    } else {
+                        Serial.printf("[mDNSTask] ❌ Failed to start mDNS for %s connection\n", networkType.c_str());
+                    }
+                }
+                // Reset mDNS flag if network goes down
+                else if (!networkUp && mdnsInitialized) {
+                    Serial.println("[mDNSTask] Network down, will reinitialize mDNS when network returns");
+                    mdnsInitialized = false;
+                }
+                
+                vTaskDelay(5000 / portTICK_PERIOD_MS);  // Check every 5 seconds
+            }
+        },
+        "mDNSTask",
+        2048,
+        this,
+        1,
+        nullptr,
+        1
+    );
 
     // 👊 Push initial status to UI
     emitStatus();
 }
-
 
 void ConnectionManager::handleSerialData() {
     // Handle USB Serial (Serial Monitor) - use prefix parser
@@ -589,10 +977,10 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
     }
 }
 
+
 void ConnectionManager::handleIncomingDataChunk(uint8_t *data, size_t len) {
     if (data == nullptr || len == 0) return;
 
-    // Use static allocation for speed - increased size to 8192
     StaticJsonDocument<8192> doc;
     DeserializationError error = deserializeJson(doc, (const char*)data, len);
 
@@ -601,25 +989,51 @@ void ConnectionManager::handleIncomingDataChunk(uint8_t *data, size_t len) {
         return;
     }
 
-    // Extract the type field from the JSON
-    const char* type = doc["type"];
-    if (!type) {
-        // No type field - just return
-        return;
+    // ✅ GATEWAY: Check for forwarding destination
+    if (doc.containsKey("destination")) {
+        // Fix: Extract destination as String to avoid pointer corruption
+        String destinationMac = doc["destination"].as<String>();
+        
+        if (!destinationMac.isEmpty()) {
+            // Serial.printf("[GATEWAY] 🚀 Forwarding to %s\n", destinationMac.c_str());
+            
+            if (espnowManager && espnowManager->isInitialized()) {
+                // Remove destination field before forwarding
+                doc.remove("destination");
+                
+                // Serialize cleaned payload
+                String forwardPayload;
+                serializeJson(doc, forwardPayload);
+                
+                // Forward via ESP-NOW (NO PREFIX - ESP-NOW delivers complete messages)
+                bool success = espnowManager->sendMessage(destinationMac, forwardPayload);
+                
+                if (success) {
+                    // Serial.printf("[GATEWAY] ✅ Forwarded %s (%d bytes)\n", 
+                    //             doc["type"].as<const char*>(), forwardPayload.length());
+                } else {
+                    Serial.printf("[GATEWAY] ❌ Forward failed\n");
+                }
+                
+                return; // Don't process locally after forwarding
+            } else {
+                Serial.println("[GATEWAY] ❌ ESP-NOW not available");
+            }
+        }
     }
+
+    // ✅ EXISTING: Local processing (unchanged)
+    const char* type = doc["type"];
+    if (!type) return;
 
     if (strcmp(type, "sensor") == 0 && screenRouter) {
-        // Deep copy with increased size to 8192
         auto* docCopy = new StaticJsonDocument<8192>(doc);
-        offloadSensor(docCopy);  // run on core 1
+        offloadSensor(docCopy);
     }
-
     else if (strcmp(type, "config") == 0 && screenRouter) {
-        // Allocate copy for task with increased size to 8192
         auto* docCopy = new StaticJsonDocument<8192>(doc);
-        offloadConfig(docCopy);  // Pinned to core 1
+        offloadConfig(docCopy);
     }
-
     else if (strcmp(type, "MQTT_Subscription_Request") == 0) {
         if (doc.containsKey("subscriptions") && doc["subscriptions"].is<JsonArray>()) {
             JsonArray subs = doc["subscriptions"];
@@ -681,85 +1095,95 @@ void ConnectionManager::offloadSensor(JsonDocument* doc) {
 }
 
 void ConnectionManager::handleScreenId(const char* screenId, const StaticJsonDocument<8192>& doc) {
-    if (screenId) {
-        // Debug: Log the current screenId being processed
-        Serial.printf("[ConnectionManager] Processing screenId: '%s'\n", screenId);
+    if (!screenId) return;
+    
+    // Static flags to ensure each manager type is registered only ONCE
+    static bool quadManagerRegistered = false;
+    static bool charlieManagerRegistered = false;
+    static bool neopixelManagerRegistered = false;
+    static bool matrixManagerRegistered = false;
+    
+    // Get the Wire interface once
+    TwoWire* wireInterface = devicePtr->getI2CInterface();
+    
+    // Debug: Log the current screenId being processed
+    Serial.printf("[ConnectionManager] Processing screenId: '%s'\n", screenId);
 
-        // Handle Quad display initialization
-        if (doc.containsKey("quad")) {
-            Serial.println("[ConnectionManager] Handling Quad display...");
-
-            if (quadDisplays.find(screenId) == quadDisplays.end()) {
-                // Parse "0x70" to 112
-                uint8_t i2cAddress = strtol(screenId, nullptr, 0);  
-                
-                // Get the correct Wire interface from the device
-                TwoWire* wireInterface = devicePtr->getI2CInterface();
-                
-                // Get the singleton instance with the correct Wire interface
-                Manager_QuadDisplay* quadDisplay = Manager_QuadDisplay::getInstance(wireInterface);
-                screenRouter->registerScreen(quadDisplay);
-                quadDisplays[screenId] = quadDisplay;
-
-                Serial.printf("[ConnectionManager] 🔧 Registered Quad display at %s (I2C 0x%02X) using %s\n", 
-                             screenId, i2cAddress, 
-                             (wireInterface == &Wire1) ? "Wire1" : "Wire");
-            } else {
-                Serial.printf("[ConnectionManager] ✅ Quad display for screenId '%s' already registered\n", screenId);
-            }
+    // Handle Quad display initialization
+    if (doc.containsKey("quad")) {
+        Serial.println("[ConnectionManager] Handling Quad display...");
+        
+        // Register the QuadDisplay manager singleton ONCE
+        if (!quadManagerRegistered) {
+            Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(wireInterface);
+            screenRouter->registerScreen(quadManager);
+            quadManagerRegistered = true;
+            Serial.printf("[ConnectionManager] 🔧 Registered QuadDisplay manager singleton with ScreenRouter using %s\n", 
+                         (wireInterface == &Wire1) ? "Wire1" : "Wire");
         }
+        
+        // ALWAYS add the specific display to the singleton manager
+        uint8_t i2cAddress = strtol(screenId, nullptr, 0);
+        Manager_QuadDisplay::getInstance(wireInterface)->addDisplay(i2cAddress);
+        Serial.printf("[ConnectionManager] ✅ Added Quad display at %s (I2C 0x%02X) to singleton manager\n", 
+                     screenId, i2cAddress);
+    }
 
-        // Handle NeoPixel display
-        else if (doc.containsKey("neopixel")) {
-            Serial.println("[ConnectionManager] Handling NeoPixel display...");
-
-            // Ensure the device supports the NeoPixel display before adding to the map
-            if (devicePtr->hasExternalNeopixels()) {  // Only proceed if the device supports NeoPixels
-                if (neopixelDisplays.find(screenId) == neopixelDisplays.end()) {
-                    // If the screenId doesn't exist, access the singleton instance
-                    Manager_NeoPixels* neopixelDisplay = Manager_NeoPixels::getInstance();
-                    neopixelDisplays[screenId] = neopixelDisplay;  // Add to map
-                    Serial.printf("[ConnectionManager] 🔧 Added NeoPixel display for screenId '%s' to the map.\n", screenId);
-                } else {
-                    Serial.printf("[ConnectionManager] ✅ NeoPixel display for screenId '%s' already registered\n", screenId);
-                }
-
-                // Register the existing NeoPixel display with the screenRouter
-                if (neopixelDisplays[screenId] != nullptr) {
-                    screenRouter->registerScreen(neopixelDisplays[screenId]);  // Register the existing NeoPixel display with screenRouter
-                    const char* displayTextContent = doc.containsKey("text") ? doc["text"].as<const char*>() : "";
-                    Serial.printf("[ConnectionManager] Using existing NeoPixel display for screenId '%s': %s\n", screenId, displayTextContent);
-                }
-            } else {
-                Serial.printf("[ERROR] NeoPixel display not supported for screenId '%s'. Skipping.\n", screenId);
-            }
+    // Handle Charlie display initialization
+    else if (doc.containsKey("charlie")) {
+        Serial.println("[ConnectionManager] Handling Charlie display...");
+        
+        // Register the Charlieplex manager singleton ONCE
+        if (!charlieManagerRegistered) {
+            Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(wireInterface);
+            screenRouter->registerScreen(charlieManager);
+            charlieManagerRegistered = true;
+            Serial.printf("[ConnectionManager] 🔧 Registered Charlieplex manager singleton with ScreenRouter using %s\n", 
+                         (wireInterface == &Wire1) ? "Wire1" : "Wire");
         }
-        // Handle MATRIX display
-        else if (doc.containsKey("matrix")) {
-            Serial.println("[ConnectionManager] Handling Matrix display...");
+        
+        // ALWAYS add the specific display to the singleton manager
+        uint8_t i2cAddress = strtol(screenId, nullptr, 0);
+        Manager_Charlieplex::getInstance(wireInterface)->addDisplay(i2cAddress);
+        Serial.printf("[ConnectionManager] ✅ Added Charlie display at %s (I2C 0x%02X) to singleton manager\n", 
+                     screenId, i2cAddress);
+    }
 
-            // Ensure the device supports the matrix display before adding to the map
-            if (devicePtr->hasExternalMatrix()) {  // Only proceed if the device supports the matrix
-                if (matrixDisplays.find(screenId) == matrixDisplays.end()) {
-                    // Get the singleton instance
-                    Manager_Matrix* matrixDisplay = Manager_Matrix::getInstance();
-                    matrixDisplays[screenId] = matrixDisplay;  // Add to map
+    // Handle NeoPixel display
+    else if (doc.containsKey("neopixel")) {
+        Serial.println("[ConnectionManager] Handling NeoPixel display...");
 
-                    Serial.printf("[ConnectionManager] 🔧 Added Matrix display for screenId '%s' to the map.\n", screenId);
-                } else {
-                    Serial.printf("[ConnectionManager] ✅ Matrix display for screenId '%s' already registered\n", screenId);
-                }
-
-                // Register the existing matrix display with the screenRouter
-                if (matrixDisplays[screenId] != nullptr) {
-                    screenRouter->registerScreen(matrixDisplays[screenId]);  // Register the existing matrix display with screenRouter
-                    const char* displayTextContent = doc.containsKey("text") ? doc["text"].as<const char*>() : "";
-                    matrixDisplays[screenId]->displayText(displayTextContent, 0, 0);  // Default position at (0, 0)
-                    Serial.printf("[ConnectionManager] Displayed text on existing Matrix screenId '%s': %s\n", screenId, displayTextContent);
-                }
-            } else {
-                Serial.printf("[ERROR] Matrix display not supported for screenId '%s'. Skipping.\n", screenId);
+        if (devicePtr->hasExternalNeopixels()) {
+            // Register the NeoPixel manager singleton ONCE
+            if (!neopixelManagerRegistered) {
+                Manager_NeoPixels* neopixelManager = Manager_NeoPixels::getInstance();
+                screenRouter->registerScreen(neopixelManager);
+                neopixelManagerRegistered = true;
+                Serial.printf("[ConnectionManager] 🔧 Registered NeoPixel manager singleton with ScreenRouter\n");
             }
+            
+            Serial.printf("[ConnectionManager] ✅ NeoPixel display for screenId '%s' handled by singleton manager\n", screenId);
+        } else {
+            Serial.printf("[ERROR] NeoPixel display not supported for screenId '%s'. Skipping.\n", screenId);
+        }
+    }
+    
+    // Handle MATRIX display
+    else if (doc.containsKey("matrix")) {
+        Serial.println("[ConnectionManager] Handling Matrix display...");
+
+        if (devicePtr->hasExternalMatrix()) {
+            // Register the Matrix manager singleton ONCE
+            if (!matrixManagerRegistered) {
+                Manager_Matrix* matrixManager = Manager_Matrix::getInstance();
+                screenRouter->registerScreen(matrixManager);
+                matrixManagerRegistered = true;
+                Serial.printf("[ConnectionManager] 🔧 Registered Matrix manager singleton with ScreenRouter\n");
+            }
+            
+            Serial.printf("[ConnectionManager] ✅ Matrix display for screenId '%s' handled by singleton manager\n", screenId);
+        } else {
+            Serial.printf("[ERROR] Matrix display not supported for screenId '%s'. Skipping.\n", screenId);
         }
     }
 }
@@ -799,6 +1223,7 @@ String ConnectionManager::getDeviceCapabilities() {
     doc["HasButtons"] = devicePtr->hasButtons();
     doc["HasBattery"] = devicePtr->hasBattery();
     doc["SupportsWiFi"] = devicePtr->supportsWiFi();
+    doc["SupportsEthernet"] = devicePtr->supportsEthernet();
     doc["SupportsBLE"] = devicePtr->supportsBLE();
     doc["SupportsUSB"] = devicePtr->supportsUSB();
     doc["SupportsESPNow"] = devicePtr->supportsESPNow();
@@ -856,6 +1281,277 @@ String ConnectionManager::getDeviceCapabilities() {
     return output;
 }
 
+
+void ConnectionManager::getSystemStatsLightweightAsync(AsyncWebServerRequest* request) {
+    struct StatsTaskData {
+        AsyncWebServerRequest* request;
+        ConnectionManager* manager;
+    };
+    
+    StatsTaskData* taskData = new StatsTaskData{request, this};
+    
+    xTaskCreate(
+        [](void* param) {
+            StatsTaskData* data = static_cast<StatsTaskData*>(param);
+            String stats = data->manager->getSystemStatsLightweight();
+            data->request->send(200, "application/json", stats);
+            delete data;
+            vTaskDelete(NULL);
+        },
+        "StatsLiteTask",
+        4096,  // <-- Increase from 2048 to 4096
+        taskData,
+        1,
+        NULL
+    );
+}
+
+void ConnectionManager::getSystemStatsAsync(AsyncWebServerRequest* request) {
+    // Create a structure to pass data to the task
+    struct StatsTaskData {
+        AsyncWebServerRequest* request;
+        ConnectionManager* manager;
+    };
+    
+    StatsTaskData* taskData = new StatsTaskData{request, this};
+    
+    // Create a one-shot task to handle the stats generation
+    xTaskCreate(
+        [](void* param) {
+            StatsTaskData* data = static_cast<StatsTaskData*>(param);
+            
+            // Generate full stats on this task (off main thread)
+            // This can do all the expensive I2C reads without blocking
+            String stats = data->manager->getSystemStats();
+            
+            // Send response (this is safe to call from any task)
+            data->request->send(200, "application/json", stats);
+            
+            // Clean up
+            delete data;
+            vTaskDelete(NULL);  // Delete this task
+        },
+        "StatsTask",
+        4096,  // Stack size
+        taskData,
+        1,     // Priority
+        NULL   // Don't need task handle
+    );
+}
+
+String ConnectionManager::getSystemStatsLightweight() {
+    StaticJsonDocument<512> doc;  // Reduced size for lightweight version
+    
+    // Only include essential, fast-to-gather stats
+    JsonObject memory = doc.createNestedObject("memory");
+    memory["freeHeap"] = ESP.getFreeHeap();
+    memory["heapSize"] = ESP.getHeapSize();
+    
+    // Quick queue depth checks (these are fast)
+    JsonObject queues = doc.createNestedObject("queues");
+    if (sensorQueue != NULL) {
+        queues["sensor"]["depth"] = uxQueueMessagesWaiting(sensorQueue);
+        queues["sensor"]["maxSize"] = SENSOR_QUEUE_SIZE;
+    }
+    if (configQueue != NULL) {
+        queues["config"]["depth"] = uxQueueMessagesWaiting(configQueue);
+        queues["config"]["maxSize"] = CONFIG_QUEUE_SIZE;
+    }
+    
+    // Basic system info (fast)
+    JsonObject system = doc.createNestedObject("system");
+    system["uptime"] = millis();
+    system["cpuFreqMHz"] = getCpuFrequencyMhz();
+    
+    // Configuration state (fast)
+    JsonObject config = doc.createNestedObject("configuration");
+    config["hasReceivedConfig"] = hasReceivedConfig;
+    config["configCount"] = configCount;
+    
+    doc["connectionMode"] = connMode;
+    doc["timestamp"] = millis();
+    
+    String output;
+    serializeJson(doc, output);
+    return output;
+}
+
+String ConnectionManager::getSystemStats() {
+    StaticJsonDocument<1024> doc;
+    
+    // Queue statistics
+    JsonObject queues = doc.createNestedObject("queues");
+    
+    if (sensorQueue != NULL) {
+        queues["sensor"]["depth"] = uxQueueMessagesWaiting(sensorQueue);
+        queues["sensor"]["maxSize"] = SENSOR_QUEUE_SIZE;
+        queues["sensor"]["spacesAvailable"] = uxQueueSpacesAvailable(sensorQueue);
+    } else {
+        queues["sensor"]["depth"] = -1;
+        queues["sensor"]["maxSize"] = SENSOR_QUEUE_SIZE;
+        queues["sensor"]["spacesAvailable"] = -1;
+        queues["sensor"]["status"] = "not_initialized";
+    }
+    
+    if (configQueue != NULL) {
+        queues["config"]["depth"] = uxQueueMessagesWaiting(configQueue);
+        queues["config"]["maxSize"] = CONFIG_QUEUE_SIZE;
+        queues["config"]["spacesAvailable"] = uxQueueSpacesAvailable(configQueue);
+    } else {
+        queues["config"]["depth"] = -1;
+        queues["config"]["maxSize"] = CONFIG_QUEUE_SIZE;
+        queues["config"]["spacesAvailable"] = -1;
+        queues["config"]["status"] = "not_initialized";
+    }
+    
+    // Memory statistics
+    JsonObject memory = doc.createNestedObject("memory");
+    memory["freeHeap"] = ESP.getFreeHeap();
+    memory["minFreeHeap"] = ESP.getMinFreeHeap();
+    memory["heapSize"] = ESP.getHeapSize();
+    memory["maxAllocHeap"] = ESP.getMaxAllocHeap();
+    
+    #ifdef BOARD_HAS_PSRAM
+    if (psramFound()) {
+        memory["psramSize"] = ESP.getPsramSize();
+        memory["freePsram"] = ESP.getFreePsram();
+        memory["minFreePsram"] = ESP.getMinFreePsram();
+        memory["maxAllocPsram"] = ESP.getMaxAllocPsram();
+    }
+    #endif
+    
+    // Task statistics
+    JsonObject tasks = doc.createNestedObject("tasks");
+    
+    if (sensorProcessingTaskHandle != NULL) {
+        tasks["sensorProcessing"]["state"] = eTaskGetState(sensorProcessingTaskHandle);
+        tasks["sensorProcessing"]["priority"] = uxTaskPriorityGet(sensorProcessingTaskHandle);
+        tasks["sensorProcessing"]["stackHighWaterMark"] = uxTaskGetStackHighWaterMark(sensorProcessingTaskHandle);
+    } else {
+        tasks["sensorProcessing"]["status"] = "not_running";
+    }
+    
+    if (configProcessingTaskHandle != NULL) {
+        tasks["configProcessing"]["state"] = eTaskGetState(configProcessingTaskHandle);
+        tasks["configProcessing"]["priority"] = uxTaskPriorityGet(configProcessingTaskHandle);
+        tasks["configProcessing"]["stackHighWaterMark"] = uxTaskGetStackHighWaterMark(configProcessingTaskHandle);
+    } else {
+        tasks["configProcessing"]["status"] = "not_running";
+    }
+    
+    // System uptime and performance
+    JsonObject system = doc.createNestedObject("system");
+    system["uptime"] = millis();
+    system["cpuFreqMHz"] = getCpuFrequencyMhz();
+    system["flashSize"] = ESP.getFlashChipSize();
+    system["sketchSize"] = ESP.getSketchSize();
+    system["freeSketchSpace"] = ESP.getFreeSketchSpace();
+    
+    // WiFi statistics (if connected)
+    if (WiFi.status() == WL_CONNECTED) {
+        JsonObject wifi = doc.createNestedObject("wifi");
+        wifi["rssi"] = WiFi.RSSI();
+        wifi["channel"] = WiFi.channel();
+        wifi["txPower"] = WiFi.getTxPower();
+        wifi["autoReconnect"] = WiFi.getAutoReconnect();
+    }
+    
+    // MQTT statistics (if available)
+    if (mqttManager != nullptr) {
+    JsonObject mqtt = doc.createNestedObject("mqtt");
+    mqtt["connected"] = mqttManager->connected();
+    
+    // Add which network type is being used for MQTT
+    if (mqttManager->connected()) {
+        if (WiFi.status() == WL_CONNECTED) {
+            mqtt["connectionType"] = "WiFi";
+            mqtt["localIP"] = WiFi.localIP().toString();
+        } else if (devicePtr && devicePtr->supportsEthernet() && devicePtr->isEthernetConnected()) {
+            mqtt["connectionType"] = "Ethernet";
+            mqtt["localIP"] = devicePtr->getEthernetIP().toString();
+        }
+    }
+}
+    
+    // Battery statistics (if available) - this runs on background task so it's OK
+    if (devicePtr && devicePtr->hasBattery() && batteryInitialized) {
+        JsonObject battery = doc.createNestedObject("battery");
+        float voltage = maxlipo.cellVoltage();
+        float percent = maxlipo.cellPercent();
+        
+        battery["voltage"] = round(voltage * 1000) / 1000.0;
+        battery["percent"] = round(percent * 10) / 10.0;
+        battery["isCharging"] = (voltage > 4.0);
+        battery["lowBattery"] = (percent < 20.0);
+        battery["criticalBattery"] = (percent < 10.0);
+    }
+    
+    // Configuration state tracking
+    JsonObject config = doc.createNestedObject("configuration");
+    config["hasReceivedConfig"] = hasReceivedConfig;
+    config["lastConfigTimestamp"] = lastConfigTimestamp;
+    config["configCount"] = configCount;
+    config["readyForSensorData"] = hasReceivedConfig;
+    
+    // Connection mode and status
+    doc["connectionMode"] = connMode;
+    doc["timestamp"] = millis();
+    
+    String output;
+    serializeJson(doc, output);
+    return output;
+}
+
+void ConnectionManager::initBattery() {
+    // Only initialize battery if device claims to have one
+    if (devicePtr && devicePtr->hasBattery()) {
+        Serial.println("[BATTERY] Initializing MAX17048 fuel gauge...");
+        
+        // Try to initialize the fuel gauge
+        if (maxlipo.begin()) {
+            batteryInitialized = true;
+            Serial.println("[BATTERY] ✅ MAX17048 fuel gauge initialized successfully");
+            
+            // Print initial battery status
+            float voltage = maxlipo.cellVoltage();
+            float percent = maxlipo.cellPercent();
+            Serial.printf("[BATTERY] Initial status: %.3fV (%.1f%%)\n", voltage, percent);
+            
+            // Warn if battery is low
+            if (percent < 20.0) {
+                Serial.printf("[BATTERY] ⚠️ Low battery warning: %.1f%%\n", percent);
+            }
+            if (percent < 10.0) {
+                Serial.printf("[BATTERY] 🔴 Critical battery warning: %.1f%%\n", percent);
+            }
+        } else {
+            batteryInitialized = false;
+            Serial.println("[BATTERY] ❌ Failed to initialize MAX17048 fuel gauge");
+            Serial.println("[BATTERY] Check battery connection and I2C wiring");
+        }
+    } else {
+        batteryInitialized = false;
+        Serial.println("[BATTERY] Device reports no battery support, skipping battery initialization");
+    }
+}
+
+void ConnectionManager::resetConfigState() { 
+    hasReceivedConfig = false; 
+    lastConfigTimestamp = 0; 
+    configCount = 0;
+    Serial.println("[CONFIG] Configuration state reset - device needs new config before sensor data");
+}
+
+ConnectionManager::~ConnectionManager() {
+    if (espnowManager) {
+        delete espnowManager;
+        espnowManager = nullptr;
+    }
+    if (mqttManager) {
+        delete mqttManager;
+        mqttManager = nullptr;
+    }
+}
 
 String ConnectionManager::getCurrentPreferences() {
     Preferences p;
@@ -1237,14 +1933,56 @@ bool ConnectionManager::isMqttConnected() {
 // Return a snapshot of all three layers
 ConnectionStatus ConnectionManager::getConnectionStatus() const {
     ConnectionStatus s{};
-    s.espNowActive  = (connMode == "espnow");
+    s.espNowActive  = (espnowManager && espnowManager->isInitialized()); // ✅ Updated line
     s.wifiConnected = (WiFi.status() == WL_CONNECTED);
     s.mqttConnected = (mqttManager && mqttManager->connected());
+    
+    // Add Ethernet status if device supports it
+    if (devicePtr && devicePtr->supportsEthernet()) {
+        s.ethernetConnected = devicePtr->isEthernetConnected();
+        if (s.ethernetConnected) {
+            s.ethernetIP = devicePtr->getEthernetIP().toString();
+            s.ethernetMAC = devicePtr->getEthernetMAC();
+        }
+    } else {
+        s.ethernetConnected = false;
+        s.ethernetIP = "";
+        s.ethernetMAC = "";
+    }
+    
+    // Set IP and MAC based on active connection
     if (s.wifiConnected) {
         s.ipAddress  = WiFi.localIP().toString();
         s.macAddress = getFormattedMacAddress();
+    } else if (s.ethernetConnected) {
+        s.ipAddress  = s.ethernetIP;
+        s.macAddress = s.ethernetMAC;
+    } else {
+        s.ipAddress  = "";
+        s.macAddress = getFormattedMacAddress(); // Still get WiFi MAC even if not connected
     }
+    
     return s;
+}
+
+bool ConnectionManager::isNetworkAvailable() const {
+    // Check WiFi
+    if (WiFi.status() == WL_CONNECTED) {
+        return true;
+    }
+    
+    // Check Ethernet
+    if (devicePtr && devicePtr->supportsEthernet() && devicePtr->isEthernetConnected()) {
+        return true;
+    }
+    
+    // ✅ NEW: Check ESP-NOW as a valid "network" for some purposes
+    // ESP-NOW provides peer-to-peer connectivity without traditional networking
+    if (espnowManager && espnowManager->isInitialized()) {
+        return true;
+    }
+    
+    return false;
 }
 
 // Push that snapshot to the UI callback

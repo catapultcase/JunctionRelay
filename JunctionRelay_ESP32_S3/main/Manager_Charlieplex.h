@@ -1,7 +1,7 @@
-#ifndef MANAGER_QUADDISPLAY_H
-#define MANAGER_QUADDISPLAY_H
+#ifndef MANAGER_CHARLIEPLEX_H
+#define MANAGER_CHARLIEPLEX_H
 
-#include "Adafruit_LEDBackpack.h"
+#include "Adafruit_IS31FL3731.h"
 #include "ScreenDestination.h"
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -9,10 +9,10 @@
 #include <map>
 #include <functional>
 
-class Manager_QuadDisplay : public ScreenDestination {
+class Manager_Charlieplex : public ScreenDestination {
 public:
     // Static method to get the singleton instance
-    static Manager_QuadDisplay* getInstance(TwoWire* wireInterface = &Wire);
+    static Manager_Charlieplex* getInstance(TwoWire* wireInterface = &Wire);
     
     // Static cleanup method
     static void cleanup();
@@ -23,8 +23,7 @@ public:
 
     void clearDisplay(uint8_t address = 0);  // 0 = all displays
     void setBrightness(uint8_t brightness, uint8_t address = 0);  // 0 = all displays
-    void printText(const char *text, uint8_t address = 0);  // 0 = all displays
-    void printNumber(int number, uint8_t address = 0);  // 0 = all displays
+    void displayTextOnScreen(uint8_t address, const char* text);
 
     void setScrollingText(const char* text, uint8_t address = 0);  // 0 = all displays
     void setScrollingActive(bool active, uint8_t address = 0);  // 0 = all displays
@@ -45,28 +44,32 @@ public:
 
 private:
     // Private constructor for singleton pattern
-    explicit Manager_QuadDisplay(TwoWire* wireInterface);
+    explicit Manager_Charlieplex(TwoWire* wireInterface);
     
     // Static instance pointer
-    static Manager_QuadDisplay* instance;
+    static Manager_Charlieplex* instance;
     
     struct DisplayInfo {
-        Adafruit_AlphaNum4 display;
+        Adafruit_IS31FL3731 display;
         bool initialized;
+        uint8_t width;
+        uint8_t height;
+        uint8_t brightness;
         bool scrollingActive;
         String scrollText;
         int scrollIndex;
         unsigned long lastScrollUpdate;
         String staticText;
+        uint8_t currentFrame;  // For double buffering between frames 0 and 1
         
-        DisplayInfo() : initialized(false), scrollingActive(false), 
-                       scrollIndex(0), lastScrollUpdate(0) {}
+        DisplayInfo() : initialized(false), width(16), height(9), brightness(90),
+                       scrollingActive(false), scrollIndex(0), lastScrollUpdate(0), currentFrame(0) {}
     };
     
     std::map<uint8_t, DisplayInfo> displays;  // address -> display info
     TwoWire* wireInterface;
-    const unsigned long scrollDelay = 250;
-
+    const unsigned long scrollDelay = 350;  // Increased to reduce flicker
+    
     void updateScrollingText(uint8_t address);
     
     // Helper methods for address handling
@@ -74,4 +77,4 @@ private:
     void executeOnAllDisplays(std::function<void(uint8_t)> func);
 };
 
-#endif // MANAGER_QUADDISPLAY_H
+#endif // MANAGER_CHARLIEPLEX_H

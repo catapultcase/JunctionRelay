@@ -13,11 +13,12 @@ ConnectionManager connManager;
 // 3 = Adafruit QtPy ESP32-S3
 // 4 = Adafruit Matrix ESP32-S3
 // 5 = Adafruit Feather ESP32-S3
-#define DEVICE_SELECTION 4
+// 6 = Silicognition wESP32
+#define DEVICE_SELECTION 0
 
 #if DEVICE_SELECTION == 0
-  // #include "Device_LilyGoT4.h"
-  // Device_LilyGoT4 device(&connManager);
+  #include "Device_LilyGoT4.h"
+  Device_LilyGoT4 device(&connManager);
 #elif DEVICE_SELECTION == 1
   #include "Device_CrowPanel5.h"
   Device_CrowPanel5 device(&connManager);
@@ -33,6 +34,9 @@ ConnectionManager connManager;
 #elif DEVICE_SELECTION == 5
   #include "Device_AdafruitFeatherESP32S3.h"
   Device_AdafruitFeatherESP32S3 device(&connManager);
+#elif DEVICE_SELECTION == 6
+  #include "Device_Silicognition_wESP32.h"
+  Device_Silicognition_wESP32 device(&connManager);
 #else
   #error "Invalid DEVICE_SELECTION value!"
 #endif
@@ -145,6 +149,15 @@ void setup() {
       label += "MAC: " + s.macAddress + "\n";
     } else {
       label += "WiFi: Disconnected\n";
+    }
+    
+    // Add Ethernet status (now comes from ConnectionManager)
+    if (s.ethernetConnected) {
+      label += "Ethernet: Connected\n";
+      label += "ETH IP: " + s.ethernetIP + "\n";
+      label += "ETH MAC: " + s.ethernetMAC + "\n";
+    } else if (device.supportsEthernet()) {
+      label += "Ethernet: Disconnected\n";
     }
     
     // Add MQTT status
