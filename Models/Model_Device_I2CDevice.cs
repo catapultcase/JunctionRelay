@@ -1,0 +1,34 @@
+﻿/*
+ * This file is part of Junction Relay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * Junction Relay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Junction Relay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+namespace JunctionRelayServer.Models
+{
+    public class Model_Device_I2CDevice
+    {
+        public int Id { get; set; }
+        public int DeviceId { get; set; }
+        public string I2CAddress { get; set; } = "";
+        public string DeviceType { get; set; } = "";
+        public string CommunicationProtocol { get; set; } = "MQTT";
+        public bool IsEnabled { get; set; } = true;
+        public DateTime DateAdded { get; set; } = DateTime.UtcNow;
+        public List<Model_Device_I2CDevice_Endpoint> Endpoints { get; set; } = new List<Model_Device_I2CDevice_Endpoint>();
+
+    }
+}

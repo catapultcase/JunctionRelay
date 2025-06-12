@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>a19cb7a2-588a-4eda-9675-028393e94ec7</UserSecretsId>
+    <Version>0.8.0.5</Version>
+  </PropertyGroup>
+
+  <!-- Exclude frontend source files from .NET compilation -->
+  <ItemGroup>
+    <TypeScriptCompile Remove="junctionrelaywebui\src\**\*.ts" />
+    <TypeScriptCompile Remove="junctionrelaywebui\src\**\*.tsx" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.16" />
+    <PackageReference Include="Microsoft.AspNetCore.Cors" Version="2.3.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.2" />
+    <PackageReference Include="Microsoft.TypeScript.MSBuild" Version="5.8.1" />
+    <PackageReference Include="MQTTnet" Version="3.1.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="RJCP.SerialPortStream" Version="3.0.1" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
+    <PackageReference Include="System.IO.Ports" Version="9.0.3" />
+    <PackageReference Include="System.Management" Version="9.0.3" />
+    <PackageReference Include="Tmds.MDns" Version="0.8.0" />
+  </ItemGroup>
+
+  <!-- Remove junk from internal build if needed -->
+  <ItemGroup>
+    <Compile Remove="Handlers\**" />
+    <Compile Remove="Repositories\**" />
+    <Content Remove="Handlers\**" />
+    <Content Remove="Repositories\**" />
+    <EmbeddedResource Remove="Handlers\**" />
+    <EmbeddedResource Remove="Repositories\**" />
+    <None Remove="Handlers\**" />
+    <None Remove="Repositories\**" />
+    <TypeScriptCompile Remove="Handlers\**" />
+    <TypeScriptCompile Remove="Repositories\**" />
+  </ItemGroup>
+
+  <!-- Include frontend files in Solution Explorer (but not in build) -->
+  <ItemGroup>
+    <None Include="junctionrelaywebui\**\*" Exclude="junctionrelaywebui\node_modules\**" />
+  </ItemGroup>
+
+  <!-- Build frontend and copy directly into publish/wwwroot -->
+  <Target Name="BuildFrontend" BeforeTargets="Publish">
+    <Message Importance="high" Text="🔧 Running frontend build and copying to publish wwwroot..." />
+
+    <Exec Command="npm install" WorkingDirectory="junctionrelaywebui" />
+    <Exec Command="npm run build" WorkingDirectory="junctionrelaywebui" />
+
+    <PropertyGroup>
+      <PublishWwwRoot>$(PublishDir)wwwroot\</PublishWwwRoot>
+    </PropertyGroup>
+
+    <RemoveDir Directories="$(PublishWwwRoot)" />
+    <MakeDir Directories="$(PublishWwwRoot)" />
+
+    <ItemGroup>
+      <FrontendFiles Include="junctionrelaywebui\build\**\*.*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(FrontendFiles)" DestinationFiles="@(FrontendFiles->'$(PublishWwwRoot)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
