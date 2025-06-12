@@ -122,14 +122,14 @@ docker run -p 7180:7180 junctionrelay
 
 Junction Relay supports a wide range of communication protocols to interact with ESP32-based devices. This gives you flexibility depending on your hardware setup and reliability requirements:
 
-| Protocol     | Description                                                                 |
-|--------------|-----------------------------------------------------------------------------|
-| 🌐 **Ethernet**   | Reliable and low-latency. Ideal for stationary or high-performance setups using devices like the WESP32. |
-| 📶 **Wi-Fi**      | Most common option. Easy to configure and works well for mobile or wireless sensor nodes. |
-| 🔌 **COM / Serial** | Direct USB or UART connection. Useful for debugging or permanent wired installations. |
-| 🔄 **WebSockets** | Full-duplex, low-latency communication with the backend. Perfect for real-time data and UI updates. |
-| 🌐 **HTTP**       | Lightweight and easy to integrate. Devices can push or pull updates from RESTful endpoints. |
-| 📡 **MQTT**       | Publish/subscribe protocol for loosely coupled sensor networks. Compatible with external brokers. |
+| Protocol                   | Description                                                                 |
+|----------------------------|-----------------------------------------------------------------------------|
+| 🌐 **Ethernet**           | Reliable and low-latency. Ideal for stationary or high-performance setups using devices like the WESP32. |
+| 📶 **Wi-Fi**              | Most common option. Easy to configure and works well for mobile or wireless sensor nodes. |
+| 🔌 **COM / Serial**       | Direct USB or UART connection. Useful for debugging or permanent wired installations. |
+| 🔄 **WebSockets**         | Full-duplex, low-latency communication with the backend. Perfect for real-time data and UI updates. |
+| 🌐 **HTTP**               | Lightweight and easy to integrate. Devices can push or pull updates from RESTful endpoints. |
+| 📡 **MQTT**               | Publish/subscribe protocol for loosely coupled sensor networks. Compatible with external brokers. |
 
 You can configure the protocol per device depending on its capabilities and purpose. Many devices support fallback modes (e.g. Wi-Fi → Ethernet), and all communication methods can coexist within the same Junction Relay instance.
 
