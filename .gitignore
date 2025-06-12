@@ -4,8 +4,8 @@
 bin/
 obj/
 out/
-JunctionRelay_Display_ESP32_S3/main2/build
-JunctionRelay_Display_ESP32/main3/build
+JunctionRelay_ESP32_DEV/main2/build/
+JunctionRelay_ESP32_DEV/main3/build/
 
 
 # =============================
