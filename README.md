@@ -52,72 +52,6 @@ Junction Relay includes out-of-the-box collectors for:
 
 ---
 
-
-
-## 🚀 Quick Start with Docker Hub
-
-You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
-
-```bash
-docker run -d \
-  --name junctionrelay \
-  -p 7180:7180 \
-  catapultcase/junctionrelay:latest
-```
-
-This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
-
-🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
-
-> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
-
----
-
-## 🛠️ Build from Source (Optional)
-
-Prefer to build it yourself? Clone the repo and build the image manually:
-
-```bash
-git clone https://github.com/catapultcase/JunctionRelay.git
-cd JunctionRelay
-docker build -t junctionrelay .
-docker run -p 7180:7180 junctionrelay
-```
-
----
-
-## 🚀 Quick Start with Docker Hub
-
-You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
-
-```bash
-docker run -d \
-  --name junctionrelay \
-  -p 7180:7180 \
-  catapultcase/junctionrelay:latest
-```
-
-This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
-
-🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
-
-> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
-
----
-
-## 🛠️ Build from Source (Optional)
-
-Prefer to build it yourself? Clone the repo and build the image manually:
-
-```bash
-git clone https://github.com/catapultcase/JunctionRelay.git
-cd JunctionRelay
-docker build -t junctionrelay .
-docker run -p 7180:7180 junctionrelay
-```
-
----
-
 ## 🔌 ESP Device Protocols
 
 Junction Relay supports a wide range of communication protocols to interact with ESP32-based devices. This gives you flexibility depending on your hardware setup and reliability requirements:
@@ -132,6 +66,70 @@ Junction Relay supports a wide range of communication protocols to interact with
 | 📡 **MQTT**               | Publish/subscribe protocol for loosely coupled sensor networks. Compatible with external brokers. |
 
 You can configure the protocol per device depending on its capabilities and purpose. Many devices support fallback modes (e.g. Wi-Fi → Ethernet), and all communication methods can coexist within the same Junction Relay instance.
+
+---
+
+## 🚀 Quick Start with Docker Hub
+
+You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
+
+```bash
+docker run -d \
+  --name junctionrelay \
+  -p 7180:7180 \
+  catapultcase/junctionrelay:latest
+```
+
+This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
+
+🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
+
+> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
+
+---
+
+## 🛠️ Build from Source (Optional)
+
+Prefer to build it yourself? Clone the repo and build the image manually:
+
+```bash
+git clone https://github.com/catapultcase/JunctionRelay.git
+cd JunctionRelay
+docker build -t junctionrelay .
+docker run -p 7180:7180 junctionrelay
+```
+
+---
+
+## 🚀 Quick Start with Docker Hub
+
+You can now run Junction Relay instantly using the prebuilt image hosted on Docker Hub:
+
+```bash
+docker run -d \
+  --name junctionrelay \
+  -p 7180:7180 \
+  catapultcase/junctionrelay:latest
+```
+
+This pulls the latest version of Junction Relay and exposes the web interface at [http://localhost:7180](http://localhost:7180).
+
+🔗 **Docker Hub:** [catapultcase/junctionrelay](https://hub.docker.com/repository/docker/catapultcase/junctionrelay)
+
+> Tip: Add `--restart unless-stopped` to run it automatically after reboot.
+
+---
+
+## 🛠️ Build from Source (Optional)
+
+Prefer to build it yourself? Clone the repo and build the image manually:
+
+```bash
+git clone https://github.com/catapultcase/JunctionRelay.git
+cd JunctionRelay
+docker build -t junctionrelay .
+docker run -p 7180:7180 junctionrelay
+```
 
 ---
 
