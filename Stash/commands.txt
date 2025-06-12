@@ -1,0 +1,66 @@
+backend:
+
+
+docker buildx create --use
+
+linux only:
+
+docker buildx build --platform linux/amd64 -t catapultcase/junctionrelay:latest --push .
+
+
+
+Linux and arm platforms:
+docker buildx build --platform linux/amd64,linux/arm64 -t catapultcase/junctionrelay:latest --push .
+
+dotnet run
+
+
+
+
+react frontend:
+
+
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+npm run build
+npm start
+
+
+//  UPLOAD OTA
+
+.\upload-firmware-crowpanel5.ps1
+
+
+pi:
+
+// SHOW DOCKERS
+docker ps -a
+
+// REMOVE DOCKER
+docker rm XXXXXXXX
+
+// REMOVE MULTIPLE DOCKERS
+docker rm 401626114a50 b2f87ae608c3 d7caf89d61d7 7a4f28b7296b
+
+// SHOW COM DEVICES
+ls /dev/tty*
+
+// PULL LATEST IMAGE
+docker pull rusty6285/junctionrelayserver:latest
+
+// START IMAGE WITHOUT PASSEDTHROUGH USB
+docker run -p 5000:5000 -v /dev:/dev rusty6285/junctionrelayserver:latest
+
+// START IMAGE WITH PASSEDTHROUGH USB
+docker run -p 5000:5000 --device=/dev/ttyACM0:/dev/ttyACM0 -v /dev:/dev rusty6285/junctionrelayserver:latest
+
+// REPRESENTATION OF COM PORT IN LINUX
+/dev/ttyACM0
+
+
+// INSTALL PORTAINER
+
+docker pull portainer/portainer-ce:latest
+
+docker volume create portainer_data
+
+docker run -d -p 8000:8000 -p 9443:9443 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest
