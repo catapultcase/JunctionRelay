@@ -3,12 +3,9 @@
 
 #include <Wire.h>
 #include <lvgl.h>
-#include "Device_CrowPanel5.h"  // Full definition is required for g_device
-#include "Device_CrowPanel7.h"  // Full definition is required for g_device
 
-// Global pointer to the display device (for touch coordinate mapping)
-// (Defined in touch.cpp)
-extern DeviceConfig* g_device;
+// Forward declaration instead of including Device.h
+class DeviceConfig;
 
 // GT911 Touch Configuration
 #define TOUCH_GT911
@@ -31,8 +28,9 @@ extern TAMC_GT911 ts;
 extern int touch_last_x;
 extern int touch_last_y;
 
-// Function declarations
+// Function declarations - now pass device instance directly
 void touch_init();
+void touch_setDevice(DeviceConfig* device);  // NEW: Set device reference
 bool touch_has_signal();
 bool touch_touched();
 bool touch_released();

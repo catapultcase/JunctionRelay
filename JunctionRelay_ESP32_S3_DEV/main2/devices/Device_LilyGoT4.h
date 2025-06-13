@@ -1,21 +1,24 @@
-#ifndef DEVICE_ADAFRUIT_MATRIX_ESP32_S3_H
-#define DEVICE_ADAFRUIT_MATRIX_ESP32_S3_H
+#ifndef DEVICE_H
+#define DEVICE_H
+
+// Device identification define
+#define DEVICE_LILYGO_T4
 
 // Define device info
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "Matrix ESP32-S3"
-#define DEVICE_MANUFACTURER             "Adafruit"
+#define DEVICE_MODEL                    "T4 S3"
+#define DEVICE_MANUFACTURER             "LilyGo"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
+#define DEVICE_MCU                      "ESP32-S3R8 Dual-core LX7 microprocessor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "4 MB"
-#define DEVICE_PSRAM                    "2 MB"
+#define DEVICE_FLASH                    "16 MB"
+#define DEVICE_PSRAM                    "8 MB"
 
 // Define capabilities for this device
-#define DEVICE_HAS_ONBOARD_SCREEN       0 
+#define DEVICE_HAS_ONBOARD_SCREEN       1 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
-#define DEVICE_HAS_EXTERNAL_MATRIX      1
+#define DEVICE_HAS_EXTERNAL_MATRIX      0
 #define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
@@ -31,31 +34,22 @@
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
 
-// Define device matrix settings
-#define MATRIX_WIDTH 64
-#define MATRIX_HEIGHT 32
-
 #include "DeviceConfig.h"
 #include "Utils.h"
-#include <Adafruit_GFX.h>
-#include <Adafruit_Protomatter.h>
-#include "Manager_Matrix.h"
+#include <LilyGo_AMOLED.h>
 
 // Forward declaration
 class ConnectionManager;
 
-// RGB Matrix Pin assignments (defined in the cpp file)
-extern uint8_t rgbPins[];
-extern uint8_t addrPins[];
-extern uint8_t clockPin;
-extern uint8_t latchPin;
-extern uint8_t oePin;
-
-class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
+class Device_LilyGoT4 : public DeviceConfig {
 public:
-    Device_AdafruitMatrixESP32S3(ConnectionManager* connMgr);
+    Device_LilyGoT4(ConnectionManager* connMgr);
 
     bool begin() override;
+    
+    // Initialize LVGL display helpers (called after LVGL is initialized)
+    void initLVGLHelper() override;
+
     const char* getName() override;
 
     void setRotation(uint8_t rotation) override;
@@ -63,11 +57,11 @@ public:
     int width() override;
     int height() override;
 
+    // Device-specific setup method (called by main.ino)
+    void setupDeviceSpecific();
+
     // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
-
-    // Test method to display text on the matrix
-    void testText(const char* text);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -104,14 +98,14 @@ public:
     }
 
 private:
-    // Task handle for the matrix manager task that runs on core 1
-    static TaskHandle_t matrixTaskHandle;
-    
-    // Static task function that will run on core 1
-    static void matrixTask(void* parameter);
+    LilyGo_Class amoled;
+    uint8_t rotation;
     
     // Store the connection manager reference
     ConnectionManager* connMgr;
 };
 
-#endif // DEVICE_ADAFRUIT_MATRIX_ESP32_S3_H
+// Alias the class to the generic Device name for build system
+typedef Device_LilyGoT4 Device;
+
+#endif // DEVICE_H

@@ -1,4 +1,4 @@
-#include "Device_AdafruitFeatherESP32S3.h"
+#include "Device.h"
 #include "Utils.h"
 #include "Manager_I2C.h"
 #include "I2CScanner.h"
@@ -23,6 +23,11 @@ Device_AdafruitFeatherESP32S3::Device_AdafruitFeatherESP32S3(ConnectionManager* 
     quadDisplayTaskHandle = NULL;
     charlieDisplayTaskHandle = NULL;
     #endif
+}
+
+// Device-specific setup method called by main.ino
+void Device_AdafruitFeatherESP32S3::setupDeviceSpecific() {
+    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 bool Device_AdafruitFeatherESP32S3::begin() {

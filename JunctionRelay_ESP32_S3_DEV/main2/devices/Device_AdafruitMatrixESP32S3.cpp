@@ -1,4 +1,4 @@
-#include "Device_AdafruitMatrixESP32S3.h"
+#include "Device.h"
 #include "Utils.h"
 
 // Define the RGBMatrix pins here (only in one file to avoid multiple definitions)
@@ -14,6 +14,11 @@ TaskHandle_t Device_AdafruitMatrixESP32S3::matrixTaskHandle = NULL;
 Device_AdafruitMatrixESP32S3::Device_AdafruitMatrixESP32S3(ConnectionManager* connMgr)
 : connMgr(connMgr) {
     // Store the connection manager reference for future use if needed
+}
+
+// Device-specific setup method called by main.ino
+void Device_AdafruitMatrixESP32S3::setupDeviceSpecific() {
+    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 // Matrix manager task that runs on core 1
