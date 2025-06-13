@@ -1,4 +1,4 @@
-#include "Device_Silicognition_wESP32.h"
+#include "Device.h"
 #include "Utils.h"
 
 // Static instance pointer for event handler
@@ -33,6 +33,12 @@ Device_Silicognition_wESP32::Device_Silicognition_wESP32(ConnectionManager* conn
     externalNeoPixelPin1 = DEFAULT_EXTERNAL_PIN_1;
     externalNeoPixelPin2 = DEFAULT_EXTERNAL_PIN_2;
     #endif
+}
+
+// Device-specific setup method called by main.ino
+void Device_Silicognition_wESP32::setupDeviceSpecific() {
+    // This is a placeholder for any future wESP32-specific initialization
+    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 #if DEVICE_HAS_EXTERNAL_NEOPIXELS

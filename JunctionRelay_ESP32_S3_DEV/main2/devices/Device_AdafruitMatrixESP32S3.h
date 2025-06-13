@@ -1,21 +1,12 @@
-#ifndef DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
-#define DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
+#ifndef DEVICE_H
+#define DEVICE_H
 
-#include "DeviceConfig.h"
-#include "Utils.h"
-#include <Adafruit_NeoPixel.h>
-#include "Manager_NeoPixels.h" 
-#include "Manager_I2C.h"
-#include "I2CScanner.h"
-#include <Preferences.h>
+// Device identification define
+#define DEVICE_ADAFRUIT_MATRIX_ESP32S3
 
-#if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    #include "Manager_QuadDisplay.h"
-    #include "Manager_Charlieplex.h"
-#endif
-
+// Define device info
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "QT Py ESP32-S3"
+#define DEVICE_MODEL                    "Matrix ESP32-S3"
 #define DEVICE_MANUFACTURER             "Adafruit"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
@@ -27,9 +18,9 @@
 #define DEVICE_HAS_ONBOARD_SCREEN       0 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
-#define DEVICE_HAS_EXTERNAL_MATRIX      0
-#define DEVICE_HAS_EXTERNAL_NEOPIXELS   1 
-#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
+#define DEVICE_HAS_EXTERNAL_MATRIX      1
+#define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
+#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_WIFI            1
@@ -43,39 +34,46 @@
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
 
-#if DEVICE_HAS_ONBOARD_RGB_LED
-    #define PIN_NEOPIXEL 39
-    #define NUMPIXELS 1
-#endif
+// Define device matrix settings
+#define MATRIX_WIDTH 64
+#define MATRIX_HEIGHT 32
 
-#if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    // Default pins - will be overridden by preferences
-    #define DEFAULT_EXTERNAL_PIN_1 35
-    #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
-    #define EXTERNAL_NUMPIXELS 128
-#endif
+#include "DeviceConfig.h"
+#include "Utils.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_Protomatter.h>
+#include "Manager_Matrix.h"
 
-class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
+// Forward declaration
+class ConnectionManager;
+
+// RGB Matrix Pin assignments (defined in the cpp file)
+extern uint8_t rgbPins[];
+extern uint8_t addrPins[];
+extern uint8_t clockPin;
+extern uint8_t latchPin;
+extern uint8_t oePin;
+
+class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
 public:
-    Device_AdafruitQtPyESP32S3(ConnectionManager* connMgr);
+    Device_AdafruitMatrixESP32S3(ConnectionManager* connMgr);
 
-    bool begin();  
-    const char* getName();
+    bool begin() override;
+    const char* getName() override;
 
-    void setRotation(uint8_t rotation);
-    uint8_t getRotation();
-    int width();
-    int height();
+    void setRotation(uint8_t rotation) override;
+    uint8_t getRotation() override;
+    int width() override;
+    int height() override;
 
-    // I2C methods
-    String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() override;  // Implement base class method
+    // Device-specific setup method (called by main.ino)
+    void setupDeviceSpecific();
 
-    // NeoPixel configuration methods
-    void loadNeoPixelPreferences();
-    void saveNeoPixelPreferences();
-    int getNeoPixelPin(int index = 0);
-    void setNeoPixelPin(int pin, int index = 0);
+    // I2C interface (not used by this device, but required by DeviceConfig)
+    TwoWire* getI2CInterface() override;
+
+    // Test method to display text on the matrix
+    void testText(const char* text);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -106,35 +104,23 @@ public:
     virtual const char* getWirelessConnectivity() const override { return DEVICE_WIRELESS_CONNECTIVITY; }
     virtual const char* getFlash() const override { return DEVICE_FLASH; }
     virtual const char* getPSRAM() const override { return DEVICE_PSRAM; }
-
     virtual const char* getUniqueIdentifier() const override {
         static String macStr = getFormattedMacAddress();
         return macStr.c_str();
     }
 
 private:
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Adafruit_NeoPixel onboardPixel;
-    #endif
-
-    #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    TaskHandle_t i2cInitTaskHandle;
-    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
-    TaskHandle_t charlieDisplayTaskHandle;  // Task for Charlieplex manager
-    bool detectedQuadDisplay;
-    bool detectedCharlieDisplay;
-    #endif
-
-    ConnectionManager* connMgr;
+    // Task handle for the matrix manager task that runs on core 1
+    static TaskHandle_t matrixTaskHandle;
     
-    // NeoPixel pin configuration stored in preferences
-    int externalNeoPixelPin1;
-    int externalNeoPixelPin2;  // Stub for future use
-
-public:
-    // Legacy support - uses pin 1
-    int getNeoPixelPin() { return getNeoPixelPin(0); }
-    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS; }
+    // Static task function that will run on core 1
+    static void matrixTask(void* parameter);
+    
+    // Store the connection manager reference
+    ConnectionManager* connMgr;
 };
 
-#endif // DEVICE_ADAFRUIT_QT_PY_ESP32S3_H
+// Alias the class to the generic Device name for build system
+typedef Device_AdafruitMatrixESP32S3 Device;
+
+#endif // DEVICE_H

@@ -1,5 +1,8 @@
-#ifndef DEVICE_CROW_PANEL5_H
-#define DEVICE_CROW_PANEL5_H
+#ifndef DEVICE_H
+#define DEVICE_H
+
+// Device identification define - this is what triggers touch_init()
+#define DEVICE_CROWPANEL5
 
 // Define device info
 #define DEVICE_CLASS                    "JunctionRelay Display"
@@ -59,6 +62,9 @@ public:
   // Rotation handling
   void setRotation(uint8_t rotation) override;
   uint8_t getRotation() override;
+
+  // Device-specific setup method (called by main.ino)
+  void setupDeviceSpecific();
 
   // Return device name
   const char* getName() override;
@@ -127,4 +133,7 @@ private:
   ConnectionManager* connMgr;
 };
 
-#endif // DEVICE_CROW_PANEL5_H
+// Alias the class to the generic Device name for build system
+typedef Device_CrowPanel5 Device;
+
+#endif // DEVICE_H

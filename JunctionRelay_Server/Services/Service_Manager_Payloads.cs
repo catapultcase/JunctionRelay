@@ -38,6 +38,8 @@ namespace JunctionRelayServer.Services
             _layoutsDb = layoutsDb;
         }
 
+        #region Helper Methods
+
         // Helper method to add properties if they are present (including valid 0 values)
         private void AddIfPresent<T>(Dictionary<string, object> dictionary, string key, T? value)
         {
@@ -128,13 +130,11 @@ namespace JunctionRelayServer.Services
         // Helper method to add gateway destination when junction type is "Gateway"
         private void AddGatewayDestination(Dictionary<string, object> payloadDict, string junctionType, string? gatewayDestination, string screenKey)
         {
-            // FIXED: Check for any junction type that contains "Gateway" (case-insensitive)
             if (junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrEmpty(gatewayDestination))
                 {
                     payloadDict["destination"] = gatewayDestination;
-                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 🚀 Adding Gateway destination to {screenKey} -> {gatewayDestination}");
                 }
                 else
                 {
@@ -143,126 +143,22 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Refactored to use passed-in device and screen data, and already assigned sensors, now with option to override the template
-        public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
-            string screenKey,
-            List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen,
-            Model_Screen_Layout? overrideTemplate = null,
-            string? junctionType = null,
-            string? gatewayDestination = null)
+        // Helper method to serialize payload with optional 8-digit length prefix
+        private string SerializeWithOptionalPrefix(Dictionary<string, object> payloadDict, bool includePrefix, string payloadType)
         {
-            var result = new Dictionary<string, object>();
-
-            // 0) Ensure there's a ScreenLayoutId
-            if (screen.ScreenLayoutId == null)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
-                return result;
-            }
-
-            // 1) Load or override the template
-            Model_Screen_Layout? template;
-            if (overrideTemplate != null)
-            {
-                template = overrideTemplate;
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Using provided template override for screen {screen.ScreenKey}");
-            }
-            else
-            {
-                template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
-                if (template == null)
-                {
-                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
-                    return result;
-                }
-            }
-
-            // 2) Sort sensors (treat null as empty list)
-            var sortedSensors = (assignedSensors ?? new List<Model_Sensor>())
-                .OrderBy(s => s.SensorOrder)
-                .ToList();
-
-            // 3) Build base config dictionary from JsonLayoutConfig + template props
-            var configDict = new Dictionary<string, object>();
-            if (!string.IsNullOrWhiteSpace(template.JsonLayoutConfig))
-            {
-                try
-                {
-                    // Parse the JSON and deep‐clone each value before disposing
-                    using var doc = JsonDocument.Parse(template.JsonLayoutConfig);
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        var clonedValue = CloneJsonValue(prop.Value);
-                        AddIfPresent(configDict, prop.Name, clonedValue);
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Invalid JsonLayoutConfig for screen {screen.Id}: {ex.Message}");
-                }
-            }
-            AddAllTemplateProperties(template, configDict);
-
-            // 4) Determine layoutKey (CUSTOM stays special)
-            string layoutKey;
-            if (template.LayoutType.Equals("CUSTOM", StringComparison.OrdinalIgnoreCase))
-            {
-                layoutKey = string.IsNullOrEmpty(template.CustomLayoutType)
-                    ? "custom"
-                    : template.CustomLayoutType.ToLowerInvariant();
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Using custom layout type '{layoutKey}' for screen {screen.Id}");
-            }
-            else
-            {
-                layoutKey = template.LayoutType.ToLowerInvariant();
-            }
-
-            // 5) Build a 'layout' array only if there are sensors
-            List<object>? layoutItems = null;
-            if (sortedSensors.Any())
-            {
-                layoutItems = new List<object>(sortedSensors.Count);
-                foreach (var s in sortedSensors)
-                {
-                    layoutItems.Add(new
-                    {
-                        id = s.SensorTag,
-                        label = s.SensorTag,
-                        unit = string.IsNullOrEmpty(s.Unit) ? "" : s.Unit
-                    });
-                }
-            }
-
-            // 6) Assemble the payload dictionary
-            var payloadDict = new Dictionary<string, object>
-            {
-                ["type"] = "config",
-                ["screenId"] = screen.ScreenKey,
-                [layoutKey] = configDict
-            };
-
-            // 7) Add gateway destination if applicable
-            if (!string.IsNullOrEmpty(junctionType))
-            {
-                AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
-            }
-
-            if (layoutItems != null)
-            {
-                payloadDict["layout"] = layoutItems;
-            }
-
-            // 8) Serialize to JSON with an 8-digit length prefix
             var json = JsonSerializer.Serialize(payloadDict);
-            var prefix = json.Length.ToString().PadLeft(8, '0');
-            var finalPayload = prefix + json;
 
-            // 9) Return under the screenKey
-            result[screenKey] = finalPayload;
-            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created {template.LayoutType} config payload for {screenKey} (length: {json.Length})");
-
-            return result;
+            if (includePrefix)
+            {
+                var prefix = json.Length.ToString().PadLeft(8, '0');
+                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added 8-digit prefix '{prefix}' to {payloadType} payload");
+                return prefix + json;
+            }
+            else
+            {
+                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ℹ️ No prefix added to {payloadType} payload");
+                return json;
+            }
         }
 
         // Helper method to add all template properties to a dictionary
@@ -331,7 +227,130 @@ namespace JunctionRelayServer.Services
             AddIfPresent(dictionary, "max_height", template.MaxHeight);
         }
 
-        public Task<Dictionary<string, object>> GenerateMQTTSubscriptionConfigPayloadsAsync(
+        #endregion
+
+        #region Payload Generation Methods
+
+        // Generate configuration payloads for screens
+        public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
+            string screenKey,
+            List<Model_Sensor> assignedSensors,
+            Model_Device_Screens screen,
+            Model_Screen_Layout? overrideTemplate = null,
+            string? junctionType = null,
+            string? gatewayDestination = null)
+        {
+            var result = new Dictionary<string, object>();
+
+            // 1) Ensure there's a ScreenLayoutId
+            if (screen.ScreenLayoutId == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
+                return result;
+            }
+
+            // 2) Load template - use override if provided, otherwise load from database
+            Model_Screen_Layout? template;
+            if (overrideTemplate != null)
+            {
+                template = overrideTemplate;
+                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Using provided template override for screen {screen.ScreenKey}");
+            }
+            else
+            {
+                template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+                if (template == null)
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
+                    return result;
+                }
+            }
+
+            // 3) Sort sensors (treat null as empty list)
+            var sortedSensors = (assignedSensors ?? new List<Model_Sensor>())
+                .OrderBy(s => s.SensorOrder)
+                .ToList();
+
+            // 4) Build base config dictionary from JsonLayoutConfig + template props
+            var configDict = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(template.JsonLayoutConfig))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(template.JsonLayoutConfig);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        var clonedValue = CloneJsonValue(prop.Value);
+                        AddIfPresent(configDict, prop.Name, clonedValue);
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Invalid JsonLayoutConfig for screen {screen.Id}: {ex.Message}");
+                }
+            }
+            AddAllTemplateProperties(template, configDict);
+
+            // 5) Determine layoutKey (CUSTOM stays special)
+            string layoutKey;
+            if (template.LayoutType.Equals("CUSTOM", StringComparison.OrdinalIgnoreCase))
+            {
+                layoutKey = string.IsNullOrEmpty(template.CustomLayoutType)
+                    ? "custom"
+                    : template.CustomLayoutType.ToLowerInvariant();
+            }
+            else
+            {
+                layoutKey = template.LayoutType.ToLowerInvariant();
+            }
+
+            // 6) Build a 'layout' array only if there are sensors
+            List<object>? layoutItems = null;
+            if (sortedSensors.Any())
+            {
+                layoutItems = new List<object>(sortedSensors.Count);
+                foreach (var s in sortedSensors)
+                {
+                    layoutItems.Add(new
+                    {
+                        id = s.SensorTag,
+                        label = s.SensorTag,
+                        unit = string.IsNullOrEmpty(s.Unit) ? "" : s.Unit
+                    });
+                }
+            }
+
+            // 7) Assemble the payload dictionary
+            var payloadDict = new Dictionary<string, object>
+            {
+                ["type"] = "config",
+                ["screenId"] = screen.ScreenKey,
+                [layoutKey] = configDict
+            };
+
+            // 8) Add gateway destination if applicable
+            if (!string.IsNullOrEmpty(junctionType))
+            {
+                AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
+            }
+
+            if (layoutItems != null)
+            {
+                payloadDict["layout"] = layoutItems;
+            }
+
+            // 9) Serialize with optional prefix based on template setting
+            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "config");
+
+            // 10) Return under the screenKey
+            result[screenKey] = finalPayload;
+            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created {template.LayoutType} config payload for {screenKey}");
+
+            return result;
+        }
+
+        // Generate MQTT subscription configuration payloads for screens
+        public async Task<Dictionary<string, object>> GenerateMQTTSubscriptionConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -340,14 +359,28 @@ namespace JunctionRelayServer.Services
         {
             var result = new Dictionary<string, object>();
 
-            // If no sensors are assigned, skip
+            // 1) If no sensors are assigned, skip
             if (assignedSensors.Count == 0)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Screen {screen.Id} has no assigned sensors. Skipping.");
-                return Task.FromResult(new Dictionary<string, object>()); // Return empty if no sensors are assigned
+                return result;
             }
 
-            // Create a list of subscriptions based on MQTTTopic from each sensor
+            // 2) Load template to get prefix setting
+            if (screen.ScreenLayoutId == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
+                return result;
+            }
+
+            var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+            if (template == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
+                return result;
+            }
+
+            // 3) Create a list of subscriptions based on MQTTTopic from each sensor
             var subscriptions = new List<string>();
             foreach (var sensor in assignedSensors)
             {
@@ -361,7 +394,7 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // Generate the payload object for MQTT subscriptions
+            // 4) Generate the payload object for MQTT subscriptions
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "MQTT_Subscription_Request",
@@ -369,23 +402,24 @@ namespace JunctionRelayServer.Services
                 ["subscriptions"] = subscriptions
             };
 
-            // Add gateway destination if applicable
+            // 5) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
             }
 
-            // Serialize and prefix with length
-            string json = System.Text.Json.JsonSerializer.Serialize(payloadDict);
-            string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
+            // 6) Serialize with optional prefix based on template setting
+            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "MQTT config");
 
+            // 7) Return under the screenKey
             result[screenKey] = finalPayload;
-            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Subscription Payload for {screenKey}: {finalPayload}");
+            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created MQTT subscription payload for {screenKey}");
 
-            return Task.FromResult(result);
+            return result;
         }
 
-        public Task<Dictionary<string, object>> GenerateSensorPayloadsAsync(
+        // Generate sensor data payloads for screens
+        public async Task<Dictionary<string, object>> GenerateSensorPayloadsAsync(
             string screenId,
             int sensorCount,
             List<Model_Sensor> assignedSensors,
@@ -394,34 +428,45 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null)
         {
             var result = new Dictionary<string, object>();
-            // Ensure we have assigned sensors to work with
+
+            // 1) Ensure we have assigned sensors to work with
             if (assignedSensors.Count == 0)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ No assigned sensors for Screen {screenId}. Skipping payload generation.");
-                return Task.FromResult(result);
+                return result;
             }
-            // Fetch the screen's layout template (for GRID or QUAD layout)
-            var template = screen.Template;
+
+            // 2) Load template from database
+            if (screen.ScreenLayoutId == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
+                return result;
+            }
+
+            var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
             if (template == null)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Screen {screenId} has no layout template.");
-                return Task.FromResult(result);
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
+                return result;
             }
 
-            // Get decimal places from template, default to 0 if null
+            // 3) Get decimal places from template, default to 0 if null
             int decimalPlaces = template.DecimalPlaces ?? 0;
 
-            // Create a dictionary to hold the sensor data in the desired structure
+            // 4) Create a dictionary to hold the sensor data in the desired structure
             var sensors = new Dictionary<string, object>();
-            // Sort the assigned sensors by SensorOrder before processing
+
+            // 5) Sort the assigned sensors by SensorOrder before processing
             var sortedSensors = assignedSensors
                 .OrderBy(s => s.SensorOrder)
                 .Take(sensorCount)
                 .ToList();
-            // Iterate over the sorted sensors and create the payloads
+
+            // 6) Iterate over the sorted sensors and create the payloads
             foreach (var sensor in sortedSensors)
             {
                 var sensorData = new List<object>();
+
                 // Get the sensor's latest value from the global cache using OriginalId
                 var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
                 if (cachedSensor != null)
@@ -445,11 +490,12 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Sensor with OriginalId {sensor.OriginalId} not found in cache.");
                     continue;
                 }
+
                 // Use the sensor's SensorTag as the key for the payload
                 sensors[sensor.SensorTag] = sensorData;
             }
 
-            // Create the final payload object in the desired structure
+            // 7) Create the final payload object in the desired structure
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "sensor",
@@ -457,20 +503,24 @@ namespace JunctionRelayServer.Services
                 ["sensors"] = sensors
             };
 
-            // Add gateway destination if applicable
+            // 8) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // Serialize the object to JSON and prefix with length
-            string json = System.Text.Json.JsonSerializer.Serialize(payloadDict);
-            string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
+            // 9) Serialize with optional prefix based on template setting
+            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "sensor");
+
+            // 10) Return under the screenId
             result[screenId] = finalPayload;
-            return Task.FromResult(result);
+            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created sensor payload for {screenId}");
+
+            return result;
         }
 
-        public Task<Dictionary<string, object>> GenerateMatrixSensorPayloadsAsync(
+        // Generate matrix-style sensor data payloads for screens
+        public async Task<Dictionary<string, object>> GenerateMatrixSensorPayloadsAsync(
             string screenId,
             int sensorCount,
             List<Model_Sensor> assignedSensors,
@@ -480,33 +530,46 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null)
         {
             var result = new Dictionary<string, object>();
-            // If no sensors are assigned, skip
+
+            // 1) If no sensors are assigned, skip
             if (assignedSensors.Count == 0)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ No assigned sensors for Screen {screenId}. Skipping payload generation.");
-                return Task.FromResult(result);
-            }
-            // Ensure the screen has a template
-            var template = screen.Template;
-            if (template == null)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Screen {screenId} has no layout template.");
-                return Task.FromResult(result);
+                return result;
             }
 
-            // Get decimal places from template, default to 0 if null
+            // 2) Load template from database
+            if (screen.ScreenLayoutId == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
+                return result;
+            }
+
+            var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+            if (template == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
+                return result;
+            }
+
+            // 3) Get decimal places from template, default to 0 if null
             int decimalPlaces = template.DecimalPlaces ?? 0;
 
             var sensors = new Dictionary<string, object>();
-            // Get the sorted sensors, limit by count
+
+            // 4) Get the sorted sensors, limit by count
             var sortedSensors = assignedSensors
                 .OrderBy(s => s.SensorOrder)
                 .Take(sensorCount)
                 .ToList();
+
             int offset = startingYOffset;
+
+            // 5) Process each sensor and build matrix-style payload
             foreach (var sensor in sortedSensors)
             {
                 var sensorData = new List<object>();
+
                 var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
                 if (cachedSensor != null)
                 {
@@ -524,12 +587,15 @@ namespace JunctionRelayServer.Services
 
                     // Create the text with formatted value
                     string text = $"{sensor.SensorTag}: {formattedValue} {cachedSensor.Unit}";
+
                     sensorData.Add(new { text });
+
                     sensors[sensor.SensorTag] = new
                     {
                         Position = new { x = 0, y = offset },
                         Data = sensorData
                     };
+
                     // Increment offset for next sensor (8 pixels is font height)
                     offset += 8;
                 }
@@ -539,7 +605,7 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // Create the final payload object
+            // 6) Create the final payload object
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "sensor",
@@ -547,16 +613,22 @@ namespace JunctionRelayServer.Services
                 ["sensors"] = sensors
             };
 
-            // Add gateway destination if applicable
+            // 7) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            string json = System.Text.Json.JsonSerializer.Serialize(payloadDict);
-            string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
+            // 8) Serialize with optional prefix based on template setting
+            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "matrix sensor");
+
+            // 9) Return under the screenId
             result[screenId] = finalPayload;
-            return Task.FromResult(result);
+            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created matrix sensor payload for {screenId}");
+
+            return result;
         }
+
+        #endregion
     }
 }

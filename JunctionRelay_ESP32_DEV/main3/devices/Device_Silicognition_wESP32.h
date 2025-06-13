@@ -1,5 +1,8 @@
-#ifndef DEVICE_SILICOGNITION_WESP32_H
-#define DEVICE_SILICOGNITION_WESP32_H
+#ifndef DEVICE_H
+#define DEVICE_H
+
+// Device identification define
+#define DEVICE_SILICOGNITION_WESP32
 
 #include "DeviceConfig.h"
 #include "Utils.h"
@@ -19,7 +22,7 @@
 
 #define DEVICE_CLASS                    "JunctionRelay Gateway"
 #define DEVICE_MODEL                    "wESP32"
-#define DEVICE_MANUFACTURER             "Silicognition"
+#define DEVICE_MANUFACTURER             "Silicognition LLC"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32 Dual Core 240MHz Tensilica processor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE) + Ethernet"
@@ -87,6 +90,9 @@ public:
     uint8_t getRotation();
     int width();
     int height();
+
+    // Device-specific setup method (called by main.ino)
+    void setupDeviceSpecific();
 
     // I2C methods
     String performI2CScan(StaticJsonDocument<2048>& doc);
@@ -180,4 +186,7 @@ public:
     #endif
 };
 
-#endif // DEVICE_SILICOGNITION_WESP32_H
+// Alias the class to the generic Device name for build system
+typedef Device_Silicognition_wESP32 Device;
+
+#endif // DEVICE_H

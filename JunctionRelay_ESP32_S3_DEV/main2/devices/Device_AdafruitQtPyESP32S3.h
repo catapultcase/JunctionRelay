@@ -1,12 +1,16 @@
-#ifndef DEVICE_ADAFRUIT_FEATHER_ESP32S3_H
-#define DEVICE_ADAFRUIT_FEATHER_ESP32S3_H
+#ifndef DEVICE_H
+#define DEVICE_H
+
+// Device identification define
+#define DEVICE_ADAFRUIT_QTPY_ESP32S3
 
 #include "DeviceConfig.h"
 #include "Utils.h"
 #include <Adafruit_NeoPixel.h>
+#include "Manager_NeoPixels.h" 
 #include "Manager_I2C.h"
 #include "I2CScanner.h"
-#include <vector>
+#include <Preferences.h>
 
 #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     #include "Manager_QuadDisplay.h"
@@ -14,20 +18,20 @@
 #endif
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "Feather ESP32-S3"
+#define DEVICE_MODEL                    "QT Py ESP32-S3 N4R2"
 #define DEVICE_MANUFACTURER             "Adafruit"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "8 MB"
-#define DEVICE_PSRAM                    "N/A"
+#define DEVICE_FLASH                    "4 MB"
+#define DEVICE_PSRAM                    "2 MB"
 
 // Define capabilities for this device
 #define DEVICE_HAS_ONBOARD_SCREEN       0 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
 #define DEVICE_HAS_EXTERNAL_MATRIX      0
-#define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
+#define DEVICE_HAS_EXTERNAL_NEOPIXELS   1 
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
@@ -47,9 +51,16 @@
     #define NUMPIXELS 1
 #endif
 
-class Device_AdafruitFeatherESP32S3 : public DeviceConfig {
+#if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    // Default pins - will be overridden by preferences
+    #define DEFAULT_EXTERNAL_PIN_1 35
+    #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
+    #define EXTERNAL_NUMPIXELS 128
+#endif
+
+class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
 public:
-    Device_AdafruitFeatherESP32S3(ConnectionManager* connMgr);
+    Device_AdafruitQtPyESP32S3(ConnectionManager* connMgr);
 
     bool begin();  
     const char* getName();
@@ -59,9 +70,18 @@ public:
     int width();
     int height();
 
-    // I2C methods - Feather uses Wire (primary I2C)
+    // Device-specific setup method (called by main.ino)
+    void setupDeviceSpecific();
+
+    // I2C methods
     String performI2CScan(StaticJsonDocument<2048>& doc);
     TwoWire* getI2CInterface() override;  // Implement base class method
+
+    // NeoPixel configuration methods
+    void loadNeoPixelPreferences();
+    void saveNeoPixelPreferences();
+    int getNeoPixelPin(int index = 0);
+    void setNeoPixelPin(int pin, int index = 0);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -112,6 +132,18 @@ private:
     #endif
 
     ConnectionManager* connMgr;
+    
+    // NeoPixel pin configuration stored in preferences
+    int externalNeoPixelPin1;
+    int externalNeoPixelPin2;  // Stub for future use
+
+public:
+    // Legacy support - uses pin 1
+    int getNeoPixelPin() { return getNeoPixelPin(0); }
+    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS; }
 };
 
-#endif // DEVICE_ADAFRUIT_FEATHER_ESP32S3_H
+// Alias the class to the generic Device name for build system
+typedef Device_AdafruitQtPyESP32S3 Device;
+
+#endif // DEVICE_H

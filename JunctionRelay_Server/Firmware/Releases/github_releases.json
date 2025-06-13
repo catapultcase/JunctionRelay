@@ -2,13 +2,18 @@
   "Releases": [
     {
       "tag_name": "v0.7.9",
-      "name": "ESP32 S3 OTA Firmware v0.7.9",
-      "prerelease": false,
+      "name": "Junction Relay ESP32 Family Firmware v0.7.9",
+      "prerelease": true,
       "assets": [
         {
-          "Name": "junctionrelay_silicognition_wesp32_v0.7.9.bin",
-          "Size": 1206944,
-          "Sha256Hash": "9ccf4895dc23576a6462580eb7f4edd2e5af23a761ac5fd32c910debb0f1a613"
+          "Name": "junctionrelay_silicognition_wesp32_v0.7.9_FullFlash.zip",
+          "Size": 750298,
+          "Sha256Hash": null
+        },
+        {
+          "Name": "junctionrelay_silicognition_wesp32_v0.7.9_OTA.bin",
+          "Size": 1194752,
+          "Sha256Hash": "8f9d8963600b41b51558891574788f37386ff027e97a90537ec135ff98f347ab"
         }
       ]
     },
@@ -99,5 +104,5 @@
       ]
     }
   ],
-  "CachedAt": "2025-06-11T14:11:13.849281-05:00"
+  "CachedAt": "2025-06-12T17:47:42.5170818-05:00"
 }

@@ -1,9 +1,9 @@
-#include "Device_CrowPanel5.h"
+#include "Device.h"
 #include "touch.h"
 #include <driver/gpio.h>
 #include <PCA9557.h>
 
-Device_CrowPanel5::CustomLGFX::CustomLGFX() {
+Device_CrowPanel7::CustomLGFX::CustomLGFX() {
     auto cfg = _panel_instance.config();
     cfg.memory_width  = 800;
     cfg.memory_height = 480;
@@ -20,40 +20,42 @@ Device_CrowPanel5::CustomLGFX::CustomLGFX() {
     auto bus_cfg = _bus_instance.config();
     bus_cfg.panel = &_panel_instance;
 
-    bus_cfg.pin_d0  = GPIO_NUM_8;   // B0
-    bus_cfg.pin_d1  = GPIO_NUM_3;   // B1
-    bus_cfg.pin_d2  = GPIO_NUM_46;  // B2
-    bus_cfg.pin_d3  = GPIO_NUM_9;   // B3
-    bus_cfg.pin_d4  = GPIO_NUM_1;   // B4
+    // CrowPanel7 specific pin configuration
+    bus_cfg.pin_d0  = GPIO_NUM_15;  // B0
+    bus_cfg.pin_d1  = GPIO_NUM_7;   // B1
+    bus_cfg.pin_d2  = GPIO_NUM_6;   // B2
+    bus_cfg.pin_d3  = GPIO_NUM_5;   // B3
+    bus_cfg.pin_d4  = GPIO_NUM_4;   // B4
 
-    bus_cfg.pin_d5  = GPIO_NUM_5;   // G0
-    bus_cfg.pin_d6  = GPIO_NUM_6;   // G1
-    bus_cfg.pin_d7  = GPIO_NUM_7;   // G2
-    bus_cfg.pin_d8  = GPIO_NUM_15;  // G3
+    bus_cfg.pin_d5  = GPIO_NUM_9;   // G0
+    bus_cfg.pin_d6  = GPIO_NUM_46;  // G1
+    bus_cfg.pin_d7  = GPIO_NUM_3;   // G2
+    bus_cfg.pin_d8  = GPIO_NUM_8;   // G3
     bus_cfg.pin_d9  = GPIO_NUM_16;  // G4
-    bus_cfg.pin_d10 = GPIO_NUM_4;   // G5
+    bus_cfg.pin_d10 = GPIO_NUM_1;   // G5
 
-    bus_cfg.pin_d11 = GPIO_NUM_45;  // R0
-    bus_cfg.pin_d12 = GPIO_NUM_48;  // R1
+    bus_cfg.pin_d11 = GPIO_NUM_14;  // R0
+    bus_cfg.pin_d12 = GPIO_NUM_21;  // R1
     bus_cfg.pin_d13 = GPIO_NUM_47;  // R2
-    bus_cfg.pin_d14 = GPIO_NUM_21;  // R3
-    bus_cfg.pin_d15 = GPIO_NUM_14;  // R4
+    bus_cfg.pin_d14 = GPIO_NUM_48;  // R3
+    bus_cfg.pin_d15 = GPIO_NUM_45;  // R4
 
-    bus_cfg.pin_henable = GPIO_NUM_40;
-    bus_cfg.pin_vsync   = GPIO_NUM_41;
+    bus_cfg.pin_henable = GPIO_NUM_41;
+    bus_cfg.pin_vsync   = GPIO_NUM_40;
     bus_cfg.pin_hsync   = GPIO_NUM_39;
     bus_cfg.pin_pclk    = GPIO_NUM_0;
     bus_cfg.freq_write  = 15000000;
 
+    // CrowPanel7 specific timing parameters
     bus_cfg.hsync_polarity    = 0;
-    bus_cfg.hsync_front_porch = 8;
-    bus_cfg.hsync_pulse_width = 4;
-    bus_cfg.hsync_back_porch  = 43;
+    bus_cfg.hsync_front_porch = 40;
+    bus_cfg.hsync_pulse_width = 48;
+    bus_cfg.hsync_back_porch  = 40;
 
     bus_cfg.vsync_polarity    = 0;
-    bus_cfg.vsync_front_porch = 8;
-    bus_cfg.vsync_pulse_width = 4;
-    bus_cfg.vsync_back_porch  = 12;
+    bus_cfg.vsync_front_porch = 1;
+    bus_cfg.vsync_pulse_width = 31;
+    bus_cfg.vsync_back_porch  = 13;
 
     bus_cfg.pclk_active_neg   = 1;
     bus_cfg.de_idle_high      = 0;
@@ -70,12 +72,18 @@ Device_CrowPanel5::CustomLGFX::CustomLGFX() {
     setPanel(&_panel_instance);
 }
 
-Device_CrowPanel5::Device_CrowPanel5(ConnectionManager* connMgr) : rotation(0), connMgr(connMgr) {
-    g_device = this;
+// ✅ FIXED CONSTRUCTOR - Uses touch_setDevice() instead of g_device
+Device_CrowPanel7::Device_CrowPanel7(ConnectionManager* connMgr) : rotation(0), connMgr(connMgr) {
+    touch_setDevice(this);  // Set device reference for touch system
 }
 
-bool Device_CrowPanel5::begin() {
-    Serial.println("[DEBUG] Initializing CrowPanel5...");
+// Device-specific setup method called by main.ino
+void Device_CrowPanel7::setupDeviceSpecific() {
+    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
+}
+
+bool Device_CrowPanel7::begin() {
+    Serial.println("[DEBUG] Initializing CrowPanel7...");
 
     // Initialize hardware first
     pinMode(38, OUTPUT); digitalWrite(38, LOW);
@@ -114,7 +122,7 @@ bool Device_CrowPanel5::begin() {
 }
 
 // New method to init LVGL display helpers after LVGL is initialized
-void Device_CrowPanel5::initLVGLHelper() {
+void Device_CrowPanel7::initLVGLHelper() {
     // Create and initialize LVGL display buffer
     static lv_color_t draw_buf_mem[800 * 480 / 15];
     static lv_disp_draw_buf_t draw_buf;
@@ -143,15 +151,15 @@ void Device_CrowPanel5::initLVGLHelper() {
     }
 }
 
-int Device_CrowPanel5::width() {
+int Device_CrowPanel7::width() {
     return lgfx_dev.width();
 }
 
-int Device_CrowPanel5::height() {
+int Device_CrowPanel7::height() {
     return lgfx_dev.height();
 }
 
-void Device_CrowPanel5::setRotation(uint8_t r) {
+void Device_CrowPanel7::setRotation(uint8_t r) {
     if (!lv_disp_get_default()) return;
     rotation = r % 4;
     lgfx_dev.setRotation(rotation);
@@ -163,16 +171,16 @@ void Device_CrowPanel5::setRotation(uint8_t r) {
     }
 }
 
-uint8_t Device_CrowPanel5::getRotation() {
+uint8_t Device_CrowPanel7::getRotation() {
     return rotation;
 }
 
-const char* Device_CrowPanel5::getName() {
-    return "Elecrow 5-inch Panel";
+const char* Device_CrowPanel7::getName() {
+    return "Elecrow 7-inch Panel";
 }
 
-void Device_CrowPanel5::my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
-    Device_CrowPanel5* instance = static_cast<Device_CrowPanel5*>(disp->user_data);
+void Device_CrowPanel7::my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+    Device_CrowPanel7* instance = static_cast<Device_CrowPanel7*>(disp->user_data);
     if (instance) {
         int32_t w = area->x2 - area->x1 + 1;
         int32_t h = area->y2 - area->y1 + 1;
@@ -185,8 +193,8 @@ void Device_CrowPanel5::my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area
     lv_disp_flush_ready(disp);
 }
 
-void Device_CrowPanel5::my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
-    Device_CrowPanel5* instance = static_cast<Device_CrowPanel5*>(indev_driver->user_data);
+void Device_CrowPanel7::my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
+    Device_CrowPanel7* instance = static_cast<Device_CrowPanel7*>(indev_driver->user_data);
     if (!instance) return;
 
     if (touch_has_signal()) {

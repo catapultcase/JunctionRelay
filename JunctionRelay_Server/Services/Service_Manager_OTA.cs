@@ -981,8 +981,9 @@ namespace JunctionRelayServer.Services
 
         private bool IsFirmwareRelease(GitHubRelease release)
         {
-            // Check if the release name contains "OTA Firmware" (more flexible)
-            bool nameContainsOTA = release.Name.Contains("OTA Firmware", StringComparison.OrdinalIgnoreCase);
+            // Check if the release name contains "ESP32 Family Firmware" or "OTA Firmware" (for backwards compatibility)
+            bool nameContainsFirmware = release.Name.Contains("ESP32 Family Firmware", StringComparison.OrdinalIgnoreCase) ||
+                                       release.Name.Contains("OTA Firmware", StringComparison.OrdinalIgnoreCase);
 
             // Also check if the release has .bin firmware files
             bool hasFirmwareAssets = release.Assets?.Any(asset =>
@@ -990,12 +991,12 @@ namespace JunctionRelayServer.Services
                 asset.Name.EndsWith(".bin")
             ) ?? false;
 
-            // Console.WriteLine($"[OTA DEBUG] Release '{release.Name}': nameContainsOTA={nameContainsOTA}, hasFirmwareAssets={hasFirmwareAssets}");
+            // Console.WriteLine($"[OTA DEBUG] Release '{release.Name}': nameContainsFirmware={nameContainsFirmware}, hasFirmwareAssets={hasFirmwareAssets}");
 
             // A release is considered a firmware release if either:
-            // 1. The name contains "OTA Firmware", OR
+            // 1. The name contains firmware keywords, OR
             // 2. It has firmware .bin assets with the correct naming convention
-            return nameContainsOTA || hasFirmwareAssets;
+            return nameContainsFirmware || hasFirmwareAssets;
         }
 
         private GitHubAsset? FindMatchingFirmware(List<GitHubAsset> assets, string normalizedTarget)

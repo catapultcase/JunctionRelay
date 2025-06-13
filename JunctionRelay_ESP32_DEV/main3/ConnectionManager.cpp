@@ -872,7 +872,17 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
         return;
     }
 
-    // Stage 1: Extract the 8-byte prefix (contains length of the payload)
+    // NEW: Check if the payload starts with JSON (no prefix)
+    if (readingLength && bytesRead == 0 && len > 0) {
+        // Check if first character is '{' - indicates JSON without prefix
+        if (data[0] == '{') {
+            // Serial.println("[DEBUG] No prefix detected, processing JSON directly");
+            handleIncomingDataChunk(data, len);
+            return;
+        }
+    }
+
+    // EXISTING: Stage 1: Extract the 8-byte prefix (contains length of the payload)
     if (readingLength) {
         size_t prefixCopyLen = min(len, (size_t)(8 - bytesRead));
         memcpy(prefixBuffer + bytesRead, data, prefixCopyLen);
@@ -880,6 +890,23 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
         
         if (bytesRead >= 8) {
             prefixBuffer[8] = '\0';
+            
+            // Check if the prefix contains only digits
+            bool isValidPrefix = true;
+            for (int i = 0; i < 8; i++) {
+                if (!isdigit(prefixBuffer[i])) {
+                    isValidPrefix = false;
+                    break;
+                }
+            }
+            
+            if (!isValidPrefix) {
+                Serial.println("[ERROR] Invalid prefix format - expected 8 digits");
+                readingLength = true;
+                bytesRead = 0;
+                return;
+            }
+            
             payloadLength = atoi(prefixBuffer);
             
             if (payloadLength <= 0 || payloadLength > MAX_PAYLOAD_SIZE) {
@@ -888,6 +915,8 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
                 bytesRead = 0;
                 return;
             }
+            
+            // Serial.printf("[DEBUG] Stripped 8-digit prefix '%s', expecting %d bytes\n", prefixBuffer, payloadLength);
             
             readingLength = false;
             bytesRead = 0;
@@ -899,7 +928,7 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
             }
         }
     } 
-    // Stage 2: Accumulate payload data
+    // EXISTING: Stage 2: Accumulate payload data
     else {
         size_t remainingBytes = payloadLength - bytesRead;
         size_t copyLen = (len < remainingBytes) ? len : remainingBytes;
@@ -908,7 +937,7 @@ void ConnectionManager::handleIncomingDataChunkPrefix(uint8_t *data, size_t len)
         bytesRead += copyLen;
     }
 
-    // Stage 3: When complete payload is received, process it
+    // EXISTING: Stage 3: When complete payload is received, process it
     if (!readingLength && bytesRead >= payloadLength) {
         handleIncomingDataChunk(staticPayloadBuffer, payloadLength);
         

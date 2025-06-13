@@ -4,6 +4,8 @@
 #include <Adafruit_Protomatter.h>
 #include "ScreenDestination.h"
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // Forward declaration to avoid circular includes
 class ConnectionManager;
@@ -53,11 +55,18 @@ private:
     // Private constructor for singleton pattern
     Manager_Matrix();
     
+    // Destructor to clean up resources
+    ~Manager_Matrix();
+    
     // Static instance pointer
     static Manager_Matrix* instance;
     
     // The matrix instance
     Adafruit_Protomatter* matrix;
+    
+    // Thread safety
+    SemaphoreHandle_t matrixMutex;
+    static constexpr TickType_t MUTEX_TIMEOUT_MS = 100;
     
     // Flag to check if the matrix is initialized
     bool initialized;
@@ -69,15 +78,60 @@ private:
     static void refreshTimerCallback(void* parameter);
     static TaskHandle_t refreshTaskHandle;
     
-    // Scrolling IP display variables
-    int scrollOffset;
-    unsigned long lastScrollTime;
-    unsigned long pauseStartTime;
-    bool isPaused;
-    bool showingReadyScreen;  // Track if we're showing ready screen vs sensor data
+    // Display state management
+    enum DisplayMode {
+        MODE_READY_SCREEN,
+        MODE_SENSOR_DATA,
+        MODE_CONFIG_DATA
+    };
     
-    // Helper method to calculate how many characters will fit without wrapping
+    DisplayMode currentMode;
+    unsigned long lastModeChange;
+    
+    // Scrolling IP display variables (with anti-flicker)
+    struct ScrollState {
+        int offset;
+        unsigned long lastUpdateTime;
+        unsigned long pauseStartTime;
+        bool isPaused;
+        bool needsUpdate;
+        char lastDisplayedIP[20];  // Cache last IP to detect changes
+        int textWidth;             // Cached text width
+    } scrollState;
+    
+    // Static text buffers to avoid dynamic allocation
+    static constexpr size_t MAX_TEXT_LENGTH = 63;
+    char textBuffer[MAX_TEXT_LENGTH + 1];
+    char ipBuffer[20];
+    char versionBuffer[32];
+    
+    // Double buffering for flicker reduction
+    bool useDoubleBuffering;
+    uint16_t* backBuffer;
+    
+    // Helper methods
+    void safeTextCopy(char* dest, const char* src, size_t destSize);
     int calculateFitChars(const char* text, int x);
+    bool validateCoordinates(int x, int y);
+    void updateScrollState(const char* text, int maxWidth);
+    void renderScrollingText(const char* text, int x, int y, int maxWidth);
+    void setDisplayMode(DisplayMode mode);
+    
+    // Thread-safe matrix operations
+    bool acquireMatrix(const char* caller = "unknown");
+    void releaseMatrix();
+    
+    // Memory management
+    void initializeBuffers();
+    void cleanupBuffers();
+    
+    // Anti-flicker optimizations
+    void smartRefresh();
+    bool contentChanged();
+    
+    // Debug and monitoring
+    void logMemoryUsage();
+    void checkStackUsage();
 };
 
 #endif // MANAGER_MATRIX_H

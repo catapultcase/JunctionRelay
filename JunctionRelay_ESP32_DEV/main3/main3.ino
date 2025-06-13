@@ -6,44 +6,13 @@
 Preferences prefs;
 ConnectionManager connManager;
 
-// ── Device Selection ──
-// 0 = LilyGo T4
-// 1 = CrowPanel5
-// 2 = CrowPanel7
-// 3 = Adafruit QtPy ESP32-S3
-// 4 = Adafruit Matrix ESP32-S3
-// 5 = Adafruit Feather ESP32-S3
-// 6 = Silicognition wESP32
-#define DEVICE_SELECTION 6
+// ── Generic Device Header ──
+// This file gets swapped out by the build system based on target device
+#include "Device.h"
 
-#if DEVICE_SELECTION == 0
-  // #include "Device_LilyGoT4.h"
-  // Device_LilyGoT4 device(&connManager);
-#elif DEVICE_SELECTION == 1
-  // #include "Device_CrowPanel5.h"
-  // Device_CrowPanel5 device(&connManager);
-#elif DEVICE_SELECTION == 2
-  // #include "Device_CrowPanel7.h"
-  // Device_CrowPanel7 device(&connManager);
-#elif DEVICE_SELECTION == 3
-  // #include "Device_AdafruitQtPyESP32S3.h"
-  // Device_AdafruitQtPyESP32S3 device(&connManager);
-#elif DEVICE_SELECTION == 4
-  // #include "Device_AdafruitMatrixESP32S3.h"
-  // Device_AdafruitMatrixESP32S3 device(&connManager);
-#elif DEVICE_SELECTION == 5
-  // #include "Device_AdafruitFeatherESP32S3.h"
-  // Device_AdafruitFeatherESP32S3 device(&connManager);
-#elif DEVICE_SELECTION == 6
-  #include "Device_Silicognition_wESP32.h"
-  Device_Silicognition_wESP32 device(&connManager);
-#else
-  #error "Invalid DEVICE_SELECTION value!"
-#endif
-
-#if DEVICE_SELECTION == 1 || DEVICE_SELECTION == 2
-  // #include "touch.h"
-#endif
+// ── Generic Device Instance ──
+// All device classes inherit from a common base or implement the same interface
+Device device(&connManager);
 
 #include "ScreenRouter.h"
 
@@ -201,9 +170,9 @@ void setup() {
     screenRouter.registerScreen(&displayManager);
   #endif
 
-  #if DEVICE_SELECTION == 1
-    touch_init();
-  #endif
+  // Device-specific initialization - no hardcoded device selection needed!
+  // The device header swapping handles this automatically
+  device.setupDeviceSpecific();
 
   connManager.setDevice(&device);
   connManager.setConnMode(mode);
