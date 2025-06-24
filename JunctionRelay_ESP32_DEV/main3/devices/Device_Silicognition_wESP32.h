@@ -22,7 +22,7 @@
 
 #define DEVICE_CLASS                    "JunctionRelay Gateway"
 #define DEVICE_MODEL                    "wESP32"
-#define DEVICE_MANUFACTURER             "Silicognition LLC"
+#define DEVICE_MANUFACTURER             "Silicognition"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32 Dual Core 240MHz Tensilica processor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE) + Ethernet"

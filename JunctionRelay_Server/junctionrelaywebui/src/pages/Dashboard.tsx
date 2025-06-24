@@ -1,20 +1,20 @@
 /*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 import { useEffect, useState, MouseEvent } from "react";
@@ -32,24 +32,16 @@ import {
     TextField,
     Drawer,
     Divider,
-    Select,
-    MenuItem,
-    InputLabel,
-    Modal,
     Checkbox,
     ListItemText,
     Popover,
     List,
     ListItem,
     IconButton,
-    CircularProgress,
-    FormControlLabel,
-    FormControl,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import AddIcon from '@mui/icons-material/Add';
 
 // Import components
 import JunctionsTable from "../components/JunctionsTable";
@@ -68,15 +60,6 @@ const getCollectors = async () => {
 const getJunctions = async () => {
     const r = await fetch("/api/junctions");
     if (!r.ok) throw new Error("Error fetching junctions");
-    return r.json();
-};
-const createJunction = async (j: any) => {
-    const r = await fetch("/api/junctions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(j),
-    });
-    if (!r.ok) throw new Error("Failed to create junction");
     return r.json();
 };
 
@@ -128,27 +111,6 @@ const Dashboard: React.FC = () => {
     const [collectors, setCollectors] = useState<any[]>([]);
     const [activeStreams, setActiveStreams] = useState<any[]>([]);
     const [activePollers, setActivePollers] = useState<any[]>([]);
-    const [modalOpen, setModalOpen] = useState(false);
-    const [loading, setLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string>("");
-
-    const [newJunction, setNewJunction] = useState<{
-        name: string;
-        description: string;
-        type: string;
-        showOnDashboard?: boolean;
-        autoStartOnLaunch?: boolean;
-        allTargetsAllData?: boolean;
-        sortOrder?: number; // Added sortOrder field
-    }>({
-        name: "",
-        description: "",
-        type: "COM Junction",
-        showOnDashboard: true,
-        autoStartOnLaunch: false,
-        allTargetsAllData: false,
-        sortOrder: 0 // Default to 0
-    });
     const [selectedPoller, setSelectedPoller] = useState<any | null>(null);
     const [selectedStream, setSelectedStream] = useState<any | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -351,53 +313,51 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    const handleSave = async (redirect: boolean) => {
+    // Refresh junctions data (for after add/clone/delete operations from JunctionsTable)
+    const refreshJunctions = async () => {
         try {
-            setLoading(true);
-            setError("");
-
-            // Basic validation
-            if (!newJunction.name) {
-                setError("Junction name is required!");
-                setLoading(false);
-                return;
+            const response = await fetch("/api/junctions");
+            if (!response.ok) {
+                throw new Error("Failed to fetch junctions");
             }
+            const junctions = await response.json();
 
-            // Set the sort order to be the highest existing sort order + 1
-            const highestSortOrder = Math.max(
-                ...junctions.map(j => j.sortOrder !== undefined ? j.sortOrder : 0),
-                0  // If junctions is empty, default to 0
-            );
+            // Add sortOrder if missing and sort the junctions
+            const junctionsWithSortOrder = junctions.map((j: any, index: number) => {
+                return { ...j, sortOrder: j.sortOrder !== undefined ? j.sortOrder : index };
+            }).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
 
-            const junctionWithSortOrder = {
-                ...newJunction,
-                status: "Idle",
-                sortOrder: highestSortOrder + 1
-            };
+            // Merge with current status data
+            const runningResponse = await fetch("/api/connections/running");
+            if (runningResponse.ok) {
+                const runningData = await runningResponse.json();
+                const updatedJunctions = junctionsWithSortOrder.map((j: any) => {
+                    const running = runningData.find((r: any) => r.id === j.id);
+                    return running ? { ...j, status: running.status } : j;
+                });
 
-            const res = await createJunction(junctionWithSortOrder);
-            setModalOpen(false);
-            setNewJunction({
-                name: "",
-                description: "",
-                type: "COM Junction",
-                showOnDashboard: true,
-                autoStartOnLaunch: false,
-                allTargetsAllData: false,
-                sortOrder: 0
-            });
-            setJunctions(await getJunctions());
-            if (redirect) navigate(`/configure-junction/${res.id}`);
-        } catch (e) {
-            console.error(e);
-            setError(e instanceof Error ? e.message : "An unknown error occurred");
-        } finally {
-            setLoading(false);
+                // Add smart comparison to prevent unnecessary updates
+                setJunctions(prev => {
+                    if (JSON.stringify(updatedJunctions) !== JSON.stringify(prev)) {
+                        return updatedJunctions;
+                    }
+                    return prev; // No changes, return previous state to avoid re-render
+                });
+            } else {
+                // Add smart comparison here too
+                setJunctions(prev => {
+                    if (JSON.stringify(junctionsWithSortOrder) !== JSON.stringify(prev)) {
+                        return junctionsWithSortOrder;
+                    }
+                    return prev;
+                });
+            }
+        } catch (err: any) {
+            console.error("Error refreshing junctions:", err);
         }
     };
 
     // Cell renderers...   
-
     const getCollectorCell = (field: string, item: any) => {
         switch (field) {
             case "sourceName":
@@ -489,7 +449,7 @@ const Dashboard: React.FC = () => {
                 throw new Error("Failed to clone junction");
             }
 
-            setJunctions(await getJunctions()); // Refresh list after cloning
+            await refreshJunctions(); // Refresh junctions after cloning
         } catch (e) {
             console.error("Error cloning junction:", e);
         }
@@ -499,7 +459,7 @@ const Dashboard: React.FC = () => {
         try {
             // Remove the window.confirm from here since it's already in JunctionsTable
             await fetch(`/api/junctions/${junctionId}`, { method: "DELETE" });
-            setJunctions(await getJunctions());
+            await refreshJunctions(); // Refresh junctions after deleting
         } catch (e) {
             console.error("Error deleting junction:", e);
         }
@@ -517,45 +477,22 @@ const Dashboard: React.FC = () => {
                 Dashboard
             </Typography>
 
-            <Box sx={{ marginBottom: 2, display: 'flex', alignItems: 'center' }}>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => setModalOpen(true)}
-                    sx={{ marginRight: 1 }}
-                    size="small"
-                    startIcon={<AddIcon />}
-                >
-                    Add Junction
-                </Button>
-                <Button
-                    variant="contained"
-                    size="small"
-                    sx={{ marginRight: 1 }}
-                >
-                    Start All
-                </Button>
-                <Button
-                    variant="contained"
-                    size="small"
-                    sx={{ marginRight: 2 }}
-                >
-                    Stop All
-                </Button>
-            </Box>
-
-            {/* Junctions Table with column-based sorting */}
+            {/* Junctions Table - now includes its own Add Junction button with all new junction types */}
             <JunctionsTable
-                junctions={dashboardJunctions}
+                junctions={junctions}
+                filteredJunctions={dashboardJunctions}
                 additionalColumns={additionalColumns}
                 onStartJunction={handleStartJunction}
                 onStopJunction={handleStopJunction}
                 onCloneJunction={handleCloneJunction}
                 onDeleteJunction={handleDeleteJunction}
                 onUpdateSortOrders={handleUpdateSortOrders}
+                onJunctionAdded={refreshJunctions}
                 detailedConnections={detailedConnections}
                 setDetailedConnections={setDetailedConnections}
                 localStorageKey="dashboard_visible_junction_cols"
+                showAddButton={true}
+                showImportButton={false}
             />
 
             {/* Active Collectors Table */}
@@ -925,129 +862,6 @@ const Dashboard: React.FC = () => {
                     )}
                 </Box>
             </Drawer>
-
-
-            {/* Create Junction Modal */}
-            <Modal open={modalOpen} onClose={() => setModalOpen(false)}>
-                <Box sx={{
-                    position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-                    width: '80%', maxWidth: 600, bgcolor: 'background.paper', p: 4, boxShadow: 24, borderRadius: 2
-                }}>
-                    <Typography variant="h6" gutterBottom>Create New Junction</Typography>
-                    {loading ? (
-                        <Box sx={{ display: "flex", justifyContent: "center" }}>
-                            <CircularProgress size={24} />
-                        </Box>
-                    ) : (
-                        <>
-                            {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
-
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Junction Name"
-                                    name="name"
-                                    value={newJunction.name}
-                                    onChange={(e) => setNewJunction({ ...newJunction, name: e.target.value })}
-                                    required
-                                />
-
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Description"
-                                    name="description"
-                                    value={newJunction.description}
-                                    onChange={(e) => setNewJunction({ ...newJunction, description: e.target.value })}
-                                    multiline
-                                    rows={2}
-                                />
-
-                                <FormControl fullWidth size="small">
-                                    <InputLabel id="junction-type-label">Junction Type</InputLabel>
-                                    <Select
-                                        labelId="junction-type-label"
-                                        name="type"
-                                        value={newJunction.type}
-                                        onChange={(e) => setNewJunction({ ...newJunction, type: e.target.value as string })}
-                                        label="Junction Type"
-                                    >
-                                        <MenuItem value="COM Junction">COM Junction</MenuItem>
-                                        <MenuItem value="HTTP Junction">HTTP Junction</MenuItem>
-                                        <MenuItem value="MQTT Junction">MQTT Junction</MenuItem>
-                                    </Select>
-                                </FormControl>
-
-                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={newJunction.showOnDashboard || false}
-                                                onChange={(e) => setNewJunction({ ...newJunction, showOnDashboard: e.target.checked })}
-                                                name="showOnDashboard"
-                                                size="small"
-                                            />
-                                        }
-                                        label="Show on Dashboard"
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={newJunction.autoStartOnLaunch || false}
-                                                onChange={(e) => setNewJunction({ ...newJunction, autoStartOnLaunch: e.target.checked })}
-                                                name="autoStartOnLaunch"
-                                                size="small"
-                                            />
-                                        }
-                                        label="Auto Start on Launch"
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={newJunction.allTargetsAllData || false}
-                                                onChange={(e) => setNewJunction({ ...newJunction, allTargetsAllData: e.target.checked })}
-                                                name="allTargetsAllData"
-                                                size="small"
-                                            />
-                                        }
-                                        label="All Targets All Data"
-                                    />
-                                </Box>
-                            </Box>
-
-                            <Box sx={{ display: "flex", gap: 2, marginTop: 3, justifyContent: "flex-end" }}>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleSave(false)}
-                                    size="small"
-                                >
-                                    Save
-                                </Button>
-
-                                <Button
-                                    variant="contained"
-                                    color="secondary"
-                                    onClick={() => handleSave(true)}
-                                    size="small"
-                                >
-                                    Save & Configure
-                                </Button>
-
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => setModalOpen(false)}
-                                    size="small"
-                                >
-                                    Cancel
-                                </Button>
-                            </Box>
-                        </>
-                    )}
-                </Box>
-            </Modal>
         </Box>
     );
 };

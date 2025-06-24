@@ -1,5 +1,20 @@
 ﻿/*
- * Debug WebSocket Service Manager with Console Output
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using System.Collections.Concurrent;
@@ -28,7 +43,8 @@ namespace JunctionRelayServer.Services
         // Container for WebSocket connection and metadata
         private class DeviceWebSocketConnection
         {
-            public WebSocket WebSocket { get; set; }
+            // ✅ FIX 1: Make WebSocket nullable to resolve CS8618
+            public WebSocket? WebSocket { get; set; }
             public string DeviceMac { get; set; } = string.Empty;
             public string DeviceName { get; set; } = string.Empty;
             public DateTime ConnectedAt { get; set; } = DateTime.UtcNow;
@@ -224,7 +240,7 @@ namespace JunctionRelayServer.Services
                 {
                     type = "welcome",
                     timestamp = DateTime.UtcNow,
-                    message = "Connected to Junction Relay",
+                    message = "Connected to JunctionRelay",
                     serverVersion = "1.0.0"
                 };
 
@@ -248,7 +264,8 @@ namespace JunctionRelayServer.Services
 
             try
             {
-                while (connection.WebSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+                // ✅ FIX: Add null check for WebSocket
+                while (connection.WebSocket?.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
                 {
                     try
                     {
@@ -402,6 +419,9 @@ namespace JunctionRelayServer.Services
                     if (data.TryGetProperty("flashSize", out var flashElement))
                         connection.FlashSize = flashElement.GetInt64();
 
+                    if (data.TryGetProperty("connectionMode", out var connModeElement))
+                        connection.ConnectionType = connModeElement.GetString() ?? "WiFi";
+
                     // Extract capabilities
                     if (data.TryGetProperty("capabilities", out var capabilitiesElement))
                     {
@@ -457,6 +477,20 @@ namespace JunctionRelayServer.Services
         {
             try
             {
+                // Extract connection type from health report if available
+                if (messageDoc.RootElement.TryGetProperty("data", out var data))
+                {
+                    if (data.TryGetProperty("connectionType", out var connTypeElement))
+                    {
+                        var connectionType = connTypeElement.GetString();
+                        if (!string.IsNullOrEmpty(connectionType))
+                        {
+                            connection.ConnectionType = connectionType;
+                            Console.WriteLine($"[WebSocket Service] Updated connection type for {connection.DeviceMac}: {connectionType}");
+                        }
+                    }
+                }
+
                 if (_connectionStats.TryGetValue(connection.DeviceMac, out var stats))
                 {
                     stats.LastHealthReport = DateTime.UtcNow;
@@ -498,6 +532,20 @@ namespace JunctionRelayServer.Services
         {
             try
             {
+                // Extract connection type from heartbeat if available
+                if (messageDoc.RootElement.TryGetProperty("data", out var data))
+                {
+                    if (data.TryGetProperty("connectionType", out var connTypeElement))
+                    {
+                        var connectionType = connTypeElement.GetString();
+                        if (!string.IsNullOrEmpty(connectionType))
+                        {
+                            connection.ConnectionType = connectionType;
+                            Console.WriteLine($"[WebSocket Service] Updated connection type for {connection.DeviceMac}: {connectionType}");
+                        }
+                    }
+                }
+
                 var response = new
                 {
                     type = "heartbeat-ack",
@@ -512,16 +560,18 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Process configuration acknowledgment
-        private async Task ProcessConfigAcknowledgmentAsync(DeviceWebSocketConnection connection, JsonDocument messageDoc)
+        // ✅ FIX 2: Remove async keyword to resolve CS1998 (line 516)
+        private Task ProcessConfigAcknowledgmentAsync(DeviceWebSocketConnection connection, JsonDocument messageDoc)
         {
             // No action needed for config acknowledgments
+            return Task.CompletedTask;
         }
 
-        // Process payload acknowledgment
-        private async Task ProcessPayloadAcknowledgmentAsync(DeviceWebSocketConnection connection, JsonDocument messageDoc)
+        // ✅ FIX 3: Remove async keyword to resolve CS1998 (line 522)
+        private Task ProcessPayloadAcknowledgmentAsync(DeviceWebSocketConnection connection, JsonDocument messageDoc)
         {
             // No action needed for payload acknowledgments
+            return Task.CompletedTask;
         }
 
         // Send message to specific device
@@ -535,9 +585,10 @@ namespace JunctionRelayServer.Services
                 return false;
             }
 
-            if (connection.WebSocket.State != WebSocketState.Open)
+            // ✅ FIX: Add null check for WebSocket
+            if (connection.WebSocket == null || connection.WebSocket.State != WebSocketState.Open)
             {
-                Console.WriteLine($"[WebSocket Service] WebSocket not open for {deviceMac}, state: {connection.WebSocket.State}");
+                Console.WriteLine($"[WebSocket Service] WebSocket not open for {deviceMac}, state: {connection.WebSocket?.State}");
                 return false;
             }
 
@@ -602,7 +653,8 @@ namespace JunctionRelayServer.Services
             {
                 connection.CancellationToken.Cancel();
 
-                if (connection.WebSocket.State == WebSocketState.Open)
+                // ✅ FIX: Add null check for WebSocket
+                if (connection.WebSocket?.State == WebSocketState.Open)
                 {
                     await connection.WebSocket.CloseAsync(
                         WebSocketCloseStatus.NormalClosure,
@@ -651,7 +703,7 @@ namespace JunctionRelayServer.Services
                 ConnectionType = conn.ConnectionType,
                 ConnectedAt = conn.ConnectedAt,
                 LastMessageAt = conn.LastMessageAt,
-                IsConnected = conn.WebSocket.State == WebSocketState.Open,
+                IsConnected = conn.WebSocket?.State == WebSocketState.Open,
                 IsRegistered = conn.IsRegistered,
                 FirmwareVersion = conn.FirmwareVersion,
                 DeviceModel = conn.DeviceModel,
@@ -664,14 +716,14 @@ namespace JunctionRelayServer.Services
             });
         }
 
-        // Check if device is connected
+        // ✅ FIX 4: Make synchronous to resolve CS1998
         public bool IsDeviceConnected(string deviceMac)
         {
             return _connections.TryGetValue(deviceMac, out var connection) &&
-                   connection.WebSocket.State == WebSocketState.Open;
+                   connection.WebSocket?.State == WebSocketState.Open;
         }
 
-        // Get device statistics
+        // ✅ FIX 5: Make synchronous to resolve CS1998
         public object? GetDeviceStatistics(string deviceMac)
         {
             if (!_connectionStats.TryGetValue(deviceMac, out var stats))
@@ -682,7 +734,7 @@ namespace JunctionRelayServer.Services
             return new
             {
                 DeviceMac = deviceMac,
-                IsConnected = connection?.WebSocket.State == WebSocketState.Open,
+                IsConnected = connection?.WebSocket?.State == WebSocketState.Open,
                 IsRegistered = connection?.IsRegistered ?? false,
                 ConnectedAt = connection?.ConnectedAt,
                 LastMessageAt = connection?.LastMessageAt,

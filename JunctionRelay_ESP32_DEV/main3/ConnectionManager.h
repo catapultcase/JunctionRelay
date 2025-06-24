@@ -61,6 +61,10 @@ public:
     void handleIncomingDataChunk(uint8_t* data, size_t len);
     void handleScreenId(const char* screenId, const StaticJsonDocument<8192>& doc);
 
+    // Network protocol loops
+    void mqttLoop();
+    void webSocketLoop();
+
     // ConnectionStatus API
     ConnectionStatus getConnectionStatus() const;
     void emitStatus();
@@ -83,7 +87,6 @@ public:
 
     // MQTT
     bool            isMqttConnected();
-    void            mqttLoop();
     void            reconnectMQTT();
     Manager_MQTT*   getMqttManager() { return mqttManager; }
 
@@ -146,6 +149,10 @@ public:
     String mqttUserName;
     String mqttPassword;
 
+    // Backend server configuration (moved from private to public)
+    String backendServerIP = "";
+    uint16_t backendServerPort = 7180;
+
     // Configuration state tracking (public so tasks can access)
     bool hasReceivedConfig = false;
     unsigned long lastConfigTimestamp = 0;
@@ -154,6 +161,11 @@ public:
     // Battery monitoring (public so accessible from stats)
     Adafruit_MAX17048 maxlipo;
     bool batteryInitialized = false;
+
+    // Helper classes (public for access from main.cpp if needed)
+    Helper_WebSocket* webSocketHelper = nullptr;
+    Helper_HTTP* httpHelper = nullptr;
+    Helper_Network* networkHelper = nullptr;
 
 private:
     
@@ -210,16 +222,9 @@ private:
     std::map<String, Manager_QuadDisplay*>    quadDisplays;
     std::map<String, Manager_Matrix*>         matrixDisplays;
     std::map<String, Manager_NeoPixels*>      neopixelDisplays;
-
-    // Helper class instances
-    Helper_WebSocket*                    webSocketHelper = nullptr;
-    Helper_HTTP*                         httpHelper = nullptr;
-    Helper_Network*                      networkHelper = nullptr;
     
     // Protocol state management
     PrimaryProtocol                      activePrimaryProtocol;
-    String                              backendServerIP = "";
-    uint16_t                            backendServerPort = 7180;
     
     // Network event handling
     void handleNetworkEvent(const String& networkType, bool connected);
