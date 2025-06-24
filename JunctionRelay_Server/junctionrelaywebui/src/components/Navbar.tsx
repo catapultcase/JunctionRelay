@@ -40,9 +40,6 @@ import LanguageIcon from "@mui/icons-material/Language";
 import LocalCafeIcon from "@mui/icons-material/LocalCafe";
 import StarIcon from "@mui/icons-material/Star";
 import GitHubIcon from "@mui/icons-material/GitHub";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import CloudIcon from "@mui/icons-material/Cloud";
 import PersonIcon from "@mui/icons-material/Person";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
@@ -103,7 +100,7 @@ const Navbar = () => {
                     if (proxyToken && storedCloudUser) {
                         setCloudUser(storedCloudUser);
                         setIsAuthenticated(true);
-                        
+
                         // Only make user-info call for authenticated cloud users
                         try {
                             const userInfoResponse = await fetch('/api/cloud-auth/user-info', {
@@ -111,10 +108,10 @@ const Navbar = () => {
                                     'Authorization': `Bearer ${proxyToken}`
                                 }
                             });
-                            
+
                             if (userInfoResponse.ok) {
                                 const userInfoData = await userInfoResponse.json();
-                                
+
                                 // Check hasValidLicense field like the Settings component does
                                 const hasValidLicense = userInfoData.hasValidLicense;
                                 setLicenseStatus(hasValidLicense ? 'Pro' : 'Cloud');
@@ -219,6 +216,11 @@ const Navbar = () => {
         { text: "Payloads", path: "/payloads" },
     ];
 
+    // Add Cloud Dashboard for cloud authenticated users
+    if (authMode === 'cloud' && isAuthenticated) {
+        navItems.splice(1, 0, { text: "Cloud", path: "https://dashboard.junctionrelay.com/" });
+    }
+
     if (flags?.host_charts) {
         navItems.push({ text: "Host Charts", path: "/hostcharts" });
     }
@@ -273,33 +275,69 @@ const Navbar = () => {
                     </MuiLink>
 
                     <Box sx={{ display: "flex", gap: 2 }}>
-                        {navItems.map(({ text, path }) => (
-                            <Button
-                                key={text}
-                                component={Link}
-                                to={path}
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    borderBottom:
-                                        location.pathname === path ? "2px solid #7b8ea0" : "2px solid transparent",
-                                    borderRadius: 0,
-                                    fontWeight: location.pathname === path ? 600 : 400,
-                                    textTransform: "none",
-                                    transition: "color 0.3s, border-bottom-color 0.3s",
-                                    "&:hover": {
-                                        color: "#7b8ea0",
-                                        borderBottom: "2px solid #7b8ea0"
-                                    },
-                                    "& a": {
-                                        color: "inherit !important",
-                                        textDecoration: "none !important"
-                                    }
-                                }}
-                            >
-                                {text}
-                            </Button>
-                        ))}
+                        {navItems.map(({ text, path }) => {
+                            // Handle external links for Cloud Dashboard
+                            const isExternal = path.startsWith('http');
+
+                            if (isExternal) {
+                                return (
+                                    <Button
+                                        key={text}
+                                        component={MuiLink}
+                                        href={path}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        data-navbar-link
+                                        sx={{
+                                            color: "#ffffff",
+                                            borderBottom: "2px solid transparent",
+                                            borderRadius: 0,
+                                            fontWeight: 400,
+                                            textTransform: "none",
+                                            transition: "color 0.3s, border-bottom-color 0.3s",
+                                            "&:hover": {
+                                                color: "#7b8ea0",
+                                                borderBottom: "2px solid #7b8ea0"
+                                            },
+                                            "& a": {
+                                                color: "inherit !important",
+                                                textDecoration: "none !important"
+                                            }
+                                        }}
+                                    >
+                                        {text}
+                                    </Button>
+                                );
+                            }
+
+                            return (
+                                <Button
+                                    key={text}
+                                    component={Link}
+                                    to={path}
+                                    data-navbar-link
+                                    sx={{
+                                        color: "#ffffff",
+                                        borderBottom:
+                                            location.pathname === path ? "2px solid #7b8ea0" : "2px solid transparent",
+                                        borderRadius: 0,
+                                        fontWeight: location.pathname === path ? 600 : 400,
+                                        textTransform: "none",
+                                        transition: "color 0.3s, border-bottom-color 0.3s",
+                                        "&:hover": {
+                                            color: "#7b8ea0",
+                                            borderBottom: "2px solid #7b8ea0"
+                                        },
+                                        "& a": {
+                                            color: "inherit !important",
+                                            textDecoration: "none !important"
+                                        }
+                                    }}
+                                >
+                                    {text}
+                                </Button>
+                            );
+                        })}
                     </Box>
                 </Box>
 
@@ -387,26 +425,34 @@ const Navbar = () => {
                         </Tooltip>
                     )}
 
-                    {/* Show version info only for cloud users, or GitHub link for others */}
-                    {authMode === 'cloud' && isAuthenticated ? (
-                        <Tooltip title="GitHub Repository">
-                            <IconButton
-                                component={MuiLink}
-                                href="https://github.com/catapultcase/JunctionRelay"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    padding: "4px",
-                                    minWidth: "auto"
-                                }}
-                            >
-                                {isOutdated ? (
-                                    <WarningAmberIcon sx={{ color: "#ff9800" }} fontSize="small" />
-                                ) : (
-                                    <GitHubIcon sx={{ color: "#4caf50" }} fontSize="small" />
-                                )}
+                    {/* GitHub link - always grey color */}
+                    <Tooltip title="GitHub Repository">
+                        <IconButton
+                            component={MuiLink}
+                            href="https://github.com/catapultcase/JunctionRelay"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            data-navbar-link
+                            sx={{
+                                color: "#ffffff",
+                                padding: "4px",
+                                minWidth: "auto"
+                            }}
+                        >
+                            <GitHubIcon sx={{ color: "#9e9e9e" }} fontSize="small" />
+                            {!collapsed && (authMode !== 'cloud' || !isAuthenticated) && (
+                                <Box
+                                    component="span"
+                                    sx={{
+                                        ml: 0.5,
+                                        fontSize: "0.875rem"
+                                    }}
+                                >
+                                    GitHub
+                                </Box>
+                            )}
+                            {/* Show version for cloud users */}
+                            {authMode === 'cloud' && isAuthenticated && (
                                 <Box
                                     component="span"
                                     sx={{
@@ -416,37 +462,9 @@ const Navbar = () => {
                                 >
                                     v{version}
                                 </Box>
-                            </IconButton>
-                        </Tooltip>
-                    ) : (
-                        <Tooltip title="GitHub Repository">
-                            <IconButton
-                                component={MuiLink}
-                                href="https://github.com/catapultcase/JunctionRelay"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    padding: "4px",
-                                    minWidth: "auto"
-                                }}
-                            >
-                                <GitHubIcon sx={{ color: "#ffffff" }} fontSize="small" />
-                                {!collapsed && (
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            ml: 0.5,
-                                            fontSize: "0.875rem"
-                                        }}
-                                    >
-                                        GitHub
-                                    </Box>
-                                )}
-                            </IconButton>
-                        </Tooltip>
-                    )}
+                            )}
+                        </IconButton>
+                    </Tooltip>
 
                     <Tooltip title="catapultcase.com">
                         <IconButton
