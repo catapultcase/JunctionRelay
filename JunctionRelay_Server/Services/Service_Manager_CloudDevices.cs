@@ -38,6 +38,54 @@ namespace JunctionRelayServer.Services
             _httpClient = httpClientFactory.CreateClient();
         }
 
+        public async Task<RegistrationTokenResponse> GenerateRegistrationTokenAsync(string cloudToken)
+        {
+            try
+            {
+                var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
+                if (string.IsNullOrEmpty(cloudApiUrl))
+                {
+                    throw new InvalidOperationException("Cloud API URL not configured.");
+                }
+
+                var tokenUrl = $"{cloudApiUrl}/cloud/devices/generate-registration-token";
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
+                request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        throw new UnauthorizedAccessException("Cloud authentication token is invalid or expired.");
+                    }
+
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to generate registration token. Status: {response.StatusCode}, Content: {errorContent}");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var tokenResponse = JsonSerializer.Deserialize<RegistrationTokenResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (tokenResponse == null)
+                {
+                    throw new InvalidOperationException("Invalid response from cloud API during token generation.");
+                }
+
+                return tokenResponse;
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+
         public async Task<int> SyncCloudDevicesAsync(string cloudToken)
         {
             try
@@ -375,6 +423,114 @@ namespace JunctionRelayServer.Services
                 var success = await _deviceDb.DeleteDeviceAsync(deviceToRemove.Id);
             }
         }
+
+        public async Task<IEnumerable<PendingCloudDeviceResponse>> GetPendingCloudDevicesAsync(string cloudToken)
+        {
+            try
+            {
+                var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
+                if (string.IsNullOrEmpty(cloudApiUrl))
+                {
+                    throw new InvalidOperationException("Cloud API URL not configured.");
+                }
+
+                var pendingUrl = $"{cloudApiUrl}/cloud/devices/pending";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, pendingUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
+
+                var response = await _httpClient.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        throw new UnauthorizedAccessException("Cloud authentication token is invalid or expired.");
+                    }
+
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to fetch pending devices. Status: {response.StatusCode}, Content: {errorContent}");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var cloudResponse = JsonSerializer.Deserialize<PendingCloudDevicesApiResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return cloudResponse?.Devices ?? new List<PendingCloudDeviceResponse>();
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+
+        public async Task<bool> ConfirmCloudDeviceAsync(string cloudToken, string deviceId, bool accept)
+        {
+            try
+            {
+                var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
+                if (string.IsNullOrEmpty(cloudApiUrl))
+                {
+                    throw new InvalidOperationException("Cloud API URL not configured.");
+                }
+
+                var confirmUrl = $"{cloudApiUrl}/cloud/devices/{deviceId}/confirm";
+
+                var confirmRequest = new { accept = accept };
+                var jsonContent = JsonSerializer.Serialize(confirmRequest);
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, confirmUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
+                request.Content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return false;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        throw new UnauthorizedAccessException("Cloud authentication token is invalid or expired.");
+                    }
+
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to confirm device. Status: {response.StatusCode}, Content: {errorContent}");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+    }
+
+    public class PendingCloudDeviceResponse
+    {
+        public string DeviceId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+    }
+
+    public class PendingCloudDevicesApiResponse
+    {
+        public bool Success { get; set; }
+        public List<PendingCloudDeviceResponse> Devices { get; set; } = new();
+    }
+
+    public class RegistrationTokenResponse
+    {
+        public bool Success { get; set; }
+        public string RegistrationToken { get; set; } = string.Empty;
+        public int ExpiresIn { get; set; }
+        public string QrCodeData { get; set; } = string.Empty;
     }
 
     public class CloudDevicesApiResponse
