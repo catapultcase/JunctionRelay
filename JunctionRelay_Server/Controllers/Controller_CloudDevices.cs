@@ -39,6 +39,138 @@ namespace JunctionRelayServer.Controllers
             _deviceDb = deviceDb;
         }
 
+        // GET: api/cloud-auth/devices/pending
+        [HttpGet("devices/pending")]
+        public async Task<IActionResult> GetPendingCloudDevices()
+        {
+            try
+            {
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Cloud authentication required" });
+                }
+
+                var cloudToken = authHeader.Substring("Bearer ".Length);
+
+                // Get pending devices from cloud service
+                var pendingDevices = await _cloudDeviceService.GetPendingCloudDevicesAsync(cloudToken);
+
+                return Ok(new
+                {
+                    success = true,
+                    devices = pendingDevices,
+                    count = pendingDevices?.Count() ?? 0
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "Invalid cloud authentication token" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to retrieve pending cloud devices",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // POST: api/cloud-auth/devices/{deviceId}/confirm
+        [HttpPost("devices/{deviceId}/confirm")]
+        public async Task<IActionResult> ConfirmCloudDevice(string deviceId, [FromBody] ConfirmDeviceRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(deviceId))
+                {
+                    return BadRequest(new { message = "Device ID is required" });
+                }
+
+                if (request == null)
+                {
+                    return BadRequest(new { message = "Request body is required" });
+                }
+
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Cloud authentication required" });
+                }
+
+                var cloudToken = authHeader.Substring("Bearer ".Length);
+
+                // Confirm device with cloud service
+                var success = await _cloudDeviceService.ConfirmCloudDeviceAsync(cloudToken, deviceId, request.Accept);
+
+                if (success)
+                {
+                    var action = request.Accept ? "approved" : "rejected";
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Device {action} successfully"
+                    });
+                }
+                else
+                {
+                    return NotFound(new { message = $"Device '{deviceId}' not found" });
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "Invalid cloud authentication token" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to confirm cloud device",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // POST: api/cloud-auth/generate-registration-token
+        [HttpPost("generate-registration-token")]
+        public async Task<IActionResult> GenerateRegistrationToken()
+        {
+            try
+            {
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Cloud authentication required" });
+                }
+
+                var cloudToken = authHeader.Substring("Bearer ".Length);
+
+                // Generate registration token via cloud service
+                var tokenResponse = await _cloudDeviceService.GenerateRegistrationTokenAsync(cloudToken);
+
+                return Ok(tokenResponse);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "Invalid cloud authentication token" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to generate registration token",
+                    error = ex.Message
+                });
+            }
+        }
+
         // POST: api/cloud-auth/devices/refresh
         [HttpPost("devices/refresh")]
         public async Task<IActionResult> RefreshCloudDevices()
@@ -254,5 +386,11 @@ namespace JunctionRelayServer.Controllers
                 });
             }
         }
+    }
+
+    // Request model for device confirmation
+    public class ConfirmDeviceRequest
+    {
+        public bool Accept { get; set; }
     }
 }

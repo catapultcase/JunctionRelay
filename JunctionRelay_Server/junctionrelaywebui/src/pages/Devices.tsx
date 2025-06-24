@@ -36,12 +36,7 @@ import {
     Snackbar,
     TextField,
     Divider,
-    Alert,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem
-} from "@mui/material";
+    Alert} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 // Icon imports
 import AddIcon from '@mui/icons-material/Add';
@@ -55,6 +50,8 @@ import ComputerIcon from '@mui/icons-material/Computer';
 
 // Import our components
 import DevicesTable from '../components/Devices_DevicesTable';
+import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
+import PendingDevicesSection from '../components/PendingDevicesSection';
 import { useFeatureFlags } from '../hooks/useFeatureFlags';
 import { STORAGE_KEY_REFRESH_INTERVAL, getDeviceStatusInfo } from '../components/Devices_Helpers';
 
@@ -94,6 +91,8 @@ const Devices: React.FC = () => {
     const navigate = useNavigate();
     const flags = useFeatureFlags();
 
+    // Check if we're in unified mode
+    const isUnifiedMode = String(flags?.combine_cloud_devices).toLowerCase() === 'true';
 
     // Save refresh interval to localStorage when it changes
     useEffect(() => {
@@ -391,7 +390,7 @@ const Devices: React.FC = () => {
         return !!resyncingDevices[`${macAddress}-${ipAddress}`];
     };
 
-    // Handle refresh cloud devices
+    // Handle refresh cloud devices using the existing proxy controller
     const handleRefreshCloudDevices = async () => {
         setRefreshingCloudDevices(true);
         try {
@@ -399,8 +398,6 @@ const Devices: React.FC = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                    // You'll need to pass the cloud auth token here
-                    // "Authorization": `Bearer ${cloudToken}`
                 }
             });
 
@@ -756,6 +753,13 @@ const Devices: React.FC = () => {
                 </Paper>
             )}
 
+            {/* Pending Cloud Devices Section */}
+            <PendingDevicesSection
+                onDeviceConfirmed={() => fetchDevices(false)}
+                onError={(message) => showSnackbar(message, "error")}
+                onSuccess={(message) => showSnackbar(message, "success")}
+            />
+
             {/* Device Management Section - Above the table */}
             <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
                 <Typography variant="h6">Device Management</Typography>
@@ -780,30 +784,54 @@ const Devices: React.FC = () => {
                     Check for Firmware Updates
                 </Button>
 
-                <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => setAddCloudDeviceModalOpen(true)}
-                    startIcon={<CloudIcon />}
-                    size="small"
-                >
-                    Add Cloud Device
-                </Button>
+                {/* Cloud Device Buttons - Only show in unified mode */}
+                {isUnifiedMode && (
+                    <>
+                        <Button
+                            variant="contained"
+                            onClick={() => setAddCloudDeviceModalOpen(true)}
+                            startIcon={<CloudIcon />}
+                            size="small"
+                            sx={{
+                                backgroundColor: '#1976d2',
+                                color: 'white',
+                                '&:hover': {
+                                    backgroundColor: '#1565c0',
+                                },
+                                '&:focus': {
+                                    backgroundColor: '#1565c0',
+                                }
+                            }}
+                        >
+                            Add Cloud Device
+                        </Button>
 
-                <Button
-                    variant="outlined"
-                    color="primary"
-                    onClick={handleRefreshCloudDevices}
-                    disabled={refreshingCloudDevices}
-                    startIcon={refreshingCloudDevices ? <CircularProgress size={16} /> : <RefreshIcon />}
-                    size="small"
-                >
-                    {refreshingCloudDevices ? "Refreshing..." : "Refresh Cloud Devices"}
-                </Button>
+                        <Button
+                            variant="outlined"
+                            onClick={handleRefreshCloudDevices}
+                            disabled={refreshingCloudDevices}
+                            startIcon={refreshingCloudDevices ? <CircularProgress size={16} /> : <RefreshIcon />}
+                            size="small"
+                            sx={{
+                                borderColor: '#1976d2',
+                                color: '#1976d2',
+                                '&:hover': {
+                                    borderColor: '#1565c0',
+                                    backgroundColor: 'rgba(25, 118, 210, 0.04)',
+                                },
+                                '&:focus': {
+                                    borderColor: '#1565c0',
+                                }
+                            }}
+                        >
+                            {refreshingCloudDevices ? "Refreshing..." : "Refresh Cloud Devices"}
+                        </Button>
+                    </>
+                )}
             </Box>
 
             {/* Conditional Device Tables based on feature flag */}
-            {String(flags?.combine_cloud_devices).toLowerCase() === 'true' ? (
+            {isUnifiedMode ? (
                 // Single unified table when flag is true
                 <DevicesTable
                     devices={allDevices}
@@ -838,6 +866,49 @@ const Devices: React.FC = () => {
                         onRefreshIntervalChange={setRefreshInterval}
                         refreshIntervalOptions={REFRESH_INTERVAL_OPTIONS}
                     />
+
+                    {/* Cloud Device Management Buttons - Above Cloud table in non-unified mode */}
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                        <Button
+                            variant="contained"
+                            onClick={() => setAddCloudDeviceModalOpen(true)}
+                            startIcon={<CloudIcon />}
+                            size="small"
+                            sx={{
+                                backgroundColor: '#1976d2',
+                                color: 'white',
+                                '&:hover': {
+                                    backgroundColor: '#1565c0',
+                                },
+                                '&:focus': {
+                                    backgroundColor: '#1565c0',
+                                }
+                            }}
+                        >
+                            Add Cloud Device
+                        </Button>
+
+                        <Button
+                            variant="outlined"
+                            onClick={handleRefreshCloudDevices}
+                            disabled={refreshingCloudDevices}
+                            startIcon={refreshingCloudDevices ? <CircularProgress size={16} /> : <RefreshIcon />}
+                            size="small"
+                            sx={{
+                                borderColor: '#1976d2',
+                                color: '#1976d2',
+                                '&:hover': {
+                                    borderColor: '#1565c0',
+                                    backgroundColor: 'rgba(25, 118, 210, 0.04)',
+                                },
+                                '&:focus': {
+                                    borderColor: '#1565c0',
+                                }
+                            }}
+                        >
+                            {refreshingCloudDevices ? "Refreshing..." : "Refresh Cloud Devices"}
+                        </Button>
+                    </Box>
 
                     <DevicesTable
                         devices={allDevices.filter(device => device.type === "Cloud Device")}
@@ -885,7 +956,7 @@ const Devices: React.FC = () => {
                 onDeviceAdded={fetchDevices}
             />
 
-            <AddCloudDeviceModal
+            <DeviceRegistrationModal
                 open={addCloudDeviceModalOpen}
                 onClose={() => setAddCloudDeviceModalOpen(false)}
                 onDeviceAdded={fetchDevices}
@@ -1221,148 +1292,6 @@ const AddCustomDeviceModal: React.FC<{
                         size="small"
                     >
                         {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
-                    </Button>
-                    <Button
-                        variant="outlined"
-                        onClick={onClose}
-                        size="small"
-                        disabled={loading}
-                    >
-                        Cancel
-                    </Button>
-                </Box>
-            </Box>
-        </Modal>
-    );
-};
-
-// Add Cloud Device Modal Component
-const AddCloudDeviceModal: React.FC<{
-    open: boolean;
-    onClose: () => void;
-    onDeviceAdded: () => void;
-}> = ({ open, onClose, onDeviceAdded }) => {
-    const [formData, setFormData] = useState({
-        deviceName: "",
-        deviceId: ""
-    });
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = async () => {
-        const { deviceName, deviceId } = formData;
-        if (!deviceName || !deviceId) {
-            setError("All fields are required.");
-            return;
-        }
-
-        try {
-            setLoading(true);
-
-            // This would call your cloud device registration API
-            const response = await fetch("/api/cloud-auth/devices/register", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    // You'll need to pass the cloud auth token here
-                    // "Authorization": `Bearer ${cloudToken}`
-                },
-                body: JSON.stringify({
-                    deviceId,
-                    deviceName
-                }),
-            });
-
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || "Failed to register cloud device");
-
-            onDeviceAdded();
-            onClose();
-
-            // Reset form
-            setFormData({ deviceName: "", deviceId: "" });
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Modal open={open} onClose={onClose}>
-            <Box
-                sx={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    width: '80%',
-                    maxWidth: 500,
-                    bgcolor: "background.paper",
-                    p: 4,
-                    boxShadow: 24,
-                    borderRadius: 2
-                }}
-            >
-                <Typography variant="h6" gutterBottom>
-                    Add Cloud Device
-                </Typography>
-
-                {error && (
-                    <Alert
-                        severity="error"
-                        sx={{
-                            mb: 2,
-                            '& .MuiAlert-message': {
-                                fontWeight: 'medium'
-                            }
-                        }}
-                    >
-                        {error}
-                    </Alert>
-                )}
-
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                    Register a new device to your JunctionRelay Cloud account.
-                </Typography>
-
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <TextField
-                        fullWidth
-                        label="Device Name"
-                        name="deviceName"
-                        value={formData.deviceName}
-                        onChange={handleChange}
-                        size="small"
-                        required
-                        helperText="A friendly name for your device"
-                    />
-                    <TextField
-                        fullWidth
-                        label="Device ID"
-                        name="deviceId"
-                        value={formData.deviceId}
-                        onChange={handleChange}
-                        size="small"
-                        required
-                        helperText="Unique identifier for your device (e.g., serial number)"
-                    />
-                </Box>
-
-                <Box sx={{ display: "flex", gap: 2, mt: 3 }}>
-                    <Button
-                        variant="contained"
-                        onClick={handleSubmit}
-                        disabled={loading}
-                        startIcon={<CloudIcon />}
-                        size="small"
-                    >
-                        {loading ? "Registering..." : "Register Device"}
                     </Button>
                     <Button
                         variant="outlined"
