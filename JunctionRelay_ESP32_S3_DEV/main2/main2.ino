@@ -203,6 +203,11 @@ void loop() {
     lastSerial = millis();
   }
 
+  // WebSocket polling - ArduinoWebsockets can handle frequent polling
+  connManager.webSocketLoop();
+
+  // NO mqttLoop() needed - MQTT runs in background task
+
   // Update NeoPixels (CM5 effect and other animations)
   #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     Manager_NeoPixels* neoManager = Manager_NeoPixels::getInstance();

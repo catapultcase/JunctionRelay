@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 import React from 'react';
@@ -28,14 +28,6 @@ export interface DeviceColumn {
     sortable?: boolean; // Whether this column can be sorted
 }
 
-// Interface for hierarchical device structure
-export interface HierarchicalDevice {
-    device: any;
-    children: any[];
-    isChild: boolean;
-    level: number;
-}
-
 // Storage keys
 export const STORAGE_KEY_DEVICES_COLUMNS = "devices_visible_columns";
 export const STORAGE_KEY_DEVICES_SORT = "devices_sort_state";
@@ -44,9 +36,11 @@ export const STORAGE_KEY_REFRESH_INTERVAL = "devices_refresh_interval";
 // Type for sort direction
 export type SortDirection = 'asc' | 'desc';
 
-// Define column definitions for regular devices
+// Define column definitions for devices
 export const defaultDeviceColumns: DeviceColumn[] = [
+    { field: "actions", label: "Actions", align: "left", sortable: false },
     { field: "name", label: "Device Name", align: "left", sortable: true },
+    { field: "type", label: "Type", align: "left", sortable: true },
     { field: "model", label: "Model", align: "left", sortable: true },
     { field: "ipAddress", label: "IP Address", align: "left", sortable: true },
     { field: "uniqueIdentifier", label: "MAC / Unique ID", align: "left", sortable: true },
@@ -59,25 +53,6 @@ export const defaultDeviceColumns: DeviceColumn[] = [
     { field: "lastPinged", label: "Last Successful Heartbeat", align: "left", sortable: true },
     { field: "pingLatency", label: "Heartbeat Time (ms)", align: "right", sortable: true },
     { field: "consecutiveFailures", label: "Heartbeat Failures", align: "right", sortable: true },
-    { field: "actions", label: "Actions", align: "right", sortable: false },
-];
-
-// Gateway-specific column definitions
-export const gatewayDeviceColumns: DeviceColumn[] = [
-    { field: "name", label: "Device Name", align: "left", sortable: true },
-    { field: "model", label: "Model", align: "left", sortable: true },
-    { field: "ipAddress", label: "IP Address", align: "left", sortable: true },
-    { field: "uniqueIdentifier", label: "MAC / Unique ID", align: "left", sortable: true },
-    { field: "status", label: "Status", align: "left", sortable: true },
-    { field: "connMode", label: "Active Connections", align: "left", sortable: true },
-    { field: "firmware", label: "Firmware", align: "left", sortable: true },
-    { field: "custom", label: "Custom Firmware", align: "left", sortable: true },
-    { field: "heartbeatStatus", label: "Heartbeat", align: "left", sortable: true },
-    { field: "heartbeatProtocol", label: "Heartbeat Protocol", align: "left", sortable: true },
-    { field: "lastPinged", label: "Last Successful Heartbeat", align: "left", sortable: true },
-    { field: "pingLatency", label: "Heartbeat Time (ms)", align: "right", sortable: true },
-    { field: "consecutiveFailures", label: "Heartbeat Failures", align: "right", sortable: true },
-    { field: "actions", label: "Actions", align: "right", sortable: false },
 ];
 
 // Helper function to get heartbeat status info
@@ -258,6 +233,40 @@ export const getDeviceStatusInfo = (
     // If no match found, return the original status with default styling
     const displayLabel = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     return { label: displayLabel, color: "default" };
+};
+
+// Helper function to get device type info
+export const getDeviceTypeInfo = (device: any): { label: string; color: "primary" | "secondary" | "default" | "info"; icon: React.ReactNode } => {
+    // Check for Cloud Device type first (before other checks)
+    if (device.type === "Cloud Device") {
+        return {
+            label: "Cloud Device",
+            color: "info",
+            icon: null // Will be added in the component
+        };
+    }
+
+    if (device.isGateway) {
+        return {
+            label: "Gateway",
+            color: "primary",
+            icon: null // Will be added in the component
+        };
+    }
+
+    if (device.gatewayId && !device.isGateway) {
+        return {
+            label: "Child",
+            color: "secondary",
+            icon: null // Will be added in the component
+        };
+    }
+
+    return {
+        label: "Standalone",
+        color: "default",
+        icon: null // Will be added in the component
+    };
 };
 
 // Enhanced ConnMode display helper

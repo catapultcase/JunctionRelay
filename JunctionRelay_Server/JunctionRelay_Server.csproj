@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>a19cb7a2-588a-4eda-9675-028393e94ec7</UserSecretsId>
-    <Version>0.8.0.5</Version>
+    <Version>0.8.0.7</Version>
   </PropertyGroup>
 
   <!-- Exclude frontend source files from .NET compilation -->

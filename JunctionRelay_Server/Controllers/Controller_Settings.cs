@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
@@ -257,40 +257,85 @@ public class Controller_Settings : ControllerBase
         }
     }
 
+    // Update the GetFeatureFlags method in your Controller_Settings class:
+
     [HttpGet("flags")]
     public async Task<IActionResult> GetFeatureFlags()
     {
         var settings = await _db.QueryAsync<Model_Setting>("SELECT * FROM Settings");
-        var flags = settings.ToDictionary(
-            s => s.Key,
-            s => string.Equals(s.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase)
-        );
+
+        var flags = new Dictionary<string, object>();
+
+        foreach (var setting in settings)
+        {
+            // Handle boolean flags
+            if (setting.Key == "host_charts" ||
+                setting.Key == "custom_firmware_flashing" ||
+                setting.Key == "hyperlink_rows" ||
+                setting.Key == "junction_import_export")
+            {
+                flags[setting.Key] = string.Equals(setting.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+            }
+            // Handle alignment settings as strings (normalize case)
+            else if (setting.Key == "device_actions_alignment" ||
+                     setting.Key == "junction_actions_alignment")
+            {
+                // Normalize alignment values to lowercase for consistency
+                var alignmentValue = setting.Value?.Trim()?.ToLowerInvariant();
+
+                // Validate alignment values and provide sensible defaults
+                if (alignmentValue == "left" || alignmentValue == "center" || alignmentValue == "right")
+                {
+                    flags[setting.Key] = alignmentValue;
+                }
+                else
+                {
+                    // Default to 'right' for invalid values
+                    flags[setting.Key] = "right";
+                    _logger.LogWarning($"Invalid alignment value '{setting.Value}' for {setting.Key}, defaulting to 'right'");
+                }
+            }
+            // Handle other settings as strings
+            else
+            {
+                flags[setting.Key] = setting.Value?.Trim() ?? "";
+            }
+        }
+
+        // Ensure alignment flags exist with defaults if not in database
+        if (!flags.ContainsKey("device_actions_alignment"))
+        {
+            flags["device_actions_alignment"] = "right";
+        }
+
+        if (!flags.ContainsKey("junction_actions_alignment"))
+        {
+            flags["junction_actions_alignment"] = "right";
+        }
+
         return Ok(flags);
     }
 
-    // Toggle a boolean setting by its key, creating it if missing
     [HttpPost("toggle/{key}")]
     public async Task<IActionResult> ToggleByKey(
-    string key,
-    [FromBody] Model_AuthToggleRequest req)
+        string key,
+        [FromBody] Model_AuthToggleRequest req)
     {
         var newValue = req.Enabled.ToString().ToLower();
 
-        // 1) Try update
         var updateSql = @"
-    UPDATE Settings
-       SET Value = @Value
-     WHERE [Key] = @Key;
-";
+        UPDATE Settings
+           SET Value = @Value
+         WHERE [Key] = @Key;
+    ";
         var rows = await _db.ExecuteAsync(updateSql, new { Key = key, Value = newValue });
 
-        // 2) If no row existed, insert it
         if (rows == 0)
         {
             var insertSql = @"
-        INSERT INTO Settings ([Key], Value, Description)
-        VALUES (@Key, @Value, @Description);
-    ";
+            INSERT INTO Settings ([Key], Value, Description)
+            VALUES (@Key, @Value, @Description);
+        ";
             await _db.ExecuteAsync(insertSql, new
             {
                 Key = key,
@@ -299,10 +344,8 @@ public class Controller_Settings : ControllerBase
             });
         }
 
-        // 3) Clear the auth cache if this was the authentication setting
         if (key == "authentication_enabled")
         {
-            // You'll need to inject IService_Auth into this controller
             var authService = HttpContext.RequestServices.GetRequiredService<IService_Auth>();
             authService.ClearAuthCache();
         }
@@ -315,8 +358,8 @@ public class Controller_Settings : ControllerBase
     }
 }
 
-// Data models for Docker Hub API
-public class DockerHubResponse
+    // Data models for Docker Hub API
+    public class DockerHubResponse
 {
     [JsonPropertyName("results")]
     public List<DockerHubTag> Results { get; set; } = new();

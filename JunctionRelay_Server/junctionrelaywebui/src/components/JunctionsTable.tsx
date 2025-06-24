@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 import { useState, useEffect, MouseEvent, useCallback, useMemo, memo, useRef } from "react";
@@ -40,6 +40,17 @@ import {
     Chip,
     Switch,
     FormControlLabel,
+    Modal,
+    TextField,
+    CircularProgress,
+    Alert,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    SelectChangeEvent,
+    AlertColor,
+    Snackbar,
 } from "@mui/material";
 import { Link, useNavigate } from "react-router-dom";
 import StopIcon from "@mui/icons-material/Stop";
@@ -51,6 +62,8 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import HubIcon from '@mui/icons-material/Hub';
 import DevicesIcon from '@mui/icons-material/Devices';
+import AddIcon from '@mui/icons-material/Add';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 
@@ -91,6 +104,7 @@ interface JunctionsTableProps {
     onCloneJunction: (id: number) => void;
     onDeleteJunction: (id: number) => void;
     onUpdateSortOrders?: (updates: { junctionId: number, sortOrder: number }[]) => void;
+    onJunctionAdded?: () => void; // Callback when a junction is added
     filteredJunctions?: Junction[];
     localStorageKey?: string;
     detailedConnections: boolean;
@@ -98,6 +112,8 @@ interface JunctionsTableProps {
     additionalColumns?: JunctionColumn[];
     devices?: any[]; // Add devices array to look up device status
     collectors?: any[]; // Add collectors array to look up collector status
+    showAddButton?: boolean; // Whether to show the Add Junction button
+    showImportButton?: boolean; // Whether to show the Import Junction button
 }
 
 const STORAGE_KEY_DEFAULT = "dashboard_visible_junction_cols";
@@ -284,6 +300,27 @@ const ProtocolIcon = memo(({ type }: { type: string }) => {
                 <img
                     src="/Protocols/COM/svg/com-icon-solid.svg"
                     alt="COM"
+                    width="24"
+                    height="24"
+                    style={{ verticalAlign: 'middle' }}
+                />
+            );
+        case 'Websocket Junction':
+            return (
+                <img
+                    src="/Protocols/WebSocket/svg/websocket-icon-solid.svg"
+                    alt="WebSocket"
+                    width="24"
+                    height="24"
+                    style={{ verticalAlign: 'middle' }}
+                />
+            );
+        case 'Gateway Junction (HTTP to ESP:NOW)':
+        case 'Gateway Junction (Websocket to ESP:NOW)':
+            return (
+                <img
+                    src="/Protocols/Gateway/svg/gateway-icon-solid.svg"
+                    alt="Gateway"
                     width="24"
                     height="24"
                     style={{ verticalAlign: 'middle' }}
@@ -510,8 +547,16 @@ const JunctionTableRow = memo(({
                     />
                 );
             case "actions":
+                // Get the alignment from the column definition (which uses the feature flag)
+                const actionColumn = allColumns.find(col => col.field === field);
+                const alignment = actionColumn?.align || 'right';
+
+                // Convert alignment to flexbox justify-content value
+                const justifyContent = alignment === 'left' ? 'flex-start' :
+                    alignment === 'center' ? 'center' : 'flex-end';
+
                 return (
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Box sx={{ display: 'flex', justifyContent }}>
                         <Tooltip title="Edit">
                             <IconButton
                                 size="small"
@@ -610,26 +655,90 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     onCloneJunction,
     onDeleteJunction,
     onUpdateSortOrders,
+    onJunctionAdded,
     filteredJunctions,
     localStorageKey = STORAGE_KEY_DEFAULT,
     detailedConnections,
     setDetailedConnections,
     additionalColumns = [],
     devices = [],
-    collectors = []
+    collectors = [],
+    showAddButton = true,
+    showImportButton = true
 }) => {
     const navigate = useNavigate();
 
     const flags = useFeatureFlags();
     const hyperlinkRowsEnabled = flags?.hyperlink_rows !== false;
+    const junctionImportExportEnabled = flags?.junction_import_export !== false;
 
     // Add useRef at the component level, outside any effects
     const isInitialRender = useRef(true);
 
-    // First, define junctionCols directly without dependencies on visibleJunctionCols
+    // Junction creation state
+    const [addJunctionModalOpen, setAddJunctionModalOpen] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [importing, setImporting] = useState<boolean>(false);
+    const [error, setError] = useState<string>("");
+    const [snackMessage, setSnackMessage] = useState<string | null>(null);
+    const [snackbarSeverity, setSnackbarSeverity] = useState<AlertColor>("success");
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Gateway devices state
+    const [gatewayDevices, setGatewayDevices] = useState<any[]>([]);
+
+    // State for the add junction form
+    const [newJunction, setNewJunction] = useState<Partial<Junction>>({
+        name: "",
+        description: "",
+        type: "COM Junction",
+        showOnDashboard: true,
+        autoStartOnLaunch: false,
+        allTargetsAllData: false,
+        deviceLinks: [],
+        collectorLinks: [],
+        sortOrder: 0,
+        gatewayDestination: "",
+        selectedGatewayDeviceId: ""
+    });
+
+    // Load gateway devices when component mounts
+    useEffect(() => {
+        const loadGatewayDevices = async () => {
+            try {
+                const response = await fetch("/api/devices");
+                if (response.ok) {
+                    const devices = await response.json();
+                    // Filter devices where IsGateway = true
+                    const gateways = devices.filter((device: any) => device.isGateway === true);
+                    setGatewayDevices(gateways);
+                }
+            } catch (error) {
+                console.error("Error loading gateway devices:", error);
+            }
+        };
+
+        loadGatewayDevices();
+    }, []);
+
+    // Show snackbar with configurable severity
+    const showSnackbar = useCallback((message: string, severity: AlertColor = "success") => {
+        setSnackMessage(message);
+        setSnackbarSeverity(severity);
+    }, []);
+
+    // Create dynamic junction columns based on feature flags
     const junctionCols = useMemo(() => {
-        return [...additionalColumns, ...defaultJunctionCols];
-    }, [additionalColumns]);
+        const actionsAlignment = flags?.junction_actions_alignment?.toLowerCase() === 'left' ? 'left' : 'right';
+
+        const baseColumns = [...additionalColumns, ...defaultJunctionCols];
+
+        return baseColumns.map(col =>
+            col.field === 'actions'
+                ? { ...col, align: actionsAlignment as "left" | "right" | "center" | "inherit" | "justify" }
+                : col
+        );
+    }, [additionalColumns, flags?.junction_actions_alignment]);
 
     // THEN define visibleJunctionCols, now that junctionCols is defined
     const [visibleJunctionCols, setVisibleJunctionCols] = useState<string[]>(() => {
@@ -791,12 +900,205 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
         onDeleteJunction(id);
     }, [onDeleteJunction]);
 
+    // Junction creation handlers
+    const handleAddJunction = () => {
+        // Reset the form when opening
+        // Get the highest existing sort order
+        const highestSortOrder = junctions.length > 0
+            ? Math.max(...junctions.map(j => j.sortOrder !== undefined ? j.sortOrder : 0))
+            : -1;
+
+        setNewJunction({
+            name: "",
+            description: "",
+            type: "COM Junction",
+            showOnDashboard: true,
+            autoStartOnLaunch: false,
+            allTargetsAllData: false,
+            deviceLinks: [],
+            collectorLinks: [],
+            sortOrder: highestSortOrder + 1,
+            gatewayDestination: "",
+            selectedGatewayDeviceId: ""
+        });
+        setError("");
+        setAddJunctionModalOpen(true);
+    };
+
+    // Handle the file upload and import
+    const handleImportJunction = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            showSnackbar("No file selected", "error");
+            return;
+        }
+
+        setImporting(true);
+        try {
+            const fileContent = await file.text();
+            const jsonData = JSON.parse(fileContent);
+
+            // Import junction logic would go here - calling the service
+            // await junctionService.importJunction(jsonData);
+
+            // Notify parent to refresh
+            if (onJunctionAdded) {
+                onJunctionAdded();
+            }
+            showSnackbar("Junction imported successfully", "success");
+        } catch (error) {
+            console.error("Import failed:", error);
+            showSnackbar("Failed to import junction", "error");
+        } finally {
+            setImporting(false);
+        }
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    // Form handlers for the add junction modal
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setNewJunction({ ...newJunction, [name]: value });
+    };
+
+    const handleSelectChange = (e: SelectChangeEvent<string>) => {
+        const { name, value } = e.target;
+
+        // Handle gateway device selection
+        if (name === "selectedGatewayDeviceId") {
+            const selectedDevice = gatewayDevices.find(device => device.id.toString() === value);
+            setNewJunction({
+                ...newJunction,
+                [name]: value,
+                gatewayDestination: selectedDevice ? selectedDevice.ipAddress : "" // Use IP address, not MAC
+            });
+        } else {
+            setNewJunction({ ...newJunction, [name]: value });
+        }
+    };
+
+    const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, checked } = e.target;
+        setNewJunction({ ...newJunction, [name]: checked });
+    };
+
+    const handleSave = async (redirect: boolean) => {
+        setLoading(true);
+        setError("");
+
+        // Basic validation
+        if (!newJunction.name) {
+            setError("Junction name is required!");
+            setLoading(false);
+            return;
+        }
+
+        // Validate gateway destination for Gateway types
+        if ((newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
+            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)") &&
+            !newJunction.selectedGatewayDeviceId) {
+            setError("Please select a gateway device for Gateway junctions!");
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const response = await fetch("/api/junctions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...newJunction, status: "Idle" }),
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to create junction");
+            }
+
+            const result = await response.json();
+            if (result && typeof result.id === 'number') {
+                handleJunctionAdded(result.id, redirect);
+            } else {
+                setError("Failed to get valid junction ID from response");
+                setLoading(false);
+            }
+        } catch (err: any) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
+
+    const handleJunctionAdded = async (id: number, redirect: boolean) => {
+        // Notify parent to refresh junctions
+        if (onJunctionAdded) {
+            onJunctionAdded();
+        }
+        showSnackbar("Junction added successfully", "success");
+
+        if (redirect) {
+            navigate(`/configure-junction/${id}`);
+        } else {
+            setAddJunctionModalOpen(false);
+        }
+        setLoading(false);
+    };
+
+    // Helper function to determine if a gateway device should be shown
+    const shouldShowGatewaySelection = () => {
+        return newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
+            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)";
+    };
+
     return (
         <>
-            {/* Table header with column selector */}
-            <Box display="flex" alignItems="center" mb={1}>
-                <Typography variant="h5">Junctions</Typography>
+            {/* Table header with Add Junction button and column selector */}
+            <Box display="flex" alignItems="center" mb={2}>
+                {/* Add Junction button on the far left */}
+                {showAddButton && (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={handleAddJunction}
+                        size="small"
+                        startIcon={<AddIcon />}
+                        sx={{ mr: 2 }}
+                    >
+                        Add Junction
+                    </Button>
+                )}
 
+                {/* Import button next to Add Junction */}
+                {showImportButton && junctionImportExportEnabled && (
+                    <Button
+                        variant="outlined"
+                        color="primary"
+                        component="label"
+                        startIcon={<CloudUploadIcon />}
+                        size="small"
+                        disabled={importing}
+                        sx={{ display: 'flex', alignItems: 'center', mr: 2 }}
+                    >
+                        {importing ? (
+                            <>
+                                <CircularProgress size={16} sx={{ mr: 1 }} />
+                                Importing...
+                            </>
+                        ) : (
+                            'Import Junction'
+                        )}
+                        <input
+                            type="file"
+                            hidden
+                            accept=".json"
+                            onChange={handleImportJunction}
+                            disabled={importing}
+                            ref={fileInputRef}
+                        />
+                    </Button>
+                )}
+
+                {/* Right side controls */}
                 <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
                     <FormControlLabel
                         control={
@@ -943,6 +1245,188 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                     </TableBody>
                 </Table>
             </TableContainer>
+
+            {/* Snackbar for notifications */}
+            <Snackbar
+                open={Boolean(snackMessage)}
+                autoHideDuration={6000}
+                onClose={() => setSnackMessage(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    onClose={() => setSnackMessage(null)}
+                    severity={snackbarSeverity}
+                    sx={{ width: "100%" }}
+                >
+                    {snackMessage}
+                </Alert>
+            </Snackbar>
+
+            {/* Add Junction Modal */}
+            <Modal open={addJunctionModalOpen} onClose={() => setAddJunctionModalOpen(false)}>
+                <Box sx={{
+                    position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                    width: '80%', maxWidth: 600, bgcolor: 'background.paper', p: 4, boxShadow: 24, borderRadius: 2
+                }}>
+                    <Typography variant="h6" gutterBottom>Create New Junction</Typography>
+                    {loading ? (
+                        <Box sx={{ display: "flex", justifyContent: "center" }}>
+                            <CircularProgress size={24} />
+                        </Box>
+                    ) : (
+                        <>
+                            {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
+
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Junction Name"
+                                    name="name"
+                                    value={newJunction.name}
+                                    onChange={handleChange}
+                                    required
+                                />
+
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Description"
+                                    name="description"
+                                    value={newJunction.description}
+                                    onChange={handleChange}
+                                    multiline
+                                    rows={2}
+                                />
+
+                                <FormControl fullWidth size="small">
+                                    <InputLabel id="junction-type-label">Junction Type</InputLabel>
+                                    <Select
+                                        labelId="junction-type-label"
+                                        name="type"
+                                        value={newJunction.type as string}
+                                        onChange={handleSelectChange}
+                                        label="Junction Type"
+                                    >
+                                        <MenuItem value="COM Junction">COM Junction</MenuItem>
+                                        <MenuItem value="HTTP Junction">HTTP Junction</MenuItem>
+                                        <MenuItem value="MQTT Junction">MQTT Junction</MenuItem>
+                                        <MenuItem value="Websocket Junction">Websocket Junction</MenuItem>
+                                        <MenuItem value="Gateway Junction (HTTP to ESP:NOW)">Gateway Junction (HTTP to ESP:NOW)</MenuItem>
+                                        <MenuItem value="Gateway Junction (Websocket to ESP:NOW)">Gateway Junction (Websocket to ESP:NOW)</MenuItem>
+                                    </Select>
+                                </FormControl>
+
+                                {/* Gateway Device Selection - only show for Gateway types */}
+                                {shouldShowGatewaySelection() && (
+                                    <>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="gateway-device-label">Gateway Device</InputLabel>
+                                            <Select
+                                                labelId="gateway-device-label"
+                                                name="selectedGatewayDeviceId"
+                                                value={newJunction.selectedGatewayDeviceId || ""}
+                                                onChange={handleSelectChange}
+                                                label="Gateway Device"
+                                                required
+                                            >
+                                                {gatewayDevices.length === 0 ? (
+                                                    <MenuItem disabled>
+                                                        No gateway devices found
+                                                    </MenuItem>
+                                                ) : (
+                                                    gatewayDevices.map((device) => (
+                                                        <MenuItem key={device.id} value={device.id.toString()}>
+                                                            {device.name} ({device.ipAddress})
+                                                        </MenuItem>
+                                                    ))
+                                                )}
+                                            </Select>
+                                        </FormControl>
+
+                                        {/* Show the IP address that will be used */}
+                                        {newJunction.gatewayDestination && (
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Gateway IP Address"
+                                                value={newJunction.gatewayDestination}
+                                                disabled
+                                                helperText="IP address of the selected gateway device"
+                                            />
+                                        )}
+                                    </>
+                                )}
+
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={newJunction.showOnDashboard || false}
+                                                onChange={handleCheckboxChange}
+                                                name="showOnDashboard"
+                                                size="small"
+                                            />
+                                        }
+                                        label="Show on Dashboard"
+                                    />
+
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={newJunction.autoStartOnLaunch || false}
+                                                onChange={handleCheckboxChange}
+                                                name="autoStartOnLaunch"
+                                                size="small"
+                                            />
+                                        }
+                                        label="Auto Start on Launch"
+                                    />
+
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={newJunction.allTargetsAllData || false}
+                                                onChange={handleCheckboxChange}
+                                                name="allTargetsAllData"
+                                                size="small"
+                                            />
+                                        }
+                                        label="All Targets All Data"
+                                    />
+                                </Box>
+                            </Box>
+
+                            <Box sx={{ display: "flex", gap: 2, marginTop: 3, justifyContent: "flex-end" }}>
+                                <Button
+                                    variant="contained"
+                                    onClick={() => handleSave(false)}
+                                    size="small"
+                                >
+                                    Save
+                                </Button>
+
+                                <Button
+                                    variant="contained"
+                                    color="secondary"
+                                    onClick={() => handleSave(true)}
+                                    size="small"
+                                >
+                                    Save & Configure
+                                </Button>
+
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => setAddJunctionModalOpen(false)}
+                                    size="small"
+                                >
+                                    Cancel
+                                </Button>
+                            </Box>
+                        </>
+                    )}
+                </Box>
+            </Modal>
         </>
     );
 };

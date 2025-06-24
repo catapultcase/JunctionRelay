@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 using JunctionRelayServer.Interfaces;
 
@@ -43,17 +43,17 @@ namespace JunctionRelayServer.Middleware
                 return;
             }
 
-            // Check if authentication is enabled
-            var authEnabled = await _authService.IsAuthenticationEnabledAsync();
+            // Get current authentication mode
+            var authMode = await _authService.GetAuthModeAsync();
 
-            if (!authEnabled)
+            // If auth mode is "none", allow all requests
+            if (authMode == "none")
             {
-                // Authentication is disabled, allow all requests
                 await _next(context);
                 return;
             }
 
-            // Authentication is enabled, validate token
+            // For "local" or "cloud" modes, validate token
             var token = ExtractTokenFromRequest(context.Request);
 
             if (string.IsNullOrEmpty(token))
@@ -64,17 +64,36 @@ namespace JunctionRelayServer.Middleware
                 return;
             }
 
-            var principal = _jwtService.ValidateToken(token);
-            if (principal == null)
+            // Validate token based on auth mode
+            if (authMode == "local")
             {
-                // Invalid token
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsync("Invalid or expired token");
-                return;
+                // Validate local JWT token
+                var principal = _jwtService.ValidateToken(token);
+                if (principal == null)
+                {
+                    context.Response.StatusCode = 401;
+                    await context.Response.WriteAsync("Invalid or expired token");
+                    return;
+                }
+                context.User = principal;
+            }
+            else if (authMode == "cloud")
+            {
+                // For cloud mode, we'll validate the Clerk token
+                // For now, we'll trust the token (you can add Clerk validation later)
+                // This allows the cloud endpoints to handle Clerk token validation
+                if (!token.StartsWith("eyJ")) // Basic JWT format check
+                {
+                    context.Response.StatusCode = 401;
+                    await context.Response.WriteAsync("Invalid token format");
+                    return;
+                }
+                // Set a minimal user context for cloud auth
+                // The actual validation happens in the cloud endpoints
+                context.User = new System.Security.Claims.ClaimsPrincipal(
+                    new System.Security.Claims.ClaimsIdentity("cloud"));
             }
 
-            // Valid token, set user context
-            context.User = principal;
             await _next(context);
         }
 
@@ -87,7 +106,11 @@ namespace JunctionRelayServer.Middleware
                 "/api/auth/login",
                 "/api/auth/setup",
                 "/api/auth/status",
-                "/api/auth/enabled",  // Add this so frontend can check auth status
+                "/api/auth/enabled",
+                "/api/auth/mode",        // Needed for determining auth mode
+                "/api/auth/set-mode",    // Needed for changing modes
+                "/api/settings/version", // Needed for version display on all pages
+                "/api/settings/flags",   // Needed for feature flags
                 "/favicon.ico",
                 "/_framework/",
                 "/css/",

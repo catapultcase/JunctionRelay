@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using Dapper;
@@ -79,6 +79,10 @@ namespace JunctionRelayServer.Services
                     IsGateway BOOLEAN DEFAULT 0,
                     GatewayId INTEGER,
                     IsJunctionRelayDevice BOOLEAN DEFAULT 0,
+
+                    -- Cloud device support
+                    IsCloudDevice BOOLEAN DEFAULT 0,
+                    CloudDeviceId INTEGER,
 
                     ConnMode TEXT,
                     SelectedPort TEXT,
@@ -689,13 +693,14 @@ namespace JunctionRelayServer.Services
             var defaultSettings = new List<(string Key, string Value, string Description)>
     {
         ("custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
+        ("combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
         ("host_charts", "false", "If true, show the demo tab for host charts via React"),
         ("hyperlink_rows", "true", "If true, junction list views will include hyperlinks for navigating to collector/device configuration pages"),
-        ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: Only works if all other references have the same ID - useful for development only")
+        ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: Only works if all other references have the same ID - useful for development only"),
+        ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables. Valid values: Left, Right"),
+        ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in junction tables. Valid values: Left, Right")
     };
-
             int addedCount = 0;
-
             // Check and insert each setting individually if it doesn't exist
             foreach (var setting in defaultSettings)
             {
@@ -716,7 +721,6 @@ namespace JunctionRelayServer.Services
                     addedCount++;
                 }
             }
-
             if (addedCount > 0)
             {
                 Console.WriteLine($"✅ Added {addedCount} missing settings to the database.");

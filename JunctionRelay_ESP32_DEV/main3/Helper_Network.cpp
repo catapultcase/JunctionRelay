@@ -110,7 +110,7 @@ void Helper_Network::startNetworkMonitoringTask() {
     xTaskCreatePinnedToCore(
         networkMonitoringTask,
         "NetworkMonitorTask",
-        2048,
+        4096,
         this,
         1,
         &networkMonitorTaskHandle,
@@ -145,22 +145,43 @@ void Helper_Network::setupMDNS(const String& networkType) {
 void Helper_Network::checkNetworkChanges() {
     static String lastNetworkType = "";
     static bool lastConnectedState = false;
+    static unsigned long lastCallbackTime = 0;
+    static bool initialCallbackSent = false;
+    
+    // Rate limiting to prevent callback spam
+    unsigned long now = millis();
+    if (now - lastCallbackTime < 3000 && initialCallbackSent) {
+        return; // Don't trigger callbacks more than once every 3 seconds
+    }
     
     String currentNetworkType = getActiveNetworkType();
     bool currentConnectedState = isAnyNetworkAvailable();
     
-    if (currentNetworkType != lastNetworkType || currentConnectedState != lastConnectedState) {
+    // Force initial callback for already-connected networks (like Ethernet)
+    bool shouldTriggerCallback = false;
+    
+    if (!initialCallbackSent && currentConnectedState) {
+        Serial.printf("[NetworkMonitor] Initial network detected: %s\n", currentNetworkType.c_str());
+        shouldTriggerCallback = true;
+        initialCallbackSent = true;
+    } else if (currentNetworkType != lastNetworkType || currentConnectedState != lastConnectedState) {
         Serial.printf("[Network] Network change detected: %s -> %s (connected: %s)\n",
                      lastNetworkType.c_str(), currentNetworkType.c_str(),
                      currentConnectedState ? "yes" : "no");
-        
-        if (networkEventCallback) {
-            networkEventCallback(currentNetworkType, currentConnectedState);
-        }
-        
-        lastNetworkType = currentNetworkType;
-        lastConnectedState = currentConnectedState;
+        shouldTriggerCallback = true;
     }
+    
+    if (shouldTriggerCallback && networkEventCallback) {
+        try {
+            networkEventCallback(currentNetworkType, currentConnectedState);
+            lastCallbackTime = now;
+        } catch (...) {
+            Serial.println("[NetworkMonitor] Exception in network callback - continuing");
+        }
+    }
+    
+    lastNetworkType = currentNetworkType;
+    lastConnectedState = currentConnectedState;
 }
 
 // Static task implementations
@@ -239,9 +260,19 @@ void Helper_Network::wifiBackupTask(void* parameter) {
 void Helper_Network::networkMonitoringTask(void* parameter) {
     Helper_Network* network = static_cast<Helper_Network*>(parameter);
     
+    // Stabilization delay to prevent early crashes
+    vTaskDelay(5000 / portTICK_PERIOD_MS);  // Wait 5 seconds for system to stabilize
+    
+    Serial.println("[NetworkMonitor] Task started - monitoring network changes");
+    
     for (;;) {
-        network->checkNetworkChanges();
-        vTaskDelay(2000 / portTICK_PERIOD_MS);  // Check every 2 seconds
+        try {
+            network->checkNetworkChanges();
+        } catch (...) {
+            Serial.println("[NetworkMonitor] Exception caught - continuing");
+        }
+        
+        vTaskDelay(5000 / portTICK_PERIOD_MS);  // Check every 5 seconds instead of 2
     }
 }
 

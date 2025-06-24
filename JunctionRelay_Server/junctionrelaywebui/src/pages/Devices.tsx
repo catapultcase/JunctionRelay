@@ -1,20 +1,20 @@
 /*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -50,10 +50,12 @@ import UpdateIcon from '@mui/icons-material/Update';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import DeviceUnknownIcon from '@mui/icons-material/DeviceUnknown';
 import EditIcon from '@mui/icons-material/Edit';
+import CloudIcon from '@mui/icons-material/Cloud';
+import ComputerIcon from '@mui/icons-material/Computer';
 
 // Import our components
 import DevicesTable from '../components/Devices_DevicesTable';
-import GatewayDevicesTable from '../components/Devices_GatewayTable';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 import { STORAGE_KEY_REFRESH_INTERVAL, getDeviceStatusInfo } from '../components/Devices_Helpers';
 
 // Main Device Component
@@ -76,13 +78,13 @@ const Devices: React.FC = () => {
     const [devices, setDevices] = useState<any[]>([]);
     const [deviceDetails, setDeviceDetails] = useState<Record<string, any>>({});
     const [buttonColor, setButtonColor] = useState<"primary" | "secondary">("primary");
-    const [junctionRelayDevices, setJunctionRelayDevices] = useState<any[]>([]);
-    const [gatewayDevices, setGatewayDevices] = useState<any[]>([]);
-    const [otherDevices, setOtherDevices] = useState<any[]>([]);
+    const [allDevices, setAllDevices] = useState<any[]>([]);
     const [connectionStatuses, setConnectionStatuses] = useState<Record<number, any>>({});
     const [updateStatuses, setUpdateStatuses] = useState<Record<number, boolean>>({});
     const [updatingDevices, setUpdatingDevices] = useState<Set<number>>(new Set());
     const [addCustomDeviceModalOpen, setAddCustomDeviceModalOpen] = useState(false);
+    const [addCloudDeviceModalOpen, setAddCloudDeviceModalOpen] = useState(false);
+    const [refreshingCloudDevices, setRefreshingCloudDevices] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<{ name: string; ipAddress: string } | null>(null);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
@@ -90,13 +92,15 @@ const Devices: React.FC = () => {
     const [resyncedDevices, setResyncedDevices] = useState<Set<string>>(new Set());
     const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
     const navigate = useNavigate();
+    const flags = useFeatureFlags();
+
 
     // Save refresh interval to localStorage when it changes
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY_REFRESH_INTERVAL, refreshInterval.toString());
     }, [refreshInterval]);
 
-    // Group and sort devices by status
+    // Group and sort devices by status for scan results
     const groupedDevices = useMemo(() => {
         if (!devices.length) return { newDevices: [], existingDevices: [], otherDevices: [] };
 
@@ -237,33 +241,27 @@ const Devices: React.FC = () => {
 
     const checkForUpdates = useCallback(async () => {
         try {
-            setStatus("Checking for firmware updates...");
-
+            // Get all JunctionRelay devices from allDevices
+            const junctionRelayDevices = allDevices.filter(d =>
+                d.isJunctionRelayDevice && !d.isGateway
+            );
             if (junctionRelayDevices.length === 0) {
-                setStatus("No Junction Relay devices to check.");
-                setTimeout(() => setStatus(""), 3000);
                 return;
             }
-
             console.log("Manual check - Checking updates for", junctionRelayDevices.length, "devices");
-
             const updates: Record<number, boolean> = {};
             let foundUpdates = 0;
-
             // Check each device individually using the backend API
             for (const device of junctionRelayDevices) {
                 try {
                     const res = await fetch(`/api/ota/check/${device.id}?force=true`);
-
                     if (res.ok) {
                         const updateInfo = await res.json();
                         const needsUpdate = updateInfo.is_outdated === true;
                         updates[device.id] = needsUpdate;
-
                         if (needsUpdate) {
                             foundUpdates++;
                             console.log(`Device ${device.name} (${device.id}) needs update: ${updateInfo.current_version} -> ${updateInfo.latest_version}`);
-                            setStatus(prev => `${prev} Found update for ${device.name}.`);
                         }
                     } else {
                         console.log(`Failed to check updates for device ${device.id}: ${res.status}`);
@@ -274,57 +272,27 @@ const Devices: React.FC = () => {
                     updates[device.id] = false;
                 }
             }
-
             setUpdateStatuses(updates);
             console.log("Manual check - Update statuses set:", updates);
-
-            if (foundUpdates === 0) {
-                setStatus("Check complete. All devices are up to date.");
-            } else {
-                setStatus(`Check complete. Found ${foundUpdates} device(s) with available updates.`);
-            }
-
-            setTimeout(() => setStatus(""), 5000);
         } catch (error) {
             console.error("Error checking for updates:", error);
-            setStatus("Error checking for updates.");
-            setTimeout(() => setStatus(""), 3000);
         }
-    }, [junctionRelayDevices]);
+    }, [allDevices]);
 
     const fetchDevices = useCallback(async (checkUpdates: boolean = false) => {
         try {
             const response = await fetch("/api/devices");
             const data = await response.json();
 
-            // Filter and set junction relay devices (non-gateway AND no gatewayId)
-            const jrDevices = data.filter((d: any) =>
-                d.isJunctionRelayDevice &&
-                !d.isGateway &&
-                !d.gatewayId
-            );
-            setJunctionRelayDevices(jrDevices);
+            // Set all devices
+            setAllDevices(data);
 
-            // Filter and set gateway devices and their children
-            const gateways = data.filter((d: any) => d.isGateway);
-            const gatewayChildren = data.filter((d: any) => d.gatewayId && !d.isGateway);
-            const allGatewayRelated = [...gateways, ...gatewayChildren];
-            setGatewayDevices(allGatewayRelated);
-
-            // Filter and set other devices (not gateway-related, not JR devices, and no gatewayId)
-            const otherDevices = data.filter((d: any) =>
-                !d.isJunctionRelayDevice &&
-                !d.isGateway &&
-                !d.gatewayId
-            );
-            setOtherDevices(otherDevices);
-
-            // Fetch connection status for all JunctionRelay devices using backend API
-            const devicesWithIp = [...jrDevices, ...allGatewayRelated].filter(d => d.ipAddress);
+            // Fetch connection status for all devices with IP addresses
+            const devicesWithIp = data.filter((d: any) => d.ipAddress);
 
             if (devicesWithIp.length > 0) {
                 try {
-                    const deviceIds = devicesWithIp.map(d => d.id);
+                    const deviceIds = devicesWithIp.map((d: any) => d.id);
                     const connectionResponse = await fetch('/api/devices/bulk-connection-status', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -344,50 +312,56 @@ const Devices: React.FC = () => {
                 }
             }
 
-            // Rest of your existing update checking logic...
-            if (checkUpdates && jrDevices.length > 0) {
-                console.log("Performing individual firmware checks for", jrDevices.length, "junction relay devices");
+            // Check for updates if requested
+            if (checkUpdates) {
+                const jrDevices = data.filter((d: any) =>
+                    d.isJunctionRelayDevice && !d.isGateway
+                );
 
-                try {
-                    const updates: Record<number, boolean> = {};
+                if (jrDevices.length > 0) {
+                    console.log("Performing individual firmware checks for", jrDevices.length, "junction relay devices");
 
-                    for (const device of jrDevices) {
-                        try {
-                            const res = await fetch(`/api/ota/check/${device.id}?force=false`);
+                    try {
+                        const updates: Record<number, boolean> = {};
 
-                            if (res.ok) {
-                                const updateInfo = await res.json();
-                                const deviceNeedsUpdate = updateInfo.is_outdated === true;
-                                updates[device.id] = deviceNeedsUpdate;
+                        for (const device of jrDevices) {
+                            try {
+                                const res = await fetch(`/api/ota/check/${device.id}?force=false`);
 
-                                if (deviceNeedsUpdate) {
-                                    console.log(`Device ${device.name} (${device.id}) needs firmware update: ${updateInfo.current_version} -> ${updateInfo.latest_version}`);
+                                if (res.ok) {
+                                    const updateInfo = await res.json();
+                                    const deviceNeedsUpdate = updateInfo.is_outdated === true;
+                                    updates[device.id] = deviceNeedsUpdate;
+
+                                    if (deviceNeedsUpdate) {
+                                        console.log(`Device ${device.name} (${device.id}) needs firmware update: ${updateInfo.current_version} -> ${updateInfo.latest_version}`);
+                                    }
+                                } else {
+                                    console.log(`No update info available for device ${device.id}`);
+                                    updates[device.id] = false;
                                 }
-                            } else {
-                                console.log(`No update info available for device ${device.id}`);
+                            } catch (err) {
+                                console.error(`Failed to check update for device ${device.id}`, err);
                                 updates[device.id] = false;
                             }
-                        } catch (err) {
-                            console.error(`Failed to check update for device ${device.id}`, err);
-                            updates[device.id] = false;
                         }
-                    }
 
-                    console.log("Update statuses (from individual checks):", updates);
-                    setUpdateStatuses(updates);
-                } catch (error) {
-                    console.error("Error in individual firmware checks:", error);
-                    const updates: Record<number, boolean> = {};
-                    jrDevices.forEach((device: any) => {
-                        updates[device.id] = false;
-                    });
-                    setUpdateStatuses(updates);
+                        console.log("Update statuses (from individual checks):", updates);
+                        setUpdateStatuses(updates);
+                    } catch (error) {
+                        console.error("Error in individual firmware checks:", error);
+                        const updates: Record<number, boolean> = {};
+                        jrDevices.forEach((device: any) => {
+                            updates[device.id] = false;
+                        });
+                        setUpdateStatuses(updates);
+                    }
                 }
             }
         } catch (err) {
             console.error("Error fetching devices:", err);
         }
-    }, []);   
+    }, []);
 
     useEffect(() => {
         // Initial load with update check
@@ -417,6 +391,35 @@ const Devices: React.FC = () => {
         return !!resyncingDevices[`${macAddress}-${ipAddress}`];
     };
 
+    // Handle refresh cloud devices
+    const handleRefreshCloudDevices = async () => {
+        setRefreshingCloudDevices(true);
+        try {
+            const response = await fetch('/api/cloud-auth/devices/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                    // You'll need to pass the cloud auth token here
+                    // "Authorization": `Bearer ${cloudToken}`
+                }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                showSnackbar(`Refreshed ${result.count || 0} cloud devices`, "success");
+                await fetchDevices(); // Refresh the local device list
+            } else {
+                const error = await response.json();
+                showSnackbar(`Failed to refresh cloud devices: ${error.message}`, "error");
+            }
+        } catch (error) {
+            console.error("Error refreshing cloud devices:", error);
+            showSnackbar("Error refreshing cloud devices", "error");
+        } finally {
+            setRefreshingCloudDevices(false);
+        }
+    };
+
     // Handle device firmware update
     const handleUpdateDevice = async (deviceId: number, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -424,7 +427,7 @@ const Devices: React.FC = () => {
         setUpdatingDevices(prev => new Set(prev).add(deviceId));
 
         try {
-            const deviceInfo = junctionRelayDevices.find(d => d.id === deviceId);
+            const deviceInfo = allDevices.find(d => d.id === deviceId);
             if (!deviceInfo) throw new Error("Device not found");
             const ipAddress = deviceInfo.ipAddress;
             if (!ipAddress) throw new Error("Device IP address not found");
@@ -659,7 +662,7 @@ const Devices: React.FC = () => {
         <Box sx={{ padding: 2 }}>
             <Typography variant="h5" gutterBottom>Devices</Typography>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Network Scan Section */}
             <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: 'wrap' }}>
                 <Button
                     variant="contained"
@@ -671,39 +674,6 @@ const Devices: React.FC = () => {
                 >
                     {scanning ? "Scanning..." : "Scan Network"}
                 </Button>
-
-                <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => setAddCustomDeviceModalOpen(true)}
-                    startIcon={<AddIcon />}
-                    size="small"
-                >
-                    Add Custom Device
-                </Button>
-
-                <Button
-                    variant="outlined"
-                    startIcon={<UpdateIcon />}
-                    onClick={checkForUpdates}
-                    size="small"
-                >
-                    Check for Updates
-                </Button>
-                <FormControl size="small" sx={{ minWidth: 140 }}>
-                    <InputLabel>Auto-Refresh</InputLabel>
-                    <Select
-                        value={refreshInterval}
-                        label="Auto-Refresh"
-                        onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                    >
-                        {REFRESH_INTERVAL_OPTIONS.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
             </Box>
 
             {/* Scan Status */}
@@ -786,46 +756,104 @@ const Devices: React.FC = () => {
                 </Paper>
             )}
 
-            {/* Gateway Devices Table with Column Management */}
-            {gatewayDevices.length > 0 && (
-                <GatewayDevicesTable
-                    devices={gatewayDevices}
-                    title="Gateway Devices & Children"
+            {/* Device Management Section - Above the table */}
+            <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                <Typography variant="h6">Device Management</Typography>
+            </Box>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setAddCustomDeviceModalOpen(true)}
+                    startIcon={<ComputerIcon />}
+                    size="small"
+                >
+                    Add Custom Local Device
+                </Button>
+
+                <Button
+                    variant="outlined"
+                    startIcon={<UpdateIcon />}
+                    onClick={checkForUpdates}
+                    size="small"
+                >
+                    Check for Firmware Updates
+                </Button>
+
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setAddCloudDeviceModalOpen(true)}
+                    startIcon={<CloudIcon />}
+                    size="small"
+                >
+                    Add Cloud Device
+                </Button>
+
+                <Button
+                    variant="outlined"
+                    color="primary"
+                    onClick={handleRefreshCloudDevices}
+                    disabled={refreshingCloudDevices}
+                    startIcon={refreshingCloudDevices ? <CircularProgress size={16} /> : <RefreshIcon />}
+                    size="small"
+                >
+                    {refreshingCloudDevices ? "Refreshing..." : "Refresh Cloud Devices"}
+                </Button>
+            </Box>
+
+            {/* Conditional Device Tables based on feature flag */}
+            {String(flags?.combine_cloud_devices).toLowerCase() === 'true' ? (
+                // Single unified table when flag is true
+                <DevicesTable
+                    devices={allDevices}
+                    title="All Devices"
                     updateStatuses={updateStatuses}
                     updatingDevices={updatingDevices}
                     connectionStatuses={connectionStatuses}
                     onDelete={handleDelete}
                     onUpdate={handleUpdateDevice}
                     navigate={navigate}
-                    storageKeySuffix="_gateway"
+                    storageKeySuffix="_unified"
+                    onDevicesChange={() => fetchDevices(false)}
+                    refreshInterval={refreshInterval}
+                    onRefreshIntervalChange={setRefreshInterval}
+                    refreshIntervalOptions={REFRESH_INTERVAL_OPTIONS}
                 />
+            ) : (
+                // Separate tables when flag is false
+                <>
+                    <DevicesTable
+                        devices={allDevices.filter(device => device.type !== "Cloud Device")}
+                        title="Local Devices"
+                        updateStatuses={updateStatuses}
+                        updatingDevices={updatingDevices}
+                        connectionStatuses={connectionStatuses}
+                        onDelete={handleDelete}
+                        onUpdate={handleUpdateDevice}
+                        navigate={navigate}
+                        storageKeySuffix="_local"
+                        onDevicesChange={() => fetchDevices(false)}
+                        refreshInterval={refreshInterval}
+                        onRefreshIntervalChange={setRefreshInterval}
+                        refreshIntervalOptions={REFRESH_INTERVAL_OPTIONS}
+                    />
+
+                    <DevicesTable
+                        devices={allDevices.filter(device => device.type === "Cloud Device")}
+                        title="Cloud Devices"
+                        updateStatuses={updateStatuses}
+                        updatingDevices={updatingDevices}
+                        connectionStatuses={connectionStatuses}
+                        onDelete={handleDelete}
+                        onUpdate={handleUpdateDevice}
+                        navigate={navigate}
+                        storageKeySuffix="_cloud"
+                        onDevicesChange={() => fetchDevices(false)}
+                    // Cloud devices don't need auto-refresh controls
+                    />
+                </>
             )}
-
-            {/* JunctionRelay Devices Table with Column Management */}
-            <DevicesTable
-                devices={junctionRelayDevices}
-                title="Standalone Devices (Junction Relay)"
-                updateStatuses={updateStatuses}
-                updatingDevices={updatingDevices}
-                connectionStatuses={connectionStatuses}
-                onDelete={handleDelete}
-                onUpdate={handleUpdateDevice}
-                navigate={navigate}
-                storageKeySuffix="_jr"
-            />
-
-            {/* Other Devices Table with Column Management */}
-            <DevicesTable
-                devices={otherDevices}
-                title="Standalone Devices (Other)"
-                updateStatuses={updateStatuses}
-                updatingDevices={updatingDevices}
-                connectionStatuses={connectionStatuses}
-                onDelete={handleDelete}
-                onUpdate={handleUpdateDevice}
-                navigate={navigate}
-                storageKeySuffix="_other"
-            />
 
             {/* Snackbar and Modals */}
             <Snackbar
@@ -854,6 +882,12 @@ const Devices: React.FC = () => {
             <AddCustomDeviceModal
                 open={addCustomDeviceModalOpen}
                 onClose={() => setAddCustomDeviceModalOpen(false)}
+                onDeviceAdded={fetchDevices}
+            />
+
+            <AddCloudDeviceModal
+                open={addCloudDeviceModalOpen}
+                onClose={() => setAddCloudDeviceModalOpen(false)}
                 onDeviceAdded={fetchDevices}
             />
         </Box>
@@ -1112,7 +1146,7 @@ const AddCustomDeviceModal: React.FC<{
                 }}
             >
                 <Typography variant="h6" gutterBottom>
-                    Add Custom Device
+                    Add Custom Local Device
                 </Typography>
 
                 {error && (
@@ -1173,7 +1207,7 @@ const AddCustomDeviceModal: React.FC<{
                         variant="contained"
                         onClick={() => handleSubmit(false)}
                         disabled={loading}
-                        startIcon={<AddIcon />}
+                        startIcon={<ComputerIcon />}
                         size="small"
                     >
                         {loading && !configureAfterAdd ? "Adding..." : "Add Device"}
@@ -1187,6 +1221,148 @@ const AddCustomDeviceModal: React.FC<{
                         size="small"
                     >
                         {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        onClick={onClose}
+                        size="small"
+                        disabled={loading}
+                    >
+                        Cancel
+                    </Button>
+                </Box>
+            </Box>
+        </Modal>
+    );
+};
+
+// Add Cloud Device Modal Component
+const AddCloudDeviceModal: React.FC<{
+    open: boolean;
+    onClose: () => void;
+    onDeviceAdded: () => void;
+}> = ({ open, onClose, onDeviceAdded }) => {
+    const [formData, setFormData] = useState({
+        deviceName: "",
+        deviceId: ""
+    });
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = async () => {
+        const { deviceName, deviceId } = formData;
+        if (!deviceName || !deviceId) {
+            setError("All fields are required.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+
+            // This would call your cloud device registration API
+            const response = await fetch("/api/cloud-auth/devices/register", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    // You'll need to pass the cloud auth token here
+                    // "Authorization": `Bearer ${cloudToken}`
+                },
+                body: JSON.stringify({
+                    deviceId,
+                    deviceName
+                }),
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || "Failed to register cloud device");
+
+            onDeviceAdded();
+            onClose();
+
+            // Reset form
+            setFormData({ deviceName: "", deviceId: "" });
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Modal open={open} onClose={onClose}>
+            <Box
+                sx={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    width: '80%',
+                    maxWidth: 500,
+                    bgcolor: "background.paper",
+                    p: 4,
+                    boxShadow: 24,
+                    borderRadius: 2
+                }}
+            >
+                <Typography variant="h6" gutterBottom>
+                    Add Cloud Device
+                </Typography>
+
+                {error && (
+                    <Alert
+                        severity="error"
+                        sx={{
+                            mb: 2,
+                            '& .MuiAlert-message': {
+                                fontWeight: 'medium'
+                            }
+                        }}
+                    >
+                        {error}
+                    </Alert>
+                )}
+
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                    Register a new device to your JunctionRelay Cloud account.
+                </Typography>
+
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <TextField
+                        fullWidth
+                        label="Device Name"
+                        name="deviceName"
+                        value={formData.deviceName}
+                        onChange={handleChange}
+                        size="small"
+                        required
+                        helperText="A friendly name for your device"
+                    />
+                    <TextField
+                        fullWidth
+                        label="Device ID"
+                        name="deviceId"
+                        value={formData.deviceId}
+                        onChange={handleChange}
+                        size="small"
+                        required
+                        helperText="Unique identifier for your device (e.g., serial number)"
+                    />
+                </Box>
+
+                <Box sx={{ display: "flex", gap: 2, mt: 3 }}>
+                    <Button
+                        variant="contained"
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        startIcon={<CloudIcon />}
+                        size="small"
+                    >
+                        {loading ? "Registering..." : "Register Device"}
                     </Button>
                     <Button
                         variant="outlined"

@@ -389,7 +389,7 @@ void ConnectionManager::setupProtocolBasedServices() {
         
         // Setup network monitoring tasks
         networkHelper->startMDNSTask();
-        // networkHelper->startNetworkMonitoringTask();
+        networkHelper->startNetworkMonitoringTask();
     }
 }
 
@@ -974,7 +974,7 @@ void ConnectionManager::handleIncomingDataChunk(uint8_t *data, size_t len) {
                 
                 if (success) {
                     // Serial.printf("[GATEWAY] ✅ Forwarded %s (%d bytes)\n", 
-                    //             doc["type"].as<const char*>(), forwardPayload.length());
+                    //              doc["type"].as<const char*>(), forwardPayload.length());
                 } else {
                     Serial.printf("[GATEWAY] ❌ Forward failed\n");
                 }
@@ -1938,6 +1938,16 @@ void ConnectionManager::startCaptivePortal() {
 }
 
 // ==========================================
+// WEBSOCKET METHODS
+// ==========================================
+
+void ConnectionManager::webSocketLoop() {
+    if (webSocketHelper) {
+        webSocketHelper->loop();
+    }
+}
+
+// ==========================================
 // MQTT METHODS
 // ==========================================
 
@@ -2048,17 +2058,13 @@ void ConnectionManager::handleNetworkEvent(const String& networkType, bool conne
     Serial.printf("[Network] Event: %s %s\n", networkType.c_str(), connected ? "connected" : "disconnected");
     
     if (connected && webSocketHelper) {
-        // Detect backend server if not already set
-        // Comment this:
-        // if (backendServerIP.isEmpty() && httpHelper) {
-        //     backendServerIP = httpHelper->detectBackendServer();
-        //     if (!backendServerIP.isEmpty()) {
-        //         Serial.printf("[Network] Backend server detected: %s\n", backendServerIP.c_str());
-        //     }
-        // }
-
-        // Keep this part to allow manual override:
-        webSocketHelper->handleConnection();
+        // Only try to connect if we're not already connected
+        if (!webSocketHelper->isConnected()) {
+            webSocketHelper->handleConnection();
+            Serial.printf("[Network] WebSocket connection initiated for %s\n", networkType.c_str());
+        } else {
+            Serial.printf("[Network] WebSocket already connected, skipping connection attempt for %s\n", networkType.c_str());
+        }
     }
     
     // Update status

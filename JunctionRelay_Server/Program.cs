@@ -19,9 +19,50 @@ using JunctionRelayServer.Utils;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using JunctionRelayServer.Middleware;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebSockets;
+using Microsoft.AspNetCore.Authorization;
+
+// Helper method to generate or load unique JWT secret per installation (LOCAL AUTH ONLY)
+static string GenerateOrLoadInstallationSecret(string dbDirectory)
+{
+    var secretFile = Path.Combine(dbDirectory, "jwt-secret.key");
+
+    try
+    {
+        // Try to load existing secret
+        if (File.Exists(secretFile))
+        {
+            var existingSecret = File.ReadAllText(secretFile);
+            if (!string.IsNullOrWhiteSpace(existingSecret) && existingSecret.Length >= 32)
+            {
+                // Console.WriteLine("Loaded existing JWT secret from installation");
+                return existingSecret;
+            }
+        }
+
+        // Generate new random secret (64 characters for extra security)
+        var randomBytes = new byte[48]; // 48 bytes = 64 base64 characters
+        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(randomBytes);
+        }
+        var newSecret = Convert.ToBase64String(randomBytes);
+
+        // Save the secret for future use
+        File.WriteAllText(secretFile, newSecret);
+        // Console.WriteLine("Generated new JWT secret for this installation");
+
+        return newSecret;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"FATAL ERROR: Could not generate/load JWT secret: {ex.Message}");
+        Console.WriteLine("Unable to secure local authentication. Please check file permissions and reinstall.");
+        Environment.Exit(1);
+        return string.Empty; // This line will never execute, but satisfies the compiler
+    }
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -129,6 +170,9 @@ builder.Services.AddWebSockets(options =>
     options.AllowedOrigins.Add("*"); // Configure as needed for security
 });
 
+// Add HttpClient for cloud functionality
+builder.Services.AddHttpClient();
+
 string dbPath;
 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 {
@@ -172,26 +216,92 @@ builder.Services.AddDataProtection()
 // Register the secrets service
 builder.Services.AddSingleton<ISecretsService, SecretsService>();
 
-// Authentication Services
-builder.Services.AddAuthentication("Bearer")
-    .AddJwtBearer("Bearer", options =>
-    {
-        var secretKey = builder.Configuration["Jwt:SecretKey"] ?? "JunctionRelay_Default_Secret_Key_Change_In_Production_Min_32_Chars!";
-        var issuer = builder.Configuration["Jwt:Issuer"] ?? "JunctionRelay";
+// DUAL AUTHENTICATION: Support BOTH Local JWT and Clerk tokens
+// LOCAL AUTH: Generate unique JWT secret per installation for better security
+var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ??
+                   GenerateOrLoadInstallationSecret(dbDirectory ?? ".");
 
-        options.TokenValidationParameters = new TokenValidationParameters
+// IMPORTANT: Set the generated secret in configuration so Service_Jwt can access it
+builder.Configuration["Jwt:SecretKey"] = jwtSecretKey;
+
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "JunctionRelay";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer("Local", options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtIssuer, // Your JWT service uses issuer as audience
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero,
+        NameClaimType = System.Security.Claims.ClaimTypes.Name
+    };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnAuthenticationFailed = context =>
         {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidAudience = issuer,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
-        };
+            // Console.WriteLine($"Local JWT Authentication failed: {context.Exception.Message}");
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            // Console.WriteLine($"Local JWT token validated successfully for: {context.Principal?.Identity?.Name}");
+            return Task.CompletedTask;
+        }
+    };
+})
+.AddJwtBearer("Clerk", options =>
+{
+    // JunctionRelay Cloud authentication - public Clerk instance for cloud features
+    options.Authority = "https://accounts.junctionrelay.com";
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = false, // FIXED: Clerk tokens don't have audience - DISABLE validation
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(5),
+        NameClaimType = "email" // Clerk uses email claim
+    };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnAuthenticationFailed = context =>
+        {
+            // Console.WriteLine($"Clerk JWT Authentication failed: {context.Exception.Message}");
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            // Console.WriteLine($"Clerk JWT token validated successfully for: {context.Principal?.Identity?.Name}");
+            return Task.CompletedTask;
+        }
+    };
+});
+
+// Authorization policy that accepts BOTH authentication schemes
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("RequireAuth", policy =>
+    {
+        policy.AddAuthenticationSchemes("Local", "Clerk")
+              .RequireAuthenticatedUser();
     });
 
-builder.Services.AddAuthorization();
+    // Default policy accepts both
+    options.DefaultPolicy = new AuthorizationPolicyBuilder("Local", "Clerk")
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // Register authentication services
 builder.Services.AddSingleton<IService_Auth, Service_Auth>();
@@ -241,6 +351,7 @@ builder.Services.AddScoped<Service_Database_Manager_Layouts>();
 builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();
+builder.Services.AddScoped<Service_Manager_CloudDevices>();
 
 builder.Services.AddSingleton<StartupSignals>();
 builder.Services.AddHostedService<Service_Heartbeats>();
@@ -361,16 +472,19 @@ app.UseWebSockets();
 app.UseStaticFiles();
 app.UseRouting();
 
+// FIXED: Use standard authentication and authorization - REMOVED custom middleware
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Add JWT middleware AFTER authorization
-app.UseMiddleware<Middleware_JwtAuthentication>();
+// REMOVED: Custom JWT middleware that was conflicting
+// app.UseMiddleware<Middleware_JwtAuthentication>();
 
 app.MapControllers();
 app.MapFallbackToFile("index.html");
 
-Console.WriteLine("Junction Relay WebSocket Service enabled");
-Console.WriteLine("Main WebSocket endpoint: /api/device-websocket/connect");
+// Console.WriteLine("JunctionRelay WebSocket Service enabled");
+// Console.WriteLine("Main WebSocket endpoint: /api/device-websocket/connect");
+// Console.WriteLine($"JWT Authentication configured with issuer: {jwtIssuer}");
+// Console.WriteLine("Authentication schemes: Local JWT, Clerk JWT");
 
 app.Run();

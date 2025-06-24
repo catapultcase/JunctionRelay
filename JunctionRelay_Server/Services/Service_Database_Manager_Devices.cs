@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using JunctionRelayServer.Models;
@@ -111,32 +111,50 @@ namespace JunctionRelayServer.Services
             newDevice.Status ??= "Offline";
             newDevice.LastUpdated = DateTime.UtcNow;
 
+            // Set device type based on IsGateway flag and GatewayId
+            if (newDevice.IsGateway)
+            {
+                newDevice.Type = "Gateway";
+            }
+            else if (newDevice.GatewayId.HasValue && newDevice.GatewayId > 0)
+            {
+                newDevice.Type = "Child";
+            }
+            else
+            {
+                newDevice.Type = "Standalone";
+            }
+
             var sql = @"
-            INSERT INTO Devices (
-                Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayDevice, ConnMode, SelectedPort,
-                DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
+        INSERT INTO Devices (
+            Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayDevice,
+            IsCloudDevice, CloudDeviceId,
+            ConnMode, SelectedPort,
+            DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
 
-                HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
-                LastPingAttempt, LastPinged, LastPingStatus, LastPingDurationMs, ConsecutivePingFailures,
-                ConfigLastAppliedAt, SensorPayloadLastAckAt,
+            HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
+            LastPingAttempt, LastPinged, LastPingStatus, LastPingDurationMs, ConsecutivePingFailures,
+            ConfigLastAppliedAt, SensorPayloadLastAckAt,
 
-                HasOnboardScreen, HasOnboardLED, HasOnboardRGBLED, HasExternalNeopixels, HasExternalMatrix, HasExternalI2CDevices,
-                HasButtons, HasBattery, SupportsWiFi, SupportsBLE, SupportsUSB, SupportsESPNow, SupportsHTTP, SupportsMQTT, SupportsWebSockets,
-                HasSpeaker, HasMicroSD
-            )
-            VALUES (
-                @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayDevice, @ConnMode, @SelectedPort,
-                @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
+            HasOnboardScreen, HasOnboardLED, HasOnboardRGBLED, HasExternalNeopixels, HasExternalMatrix, HasExternalI2CDevices,
+            HasButtons, HasBattery, SupportsWiFi, SupportsBLE, SupportsUSB, SupportsESPNow, SupportsHTTP, SupportsMQTT, SupportsWebSockets,
+            HasSpeaker, HasMicroSD
+        )
+        VALUES (
+            @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayDevice,
+            @IsCloudDevice, @CloudDeviceId,
+            @ConnMode, @SelectedPort,
+            @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
 
-                @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
-                @LastPingAttempt, @LastPinged, @LastPingStatus, @LastPingDurationMs, @ConsecutivePingFailures,
-                @ConfigLastAppliedAt, @SensorPayloadLastAckAt,
+            @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
+            @LastPingAttempt, @LastPinged, @LastPingStatus, @LastPingDurationMs, @ConsecutivePingFailures,
+            @ConfigLastAppliedAt, @SensorPayloadLastAckAt,
 
-                @HasOnboardScreen, @HasOnboardLED, @HasOnboardRGBLED, @HasExternalNeopixels, @HasExternalMatrix, @HasExternalI2CDevices,
-                @HasButtons, @HasBattery, @SupportsWiFi, @SupportsBLE, @SupportsUSB, @SupportsESPNow, @SupportsHTTP, @SupportsMQTT, @SupportsWebSockets,
-                @HasSpeaker, @HasMicroSD
-            );
-            SELECT last_insert_rowid();";
+            @HasOnboardScreen, @HasOnboardLED, @HasOnboardRGBLED, @HasExternalNeopixels, @HasExternalMatrix, @HasExternalI2CDevices,
+            @HasButtons, @HasBattery, @SupportsWiFi, @SupportsBLE, @SupportsUSB, @SupportsESPNow, @SupportsHTTP, @SupportsMQTT, @SupportsWebSockets,
+            @HasSpeaker, @HasMicroSD
+        );
+        SELECT last_insert_rowid();";
 
             int newId = await _db.ExecuteScalarAsync<int>(sql, newDevice);
             newDevice.Id = newId;
@@ -219,8 +237,6 @@ namespace JunctionRelayServer.Services
 
             return newDevice;
         }
-
-
 
         public async Task CreateDeviceScreenAsync(Model_Device_Screens screen)
         {
@@ -332,6 +348,8 @@ namespace JunctionRelayServer.Services
                 IsGateway = @IsGateway,
                 GatewayId = @GatewayId,
                 IsJunctionRelayDevice = @IsJunctionRelayDevice,
+                IsCloudDevice = @IsCloudDevice,
+                CloudDeviceId = @CloudDeviceId,
                 ConnMode = @ConnMode,
                 SelectedPort = @SelectedPort,
                 DeviceModel = @DeviceModel,

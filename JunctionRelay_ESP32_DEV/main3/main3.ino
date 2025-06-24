@@ -18,35 +18,6 @@ Device device(&connManager);
 
 ScreenRouter screenRouter;
 
-#if DEVICE_HAS_ONBOARD_SCREEN
-// LVGL task handle
-TaskHandle_t lvglTaskHandle = NULL;
-
-// Flag to coordinate initialization
-volatile bool lvglInitialized = false;
-
-// LVGL task to run on Core 1
-void lvglTaskFunction(void* parameter) {
-  Serial.printf("[LVGL Task] Started on core %d\n", xPortGetCoreID());
-  
-  // Initialize LVGL on Core 1
-  lv_init();
-  Serial.println("[LVGL Task] LVGL initialized on Core 1");
-  
-  // Set flag to indicate initialization is complete
-  lvglInitialized = true;
-  
-  // Main LVGL task loop
-  while (true) {
-    // Call LVGL task handler
-    lv_task_handler();
-    
-    // Small delay to prevent consuming too much CPU
-    vTaskDelay(pdMS_TO_TICKS(5));
-  }
-}
-#endif
-
 void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
@@ -194,6 +165,11 @@ void loop() {
     connManager.handleSerialData();
     lastSerial = millis();
   }
+
+  // WebSocket polling - ArduinoWebsockets can handle frequent polling
+  connManager.webSocketLoop();
+
+  // NO mqttLoop() needed - MQTT runs in background task
 
   // Update NeoPixels (CM5 effect and other animations)
   #if DEVICE_HAS_EXTERNAL_NEOPIXELS

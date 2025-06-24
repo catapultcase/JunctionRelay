@@ -4,9 +4,6 @@
 #include <Arduino.h>  
 #include <ArduinoJson.h>  
 #include <Wire.h>  // Add Wire library for TwoWire type
-#ifndef LV_CONF_INCLUDE_SIMPLE
-#define LV_CONF_INCLUDE_SIMPLE
-#endif
 
 #include <lvgl.h>
 #include <stdint.h>
@@ -118,14 +115,7 @@ public:
 
     // Common rotation logic for all devices
     void rotateDisplay() {
-        // Increment rotation and wrap-around (0-3)
-        uint8_t newRotation = (getRotation() + 1) % 4;
-        setRotation(newRotation);
-        // Update LVGL display driver settings
-        lv_disp_drv_t *drv = lv_disp_get_default()->driver;
-        drv->hor_res = width();
-        drv->ver_res = height();
-        lv_disp_drv_update(lv_disp_get_default(), drv);
+
     }
 
     // Optionally, common LVGL helper initialization can go here

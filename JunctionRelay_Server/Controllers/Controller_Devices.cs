@@ -1,20 +1,20 @@
 ﻿/*
- * This file is part of Junction Relay.
+ * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
- * Junction Relay is free software: you can redistribute it and/or modify
+ * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Junction Relay is distributed in the hope that it will be useful,
+ * JunctionRelay is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Junction Relay. If not, see <https://www.gnu.org/licenses/>.
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using JunctionRelayServer.Services;
@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Models;
 using Newtonsoft.Json;
 using JunctionRelayServer.Models.Requests;
+using JunctionRelay_Server.Models.Requests;
 
 namespace JunctionRelayServer.Controllers
 {
@@ -35,13 +36,15 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Manager_Network_Scan _networkScan;
         private readonly Service_Database_Manager_Sensors _sensorDb;
         private readonly Service_HostInfo _hostInfoService;
+        private readonly Service_Manager_CloudDevices _cloudDeviceService;
 
         public Controller_Devices(Service_Database_Manager_Devices deviceDb,
             Service_Manager_Devices deviceService,
             Service_Manager_Network_Scan networkScan,
             Service_Database_Manager_Sensors sensorDb,
             Service_HostInfo hostInfoService,
-            Service_Database_Manager_Device_I2CDevices i2cDeviceDb)
+            Service_Database_Manager_Device_I2CDevices i2cDeviceDb,
+            Service_Manager_CloudDevices cloudDeviceService)
         {
             _deviceDb = deviceDb;
             _deviceService = deviceService;
@@ -49,17 +52,36 @@ namespace JunctionRelayServer.Controllers
             _sensorDb = sensorDb;
             _hostInfoService = hostInfoService;
             _i2cDeviceDb = i2cDeviceDb;
+            _cloudDeviceService = cloudDeviceService;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAllDevices() => Ok(await _deviceDb.GetAllDevicesAsync());
-
-        [HttpGet("{id:int}")]
-        public async Task<IActionResult> GetDeviceById(int id)
-
+        public async Task<IActionResult> GetAllDevices()
         {
-            var device = await _deviceDb.GetDeviceByIdAsync(id);
-            return device == null ? NotFound() : Ok(device);
+            try
+            {
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                bool hasCloudAuth = !string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ");
+
+                // If user is cloud authenticated, sync cloud devices first
+                if (hasCloudAuth)
+                {
+                    var cloudToken = authHeader.Substring("Bearer ".Length);
+                    await _cloudDeviceService.SyncCloudDevicesAsync(cloudToken);
+                }
+
+                // Return unified device list from local database (includes both local and synced cloud devices)
+                var allDevices = await _deviceDb.GetAllDevicesAsync();
+                return Ok(allDevices);
+            }
+            catch (Exception ex)
+            {
+                // Log error but still return local devices if cloud sync fails
+                // This ensures the page doesn't break if cloud is unavailable
+                var localDevices = await _deviceDb.GetAllDevicesAsync();
+                return Ok(localDevices);
+            }
         }
 
         [HttpPost]
@@ -79,6 +101,12 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> GetDeviceById(int id)
+        {
+            var device = await _deviceDb.GetDeviceByIdAsync(id);
+            return device == null ? NotFound() : Ok(device);
+        }
 
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateDevice(int id, [FromBody] Model_Device updatedDevice)
@@ -1237,6 +1265,109 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Error retrieving bulk connection status: {ex.Message}");
+            }
+        }
+
+        // Add this to your Controller_Devices class
+
+        // POST: api/devices/{deviceId}/nest-under-gateway
+        [HttpPost("{deviceId:int}/nest-under-gateway")]
+        public async Task<IActionResult> NestDeviceUnderGateway(int deviceId, [FromBody] Model_Nest_Device_Request request)
+        {
+            try
+            {
+                // Validate the request
+                if (request == null)
+                    return BadRequest("Request body is required.");
+
+                // Get the device to be nested
+                var device = await _deviceDb.GetDeviceByIdAsync(deviceId);
+                if (device == null)
+                    return NotFound($"Device with ID {deviceId} not found.");
+
+                // If gatewayId is null, we're removing the device from its current gateway
+                if (request.GatewayId == null)
+                {
+                    device.GatewayId = null;
+                    device.Type = "Standalone"; // Update type to reflect standalone status
+                    device.LastUpdated = DateTime.UtcNow;
+
+                    var success = await _deviceDb.UpdateDeviceAsync(deviceId, device);
+                    return success
+                        ? Ok(new { message = $"Device '{device.Name}' removed from gateway successfully." })
+                        : StatusCode(500, "Failed to remove device from gateway.");
+                }
+
+                // Validate that the gateway exists and is actually a gateway
+                var gateway = await _deviceDb.GetDeviceByIdAsync(request.GatewayId.Value);
+                if (gateway == null)
+                    return NotFound($"Gateway with ID {request.GatewayId} not found.");
+
+                if (!gateway.IsGateway)
+                    return BadRequest($"Device '{gateway.Name}' is not configured as a gateway.");
+
+                // Prevent nesting a gateway under another gateway (optional business rule)
+                if (device.IsGateway)
+                    return BadRequest("Cannot nest a gateway device under another gateway.");
+
+                // Prevent circular nesting (device cannot be nested under itself)
+                if (deviceId == request.GatewayId)
+                    return BadRequest("Device cannot be nested under itself.");
+
+                // Update the device's gateway relationship and type
+                device.GatewayId = request.GatewayId;
+                device.Type = "Child"; // Update type to reflect child status
+                device.LastUpdated = DateTime.UtcNow;
+
+                var updateSuccess = await _deviceDb.UpdateDeviceAsync(deviceId, device);
+
+                if (updateSuccess)
+                {
+                    return Ok(new
+                    {
+                        message = $"Device '{device.Name}' successfully nested under gateway '{gateway.Name}'.",
+                        deviceId = deviceId,
+                        deviceName = device.Name,
+                        gatewayId = request.GatewayId,
+                        gatewayName = gateway.Name,
+                        newType = device.Type
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, "Failed to update device gateway relationship.");
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error nesting device under gateway: {ex.Message}");
+            }
+        }
+
+        // GET: api/devices/gateways - Get all available gateway devices
+        [HttpGet("gateways")]
+        public async Task<IActionResult> GetAvailableGateways()
+        {
+            try
+            {
+                var devices = await _deviceDb.GetAllDevicesAsync();
+                var gateways = devices
+                    .Where(d => d.IsGateway)
+                    .Select(d => new
+                    {
+                        id = d.Id,
+                        name = d.Name,
+                        ipAddress = d.IPAddress,
+                        status = d.Status
+                    })
+                    .OrderBy(g => g.name)
+                    .ToList();
+
+                return Ok(gateways);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error fetching available gateways: {ex.Message}");
             }
         }
     }
