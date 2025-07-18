@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
     Button,
     Typography,
@@ -31,12 +31,19 @@ import {
     Select,
     MenuItem,
     Divider,
-    Chip
+    Chip,
+    TextField,
+    Card,
+    CardContent,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 
 // Import the EnhancedSensorsTable component
 import EnhancedSensorsTable from "../components/EnhancedSensorsTable";
+import CollectorSetupInstructions from "../components/CollectorSetupInstructions";
 
 // Import icons
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -46,30 +53,45 @@ import StorageIcon from '@mui/icons-material/Storage';
 import NewReleasesIcon from '@mui/icons-material/NewReleases';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AddIcon from '@mui/icons-material/Add';
+import SaveIcon from '@mui/icons-material/Save';
+import EditIcon from '@mui/icons-material/Edit';
+import SecurityIcon from '@mui/icons-material/Security';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CloudIcon from '@mui/icons-material/Cloud';
+import CodeIcon from '@mui/icons-material/Code';
+import HomeIcon from '@mui/icons-material/Home';
+import ComputerIcon from '@mui/icons-material/Computer';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import RouterIcon from '@mui/icons-material/Router';
+import ColorLensIcon from '@mui/icons-material/ColorLens';
+import SpeedIcon from '@mui/icons-material/Speed';
+import WebIcon from '@mui/icons-material/Web';
+import PaymentIcon from '@mui/icons-material/Payment';
+import MonitorIcon from '@mui/icons-material/Monitor';
 
 const ConfigureCollector = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [collector, setCollector] = useState<any>(null);
+    const [originalCollector, setOriginalCollector] = useState<any>(null); // Store original values
     const [storedSensors, setStoredSensors] = useState<any[]>([]);
     const [fetchedSensors, setFetchedSensors] = useState<any[]>([]);
     const [fetchingSensors, setFetchingSensors] = useState(false);
     const [services, setServices] = useState<any[]>([]);
-    const [selectedService, setSelectedService] = useState("");
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState<"stored" | "delta">("stored");
+    const [editMode, setEditMode] = useState(false);
+    const [accessTokenChanged, setAccessTokenChanged] = useState(false);
 
     const [snackbarOpen, setSnackbarOpen] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState("");
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error" | "info" | "warning">("success");
 
-    // Removed unused currentTime state and associated useEffect
-
     // Define the default columns for each view
     const getDefaultVisibleColumns = (viewType: "stored" | "delta") => {
-        // Both views share the same column set for consistency
         return [
             "id",
             "externalId",
@@ -88,27 +110,139 @@ const ConfigureCollector = () => {
         setSnackbarOpen(true);
     };
 
-    // Removed unused formatRelativeTime function
-
-    // Fetch the collector details
-    const fetchCollector = async () => {
-        try {
-            const rsp = await fetch(`/api/collectors/${id}`);
-            if (!rsp.ok) throw new Error();
-            setCollector(await rsp.json());
-        } catch {
-            setError("Error fetching collector data.");
+    // Get collector type icon
+    const getCollectorIcon = (type: string) => {
+        switch (type) {
+            case "Cloudflare": return <CloudIcon />;
+            case "Github": return <CodeIcon />;
+            case "HomeAssistant": return <HomeIcon />;
+            case "Host": return <ComputerIcon />;
+            case "LibreHardwareMonitor": return <MonitorHeartIcon />;
+            case "MQTT": return <RouterIcon />;
+            case "NeoPixelColor": return <ColorLensIcon />;
+            case "RateTester": return <SpeedIcon />;
+            case "Render": return <WebIcon />;
+            case "Stripe": return <PaymentIcon />;
+            case "UptimeKuma": return <MonitorIcon />;
+            default: return <SettingsIcon />;
         }
     };
 
+    // Get collector type color
+    const getCollectorColor = (type: string): "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error" => {
+        switch (type) {
+            case "Cloudflare": return "primary";
+            case "Github": return "info";
+            case "HomeAssistant": return "info";
+            case "Host": return "secondary";
+            case "LibreHardwareMonitor": return "primary";
+            case "MQTT": return "error";
+            case "NeoPixelColor": return "secondary";
+            case "RateTester": return "warning";
+            case "Render": return "success";
+            case "Stripe": return "success";
+            case "UptimeKuma": return "success";
+            default: return "default";
+        }
+    };
+
+    // Update collector field
+    const updateCollectorField = (field: string, value: any) => {
+        if (field === 'accessToken') {
+            setAccessTokenChanged(true);
+        }
+        setCollector({ ...collector, [field]: value });
+    };
+
+    // Check if form has changes
+    const hasChanges = useMemo(() => {
+        if (!originalCollector || !collector) return false;
+        return Object.keys(collector).some(key => {
+            if (key === 'accessToken' && !accessTokenChanged) {
+                return false; // Don't consider unchanged access token as a change
+            }
+            return collector[key] !== originalCollector[key];
+        });
+    }, [collector, originalCollector, accessTokenChanged]);
+
+    // Get access token display value
+    const getAccessTokenDisplay = () => {
+        const isExisting = originalCollector?.accessToken;
+        if (isExisting && !accessTokenChanged) {
+            return '••••••••••••••••'; // Show masked value for existing token
+        }
+        return collector?.accessToken || ''; // Show actual value for new/changed tokens
+    };
+
+    const getAccessTokenHelperText = () => {
+        const isExisting = originalCollector?.accessToken;
+        if (isExisting && !accessTokenChanged) {
+            return "Encrypted access token exists. Enter new token to change it.";
+        }
+        return "Access token (will be encrypted when saved)";
+    };
+
+    // Save collector changes
+    const handleSaveCollector = async () => {
+        setSaving(true);
+        try {
+            const payload = { ...collector };
+
+            // If access token wasn't changed, remove it from payload to avoid overwriting
+            if (!accessTokenChanged && originalCollector?.accessToken) {
+                delete payload.accessToken;
+            }
+
+            const response = await fetch(`/api/collectors/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to save collector");
+            }
+
+            // Refresh collector data
+            await fetchCollector();
+            setEditMode(false);
+            setAccessTokenChanged(false);
+            showSnackbar("Collector updated successfully", "success");
+        } catch (err) {
+            showSnackbar("Error saving collector", "error");
+            console.error("Error saving collector:", err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Cancel edit mode
+    const handleCancelEdit = () => {
+        setCollector({ ...originalCollector });
+        setAccessTokenChanged(false);
+        setEditMode(false);
+    };
+
+    // Fetch the collector details
+    const fetchCollector = useCallback(async () => {
+        try {
+            const rsp = await fetch(`/api/collectors/${id}`);
+            if (!rsp.ok) throw new Error();
+            const data = await rsp.json();
+            setCollector(data);
+            setOriginalCollector({ ...data }); // Store original values
+        } catch {
+            setError("Error fetching collector data.");
+        }
+    }, [id]);
+
     // Fetch sensors already stored in the database
-    const fetchStoredSensors = async () => {
+    const fetchStoredSensors = useCallback(async () => {
         try {
             const rsp = await fetch(`/api/collectors/${id}/sensors`);
             if (!rsp.ok) throw new Error();
             const data = await rsp.json();
 
-            // Transform the data to match the expected structure for EnhancedSensorsTable
             const transformedSensors = (data.storedSensors || []).map((sensor: any) => ({
                 Id: sensor.id,
                 name: sensor.name,
@@ -129,7 +263,7 @@ const ConfigureCollector = () => {
         } catch {
             setError("Error fetching stored sensors.");
         }
-    };
+    }, [id]);
 
     // Fetch available services
     const fetchServices = async () => {
@@ -162,8 +296,7 @@ const ConfigureCollector = () => {
             setError("Collector ID not provided.");
             setLoading(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]); // We use eslint-disable-next-line because including all dependencies would cause unnecessary re-renders
+    }, [id, fetchCollector, fetchStoredSensors]);
 
     // Fetch new sensors from the collector that are not already in the DB
     const fetchDeltaSensors = async () => {
@@ -176,7 +309,6 @@ const ConfigureCollector = () => {
                 (s: any) => !storedSensors.some((st) => st.externalId === s.externalId)
             );
 
-            // Transform the data to match the expected structure for EnhancedSensorsTable
             const transformedSensors = newOnes.map((sensor: any) => ({
                 Id: sensor.id || `temp-${Math.random().toString(36).substring(2, 11)}`,
                 name: sensor.name,
@@ -194,8 +326,8 @@ const ConfigureCollector = () => {
             }));
 
             setFetchedSensors(transformedSensors);
-            setActiveTab("delta"); // Switch to delta tab when new sensors are found
-            await fetchStoredSensors(); // refresh DB view
+            setActiveTab("delta");
+            await fetchStoredSensors();
 
             showSnackbar(`Found ${transformedSensors.length} new sensors`, transformedSensors.length > 0 ? "info" : "success");
         } catch {
@@ -206,13 +338,12 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Fixed handleAddSensor function - updates JSON payload to match API expectations
+    // Handle adding a sensor
     const handleAddSensor = async (sensorId: number | string) => {
         try {
             const sensor = fetchedSensors.find((s) => s.Id === sensorId);
             if (!sensor) throw new Error("Sensor not found");
 
-            // Create payload without the "newSensor" wrapper
             const payload = {
                 name: sensor.name,
                 externalId: sensor.externalId || sensor.sensorTag,
@@ -229,12 +360,10 @@ const ConfigureCollector = () => {
                 mqttQoS: sensor.mqttQoS
             };
 
-            console.log("Sending payload to server:", JSON.stringify(payload, null, 2));
-
             const rsp = await fetch(`/api/sensors/collectors/${id}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload), // Send the unwrapped payload
+                body: JSON.stringify(payload),
             });
 
             if (!rsp.ok) {
@@ -249,9 +378,8 @@ const ConfigureCollector = () => {
                 throw new Error(errorMsg);
             }
 
-            // Update UI state
             setFetchedSensors(fetchedSensors.filter((s) => s.Id !== sensorId));
-            await fetchStoredSensors(); // Refresh stored sensors
+            await fetchStoredSensors();
 
             showSnackbar("Sensor added successfully.", "success");
         } catch (error) {
@@ -260,20 +388,17 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Update the handleAddAllSensors function as well
+    // Handle adding all sensors
     const handleAddAllSensors = async () => {
         if (fetchedSensors.length === 0) {
             showSnackbar("No new sensors to add", "info");
             return;
         }
 
-        // Show loading state
         setLoading(true);
 
         try {
-            // Create an array of promises for adding each sensor
             const addPromises = fetchedSensors.map(async (sensor) => {
-                // Create unwrapped payload for each sensor
                 const sensorPayload = {
                     name: sensor.name,
                     externalId: sensor.externalId || sensor.sensorTag,
@@ -292,7 +417,7 @@ const ConfigureCollector = () => {
                     const rsp = await fetch(`/api/sensors/collectors/${id}`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(sensorPayload), // Send the unwrapped payload
+                        body: JSON.stringify(sensorPayload),
                     });
 
                     if (!rsp.ok) {
@@ -308,21 +433,14 @@ const ConfigureCollector = () => {
                 }
             });
 
-            // Wait for all add operations to complete
             const results = await Promise.all(addPromises);
-
-            // Count successes and failures
             const successCount = results.filter(r => r.success).length;
             const failureCount = results.length - successCount;
 
-            // Clear the fetchedSensors list and refresh stored sensors
             setFetchedSensors([]);
             await fetchStoredSensors();
-
-            // Switch back to stored tab
             setActiveTab("stored");
 
-            // Show appropriate message based on results
             if (failureCount === 0) {
                 showSnackbar(`Successfully added all ${successCount} sensors`, "success");
             } else if (successCount === 0) {
@@ -334,7 +452,6 @@ const ConfigureCollector = () => {
             console.error("Error in bulk add operation:", error);
             showSnackbar("An error occurred while adding sensors", "error");
         } finally {
-            // Reset loading state
             setLoading(false);
         }
     };
@@ -356,9 +473,30 @@ const ConfigureCollector = () => {
     const handleBack = () => navigate("/collectors");
 
     const handleDeleteCollector = async () => {
-        // Implement collector deletion logic here
-        // This would typically involve a confirmation dialog
-        showSnackbar("Delete functionality not implemented", "warning");
+        if (window.confirm(`Are you sure you want to delete the collector "${collector?.name}"? This action cannot be undone and will also delete all associated sensors.`)) {
+            try {
+                setLoading(true);
+                const response = await fetch(`/api/collectors/${id}`, {
+                    method: "DELETE"
+                });
+
+                if (response.ok) {
+                    showSnackbar("Collector deleted successfully", "success");
+                    // Give user time to see the success message before navigating
+                    setTimeout(() => {
+                        navigate("/collectors");
+                    }, 1500);
+                } else {
+                    const errorText = await response.text();
+                    console.error("Delete error response:", errorText);
+                    throw new Error(`Failed to delete collector: ${response.status} ${response.statusText}`);
+                }
+            } catch (err: any) {
+                console.error("Error deleting collector:", err);
+                showSnackbar(`Error deleting collector: ${err.message}`, "error");
+                setLoading(false); // Reset loading state on error
+            }
+        }
     };
 
     // Mock functions required by EnhancedSensorsTable but not used in this context
@@ -395,19 +533,166 @@ const ConfigureCollector = () => {
         return activeTab === "stored" ? storedSensors : fetchedSensors;
     }, [activeTab, storedSensors, fetchedSensors]);
 
+    // Render collector configuration fields based on type
+    const renderCollectorFields = () => {
+        if (!collector) return null;
+
+        const needsUrl = ["Cloudflare", "Github", "HomeAssistant", "LibreHardwareMonitor", "Render", "Stripe", "UptimeKuma"].includes(collector.collectorType);
+        const needsAccessToken = ["Cloudflare", "Github", "HomeAssistant", "Render", "Stripe"].includes(collector.collectorType);
+        const needsService = collector.collectorType === "MQTT";
+
+        return (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <TextField
+                    label="Collector Name"
+                    value={collector.name || ''}
+                    onChange={(e) => updateCollectorField('name', e.target.value)}
+                    disabled={!editMode}
+                    size="small"
+                    required
+                />
+
+                {needsUrl && (
+                    <TextField
+                        label={
+                            collector.collectorType === "Github" ? "GitHub Repository URL" :
+                                collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
+                                    collector.collectorType === "Render" ? "Render Service URL" :
+                                        collector.collectorType === "Stripe" ? "Stripe API Base URL" :
+                                            "URL"
+                        }
+                        value={collector.url || ''}
+                        onChange={(e) => updateCollectorField('url', e.target.value)}
+                        disabled={!editMode}
+                        size="small"
+                        required
+                        placeholder={
+                            collector.collectorType === "Github" ? "https://github.com/owner/repo" :
+                                collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
+                                    collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
+                                        collector.collectorType === "Stripe" ? "https://api.stripe.com" :
+                                            ""
+                        }
+                    />
+                )}
+
+                {needsAccessToken && (
+                    <TextField
+                        label={
+                            collector.collectorType === "Github" ? "GitHub Personal Access Token" :
+                                collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
+                                    collector.collectorType === "Render" ? "Render API Key" :
+                                        collector.collectorType === "Stripe" ? "Stripe Secret Key" :
+                                            "Access Token"
+                        }
+                        type="password"
+                        value={getAccessTokenDisplay()}
+                        onChange={(e) => updateCollectorField('accessToken', e.target.value)}
+                        disabled={!editMode}
+                        size="small"
+                        required
+                        helperText={editMode ? getAccessTokenHelperText() : ""}
+                        placeholder={
+                            originalCollector?.accessToken && !accessTokenChanged
+                                ? "Enter new token to change existing"
+                                : collector.collectorType === "Github" ? "ghp_..." :
+                                    collector.collectorType === "Cloudflare" ? "cf_api_token..." :
+                                        collector.collectorType === "Render" ? "rnd_..." :
+                                            collector.collectorType === "Stripe" ? "sk_..." :
+                                                ""
+                        }
+                    />
+                )}
+
+                {needsService && (
+                    <FormControl size="small" disabled={!editMode}>
+                        <InputLabel id="service-select-label">Associated Service</InputLabel>
+                        <Select
+                            labelId="service-select-label"
+                            value={collector.serviceId || ''}
+                            onChange={(e) => updateCollectorField('serviceId', e.target.value)}
+                            label="Associated Service"
+                        >
+                            <MenuItem value="">
+                                <em>None</em>
+                            </MenuItem>
+                            {services.map((svc) => (
+                                <MenuItem key={svc.id} value={svc.id}>{svc.name}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
+
+                <TextField
+                    label="Poll Rate (ms)"
+                    type="number"
+                    value={collector.pollRate || 5000}
+                    onChange={(e) => updateCollectorField('pollRate', parseInt(e.target.value) || 5000)}
+                    disabled={!editMode}
+                    size="small"
+                    helperText="How often to poll for new data (milliseconds)"
+                />
+
+                {collector.collectorType === "RateTester" && (
+                    <TextField
+                        label="Send Rate (ms)"
+                        type="number"
+                        value={collector.sendRate || 1000}
+                        onChange={(e) => updateCollectorField('sendRate', parseInt(e.target.value) || 1000)}
+                        disabled={!editMode}
+                        size="small"
+                        helperText="How often to send test data (milliseconds)"
+                    />
+                )}
+            </Box>
+        );
+    };
+
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+                <CircularProgress />
+                <Typography sx={{ ml: 2 }}>Loading...</Typography>
+            </Box>
+        );
+    }
+
+    if (error) {
+        return (
+            <Box sx={{ p: 2 }}>
+                <Typography color="error">{error}</Typography>
+                <Button variant="outlined" onClick={handleBack} sx={{ mt: 2 }}>
+                    Back to Collectors
+                </Button>
+            </Box>
+        );
+    }
+
     return (
-        <Box sx={{ p: 2 }}>
+        <Box sx={{ p: { xs: 1, md: 2 } }}>
             {/* Header with title and action buttons */}
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-                <Typography variant="h4">
+            <Box sx={{
+                display: "flex",
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: "space-between",
+                alignItems: { xs: 'stretch', sm: 'center' },
+                mb: 3,
+                gap: 2
+            }}>
+                <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', md: '2rem' } }}>
                     Configure Collector
                 </Typography>
 
-                <Box sx={{ display: "flex", gap: 2 }}>
+                <Box sx={{
+                    display: "flex",
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    gap: 1
+                }}>
                     <Button
                         variant="outlined"
                         startIcon={<ArrowBackIcon />}
                         onClick={handleBack}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                     >
                         Back to Collectors
                     </Button>
@@ -417,64 +702,91 @@ const ConfigureCollector = () => {
                         color="error"
                         startIcon={<DeleteIcon />}
                         onClick={handleDeleteCollector}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                     >
                         Delete Collector
                     </Button>
                 </Box>
             </Box>
 
-            {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-                    <CircularProgress />
-                    <Typography sx={{ ml: 2 }}>Loading…</Typography>
-                </Box>
-            ) : error ? (
-                <Typography color="error">{error}</Typography>
-            ) : (
-                <>
-                    {/* Collector Information Card */}
-                    <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-                        <Typography variant="h6" gutterBottom sx={{
+            {/* Collector Information Card */}
+            <Card elevation={2} sx={{ mb: 3 }}>
+                <CardContent>
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', sm: 'row' },
+                        justifyContent: 'space-between',
+                        alignItems: { xs: 'stretch', sm: 'center' },
+                        mb: 2,
+                        gap: 2
+                    }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {getCollectorIcon(collector.collectorType)}
+                            <Typography variant="h6">
+                                {collector.name}
+                            </Typography>
+                            <Chip
+                                label={collector.collectorType}
+                                color={getCollectorColor(collector.collectorType)}
+                                size="small"
+                            />
+                        </Box>
+
+                        <Box sx={{
                             display: 'flex',
-                            alignItems: 'center',
-                            mb: 2
+                            flexDirection: { xs: 'column', sm: 'row' },
+                            gap: 1
                         }}>
-                            <SettingsIcon sx={{ mr: 1 }} />
-                            Collector Configuration
-                        </Typography>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        {/* Using Box with flexbox instead of Grid */}
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                            {/* Collector details - left side */}
-                            <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
-                                <Typography variant="subtitle1" fontWeight="bold">{collector.name}</Typography>
-                                <Typography><strong>URL:</strong> {collector.url}</Typography>
-                                <Typography><strong>Token:</strong> {collector.accessToken ? "••••••" : "N/A"}</Typography>
-                                <Typography><strong>Type:</strong> {collector.collectorType}</Typography>
-                            </Box>
-
-                            {/* Service selection and fetch button - right side */}
-                            <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
-                                <FormControl fullWidth sx={{ mb: 2 }}>
-                                    <InputLabel id="service-label">Associated Service</InputLabel>
-                                    <Select
-                                        labelId="service-label"
-                                        value={selectedService}
-                                        onChange={(e) => setSelectedService(e.target.value)}
-                                        disabled={!services.length}
-                                        size="small"
+                            {editMode ? (
+                                <>
+                                    <Button
+                                        variant="contained"
+                                        startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
+                                        onClick={handleSaveCollector}
+                                        disabled={saving || !hasChanges}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                                     >
-                                        <MenuItem value="">
-                                            <em>None</em>
-                                        </MenuItem>
-                                        {services.map((svc) => (
-                                            <MenuItem key={svc.id} value={svc.id}>{svc.name}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
+                                        {saving ? "Saving..." : "Save Changes"}
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={handleCancelEdit}
+                                        disabled={saving}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </>
+                            ) : (
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<EditIcon />}
+                                    onClick={() => setEditMode(true)}
+                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                >
+                                    Edit Settings
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
 
+                    <Divider sx={{ my: 2 }} />
+
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                        {/* Collector Configuration */}
+                        <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
+                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'medium' }}>
+                                Collector Configuration
+                            </Typography>
+                            {renderCollectorFields()}
+                        </Box>
+
+                        {/* Sensor Management */}
+                        <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
+                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'medium' }}>
+                                Sensor Management
+                            </Typography>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <Button
                                     variant="contained"
                                     onClick={fetchDeltaSensors}
@@ -484,118 +796,176 @@ const ConfigureCollector = () => {
                                 >
                                     {fetchingSensors ? "Fetching Sensors..." : "Fetch New Sensors"}
                                 </Button>
+
+                                <Box sx={{
+                                    p: 2,
+                                    bgcolor: 'action.hover',
+                                    borderRadius: 1,
+                                    textAlign: 'center'
+                                }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        <strong>Stored Sensors:</strong> {storedSensors.length}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        <strong>New Sensors:</strong> {fetchedSensors.length}
+                                    </Typography>
+                                </Box>
+
+                                {/* Security Notice */}
+                                {(collector.collectorType === "Cloudflare" ||
+                                    collector.collectorType === "Github" ||
+                                    collector.collectorType === "HomeAssistant" ||
+                                    collector.collectorType === "Render" ||
+                                    collector.collectorType === "Stripe") && (
+                                        <Box sx={{
+                                            p: 2,
+                                            bgcolor: 'rgba(76, 175, 80, 0.08)',
+                                            borderRadius: 1,
+                                            border: '1px solid rgba(76, 175, 80, 0.23)'
+                                        }}>
+                                            <Typography variant="caption" color="success.main" sx={{
+                                                fontWeight: 'medium',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                mb: 0.5
+                                            }}>
+                                                <SecurityIcon sx={{ mr: 1, fontSize: 16 }} />
+                                                Security Notice
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Access tokens are automatically encrypted before being stored.
+                                                Existing credentials are never sent to your browser for security.
+                                            </Typography>
+                                        </Box>
+                                    )}
                             </Box>
                         </Box>
-                    </Paper>
-
-                    {/* Tab Selection with Add All button */}
-                    <Box sx={{ display: 'flex', mb: 2, justifyContent: 'space-between' }}>
-                        <Box sx={{ display: 'flex' }}>
-                            <Button
-                                variant={activeTab === "stored" ? "contained" : "outlined"}
-                                onClick={() => setActiveTab("stored")}
-                                startIcon={<StorageIcon />}
-                                sx={{ mr: 1 }}
-                            >
-                                Stored Sensors ({storedSensors.length})
-                            </Button>
-
-                            <Button
-                                variant={activeTab === "delta" ? "contained" : "outlined"}
-                                onClick={() => setActiveTab("delta")}
-                                startIcon={<NewReleasesIcon />}
-                                disabled={fetchedSensors.length === 0}
-                                color={fetchedSensors.length > 0 ? "primary" : "inherit"}
-                            >
-                                New Sensors {fetchedSensors.length > 0 && `(${fetchedSensors.length})`}
-                                {fetchedSensors.length > 0 && (
-                                    <Chip
-                                        label={fetchedSensors.length}
-                                        color="error"
-                                        size="small"
-                                        sx={{ ml: 1, height: 20 }}
-                                    />
-                                )}
-                            </Button>
-                        </Box>
-
-                        {/* Add All button - only show when there are new sensors and we're on the delta tab */}
-                        {fetchedSensors.length > 0 && activeTab === "delta" && (
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={handleAddAllSensors}
-                                startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
-                                disabled={loading}
-                            >
-                                {loading ? "Adding..." : `Add All ${fetchedSensors.length} Sensors`}
-                            </Button>
-                        )}
                     </Box>
+                </CardContent>
+            </Card>
 
-                    {/* Sensors Table */}
-                    {displaySensors.length > 0 ? (
-                        <Box sx={{ mb: 3 }}>
-                            <EnhancedSensorsTable
-                                availableSensors={displaySensors}
-                                handleSensorSelect={noopAsync}
-                                handleSensorOrderChange={noopAsync}
-                                handleSensorTagChange={noopAsync}
-                                getSensorOrder={(sensor) => sensor.sensorOrder || 0}
-                                getSensorTag={(sensor) => sensor.sensorTag || ''}
-                                sensorTargets={{}}
-                                targets={[]}
-                                removeSensorTarget={(junctionId, sensorId, deviceId) => noopAsync()}
-                                assignSensorTarget={(junctionId, sensorId, deviceId, screenId) => noopAsync()}
-                                setCurrentSensor={noop}
-                                setCurrentTargetDevice={noop}
-                                setScreenSelectionModalOpen={noop}
-                                showSnackbar={showSnackbar}
-                                setSensorTargets={noop}
-                                junctionId={0} // Add dummy junctionId since we don't need it for collectors
+            {/* Setup Instructions Accordion */}
+            <Accordion sx={{ mb: 3 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography variant="h6">Setup Instructions</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <CollectorSetupInstructions collectorType={collector.collectorType} />
+                </AccordionDetails>
+            </Accordion>
 
-                                // Custom props for this specific usage
-                                hideTargetsColumn={true}
-                                hideSelectionColumn={true}
-                                hideSourceColumn={true}
-                                customTitle={activeTab === "stored" ? "Stored Sensors" : "New Sensors Available"}
-                                customIcon={activeTab === "stored" ? <StorageIcon sx={{ mr: 1 }} /> : <NewReleasesIcon sx={{ mr: 1 }} />}
-                                customActions={activeTab === "stored" ? renderStoredSensorActions : renderDeltaSensorActions}
-                                readOnly={true}
-                                showLastUpdated={true}
-                                hideFilters={false}
+            {/* Tab Selection with Add All button */}
+            <Box sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: 'space-between',
+                mb: 2,
+                gap: 2
+            }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    <Button
+                        variant={activeTab === "stored" ? "contained" : "outlined"}
+                        onClick={() => setActiveTab("stored")}
+                        startIcon={<StorageIcon />}
+                    >
+                        Stored Sensors ({storedSensors.length})
+                    </Button>
 
-                                // Use different local storage keys for each view to maintain separate column preferences
-                                localStorageKey={`collector_${id}_${activeTab}_sensors_columns`}
-
-                                // Pass in default visible columns for this view
-                                defaultVisibleColumns={getDefaultVisibleColumns(activeTab)}
+                    <Button
+                        variant={activeTab === "delta" ? "contained" : "outlined"}
+                        onClick={() => setActiveTab("delta")}
+                        startIcon={<NewReleasesIcon />}
+                        disabled={fetchedSensors.length === 0}
+                        color={fetchedSensors.length > 0 ? "primary" : "inherit"}
+                    >
+                        New Sensors {fetchedSensors.length > 0 && `(${fetchedSensors.length})`}
+                        {fetchedSensors.length > 0 && (
+                            <Chip
+                                label={fetchedSensors.length}
+                                color="error"
+                                size="small"
+                                sx={{ ml: 1, height: 20 }}
                             />
-                        </Box>
-                    ) : (
-                        <Paper
-                            elevation={2}
-                            sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center' }}
+                        )}
+                    </Button>
+                </Box>
+
+                {/* Add All button - only show when there are new sensors and we're on the delta tab */}
+                {fetchedSensors.length > 0 && activeTab === "delta" && (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={handleAddAllSensors}
+                        startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+                        disabled={loading}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                    >
+                        {loading ? "Adding..." : `Add All ${fetchedSensors.length} Sensors`}
+                    </Button>
+                )}
+            </Box>
+
+            {/* Sensors Table */}
+            {displaySensors.length > 0 ? (
+                <Box sx={{ mb: 3 }}>
+                    <EnhancedSensorsTable
+                        availableSensors={displaySensors}
+                        handleSensorSelect={noopAsync}
+                        handleSensorOrderChange={noopAsync}
+                        handleSensorTagChange={noopAsync}
+                        getSensorOrder={(sensor) => sensor.sensorOrder || 0}
+                        getSensorTag={(sensor) => sensor.sensorTag || ''}
+                        sensorTargets={{}}
+                        targets={[]}
+                        removeSensorTarget={(junctionId, sensorId, deviceId) => noopAsync()}
+                        assignSensorTarget={(junctionId, sensorId, deviceId, screenId) => noopAsync()}
+                        setCurrentSensor={noop}
+                        setCurrentTargetDevice={noop}
+                        setScreenSelectionModalOpen={noop}
+                        showSnackbar={showSnackbar}
+                        setSensorTargets={noop}
+                        junctionId={0}
+
+                        // Custom props for this specific usage
+                        hideTargetsColumn={true}
+                        hideSelectionColumn={true}
+                        hideSourceColumn={true}
+                        customTitle={activeTab === "stored" ? "Stored Sensors" : "New Sensors Available"}
+                        customIcon={activeTab === "stored" ? <StorageIcon sx={{ mr: 1 }} /> : <NewReleasesIcon sx={{ mr: 1 }} />}
+                        customActions={activeTab === "stored" ? renderStoredSensorActions : renderDeltaSensorActions}
+                        readOnly={true}
+                        showLastUpdated={true}
+                        hideFilters={false}
+
+                        // Use different local storage keys for each view to maintain separate column preferences
+                        localStorageKey={`collector_${id}_${activeTab}_sensors_columns`}
+
+                        // Pass in default visible columns for this view
+                        defaultVisibleColumns={getDefaultVisibleColumns(activeTab)}
+                    />
+                </Box>
+            ) : (
+                <Paper
+                    elevation={2}
+                    sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center' }}
+                >
+                    <Typography variant="body1" color="text.secondary">
+                        {activeTab === "stored"
+                            ? "No sensors are currently stored in the database."
+                            : "No new sensors available. Click 'Fetch New Sensors' to check for updates."}
+                    </Typography>
+                    {activeTab === "stored" && (
+                        <Button
+                            variant="contained"
+                            onClick={fetchDeltaSensors}
+                            disabled={fetchingSensors}
+                            startIcon={fetchingSensors ? <CircularProgress size={20} /> : <RefreshIcon />}
+                            sx={{ mt: 2 }}
                         >
-                            <Typography variant="body1" color="text.secondary">
-                                {activeTab === "stored"
-                                    ? "No sensors are currently stored in the database."
-                                    : "No new sensors available. Click 'Fetch New Sensors' to check for updates."}
-                            </Typography>
-                            {activeTab === "stored" && (
-                                <Button
-                                    variant="contained"
-                                    onClick={fetchDeltaSensors}
-                                    disabled={fetchingSensors}
-                                    startIcon={fetchingSensors ? <CircularProgress size={20} /> : <RefreshIcon />}
-                                    sx={{ mt: 2 }}
-                                >
-                                    {fetchingSensors ? "Fetching Sensors..." : "Fetch New Sensors"}
-                                </Button>
-                            )}
-                        </Paper>
+                            {fetchingSensors ? "Fetching Sensors..." : "Fetch New Sensors"}
+                        </Button>
                     )}
-                </>
+                </Paper>
             )}
 
             {/* Notification Snackbar */}
