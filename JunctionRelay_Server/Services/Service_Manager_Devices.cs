@@ -113,7 +113,7 @@ namespace JunctionRelayServer.Services
                     Name = instance ?? "Unnamed Device",
                     Description = "",  // Add description if needed
                     Type = "Standalone",
-                    Status = "Online",
+                    Status = "Active",
                     LastUpdated = DateTime.UtcNow,
                     IPAddress = ip,
                     IsJunctionRelayDevice = !string.IsNullOrEmpty(info.FirmwareVersion) && info.FirmwareVersion.StartsWith("JunctionRelay", StringComparison.OrdinalIgnoreCase),
@@ -137,6 +137,7 @@ namespace JunctionRelayServer.Services
                     HasExternalI2CDevices = caps.HasExternalI2CDevices,
                     HasButtons = caps.HasButtons,
                     HasBattery = caps.HasBattery,
+                    SupportsEthernet = caps.SupportsEthernet,
                     SupportsWiFi = caps.SupportsWiFi,
                     SupportsHTTP = caps.SupportsHTTP,
                     SupportsESPNow = caps.SupportsESPNow,

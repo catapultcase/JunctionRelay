@@ -32,10 +32,11 @@ import {
     Button,
     Tooltip,
     Checkbox,
-    ListItemText,
     Popover,
     List,
     ListItem,
+    ListItemText,
+    ListItemSecondaryAction,
     IconButton,
     Chip,
     Switch,
@@ -51,20 +52,25 @@ import {
     SelectChangeEvent,
     AlertColor,
     Snackbar,
+    Card,
+    CardContent,
+    ToggleButtonGroup,
+    ToggleButton,
 } from "@mui/material";
 import { Link, useNavigate } from "react-router-dom";
 import StopIcon from "@mui/icons-material/Stop";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import HubIcon from '@mui/icons-material/Hub';
 import DevicesIcon from '@mui/icons-material/Devices';
-import AddIcon from '@mui/icons-material/Add';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-
+import TableViewIcon from '@mui/icons-material/TableView';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import { useTheme, useMediaQuery } from "@mui/material";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 
 // Define column interface
@@ -78,6 +84,9 @@ export interface JunctionColumn {
 
 // Type for sort direction
 type SortDirection = 'asc' | 'desc';
+
+// Type for view mode
+type ViewMode = 'table' | 'standard' | 'mini';
 
 // Junction interface - keep sortOrder for backend
 export interface Junction {
@@ -104,16 +113,21 @@ interface JunctionsTableProps {
     onCloneJunction: (id: number) => void;
     onDeleteJunction: (id: number) => void;
     onUpdateSortOrders?: (updates: { junctionId: number, sortOrder: number }[]) => void;
-    onJunctionAdded?: () => void; // Callback when a junction is added
+    onJunctionAdded?: () => void;
+    onDashboardToggle?: (junctionId: number, showOnDashboard: boolean) => Promise<void>; // ADD THIS
     filteredJunctions?: Junction[];
     localStorageKey?: string;
     detailedConnections: boolean;
     setDetailedConnections: (value: boolean) => void;
     additionalColumns?: JunctionColumn[];
-    devices?: any[]; // Add devices array to look up device status
-    collectors?: any[]; // Add collectors array to look up collector status
-    showAddButton?: boolean; // Whether to show the Add Junction button
-    showImportButton?: boolean; // Whether to show the Import Junction button
+    devices?: any[];
+    collectors?: any[];
+    showAddButton?: boolean;
+    showImportButton?: boolean;
+    title?: string;
+    viewMode?: ViewMode;
+    onViewModeChange?: (mode: ViewMode) => void;
+    viewModeStorageKey?: string;
 }
 
 const STORAGE_KEY_DEFAULT = "dashboard_visible_junction_cols";
@@ -648,6 +662,7 @@ const JunctionTableRow = memo(({
     );
 });
 
+// Updated JunctionsTable component header section
 const JunctionsTable: React.FC<JunctionsTableProps> = ({
     junctions,
     onStartJunction,
@@ -656,6 +671,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     onDeleteJunction,
     onUpdateSortOrders,
     onJunctionAdded,
+    onDashboardToggle, // ADD THIS
     filteredJunctions,
     localStorageKey = STORAGE_KEY_DEFAULT,
     detailedConnections,
@@ -664,16 +680,64 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     devices = [],
     collectors = [],
     showAddButton = true,
-    showImportButton = true
+    showImportButton = true,
+    title = "Junctions",
+    viewMode: externalViewMode,
+    onViewModeChange: externalViewModeChange,
+    viewModeStorageKey = 'junctions_view_mode'
 }) => {
     const navigate = useNavigate();
-
     const flags = useFeatureFlags();
     const hyperlinkRowsEnabled = flags?.hyperlink_rows !== false;
     const junctionImportExportEnabled = flags?.junction_import_export !== false;
-
-    // Add useRef at the component level, outside any effects
     const isInitialRender = useRef(true);
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    // Use external view mode if provided, otherwise use internal state
+    const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        return (localStorage.getItem(viewModeStorageKey) as ViewMode) || 'table';
+    });
+
+    // Listen for view mode changes from bottom action bar (mobile only)
+    useEffect(() => {
+        const handleBottomActionViewModeChange = (e: CustomEvent) => {
+            if (e.detail.mode) {
+                const newMode = e.detail.mode as ViewMode;
+                setViewMode(newMode);
+                localStorage.setItem(viewModeStorageKey, newMode);
+            }
+        };
+
+        // Listen for localStorage changes from other tabs/windows
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === viewModeStorageKey && e.newValue) {
+                const newMode = e.newValue as ViewMode;
+                setViewMode(newMode);
+            }
+        };
+
+        window.addEventListener('bottom-action-view-mode-change', handleBottomActionViewModeChange as EventListener);
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('bottom-action-view-mode-change', handleBottomActionViewModeChange as EventListener);
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, [viewModeStorageKey]);
+
+    // Handle view mode change from desktop toggle buttons
+    const handleViewModeChange = useCallback((event: React.MouseEvent<HTMLElement>, newViewMode: ViewMode) => {
+        if (newViewMode !== null) {
+            setViewMode(newViewMode);
+            localStorage.setItem(viewModeStorageKey, newViewMode);
+
+            // Also dispatch event for bottom action bar sync
+            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                detail: { mode: newViewMode }
+            }));
+        }
+    }, [viewModeStorageKey]);
 
     // Junction creation state
     const [addJunctionModalOpen, setAddJunctionModalOpen] = useState<boolean>(false);
@@ -701,6 +765,31 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
         gatewayDestination: "",
         selectedGatewayDeviceId: ""
     });
+
+    // Calculate grid columns based on view mode (for tile views)
+    const getGridColumns = () => {
+        if (viewMode === 'mini') {
+            return {
+                xs: 'repeat(2, 1fr)', // 2 columns on mobile for mini tiles
+                sm: 'repeat(3, 1fr)', // 3 columns on small screens
+                md: 'repeat(4, 1fr)', // 4 columns on medium screens
+                lg: 'repeat(6, 1fr)'  // 6 columns on large screens
+            };
+        } else if (viewMode === 'standard') {
+            return {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                md: 'repeat(3, 1fr)',
+                lg: 'repeat(4, 1fr)'
+            };
+        }
+        return {};
+    };
+
+    // Calculate card dimensions based on view mode
+    const getCardHeight = () => {
+        return viewMode === 'mini' ? 120 : 200;
+    };
 
     // Load gateway devices when component mounts
     useEffect(() => {
@@ -1050,201 +1139,429 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
             newJunction.type === "Gateway Junction (Websocket to ESP:NOW)";
     };
 
+    // Junction tile click handler
+    const handleJunctionClick = (id: number) => {
+        navigate(`/configure-junction/${id}`);
+    };
+
+    // FIXED: Dashboard toggle handler using the prop callback
+    const handleDashboardToggle = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, junction: Junction) => {
+        e.stopPropagation();
+
+        if (onDashboardToggle) {
+            try {
+                await onDashboardToggle(junction.id, e.target.checked);
+            } catch (error) {
+                console.error("Failed to toggle dashboard status:", error);
+                showSnackbar("Error updating junction dashboard status", "error");
+            }
+        }
+    }, [onDashboardToggle, showSnackbar]);
+
     return (
         <>
-            {/* Table header with Add Junction button and column selector */}
-            <Box display="flex" alignItems="center" mb={2}>
-                {/* Add Junction button on the far left */}
-                {showAddButton && (
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleAddJunction}
-                        size="small"
-                        startIcon={<AddIcon />}
-                        sx={{ mr: 2 }}
-                    >
-                        Add Junction
-                    </Button>
-                )}
+            {/* Table header with view mode toggle and column selector - matching DevicesTable */}
+            <Box display="flex" alignItems="center" mb={1} flexWrap="wrap" gap={2}>
+                <Typography variant="h6">{title}</Typography>
 
-                {/* Import button next to Add Junction */}
-                {showImportButton && junctionImportExportEnabled && (
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        component="label"
-                        startIcon={<CloudUploadIcon />}
-                        size="small"
-                        disabled={importing}
-                        sx={{ display: 'flex', alignItems: 'center', mr: 2 }}
-                    >
-                        {importing ? (
-                            <>
-                                <CircularProgress size={16} sx={{ mr: 1 }} />
-                                Importing...
-                            </>
-                        ) : (
-                            'Import Junction'
-                        )}
-                        <input
-                            type="file"
-                            hidden
-                            accept=".json"
-                            onChange={handleImportJunction}
-                            disabled={importing}
-                            ref={fileInputRef}
-                        />
-                    </Button>
-                )}
+                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    {/* View Mode Toggle - ONLY show on desktop */}
+                    {!isMobile && (
+                        <ToggleButtonGroup
+                            value={viewMode}
+                            exclusive
+                            onChange={handleViewModeChange}
+                            aria-label="view mode"
+                            size="small"
+                        >
+                            <ToggleButton value="table" aria-label="table view">
+                                <TableViewIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Table
+                                </Typography>
+                            </ToggleButton>
+                            <ToggleButton value="standard" aria-label="standard tiles">
+                                <DashboardIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Standard
+                                </Typography>
+                            </ToggleButton>
+                            <ToggleButton value="mini" aria-label="mini tiles">
+                                <ViewModuleIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Mini
+                                </Typography>
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+                    )}
 
-                {/* Right side controls */}
-                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <FormControlLabel
-                        control={
-                            <Switch
-                                checked={detailedConnections}
-                                onChange={(e) => setDetailedConnections(e.target.checked)}
-                                size="small"
-                            />
-                        }
-                        label={
-                            <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-                                Show Details
-                            </Typography>
-                        }
-                        sx={{
-                            margin: 0,
-                            '& .MuiFormControlLabel-label': {
-                                fontWeight: 500
+                    {/* Show Details Switch - ONLY show in table mode */}
+                    {viewMode === 'table' && (
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={detailedConnections}
+                                    onChange={(e) => setDetailedConnections(e.target.checked)}
+                                    size="small"
+                                />
                             }
-                        }}
-                    />
+                            label={
+                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                    Show Details
+                                </Typography>
+                            }
+                            sx={{
+                                margin: 0,
+                                '& .MuiFormControlLabel-label': {
+                                    fontWeight: 500
+                                }
+                            }}
+                        />
+                    )}
 
-                    <Button
-                        onClick={openJunctionPopover}
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                            minWidth: 'auto',
-                            textTransform: 'none',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            padding: '4px 10px',
-                        }}
-                    >
-                        Columns
-                    </Button>
+                    {/* Columns Button - ONLY show in table mode */}
+                    {viewMode === 'table' && (
+                        <Button
+                            onClick={openJunctionPopover}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                minWidth: 'auto',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.875rem',
+                                padding: '4px 10px',
+                            }}
+                        >
+                            Columns
+                        </Button>
+                    )}
                 </Box>
 
-                {/* Columns Popover */}
-                <Popover
-                    open={Boolean(anchorJunctionCols)}
-                    anchorEl={anchorJunctionCols}
-                    onClose={closeJunctionPopover}
-                >
-                    <List dense>
-                        {/* visible columns first */}
-                        {visibleJunctionCols.map((field, idx) => (
-                            <ListItem key={field}>
-                                <Checkbox
-                                    checked
-                                    onChange={(e) => {
-                                        handleToggleColumn(field, e.target.checked);
-                                    }}
-                                />
-                                <ListItemText primary={junctionCols.find((c) => c.field === field)!.label} />
-                                <IconButton
-                                    size="small"
-                                    disabled={idx === 0}
-                                    onClick={() => handleMoveColumn(field, "up")}
-                                >
-                                    <ArrowUpwardIcon fontSize="inherit" />
-                                </IconButton>
-                                <IconButton
-                                    size="small"
-                                    disabled={idx === visibleJunctionCols.length - 1}
-                                    onClick={() => handleMoveColumn(field, "down")}
-                                >
-                                    <ArrowDownwardIcon fontSize="inherit" />
-                                </IconButton>
-                            </ListItem>
-                        ))}
-                        {/* then hidden columns */}
-                        {junctionCols
-                            .filter((c) => !visibleJunctionCols.includes(c.field))
-                            .map(({ field, label }) => (
+                {/* FIXED: Columns Popover with proper structure from old Dashboard code */}
+                {viewMode === 'table' && (
+                    <Popover
+                        open={Boolean(anchorJunctionCols)}
+                        anchorEl={anchorJunctionCols}
+                        onClose={closeJunctionPopover}
+                        anchorOrigin={{
+                            vertical: 'bottom',
+                            horizontal: 'right',
+                        }}
+                        transformOrigin={{
+                            vertical: 'top',
+                            horizontal: 'right',
+                        }}
+                    >
+                        <List dense>
+                            {/* Visible columns first */}
+                            {visibleJunctionCols.map((field, idx) => (
                                 <ListItem key={field}>
                                     <Checkbox
+                                        checked
                                         onChange={(e) => {
                                             handleToggleColumn(field, e.target.checked);
                                         }}
                                     />
-                                    <ListItemText primary={label} />
+                                    <ListItemText primary={junctionCols.find((c) => c.field === field)!.label} />
+                                    <IconButton
+                                        size="small"
+                                        disabled={idx === 0}
+                                        onClick={() => handleMoveColumn(field, "up")}
+                                    >
+                                        <ArrowUpwardIcon fontSize="inherit" />
+                                    </IconButton>
+                                    <IconButton
+                                        size="small"
+                                        disabled={idx === visibleJunctionCols.length - 1}
+                                        onClick={() => handleMoveColumn(field, "down")}
+                                    >
+                                        <ArrowDownwardIcon fontSize="inherit" />
+                                    </IconButton>
                                 </ListItem>
                             ))}
-                    </List>
-                </Popover>
+                            {/* Then hidden columns */}
+                            {junctionCols
+                                .filter((c) => !visibleJunctionCols.includes(c.field))
+                                .map(({ field, label }) => (
+                                    <ListItem key={field}>
+                                        <Checkbox
+                                            onChange={(e) => {
+                                                handleToggleColumn(field, e.target.checked);
+                                            }}
+                                        />
+                                        <ListItemText primary={label} />
+                                    </ListItem>
+                                ))}
+                        </List>
+                    </Popover>
+                )}
             </Box>
 
-            {/* Junctions Table */}
-            <TableContainer component={Paper} sx={{ mb: 3 }}>
-                <Table size="small">
-                    <TableHead>
-                        <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
-                            {visibleJunctionCols.map((field) => {
-                                const colDef = junctionCols.find((c) => c.field === field)!;
-                                return (
-                                    <TableCell
-                                        key={field}
-                                        align={colDef.align}
-                                        sortDirection={sortState.orderBy === field ? sortState.order : false}
-                                    >
-                                        {colDef.sortable !== false ? (
-                                            <TableSortLabel
-                                                active={sortState.orderBy === field}
-                                                direction={sortState.orderBy === field ? sortState.order : 'asc'}
-                                                onClick={() => handleRequestSort(field)}
-                                            >
-                                                {colDef.label}
-                                            </TableSortLabel>
-                                        ) : (
-                                            colDef.label
-                                        )}
-                                    </TableCell>
-                                );
-                            })}
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {sortedJunctions.length > 0 ? (
-                            sortedJunctions.map((junction) => (
-                                <JunctionTableRow
-                                    key={junction.id}
-                                    junction={junction}
-                                    visibleCols={visibleJunctionCols}
-                                    allColumns={junctionCols}
-                                    onStartJunction={memoizedStartJunction}
-                                    onStopJunction={memoizedStopJunction}
-                                    onCloneJunction={memoizedCloneJunction}
-                                    onDeleteJunction={memoizedDeleteJunction}
-                                    detailedConnections={detailedConnections}
-                                    navigate={navigate}
-                                    hyperlinkRows={hyperlinkRowsEnabled}
-                                    devices={devices}
-                                    collectors={collectors}
-                                />
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={visibleJunctionCols.length} sx={{ textAlign: 'center', py: 3 }}>
-                                    <Typography color="textSecondary">No junctions to display</Typography>
-                                </TableCell>
+            {/* Junction Content - Table or Tiles */}
+            {viewMode === 'table' ? (
+                /* Table View */
+                <TableContainer component={Paper} sx={{ mb: 3 }}>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
+                                {visibleJunctionCols.map((field) => {
+                                    const colDef = junctionCols.find((c) => c.field === field)!;
+                                    return (
+                                        <TableCell
+                                            key={field}
+                                            align={colDef.align}
+                                            sortDirection={sortState.orderBy === field ? sortState.order : false}
+                                        >
+                                            {colDef.sortable !== false ? (
+                                                <TableSortLabel
+                                                    active={sortState.orderBy === field}
+                                                    direction={sortState.orderBy === field ? sortState.order : 'asc'}
+                                                    onClick={() => handleRequestSort(field)}
+                                                >
+                                                    {colDef.label}
+                                                </TableSortLabel>
+                                            ) : (
+                                                colDef.label
+                                            )}
+                                        </TableCell>
+                                    );
+                                })}
                             </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+                        </TableHead>
+                        <TableBody>
+                            {sortedJunctions.length > 0 ? (
+                                sortedJunctions.map((junction) => (
+                                    <JunctionTableRow
+                                        key={junction.id}
+                                        junction={junction}
+                                        visibleCols={visibleJunctionCols}
+                                        allColumns={junctionCols}
+                                        onStartJunction={memoizedStartJunction}
+                                        onStopJunction={memoizedStopJunction}
+                                        onCloneJunction={memoizedCloneJunction}
+                                        onDeleteJunction={memoizedDeleteJunction}
+                                        detailedConnections={detailedConnections}
+                                        navigate={navigate}
+                                        hyperlinkRows={hyperlinkRowsEnabled}
+                                        devices={devices}
+                                        collectors={collectors}
+                                    />
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={visibleJunctionCols.length} sx={{ textAlign: 'center', py: 3 }}>
+                                        <Typography color="textSecondary">No junctions to display</Typography>
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            ) : (
+                /* Tile Views */
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: getGridColumns(),
+                    gap: viewMode === 'mini' ? 1 : 2,
+                    mb: 3
+                }}>
+                    {sortedJunctions.length > 0 ? (
+                        sortedJunctions.map(junction => {
+                            const statusInfo = getJunctionStatusInfo(junction.status);
+
+                            return (
+                                <Card
+                                    key={junction.id}
+                                    variant="outlined"
+                                    sx={{
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease-in-out',
+                                        position: 'relative',
+                                        minHeight: getCardHeight(),
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        '&:hover': {
+                                            boxShadow: 3,
+                                            backgroundColor: 'action.hover',
+                                            transform: 'translateY(-2px)'
+                                        },
+                                        // Status-based border styling
+                                        border: junction.status === 'Running' ? '2px solid' : '1px solid',
+                                        borderColor: junction.status === 'Running' ? 'success.main' : 'divider'
+                                    }}
+                                    onClick={() => handleJunctionClick(junction.id)}
+                                >
+                                    {/* Status Badge */}
+                                    <Box
+                                        sx={{
+                                            position: 'absolute',
+                                            top: viewMode === 'mini' ? 4 : 8,
+                                            right: viewMode === 'mini' ? 4 : 8,
+                                            zIndex: 1
+                                        }}
+                                    >
+                                        <Chip
+                                            label={statusInfo.label}
+                                            color={statusInfo.color}
+                                            size="small"
+                                            sx={{
+                                                fontSize: viewMode === 'mini' ? '0.6rem' : '0.75rem',
+                                                height: viewMode === 'mini' ? 18 : 22,
+                                                fontWeight: 'bold'
+                                            }}
+                                        />
+                                    </Box>
+
+                                    <CardContent sx={{
+                                        flex: 1,
+                                        pt: viewMode === 'mini' ? 3 : 5,
+                                        p: viewMode === 'mini' ? 1 : 2,
+                                        pb: viewMode === 'mini' ? 1 : 1 // Less bottom padding to make room for buttons
+                                    }}>
+                                        {/* Junction Name */}
+                                        <Typography
+                                            variant={viewMode === 'mini' ? 'body2' : 'h6'}
+                                            sx={{
+                                                mb: viewMode === 'mini' ? 0.5 : 1,
+                                                fontSize: viewMode === 'mini' ? '0.8rem' : { xs: '1rem', sm: '1.1rem' },
+                                                fontWeight: 600,
+                                                lineHeight: viewMode === 'mini' ? 1.2 : 1.5
+                                            }}
+                                        >
+                                            {junction.name}
+                                        </Typography>
+
+                                        {/* Protocol Icon and Type */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 0.5,
+                                            mb: viewMode === 'mini' ? 0.5 : 1
+                                        }}>
+                                            <ProtocolIcon type={junction.type || ''} />
+                                            {viewMode === 'standard' && (
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        fontSize: '0.75rem',
+                                                        color: 'text.secondary'
+                                                    }}
+                                                >
+                                                    {junction.type}
+                                                </Typography>
+                                            )}
+                                        </Box>
+
+                                        {/* Description (only in standard mode) */}
+                                        {viewMode === 'standard' && junction.description && (
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    fontSize: '0.75rem',
+                                                    color: 'text.secondary',
+                                                    mb: 1,
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: 'vertical'
+                                                }}
+                                            >
+                                                {junction.description}
+                                            </Typography>
+                                        )}
+
+                                        {/* Connection Info */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: viewMode === 'mini' ? 0.5 : 1,
+                                            mb: 2
+                                        }}>
+                                            {/* Sources */}
+                                            <LinkList
+                                                links={[
+                                                    ...(junction.deviceLinks?.filter((l: any) => l.role === "Source") || []),
+                                                    ...(junction.collectorLinks?.filter((l: any) => l.role === "Source") || []),
+                                                ]}
+                                                detailedConnections={false} // Always use compact mode in tiles
+                                                hyperlinkRows={hyperlinkRowsEnabled}
+                                                devices={devices}
+                                                collectors={collectors}
+                                            />
+
+                                            {/* Targets */}
+                                            <LinkList
+                                                links={[
+                                                    ...(junction.deviceLinks?.filter((l: any) => l.role === "Target") || []),
+                                                    ...(junction.collectorLinks?.filter((l: any) => l.role === "Target") || []),
+                                                ]}
+                                                detailedConnections={false} // Always use compact mode in tiles
+                                                hyperlinkRows={hyperlinkRowsEnabled}
+                                                devices={devices}
+                                                collectors={collectors}
+                                            />
+                                        </Box>
+                                    </CardContent>
+
+                                    {/* Action Buttons at Bottom */}
+                                    <Box sx={{
+                                        p: viewMode === 'mini' ? 0.5 : 1,
+                                        pt: 0,
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        gap: 0.5
+                                    }}>
+                                        <Button
+                                            variant="contained"
+                                            color="error"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                memoizedStopJunction(junction.id);
+                                            }}
+                                            disabled={junction.status === "Idle"}
+                                            sx={{
+                                                minWidth: viewMode === 'mini' ? 24 : 30,
+                                                p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
+                                                fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
+                                            }}
+                                            size="small"
+                                        >
+                                            <StopIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            color="success"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                memoizedStartJunction(junction.id);
+                                            }}
+                                            disabled={junction.status === "Running"}
+                                            sx={{
+                                                minWidth: viewMode === 'mini' ? 24 : 30,
+                                                p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
+                                                fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
+                                            }}
+                                            size="small"
+                                        >
+                                            <PlayArrowIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                        </Button>
+                                    </Box>
+                                </Card>
+                            );
+                        })
+                    ) : (
+                        <Box sx={{
+                            gridColumn: '1 / -1',
+                            textAlign: 'center',
+                            py: 3
+                        }}>
+                            <Typography color="textSecondary">No junctions to display</Typography>
+                        </Box>
+                    )}
+                </Box>
+            )}
 
             {/* Snackbar for notifications */}
             <Snackbar

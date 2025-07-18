@@ -160,6 +160,9 @@ namespace JunctionRelayServer.Controllers
 
                 // Generate login token
                 var user = await _authService.GetUserAsync(request.Username);
+                if (user == null)
+                    return StatusCode(500, new { message = "Failed to retrieve created user" });
+
                 var token = _jwtService.GenerateToken(user.Username, user.Id);
                 var expiresAt = DateTime.UtcNow.AddMinutes(480);
 

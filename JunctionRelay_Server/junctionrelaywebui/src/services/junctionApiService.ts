@@ -12,7 +12,10 @@ export interface JunctionUpdatePayload {
     CronExpression?: string | null;
     AllTargetsAllData?: boolean;
     AllTargetsAllScreens?: boolean;
+    GatewayDeviceId?: string;
     GatewayDestination?: string;
+    DestinationOverride?: string;
+    BaudRate?: number;
     SelectedPayloadAttributes?: string;
     StreamAutoTimeout?: boolean;
     StreamAutoTimeoutMs?: number;
@@ -22,6 +25,7 @@ export interface JunctionUpdatePayload {
     EnableHealthCheck?: boolean;
     HealthCheckIntervalMs?: number;
     EnableNotifications?: boolean;
+    CompressPayload?: boolean;
 }
 export interface JunctionData {
     id: number;
@@ -41,9 +45,12 @@ export interface JunctionData {
     enableHealthCheck?: boolean;
     healthCheckIntervalMs?: number;
     enableNotifications?: boolean;
-    // Add other properties as needed
+    compressPayload?: boolean;
+    gatewayDeviceId?: string;
+    gatewayDestination?: string;
+    destinationOverride?: string;
+    baudRate?: number;
 }
-
 
 export interface Link {
     id: number;
@@ -153,32 +160,6 @@ export const importJunction = async (junctionData: any) => {
         throw new Error("Failed to import junction");
     }
 };
-
-
-export const updateJunctionSortOrders = async (updates: { junctionId: number, sortOrder: number }[]) => {
-    try {
-        // Ensure correct format with a wrapper object
-        const payload = { updates: updates };
-
-        console.log("Sending sort order updates in batch:", payload);
-
-        const response = await fetch(`/api/junctions/sort-order`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to update junction sort orders: ${response.status}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error("API Error updating sort orders:", error);
-        throw error;
-    }
-};
-
 
 // Device & Collector APIs
 export const getAllDevices = async () => {

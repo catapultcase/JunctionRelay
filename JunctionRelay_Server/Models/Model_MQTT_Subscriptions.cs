@@ -23,7 +23,7 @@ namespace JunctionRelayServer.Models
     {
         public int Id { get; set; }
         public int ServiceId { get; set; }
-        public string Topic { get; set; }
+        public required string Topic { get; set; }
         public int QoS { get; set; }
         public bool Active { get; set; }
         public DateTime DateAdded { get; set; }

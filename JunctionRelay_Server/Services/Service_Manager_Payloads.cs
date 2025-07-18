@@ -19,6 +19,8 @@
 
 using JunctionRelayServer.Models;
 using System.Text.Json;
+using System.IO.Compression;
+using System.Text;
 
 namespace JunctionRelayServer.Services
 {
@@ -37,8 +39,6 @@ namespace JunctionRelayServer.Services
             _serviceManagerConnections = serviceManagerConnections;
             _layoutsDb = layoutsDb;
         }
-
-        #region Helper Methods
 
         // Helper method to add properties if they are present (including valid 0 values)
         private void AddIfPresent<T>(Dictionary<string, object> dictionary, string key, T? value)
@@ -143,21 +143,110 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Helper method to serialize payload with optional 8-digit length prefix
-        private string SerializeWithOptionalPrefix(Dictionary<string, object> payloadDict, bool includePrefix, string payloadType)
+        // Helper method to compress data using Gzip
+        private byte[] CompressData(string data)
         {
-            var json = JsonSerializer.Serialize(payloadDict);
-
-            if (includePrefix)
+            var bytes = Encoding.UTF8.GetBytes(data);
+            using var output = new MemoryStream();
+            using (var gzip = new GZipStream(output, CompressionMode.Compress))
             {
-                var prefix = json.Length.ToString().PadLeft(8, '0');
-                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added 8-digit prefix '{prefix}' to {payloadType} payload");
-                return prefix + json;
+                gzip.Write(bytes, 0, bytes.Length);
+            }
+            return output.ToArray();
+        }
+
+        // Helper method to serialize payload with LLLLTTRR prefix and compression
+        private object SerializeWithOptionalPrefix(Dictionary<string, object> payloadDict, bool includePrefix, string payloadType, bool compressPayload = false, string routingHint = "00")
+        {
+            var json = JsonSerializer.Serialize(payloadDict, new JsonSerializerOptions
+            {
+                WriteIndented = false // Remove whitespace for better compression
+            });
+
+            // Debug input parameters
+            //Console.WriteLine($"[DEBUG] SerializeWithOptionalPrefix parameters:");
+            //Console.WriteLine($"  - includePrefix: {includePrefix}");
+            //Console.WriteLine($"  - compressPayload: {compressPayload}");
+            //Console.WriteLine($"  - routingHint: '{routingHint}'");
+            //Console.WriteLine($"  - json.Length: {json.Length}");
+
+            if (compressPayload)
+            {
+                var compressedData = CompressData(json);
+                var originalSize = Encoding.UTF8.GetByteCount(json);
+                var compressedSize = compressedData.Length;
+                var compressionRatio = (1.0 - (double)compressedSize / originalSize) * 100;
+
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 🗜️ Compressed {payloadType} payload: {originalSize}→{compressedSize} bytes ({compressionRatio:F1}% reduction)");
+
+                if (includePrefix)
+                {
+                    // FIXED: LLLLTTRR format: Length(4) + Type(01=Gzip) + Route(2)
+                    var lengthHint = Math.Min(compressedData.Length, 9999).ToString("D4");
+                    var typeField = "01"; // Gzip
+                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
+                    var prefix = lengthHint + typeField + cleanRoutingHint;
+
+                    // Debug prefix components
+                    //Console.WriteLine($"[DEBUG] Compressed prefix components:");
+                    //Console.WriteLine($"  - lengthHint: '{lengthHint}' (4 chars)");
+                    //Console.WriteLine($"  - typeField: '{typeField}' (2 chars)");
+                    //Console.WriteLine($"  - cleanRoutingHint: '{cleanRoutingHint}' (2 chars)");
+                    //Console.WriteLine($"  - Final prefix: '{prefix}' (8 chars total)");
+
+                    var prefixBytes = Encoding.UTF8.GetBytes(prefix);
+                    var result = new byte[prefixBytes.Length + compressedData.Length];
+                    Array.Copy(prefixBytes, 0, result, 0, prefixBytes.Length);
+                    Array.Copy(compressedData, 0, result, prefixBytes.Length, compressedData.Length);
+
+                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added LLLLTTRR prefix '{prefix}' to compressed {payloadType} payload (Type: Gzip, Route: {cleanRoutingHint})");
+                    return result;
+                }
+                else
+                {
+                    return compressedData;
+                }
             }
             else
             {
-                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ℹ️ No prefix added to {payloadType} payload");
-                return json;
+                // Uncompressed JSON
+                if (includePrefix)
+                {
+                    // FIXED: LLLLTTRR format: Length(4) + Type(00=JSON) + Route(2)
+                    var lengthHint = Math.Min(json.Length, 9999).ToString("D4");
+                    var typeField = "00"; // JSON
+                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
+                    var prefix = lengthHint + typeField + cleanRoutingHint;
+
+                    // Debug prefix components
+                    //Console.WriteLine($"[DEBUG] JSON prefix components:");
+                    //Console.WriteLine($"  - lengthHint: '{lengthHint}' (4 chars)");
+                    //Console.WriteLine($"  - typeField: '{typeField}' (2 chars)");
+                    //Console.WriteLine($"  - cleanRoutingHint: '{cleanRoutingHint}' (2 chars)");
+                    //Console.WriteLine($"  - Final prefix: '{prefix}' (8 chars total)");
+
+                    // Validate prefix format
+                    if (prefix.Length != 8)
+                    {
+                        Console.WriteLine($"[ERROR] Prefix wrong length: {prefix.Length} (expected 8)");
+                    }
+
+                    for (int i = 0; i < prefix.Length; i++)
+                    {
+                        if (!char.IsDigit(prefix[i]))
+                        {
+                            Console.WriteLine($"[ERROR] Non-digit at position {i}: '{prefix[i]}'");
+                        }
+                    }
+
+                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added LLLLTTRR prefix '{prefix}' to {payloadType} payload (Type: JSON, Route: {cleanRoutingHint})");
+                    return prefix + json;
+                }
+                else
+                {
+                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ℹ️ No prefix added to {payloadType} payload");
+                    return json;
+                }
             }
         }
 
@@ -227,10 +316,6 @@ namespace JunctionRelayServer.Services
             AddIfPresent(dictionary, "max_height", template.MaxHeight);
         }
 
-        #endregion
-
-        #region Payload Generation Methods
-
         // Generate configuration payloads for screens
         public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
             string screenKey,
@@ -238,7 +323,8 @@ namespace JunctionRelayServer.Services
             Model_Device_Screens screen,
             Model_Screen_Layout? overrideTemplate = null,
             string? junctionType = null,
-            string? gatewayDestination = null)
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Dictionary<string, object>();
 
@@ -339,8 +425,9 @@ namespace JunctionRelayServer.Services
                 payloadDict["layout"] = layoutItems;
             }
 
-            // 9) Serialize with optional prefix based on template setting
-            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "config");
+            // 9) Determine routing hint and serialize with optional prefix and compression
+            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "config", compressPayload, routingHint);
 
             // 10) Return under the screenKey
             result[screenKey] = finalPayload;
@@ -355,7 +442,8 @@ namespace JunctionRelayServer.Services
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
             string? junctionType = null,
-            string? gatewayDestination = null)
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Dictionary<string, object>();
 
@@ -408,8 +496,9 @@ namespace JunctionRelayServer.Services
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
             }
 
-            // 6) Serialize with optional prefix based on template setting
-            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "MQTT config");
+            // 6) Determine routing hint and serialize with optional prefix and compression
+            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "MQTT config", compressPayload, routingHint);
 
             // 7) Return under the screenKey
             result[screenKey] = finalPayload;
@@ -425,7 +514,8 @@ namespace JunctionRelayServer.Services
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
             string? junctionType = null,
-            string? gatewayDestination = null)
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Dictionary<string, object>();
 
@@ -509,8 +599,9 @@ namespace JunctionRelayServer.Services
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // 9) Serialize with optional prefix based on template setting
-            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "sensor");
+            // 9) Determine routing hint and serialize with optional prefix and compression
+            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "sensor", compressPayload, routingHint);
 
             // 10) Return under the screenId
             result[screenId] = finalPayload;
@@ -527,7 +618,8 @@ namespace JunctionRelayServer.Services
             Model_Device_Screens screen,
             int startingYOffset,
             string? junctionType = null,
-            string? gatewayDestination = null)
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Dictionary<string, object>();
 
@@ -619,16 +711,43 @@ namespace JunctionRelayServer.Services
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // 8) Serialize with optional prefix based on template setting
-            string finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "matrix sensor");
+            // 8) Determine routing hint and serialize with optional prefix and compression
+            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "matrix sensor", compressPayload, routingHint);
 
             // 9) Return under the screenId
             result[screenId] = finalPayload;
-            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created matrix sensor payload for {screenId}");
+            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOAD] ✅ Created matrix sensor payload for {screenId}");
 
             return result;
         }
 
-        #endregion
+        // Generate gateway command payloads (add_peer, etc.)
+        public string SerializeGatewayCommand(
+            object command,
+            bool includePrefix,
+            bool compressPayload = false,
+            string routingHint = "01") // Default to forward for gateway commands
+        {
+            // Convert command object to dictionary format
+            var commandDict = new Dictionary<string, object>();
+
+            // Handle the command object (could be anonymous object or dictionary)
+            var json = JsonSerializer.Serialize(command);
+            using var doc = JsonDocument.Parse(json);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                var clonedValue = CloneJsonValue(prop.Value);
+                if (clonedValue != null)
+                    commandDict[prop.Name] = clonedValue;
+            }
+
+            // Use the existing SerializeWithOptionalPrefix method
+            var result = SerializeWithOptionalPrefix(commandDict, includePrefix, "gateway command", compressPayload, routingHint);
+
+            // Gateway commands are always strings (not binary), so cast appropriately
+            return result as string ?? throw new InvalidOperationException("Gateway command serialization failed");
+        }
+
     }
 }

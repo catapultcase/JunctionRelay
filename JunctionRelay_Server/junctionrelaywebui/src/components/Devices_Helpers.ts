@@ -32,6 +32,10 @@ export interface DeviceColumn {
 export const STORAGE_KEY_DEVICES_COLUMNS = "devices_visible_columns";
 export const STORAGE_KEY_DEVICES_SORT = "devices_sort_state";
 export const STORAGE_KEY_REFRESH_INTERVAL = "devices_refresh_interval";
+export const STORAGE_KEY_CLOUD_REFRESH_INTERVAL = "junctionrelay_cloud_refresh_interval";
+
+// Storage keys for cloud devices default columns
+export const STORAGE_KEY_CLOUD_DEVICES_COLUMNS = "cloud_devices_visible_columns";
 
 // Type for sort direction
 export type SortDirection = 'asc' | 'desc';
@@ -45,14 +49,30 @@ export const defaultDeviceColumns: DeviceColumn[] = [
     { field: "ipAddress", label: "IP Address", align: "left", sortable: true },
     { field: "uniqueIdentifier", label: "MAC / Unique ID", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
+    { field: "notifications", label: "Notifications", align: "center", sortable: true },
     { field: "connMode", label: "Active Connections", align: "left", sortable: true },
     { field: "firmware", label: "Firmware", align: "left", sortable: true },
     { field: "custom", label: "Custom Firmware", align: "left", sortable: true },
-    { field: "heartbeatStatus", label: "Heartbeat", align: "left", sortable: true },
+    { field: "heartbeatStatus", label: "Heartbeat Status", align: "left", sortable: true },
     { field: "heartbeatProtocol", label: "Heartbeat Protocol", align: "left", sortable: true },
-    { field: "lastPinged", label: "Last Successful Heartbeat", align: "left", sortable: true },
+    { field: "lastPinged", label: "Last Heartbeat", align: "left", sortable: true },
     { field: "pingLatency", label: "Heartbeat Time (ms)", align: "right", sortable: true },
     { field: "consecutiveFailures", label: "Heartbeat Failures", align: "right", sortable: true },
+    { field: "syncMode", label: "Cloud Sync Mode", align: "left", sortable: true },
+];
+
+// Default visible columns for local devices
+export const defaultLocalDeviceColumns = [
+    "actions", "name", "type", "model", "ipAddress", "uniqueIdentifier",
+    "status", "syncMode", "notifications", "connMode", "firmware", "custom",
+    "heartbeatProtocol", "heartbeatStatus", "lastPinged", "pingLatency",
+    "consecutiveFailures"
+];
+
+// Default visible columns for cloud devices (when not unified)
+export const defaultCloudDeviceColumns = [
+    "actions", "name", "type", "uniqueIdentifier", "status",
+    "syncMode", "notifications", "heartbeatStatus", "lastPinged"
 ];
 
 // Helper function to get heartbeat status info
@@ -64,8 +84,7 @@ export const getHeartbeatStatusInfo = (
         return { label: "Disabled", color: "default" };
     }
 
-    // Use lastPingStatus if available, otherwise fall back to overall device status
-    const heartbeatStatus = device.lastPingStatus || device.status;
+    const heartbeatStatus = device.lastPingStatus
     const consecutiveFailures = device.consecutivePingFailures || 0;
     const lastPinged = device.lastPinged;
 
@@ -97,6 +116,23 @@ export const getHeartbeatStatusInfo = (
         } else if (consecutiveFailures > 0 && consecutiveFailures < 3) {
             return {
                 label: "Unstable",
+                color: "warning"
+                // Note: icon will be added in the component that uses this
+            };
+        }
+    }
+
+    // Handle new streaming status
+    if (normalizedStatus === 'online (streaming)') {
+        if (consecutiveFailures === 0 && !isStale) {
+            return {
+                label: "Online (Streaming)",
+                color: "success"
+                // Note: icon will be added in the component that uses this
+            };
+        } else if (isStale) {
+            return {
+                label: "Stale (Streaming)",
                 color: "warning"
                 // Note: icon will be added in the component that uses this
             };
@@ -269,98 +305,59 @@ export const getDeviceTypeInfo = (device: any): { label: string; color: "primary
     };
 };
 
-// Enhanced ConnMode display helper
-export const getEnhancedConnModeDisplay = (device: any, connectionStatus?: any) => {
-    // If we have real-time connection status, use it for enhanced display
-    if (connectionStatus) {
-        const { espNow, wifiUp, ethernetUp, mqttUp } = connectionStatus;
+// Helper function to get notifications status info
+export const getNotificationsStatusInfo = (device: any): { enabled: boolean; color: "success" | "default" } => {
+    const enabled = device.pushNotifications === true || device.pushNotifications === 1;
+    return {
+        enabled,
+        color: enabled ? "success" : "default"
+    };
+};
 
-        // Determine the primary connection method and additional capabilities
-        let primaryConnection = "";
-        let additionalFeatures: string[] = [];
-        let color: "default" | "primary" | "secondary" | "success" | "warning" | "info" | "error" = "default";
+export const getSyncModeInfo = (
+    device: any
+): { label: string; color: "primary" | "secondary" | "default" } => {
+    const raw = device.syncMode;
 
-        // Primary network connection
-        if (ethernetUp && wifiUp) {
-            primaryConnection = "Eth+WiFi";
-            color = "success";
-        } else if (ethernetUp) {
-            primaryConnection = "Ethernet";
-            color = "success";
-        } else if (wifiUp) {
-            primaryConnection = "WiFi";
-            color = "primary";
-        } else {
-            primaryConnection = "Offline";
-            color = "error";
-        }
-
-        // Additional capabilities
-        if (espNow) {
-            additionalFeatures.push("ESP-NOW");
-        }
-        if (mqttUp) {
-            additionalFeatures.push("MQTT");
-        }
-
-        // Build the display label
-        let label = primaryConnection;
-        if (additionalFeatures.length > 0) {
-            label += `+${additionalFeatures.join("+")}`;
-        }
-
-        // Special case for gateway mode
-        if (device.connMode?.toLowerCase() === 'gateway') {
-            if (ethernetUp && espNow) {
-                label = "Eth/ESP-NOW";
-                color = "success";
-            } else if (ethernetUp) {
-                label = "Eth Gateway";
-                color = "primary";
-            } else if (espNow) {
-                label = "ESP-NOW Hub";
-                color = "warning";
-            } else {
-                label = "Gateway (Offline)";
-                color = "error";
-            }
-        }
-
-        return { label, color };
+    if (!raw || typeof raw !== "string") {
+        return { label: "Disabled", color: "default" };
     }
 
-    // Fallback to basic connMode from database (for manually entered devices or when endpoint unavailable)
-    if (!device.connMode) {
-        return { label: "—", color: "default" as const };
-    }
+    const mode = raw.trim().toLowerCase();
 
-    // Simple color coding for database connMode values - no capability checking
-    let connModeColor: "default" | "primary" | "secondary" | "success" | "warning" | "info" | "error" = "default";
-    switch (device.connMode.toUpperCase()) {
-        case 'WIFI':
-            connModeColor = "primary";
-            break;
-        case 'ETHERNET':
-            connModeColor = "success";
-            break;
-        case 'GATEWAY':
-            connModeColor = "info";
-            break;
-        case 'AP':
-        case 'ACCESSPOINT':
-            connModeColor = "warning";
-            break;
-        case 'ESPNOW':
-            connModeColor = "info";
-            break;
-        case 'BLUETOOTH':
-        case 'BLE':
-            connModeColor = "secondary";
-            break;
+    switch (mode) {
+        case "cloud_health":
+            return { label: "Health Only", color: "primary" };
+        case "cloud_sync":
+            return { label: "Full Sync", color: "secondary" };
+        case "local_health":
+            return { label: "Health Only", color: "primary" };
+        case "local_sync":
+            return { label: "Full Sync", color: "secondary" };
+        case "disabled":
         default:
-            connModeColor = "default";
+            return { label: "Disabled", color: "default" };
+    }
+};
+
+// Simplified ConnMode display helper - now uses only stored database values
+export const getEnhancedConnModeDisplay = (device: any): Array<{ label: string; color: "default" | "primary" | "secondary" | "success" | "warning" | "info" | "error" }> => {
+    // Use the stored ConnMode from the database (updated by background service)
+    if (!device.connMode) {
+        return [{ label: "Unknown", color: "default" }];
     }
 
-    // Return the simple database value without any enhancement
-    return { label: device.connMode, color: connModeColor };
+    // Handle comma-separated connection modes from background service
+    // Examples: "WiFi,MQTT", "Ethernet", "WiFi,Ethernet,MQTT"
+    const connectionModes = device.connMode.split(',').map((mode: string) => mode.trim()).filter((mode: string) => mode);
+
+    if (connectionModes.length === 0) {
+        return [{ label: "Unknown", color: "default" }];
+    }
+
+    // Convert each connection mode to a chip
+    return connectionModes.map((mode: string) => ({
+        label: mode,
+        color: "primary" as const // All active connections show as primary (blue)
+    }));
 };

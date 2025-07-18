@@ -21,6 +21,6 @@ namespace JunctionRelayServer.Models.Requests
 {
     public class Model_Device_Ip_Request
     {
-        public string Ip { get; set; }
+        public required string Ip { get; set; }
     }
 }

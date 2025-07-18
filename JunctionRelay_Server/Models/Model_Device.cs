@@ -57,7 +57,44 @@ namespace JunctionRelayServer.Models
         public bool IsCloudDevice { get; set; } = false;
         public int? CloudDeviceId { get; set; }
 
-        // Timestamps with UTC specification (consistent with Model_Sensor)
+        // Cloud-specific fields (from API response)
+        public string? LastEncryptedSensorData { get; set; }
+
+        private DateTime? _lastHealthReportAt;
+        public DateTime? LastHealthReportAt
+        {
+            get => _lastHealthReportAt;
+            set => _lastHealthReportAt = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
+        }
+
+        private DateTime? _createdAt;
+        public DateTime? CreatedAt
+        {
+            get => _createdAt;
+            set => _createdAt = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
+        }
+
+        private DateTime? _lastHealthAlertSent;
+        public DateTime? LastHealthAlertSent
+        {
+            get => _lastHealthAlertSent;
+            set => _lastHealthAlertSent = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
+        }
+
+        private DateTime? _lastHealthReminderSent;
+        public DateTime? LastHealthReminderSent
+        {
+            get => _lastHealthReminderSent;
+            set => _lastHealthReminderSent = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
+        }
+
+        // Push Notification Config
+        public bool PushNotifications { get; set; } = false;
+
+        // Sync Mode (e.g. Health, Full, etc.)
+        public string? SyncMode { get; set; } = "disabled";
+
+        // Timestamps
         private DateTime _lastUpdated;
         public DateTime LastUpdated
         {
@@ -74,16 +111,41 @@ namespace JunctionRelayServer.Models
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
 
-        // Heartbeat (Ping) Configuration & Monitoring
-        public string? HeartbeatProtocol { get; set; } = "HTTP";        // Protocol used for heartbeat: "HTTP", "MQTT", etc.
-        public string? HeartbeatTarget { get; set; }                    // Target endpoint for ping: HTTP path or MQTT topic
-        public string? HeartbeatExpectedValue { get; set; }             // Expected response value: e.g. "online"
-        public bool HeartbeatEnabled { get; set; } = true;              // Whether heartbeat checks are enabled
-        public int? HeartbeatIntervalMs { get; set; } = 60000;          // Interval between ping attempts (ms)
-        public int? HeartbeatGracePeriodMs { get; set; } = 180000;      // Time before marking offline after missed pings (ms)
-        public int? HeartbeatMaxRetryAttempts { get; set; } = 3;        // Max failed pings before declaring unreachable
+        // SSH Configuration
+        public string? SshUsername { get; set; }
+        public string? SshPassword { get; set; }  // This should be encrypted/hashed
+        public int? SshPort { get; set; } = 22;
+        public int? SshTimeoutMs { get; set; } = 10000;
+        public string? SshPrivateKey { get; set; }  // For key-based auth
+        public bool UseSshKeyAuth { get; set; } = false;  // true = key auth, false = password auth
+                                                          // Extended SSH heartbeat options
+        public int? SshConnectionRetries { get; set; } = 3;
+        public bool SshVerifyHostKey { get; set; } = true;
 
-        // Heartbeat DateTime properties with UTC specification
+        // Heartbeat configuration
+        public string? HeartbeatProtocol { get; set; } = "HTTP";
+        public string? HeartbeatTarget { get; set; }
+        public string? HeartbeatExpectedValue { get; set; }
+        public bool HeartbeatEnabled { get; set; } = true;
+        public int? HeartbeatIntervalMs { get; set; } = 60000;
+        public int? HeartbeatGracePeriodMs { get; set; } = 180000;
+        public int? HeartbeatMaxRetryAttempts { get; set; } = 3;
+
+        // Stream heartbeat configuration
+        public bool UseStreamAsHeartbeat { get; set; } = true;
+        public int? StreamHeartbeatThresholdMs { get; set; } = 10000;
+
+        // Connection Status Configuration
+        public bool ConnectionStatusEnabled { get; set; } = true;
+        public int? ConnectionStatusIntervalMs { get; set; } = 300000; // Default: 5 minutes
+
+        private DateTime? _lastConnectionStatusCheck;
+        public DateTime? LastConnectionStatusCheck
+        {
+            get => _lastConnectionStatusCheck;
+            set => _lastConnectionStatusCheck = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
+        }
+
         private DateTime? _lastPingAttempt;
         public DateTime? LastPingAttempt
         {
@@ -98,9 +160,9 @@ namespace JunctionRelayServer.Models
             set => _lastPinged = value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value;
         }
 
-        public string? LastPingStatus { get; set; }                     // Result of last ping: "Online", "Timeout", etc.
-        public int? LastPingDurationMs { get; set; }                    // Round-trip ping latency in ms
-        public int? ConsecutivePingFailures { get; set; }               // Number of back-to-back failed pings
+        public string? LastPingStatus { get; set; }
+        public int? LastPingDurationMs { get; set; }
+        public int? ConsecutivePingFailures { get; set; }
 
         private DateTime? _configLastAppliedAt;
         public DateTime? ConfigLastAppliedAt
@@ -125,6 +187,7 @@ namespace JunctionRelayServer.Models
         public bool HasExternalI2CDevices { get; set; }
         public bool HasButtons { get; set; }
         public bool HasBattery { get; set; }
+        public bool SupportsEthernet { get; set; }
         public bool SupportsWiFi { get; set; }
         public bool SupportsBLE { get; set; }
         public bool SupportsUSB { get; set; }
@@ -132,9 +195,9 @@ namespace JunctionRelayServer.Models
         public bool SupportsHTTP { get; set; }
         public bool SupportsMQTT { get; set; }
         public bool SupportsWebSockets { get; set; }
-
         public bool HasSpeaker { get; set; }
         public bool HasMicroSD { get; set; }
+
         public List<Model_Device_Screens> Screens { get; set; } = new();
         public List<Model_Device_I2CDevice> I2cDevices { get; set; } = new();
     }

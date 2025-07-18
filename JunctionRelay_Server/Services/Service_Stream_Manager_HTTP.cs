@@ -1,4 +1,4 @@
-﻿/*
+﻿/* 
  * This file is part of JunctionRelay.
  *
  * Copyright (C) 2024–present Jonathan Mills, CatapultCase
@@ -22,114 +22,26 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using JunctionRelayServer.Models;
+using System.Text;
 
 namespace JunctionRelayServer.Services
 {
     public class Service_Stream_Manager_HTTP
     {
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ConcurrentDictionary<int, StreamInfo> _streamingTokens = new();
+        private readonly ConcurrentDictionary<int, Service_StreamInfo_HTTP> _streamingTokens = new();
         private readonly ConcurrentDictionary<int, long> _streamLatencies = new();
+        private readonly Service_Stream_History_Manager _historyManager;
 
-        public Service_Stream_Manager_HTTP(IServiceScopeFactory scopeFactory)
+        public Service_Stream_Manager_HTTP(
+            IServiceScopeFactory scopeFactory,
+            Service_Stream_History_Manager historyManager)
         {
             _scopeFactory = scopeFactory;
+            _historyManager = historyManager;
         }
 
-        public class StreamInfo
-        {
-            public string DeviceName { get; set; } = string.Empty;
-            public int Rate { get; set; }
-            public string Status { get; set; } = string.Empty;
-
-            [JsonIgnore]
-            public CancellationTokenSource Cts { get; set; } = new();
-
-            // Add a dedicated HTTP sender for this stream
-            [JsonIgnore]
-            public Service_Send_Data_HTTP HttpSender { get; set; }
-
-            public int ScreenId { get; set; }
-            public string ScreenName { get; set; } = string.Empty;
-            public int SensorsCount { get; set; }
-            public long Latency { get; set; }
-            public DateTime LastSentTime { get; set; }
-            public string Protocol { get; set; } = "HTTP";
-
-            // just the length‐prefix (if any) before the '{'
-            public string ConfigPayloadPrefix { get; set; } = string.Empty;
-            public string LastSentPayloadPrefix { get; set; } = string.Empty;
-
-            // hold the parsed JSON docs; we will expose raw JSON strings instead of JsonElement
-            [JsonIgnore]
-            public JsonDocument ConfigPayloadDoc { get; set; } = JsonDocument.Parse("{}");
-            [JsonIgnore]
-            public JsonDocument LastSentPayloadDoc { get; set; } = JsonDocument.Parse("{}");
-
-            // Thread-safe cached JSON strings to avoid accessing disposed JsonDocuments
-            private string _configPayloadJsonCache = "{}";
-            private string _lastSentPayloadJsonCache = "{}";
-            private readonly object _jsonCacheLock = new object();
-
-            // expose JSON text so we never serialize a disposed JsonDocument/JsonElement
-            public string ConfigPayloadJson
-            {
-                get
-                {
-                    lock (_jsonCacheLock)
-                    {
-                        return _configPayloadJsonCache;
-                    }
-                }
-            }
-
-            public string LastSentPayloadJson
-            {
-                get
-                {
-                    lock (_jsonCacheLock)
-                    {
-                        return _lastSentPayloadJsonCache;
-                    }
-                }
-            }
-
-            // Method to safely update the config payload and cache
-            public void UpdateConfigPayload(string jsonString)
-            {
-                lock (_jsonCacheLock)
-                {
-                    ConfigPayloadDoc?.Dispose();
-                    ConfigPayloadDoc = JsonDocument.Parse(jsonString);
-                    _configPayloadJsonCache = jsonString;
-                }
-            }
-
-            // Method to safely update the last sent payload and cache
-            public void UpdateLastSentPayload(string jsonString)
-            {
-                lock (_jsonCacheLock)
-                {
-                    LastSentPayloadDoc?.Dispose();
-                    LastSentPayloadDoc = JsonDocument.Parse(jsonString);
-                    _lastSentPayloadJsonCache = jsonString;
-                }
-            }
-
-            // Updated dispose method to handle HTTP sender
-            public void Dispose()
-            {
-                lock (_jsonCacheLock)
-                {
-                    ConfigPayloadDoc?.Dispose();
-                    LastSentPayloadDoc?.Dispose();
-                    Cts?.Dispose();
-                    HttpSender?.Dispose(); // Dispose the HTTP sender
-                }
-            }
-        }
-
-        public IEnumerable<object> GetActiveStreams()
+        public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
         {
             return _streamingTokens.Select(kvp =>
             {
@@ -146,13 +58,67 @@ namespace JunctionRelayServer.Services
                     info.LastSentTime,
                     info.Protocol,
                     info.SensorsCount,
+                    // Add health information for frontend
+                    Health = new
+                    {
+                        info.Health.ConnectionState,
+                        info.Health.SuccessRate,
+                        info.Health.LastErrorMessage,
+                        info.Health.ErrorType,
+                        info.Health.ConsecutiveFailures,
+                        info.Health.ConsecutiveSuccesses,
+                        info.Health.KeepAlivePoolRecreated,
+                        info.Health.HttpStatusCode,
+                        info.Health.AverageLatency,
+                        info.Health.MaxLatency,
+                        info.Health.MinLatency,
+                        info.Health.LastSuccessTime,
+                        info.Health.LastFailureTime,
+                        info.Health.PoolRecreationCount
+                    },
                     info.ConfigPayloadPrefix,
-                    // return raw JSON strings instead of JsonElement
-                    ConfigPayloadJson = info.ConfigPayloadJson,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
                     info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = info.LastSentPayloadJson
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+                    info.CompressedConfigPayloadPrefix,
+                    info.CompressedLastSentPayloadPrefix,
+                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview()
                 };
             });
+        }
+
+        // Helper method to extract prefix from binary payload (for compressed payloads)
+        private string ExtractBinaryPrefix(byte[] payload)
+        {
+            if (payload == null || payload.Length < 8)
+                return string.Empty;
+
+            // Check if first 8 bytes are ASCII digits (valid prefix)
+            for (int i = 0; i < 8; i++)
+            {
+                if (payload[i] < '0' || payload[i] > '9')
+                    return string.Empty;
+            }
+
+            // Extract the 8-digit prefix
+            return Encoding.ASCII.GetString(payload, 0, 8);
+        }
+
+        // Helper method to extract prefix from string payload (for uncompressed payloads)
+        private string ExtractStringPrefix(string payload)
+        {
+            if (string.IsNullOrEmpty(payload) || payload.Length < 8)
+                return string.Empty;
+
+            // Check if first 8 characters are digits
+            for (int i = 0; i < 8; i++)
+            {
+                if (payload[i] < '0' || payload[i] > '9')
+                    return string.Empty;
+            }
+
+            return payload.Substring(0, 8);
         }
 
         public async Task StartStreamingAsync(
@@ -162,7 +128,7 @@ namespace JunctionRelayServer.Services
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
-            string? junctionType = null,           // Junction type (e.g., "Gateway Junction (HTTP)")
+            string? junctionType = null,           // Junction type (e.g., "Gateway Junction (HTTP to ESP:NOW)")
             string? gatewayDestination = null)     // Gateway IP address (for Gateway junctions)
         {
             if (_streamingTokens.ContainsKey(screen.Id))
@@ -178,6 +144,7 @@ namespace JunctionRelayServer.Services
             {
                 var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
                 var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
 
                 var device = await deviceDb.GetDeviceByIdAsync(deviceId);
                 if (device is null)
@@ -186,11 +153,19 @@ namespace JunctionRelayServer.Services
                     return;
                 }
 
+                // Get junction to access CompressPayload setting
+                var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+                if (junction is null)
+                {
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Junction {junctionId} not found.");
+                    return;
+                }
+
                 // Determine the HTTP endpoint based on junction type
                 string httpEndpoint;
-                string targetMacAddress = device.UniqueIdentifier; // Target device MAC for ESP-NOW
+                string? targetMacAddress = device.UniqueIdentifier; // Target device MAC for ESP-NOW
 
-                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP)", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                 {
                     // For Gateway junctions: 
                     // - gatewayDestination = Gateway device IP (where to send HTTP)
@@ -214,85 +189,163 @@ namespace JunctionRelayServer.Services
                 // Get the keep-alive setting from the screen configuration
                 bool useKeepAlive = screen.UseKeepAlive ?? false; // Default to false if not set
 
+                Console.WriteLine($"[DEBUG] Screen.UseKeepAlive = {screen.UseKeepAlive}");
+                Console.WriteLine($"[DEBUG] Resolved useKeepAlive = {useKeepAlive}");
+                Console.WriteLine($"[DEBUG] About to create HTTP sender for {httpEndpoint} with useKeepAlive={useKeepAlive}");
+
                 // Create HTTP sender with the determined endpoint
                 var httpSender = new Service_Send_Data_HTTP(httpEndpoint, useKeepAlive);
 
                 // seed our StreamInfo
-                var info = new StreamInfo
+                var info = new Service_StreamInfo_HTTP(junction.CompressPayload)
                 {
                     DeviceName = device.Name,
                     Rate = rate,
                     Status = "Active",
                     Cts = cts,
-                    HttpSender = httpSender, // Store the HTTP sender
+                    HttpSender = httpSender,
                     ScreenId = screen.Id,
                     ScreenName = screen.DisplayName ?? "Unnamed Screen",
                     SensorsCount = assignedSensors.Count,
                     Latency = 0,
                     LastSentTime = DateTime.UtcNow,
-                    Protocol = useKeepAlive ? "HTTP (Keep-Alive)" : "HTTP" // Update protocol display
+                    Protocol = useKeepAlive ? "HTTP (Keep-Alive)" : "HTTP"
                 };
                 _streamingTokens[screen.Id] = info;
 
-                // generate config payload with junction type and target MAC
-                var configPayloads = await payloadService.GenerateConfigPayloadsAsync(
+                // Prepare uncompressed JSON payload
+                Dictionary<string, object> uncompressedConfig = await payloadService.GenerateConfigPayloadsAsync(
                     screenKey,
                     assignedSensors,
                     screen,
                     overrideTemplate: null,
                     junctionType: junctionType,
-                    gatewayDestination: targetMacAddress); // Pass target device MAC for ESP-NOW
+                    gatewayDestination: targetMacAddress,
+                    compressPayload: false);
 
-                if (!configPayloads.TryGetValue(screenKey, out var cpObj) || cpObj is not string configPayload)
+                if (!uncompressedConfig.TryGetValue(screenKey, out object rawUncompressed) ||
+                    rawUncompressed is not string uncompressedJson)
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No config payload for screen {screenKey}.");
-                    info.Dispose(); // Clean up on failure
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No uncompressed config payload for screen {screenKey}.");
+                    info.Dispose();
                     _streamingTokens.TryRemove(screen.Id, out _);
                     return;
                 }
 
-                // capture just the length-prefix (if any)
-                var idxC = configPayload.IndexOf('{');
-                if (idxC > 0)
-                    info.ConfigPayloadPrefix = configPayload.Substring(0, idxC);
-
-                // strip prefix then parse and cache
-                var jsonConfig = idxC > 0 ? configPayload.Substring(idxC) : configPayload;
-                info.UpdateConfigPayload(jsonConfig);
-
-                // send to device using the keep-alive enabled sender
-                var (ok, _) = await httpSender.SendPayloadAsync(configPayload);
-                if (!ok)
+                // Send compressed or uncompressed payload
+                if (junction.CompressPayload)
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send config.");
-                    info.Dispose(); // Clean up on failure
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
+                    Dictionary<string, object> compressedConfig = await payloadService.GenerateConfigPayloadsAsync(
+                        screenKey,
+                        assignedSensors,
+                        screen,
+                        overrideTemplate: null,
+                        junctionType: junctionType,
+                        gatewayDestination: targetMacAddress,
+                        compressPayload: true);
 
-                string connectionType = useKeepAlive ? "keep-alive" : "standard";
-                string junctionInfo = !string.IsNullOrEmpty(junctionType) ? $" ({junctionType})" : "";
-                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP)", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Config sent to gateway {gatewayDestination} via {connectionType} connection, target: {targetMacAddress}");
+                    if (!compressedConfig.TryGetValue(screenKey, out object rawCompressed))
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No compressed config payload for screen {screenKey}.");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
+
+                    if (rawCompressed is byte[] compressedBytes)
+                    {
+                        // Extract prefix from binary payload
+                        string compressedPrefix = ExtractBinaryPrefix(compressedBytes);
+                        info.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
+
+                        // Send raw binary bytes directly (no Base64 conversion)
+                        var (success, _) = await httpSender.SendPayloadAsync(compressedBytes);
+                        if (!success)
+                        {
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send compressed config payload.");
+                            info.Dispose();
+                            _streamingTokens.TryRemove(screen.Id, out _);
+                            return;
+                        }
+                    }
+                    else if (rawCompressed is string compressedString)
+                    {
+                        // Extract prefix from string payload (shouldn't happen for compressed, but handle it)
+                        string compressedPrefix = ExtractStringPrefix(compressedString);
+                        info.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
+
+                        var (success, _) = await httpSender.SendPayloadAsync(compressedString);
+                        if (!success)
+                        {
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send compressed config payload as string.");
+                            info.Dispose();
+                            _streamingTokens.TryRemove(screen.Id, out _);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Unexpected compressed config payload type for screen {screenKey}.");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Config sent to {device.Name} via {connectionType} connection{junctionInfo}.");
+                    var (success, _) = await httpSender.SendPayloadAsync(uncompressedJson);
+                    if (!success)
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send uncompressed config payload.");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
+                }
+
+                // Extract uncompressed prefix and update StreamInfo
+                string uncompressedPrefix = ExtractStringPrefix(uncompressedJson);
+                info.ConfigPayloadPrefix = uncompressedPrefix;
+
+                // Extract JSON part (after prefix)
+                string jsonConfig = string.IsNullOrEmpty(uncompressedPrefix)
+                    ? uncompressedJson
+                    : uncompressedJson.Substring(8);
+                info.UpdateConfigPayload(jsonConfig);
+
+                string connectionType = useKeepAlive ? "keep-alive" : "standard";
+                string compressionInfo = junction.CompressPayload ? " (compressed)" : "";
+                string junctionInfo = !string.IsNullOrEmpty(junctionType) ? $" ({junctionType})" : "";
+                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Config sent to gateway {gatewayDestination} via {connectionType} connection, target: {targetMacAddress}{compressionInfo}");
+                }
+                else
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Config sent to {device.Name} via {connectionType} connection{junctionInfo}{compressionInfo}.");
                 }
             }
 
-            // —— SENSOR POLLING LOOP —— (Updated to pass target MAC for ESP-NOW)
+            // —— SENSOR POLLING LOOP ——
             _ = Task.Run(async () =>
             {
                 using var loopScope = _scopeFactory.CreateScope();
                 var loopPayloadService = loopScope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                var junctionDb = loopScope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
 
                 var info = _streamingTokens[screen.Id];
 
+                // Get junction for compression setting
+                var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+                if (junction is null)
+                {
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Junction {junctionId} not found in sensor loop.");
+                    return;
+                }
+
                 // Get the target MAC address for this device (for ESP-NOW forwarding)
-                string targetMacAddress = null;
-                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP)", StringComparison.OrdinalIgnoreCase))
+                string? targetMacAddress = null;
+                if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                 {
                     // For Gateway junctions, get the target device to extract its MAC
                     using var deviceScope = _scopeFactory.CreateScope();
@@ -305,62 +358,246 @@ namespace JunctionRelayServer.Services
 
                 while (!cts.Token.IsCancellationRequested)
                 {
-                    // pick the right sensor payload generator and pass target MAC for ESP-NOW
-                    Dictionary<string, object> sensorPayload = screen.Template?.LayoutType switch
+                    try
                     {
-                        "MATRIX" => await loopPayloadService.GenerateMatrixSensorPayloadsAsync(
-                            screenKey,
-                            assignedSensors.Count,
-                            assignedSensors,
-                            screen,
-                            startingYOffset: 0,
-                            junctionType: junctionType,
-                            gatewayDestination: targetMacAddress), // Pass target device MAC
-                        _ => await loopPayloadService.GenerateSensorPayloadsAsync(
-                            screenKey,
-                            assignedSensors.Count,
-                            assignedSensors,
-                            screen,
-                            junctionType: junctionType,
-                            gatewayDestination: targetMacAddress) // Pass target device MAC
-                    };
+                        // Build uncompressed sensor payload JSON
+                        Dictionary<string, object> uncompressedSensorPayload = screen.Template?.LayoutType switch
+                        {
+                            "MATRIX" => await loopPayloadService.GenerateMatrixSensorPayloadsAsync(
+                                screenKey,
+                                assignedSensors.Count,
+                                assignedSensors,
+                                screen,
+                                startingYOffset: 0,
+                                junctionType: junctionType,
+                                gatewayDestination: targetMacAddress,
+                                compressPayload: false),
+                            _ => await loopPayloadService.GenerateSensorPayloadsAsync(
+                                screenKey,
+                                assignedSensors.Count,
+                                assignedSensors,
+                                screen,
+                                junctionType: junctionType,
+                                gatewayDestination: targetMacAddress,
+                                compressPayload: false)
+                        };
 
-                    if (!sensorPayload.TryGetValue(screenKey, out var rawObj) || rawObj is not string rawPayload)
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No sensor payload for screen {screenKey}. Exiting loop.");
-                        break;
+                        if (!uncompressedSensorPayload.TryGetValue(screenKey, out object rawUncompressedSensor) ||
+                            rawUncompressedSensor is not string uncompressedSensorJson)
+                        {
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No uncompressed sensor payload for screen {screenKey}. Exiting loop.");
+                            break;
+                        }
+
+                        // Extract uncompressed sensor payload info FIRST (always needed for UI)
+                        string uncompressedSensorPrefix = ExtractStringPrefix(uncompressedSensorJson);
+                        info.LastSentPayloadPrefix = uncompressedSensorPrefix;
+
+                        string sensorJson = string.IsNullOrEmpty(uncompressedSensorPrefix)
+                            ? uncompressedSensorJson
+                            : uncompressedSensorJson.Substring(8);
+                        info.UpdateLastSentPayload(sensorJson);
+
+                        // If compression is enabled, send binary; otherwise send JSON string
+                        if (junction.CompressPayload)
+                        {
+                            Dictionary<string, object> compressedSensorPayload = screen.Template?.LayoutType switch
+                            {
+                                "MATRIX" => await loopPayloadService.GenerateMatrixSensorPayloadsAsync(
+                                    screenKey,
+                                    assignedSensors.Count,
+                                    assignedSensors,
+                                    screen,
+                                    startingYOffset: 0,
+                                    junctionType: junctionType,
+                                    gatewayDestination: targetMacAddress,
+                                    compressPayload: true),
+                                _ => await loopPayloadService.GenerateSensorPayloadsAsync(
+                                    screenKey,
+                                    assignedSensors.Count,
+                                    assignedSensors,
+                                    screen,
+                                    junctionType: junctionType,
+                                    gatewayDestination: targetMacAddress,
+                                    compressPayload: true)
+                            };
+
+                            if (!compressedSensorPayload.TryGetValue(screenKey, out object rawCompressedSensor))
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No compressed sensor payload for screen {screenKey}. Exiting loop.");
+                                break;
+                            }
+
+                            if (rawCompressedSensor is byte[] compressedSensorBytes)
+                            {
+                                // Extract compressed prefix from binary payload
+                                string compressedSensorPrefix = ExtractBinaryPrefix(compressedSensorBytes);
+                                info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
+
+                                // Send raw binary bytes directly (no Base64 conversion)
+                                Stopwatch stopwatch = Stopwatch.StartNew();
+                                var result = await info.HttpSender!.SendPayloadWithHealthAsync(compressedSensorBytes);
+                                stopwatch.Stop();
+
+                                // Update health information
+                                info.Health.UpdateHealth(result);
+
+                                if (!result.Success)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Send failed: {result.ErrorType} - {result.ErrorMessage}");
+                                    if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
+                                    {
+                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
+                                        break;
+                                    }
+                                    if (info.Health.ConsecutiveFailures > 1)
+                                    {
+                                        await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                    }
+                                }
+
+                                info.Latency = result.LatencyMs;
+                                info.LastSentTime = DateTime.UtcNow;
+
+                                // Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Sensor payload sent (compressed) to {info.DeviceName}. Latency: {result.LatencyMs}ms");
+
+                                var historyEntry = _historyManager.CreateEntryFromHTTP(info);
+                                _historyManager.AddHistoryEntry(historyEntry);
+
+                                _streamLatencies[screen.Id] = result.LatencyMs;
+
+                                int calculatedPause = Math.Max(rate - (int)result.LatencyMs, 0);
+                                if (calculatedPause > 0)
+                                {
+                                    await Task.Delay(calculatedPause, cts.Token);
+                                }
+
+                                continue;
+                            }
+                            else if (rawCompressedSensor is string compressedSensorString)
+                            {
+                                // Extract compressed prefix from string payload
+                                string compressedSensorPrefix = ExtractStringPrefix(compressedSensorString);
+                                info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
+
+                                Stopwatch stopwatch = Stopwatch.StartNew();
+                                var result = await info.HttpSender!.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(compressedSensorString));
+                                stopwatch.Stop();
+
+                                // Update health information
+                                info.Health.UpdateHealth(result);
+
+                                if (!result.Success)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Send failed: {result.ErrorType} - {result.ErrorMessage}");
+                                    if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
+                                    {
+                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
+                                        break;
+                                    }
+                                    if (info.Health.ConsecutiveFailures > 1)
+                                    {
+                                        await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                    }
+                                }
+
+                                info.Latency = result.LatencyMs;
+                                info.LastSentTime = DateTime.UtcNow;
+
+                                // Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Sensor payload sent (compressed string) to {info.DeviceName}. Latency: {result.LatencyMs}ms");
+
+                                var historyEntry = _historyManager.CreateEntryFromHTTP(info);
+                                _historyManager.AddHistoryEntry(historyEntry);
+
+                                _streamLatencies[screen.Id] = result.LatencyMs;
+
+                                int calculatedPause = Math.Max(rate - (int)result.LatencyMs, 0);
+                                if (calculatedPause > 0)
+                                {
+                                    await Task.Delay(calculatedPause, cts.Token);
+                                }
+
+                                continue;
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Unexpected compressed sensor payload type for screen {screenKey}. Exiting loop.");
+                                break;
+                            }
+                        }
+
+                        // Send uncompressed JSON sensor payload (convert string to bytes)
+                        Stopwatch stopwatchUncompressed = Stopwatch.StartNew();
+                        var resultUncompressed = await info.HttpSender!.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(uncompressedSensorJson));
+                        stopwatchUncompressed.Stop();
+
+                        // Update health information
+                        info.Health.UpdateHealth(resultUncompressed);
+
+                        if (!resultUncompressed.Success)
+                        {
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Send failed: {resultUncompressed.ErrorType} - {resultUncompressed.ErrorMessage}");
+                            if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
+                                break;
+                            }
+                            if (info.Health.ConsecutiveFailures > 1)
+                            {
+                                await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                            }
+                        }
+                        else
+                        {
+                            // Log pool recreation events for debugging
+                            if (resultUncompressed.KeepAlivePoolRecreated)
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Keep-alive pool recreated for {info.DeviceName}");
+                            }
+                        }
+
+                        info.Latency = resultUncompressed.LatencyMs;
+                        info.LastSentTime = DateTime.UtcNow;
+
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Sensor payload sent (uncompressed) to {info.DeviceName}. Latency: {resultUncompressed.LatencyMs}ms");
+
+                        var historyEntryUncompressed = _historyManager.CreateEntryFromHTTP(info);
+                        _historyManager.AddHistoryEntry(historyEntryUncompressed);
+
+                        _streamLatencies[screen.Id] = resultUncompressed.LatencyMs;
+
+                        int calculatedPauseUncompressed = Math.Max(rate - (int)resultUncompressed.LatencyMs, 0);
+                        if (calculatedPauseUncompressed > 0)
+                        {
+                            await Task.Delay(calculatedPauseUncompressed, cts.Token);
+                        }
                     }
-
-                    // Always update the "last generated" payload info for display purposes
-                    var idxS = rawPayload.IndexOf('{');
-                    if (idxS > 0)
-                        info.LastSentPayloadPrefix = rawPayload.Substring(0, idxS);
-
-                    // Strip prefix and safely update the last sent payload
-                    var jsonSensor = idxS > 0 ? rawPayload.Substring(idxS) : rawPayload;
-                    info.UpdateLastSentPayload(jsonSensor);
-
-                    // Use the stored HTTP sender (keep-alive or standard)
-                    var sw = Stopwatch.StartNew();
-                    var (sent, _) = await info.HttpSender.SendPayloadAsync(rawPayload);
-                    sw.Stop();
-
-                    if (!sent)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send sensor payload. Exiting loop.");
-                        break;
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Unexpected error in streaming loop: {ex.Message}");
+
+                        // Update health with unexpected error
+                        var errorResult = new HttpSendResult
+                        {
+                            Success = false,
+                            ErrorType = "unexpected_error",
+                            ErrorMessage = ex.Message,
+                            LatencyMs = 0
+                        };
+                        info.Health.UpdateHealth(errorResult);
+
+                        // Wait a bit before retrying on unexpected errors
+                        await Task.Delay(1000, cts.Token);
                     }
-
-                    long latency = sw.ElapsedMilliseconds;
-                    _streamLatencies[screen.Id] = latency;
-                    int pause = Math.Max(rate - (int)latency, 0);
-                    if (pause > 0) await Task.Delay(pause, cts.Token);
-
-                    info.Latency = latency;
-                    info.LastSentTime = DateTime.UtcNow;
                 }
 
-                _streamingTokens[screen.Id].Status = "Inactive";
+                // Update status when loop exits
+                if (_streamingTokens.TryGetValue(screen.Id, out var finalInfo))
+                {
+                    finalInfo.Status = "Inactive";
+                    finalInfo.Health.ConnectionState = "disconnected";
+                }
+
             }, cts.Token);
         }
 
@@ -383,6 +620,41 @@ namespace JunctionRelayServer.Services
         {
             _streamLatencies.TryGetValue(screenId, out var latency);
             return latency;
+        }
+
+        public StreamHistoryResponse GetStreamHistory(int screenId, DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = true)
+        {
+            return _historyManager.GetStreamHistory(screenId, fromTime, toTime, includeStatistics);
+        }
+
+        public Dictionary<int, StreamHistoryResponse> GetAllStreamHistories(DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = false)
+        {
+            return _historyManager.GetAllStreamHistories(fromTime, toTime, includeStatistics);
+        }
+
+        public object GetHistorySummary()
+        {
+            return _historyManager.GetHistorySummary();
+        }
+
+        public bool ClearStreamHistory(int screenId)
+        {
+            return _historyManager.ClearStreamHistory(screenId);
+        }
+
+        public void UpdateHistoryRetention(TimeSpan retentionPeriod)
+        {
+            _historyManager.UpdateRetentionPeriod(retentionPeriod);
+        }
+
+        public void UpdateHistoryMaxEntries(int maxEntries)
+        {
+            _historyManager.UpdateMaxEntries(maxEntries);
+        }
+
+        public HistoryConfiguration GetHistoryConfiguration()
+        {
+            return _historyManager.GetConfiguration();
         }
 
         public bool IsStreaming(int screenId)

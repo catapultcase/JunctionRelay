@@ -1,24 +1,8 @@
-﻿/*
- * This file is part of JunctionRelay.
- *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
- *
- * JunctionRelay is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * JunctionRelay is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
- */
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Utils;
+using JunctionRelayServer.Services;
 using System.IO.Compression;
+using Microsoft.Data.Sqlite;
 
 namespace JunctionRelayServer.Controllers
 {
@@ -27,14 +11,35 @@ namespace JunctionRelayServer.Controllers
     public class Controller_Database : ControllerBase
     {
         private readonly string _dbPath;
-        private readonly IWebHostEnvironment _env;
-        private readonly ILogger<Controller_Database> _logger;
+        private readonly Service_BackendIdentity _backendIdentity;
+        private readonly Service_DataDeletion _dataDeletion;
 
-        public Controller_Database(DatabasePathProvider dbPathProvider, IWebHostEnvironment env, ILogger<Controller_Database> logger)
+        public Controller_Database(
+            DatabasePathProvider dbPathProvider,
+            Service_BackendIdentity backendIdentity,
+            Service_DataDeletion dataDeletion)
         {
             _dbPath = dbPathProvider.DbPath;
-            _env = env;
-            _logger = logger;
+            _backendIdentity = backendIdentity;
+            _dataDeletion = dataDeletion;
+        }
+
+        [HttpGet("backend-identity")]
+        public IActionResult GetBackendIdentity()
+        {
+            try
+            {
+                return Ok(new
+                {
+                    backendId = _backendIdentity.GetBackendId(),
+                    friendlyName = _backendIdentity.GetFriendlyName()
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error getting backend identity: {ex.Message}");
+                return StatusCode(500, new { error = "Failed to get backend identity" });
+            }
         }
 
         [HttpDelete("delete-database")]
@@ -42,30 +47,26 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                _logger.LogWarning("Database deletion requested - marking for deletion on next restart");
+                Console.WriteLine("Database deletion requested - marking for deletion on next restart");
 
                 var deletedItems = new List<string>();
                 var errors = new List<string>();
 
-                // Create a marker file that tells the application to delete everything on startup
-                var deleteMarkerPath = Path.Combine(_env.ContentRootPath, ".delete-all-data");
-
                 try
                 {
-                    var markerContent = $"DELETE_ALL_DATA_ON_STARTUP\nRequested at: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\nReason: User requested complete database reset";
-                    System.IO.File.WriteAllText(deleteMarkerPath, markerContent);
+                    _dataDeletion.ScheduleDeletion();
                     deletedItems.Add("Created deletion marker for next startup");
-                    _logger.LogInformation("Created deletion marker file: {MarkerPath}", deleteMarkerPath);
                 }
                 catch (Exception ex)
                 {
                     errors.Add($"Failed to create deletion marker: {ex.Message}");
-                    _logger.LogError(ex, "Failed to create deletion marker file");
+                    Console.WriteLine($"Failed to create deletion marker file: {ex.Message}");
                     return StatusCode(500, new { error = "Failed to schedule database deletion", details = errors });
                 }
 
-                // Clear cache immediately (this we can do safely)
-                var firmwareDirectory = Path.Combine(_env.ContentRootPath, "Firmware");
+                // Clear immediate cache files (same as your existing logic)
+                var appDirectory = Directory.GetCurrentDirectory();
+                var firmwareDirectory = Path.Combine(appDirectory, "Firmware");
                 var releaseCacheDirectory = Path.Combine(firmwareDirectory, "Releases");
 
                 if (Directory.Exists(releaseCacheDirectory))
@@ -81,7 +82,7 @@ namespace JunctionRelayServer.Controllers
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Failed to delete cache file: {File}", file);
+                                Console.WriteLine($"Failed to delete cache file {file}: {ex.Message}");
                             }
                         }
                         deletedItems.Add($"Cleared {cacheFiles.Length} cache files");
@@ -92,14 +93,13 @@ namespace JunctionRelayServer.Controllers
                     }
                 }
 
-                // Clear logs directory (optional - be careful not to delete current log)
-                var logsDirectory = Path.Combine(_env.ContentRootPath, "Logs");
+                var logsDirectory = Path.Combine(appDirectory, "Logs");
                 if (Directory.Exists(logsDirectory))
                 {
                     try
                     {
                         var logFiles = Directory.GetFiles(logsDirectory, "*.log")
-                            .Where(f => !f.Contains(DateTime.Now.ToString("yyyy-MM-dd"))) // Don't delete today's log
+                            .Where(f => !f.Contains(DateTime.Now.ToString("yyyy-MM-dd")))
                             .ToArray();
 
                         foreach (var file in logFiles)
@@ -110,7 +110,7 @@ namespace JunctionRelayServer.Controllers
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Failed to delete log file: {File}", file);
+                                Console.WriteLine($"Failed to delete log file {file}: {ex.Message}");
                             }
                         }
                         if (logFiles.Length > 0)
@@ -124,7 +124,7 @@ namespace JunctionRelayServer.Controllers
                     }
                 }
 
-                _logger.LogWarning("Database deletion scheduled for next application restart. Items cleared immediately: {Items}", string.Join(", ", deletedItems));
+                Console.WriteLine($"Database deletion scheduled for next application restart. Items cleared immediately: {string.Join(", ", deletedItems)}");
 
                 return Ok(new
                 {
@@ -133,8 +133,10 @@ namespace JunctionRelayServer.Controllers
                     deletedImmediately = deletedItems,
                     scheduledForDeletion = new[]
                     {
-                        "SQLite database file (JunctionRelay.db)",
+                        "SQLite database file (jr_database.db)",
                         "Database journal files (.db-wal, .db-shm, .db-journal)",
+                        "Backend ID file (backend-id.txt)",
+                        "JWT secret file (jwt-secret.key)",
                         "Encryption keys directory",
                         "All application settings",
                         "Remaining cache files",
@@ -146,7 +148,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error scheduling database deletion");
+                Console.WriteLine($"Error scheduling database deletion: {ex.Message}");
                 return StatusCode(500, new
                 {
                     error = "Failed to schedule database deletion",
@@ -156,7 +158,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpGet("export-db")]
-        public IActionResult ExportDb([FromQuery] bool includeKeys = false)
+        public IActionResult ExportDb([FromQuery] bool includeKeys = false, [FromQuery] bool includeIdentity = false)
         {
             try
             {
@@ -165,11 +167,48 @@ namespace JunctionRelayServer.Controllers
 
                 var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
 
-                if (!includeKeys)
+                // Ensure database integrity before backup by forcing a checkpoint
+                try
                 {
-                    // Original behavior - just return the database file
+                    using var connection = new SqliteConnection($"Data Source={_dbPath}");
+                    connection.Open();
+
+                    // Force WAL checkpoint to ensure all pending writes are flushed to main database file
+                    using var command = connection.CreateCommand();
+                    command.CommandText = "PRAGMA wal_checkpoint(FULL);";
+                    command.ExecuteNonQuery();
+
+                    // Optional: Get checkpoint info for logging
+                    command.CommandText = "PRAGMA wal_checkpoint;";
+                    var result = command.ExecuteScalar();
+                    Console.WriteLine($"Database checkpoint completed before backup: {result}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not perform database checkpoint: {ex.Message}");
+                    // Continue with backup anyway - the file copy should still work
+                }
+
+                // If neither keys nor identity are requested, just return the database file
+                if (!includeKeys && !includeIdentity)
+                {
                     var tempExportPath = Path.Combine(Path.GetTempPath(), $"junction_backup_{timestamp}.db");
-                    System.IO.File.Copy(_dbPath, tempExportPath, overwrite: true);
+
+                    // Copy with retry in case of temporary locks
+                    var maxRetries = 3;
+                    for (int i = 0; i < maxRetries; i++)
+                    {
+                        try
+                        {
+                            System.IO.File.Copy(_dbPath, tempExportPath, overwrite: true);
+                            break;
+                        }
+                        catch (IOException) when (i < maxRetries - 1)
+                        {
+                            Thread.Sleep(100); // Wait 100ms before retry
+                        }
+                    }
+
                     var fileBytes = System.IO.File.ReadAllBytes(tempExportPath);
                     System.IO.File.Delete(tempExportPath);
 
@@ -180,17 +219,29 @@ namespace JunctionRelayServer.Controllers
                     return fileResult;
                 }
 
-                // New behavior - create a zip with database + keys
+                // Create ZIP package with selected components
                 using var memoryStream = new MemoryStream();
                 using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
                 {
-                    // Copy database to temp file first to avoid file lock issues
                     var tempDbPath = Path.Combine(Path.GetTempPath(), $"junction_backup_temp_{timestamp}.db");
-                    System.IO.File.Copy(_dbPath, tempDbPath, overwrite: true);
+
+                    // Copy database with retry logic for potential locks
+                    var maxRetries = 3;
+                    for (int i = 0; i < maxRetries; i++)
+                    {
+                        try
+                        {
+                            System.IO.File.Copy(_dbPath, tempDbPath, overwrite: true);
+                            break;
+                        }
+                        catch (IOException) when (i < maxRetries - 1)
+                        {
+                            Thread.Sleep(100); // Wait 100ms before retry
+                        }
+                    }
 
                     try
                     {
-                        // Add database file from temp copy
                         var dbEntry = archive.CreateEntry("junction_backup.db");
                         using (var dbEntryStream = dbEntry.Open())
                         using (var dbFileStream = System.IO.File.OpenRead(tempDbPath))
@@ -200,41 +251,76 @@ namespace JunctionRelayServer.Controllers
                     }
                     finally
                     {
-                        // Clean up temp file
                         if (System.IO.File.Exists(tempDbPath))
                         {
                             System.IO.File.Delete(tempDbPath);
                         }
                     }
 
-                    // Add encryption keys directory
                     var dbDirectory = Path.GetDirectoryName(_dbPath);
-                    var keysDirectory = !string.IsNullOrEmpty(dbDirectory) ? Path.Combine(dbDirectory, "keys") : "keys";
+                    var includedComponents = new List<string> { "database" };
 
-                    if (Directory.Exists(keysDirectory))
+                    // Include encryption keys if requested (including JWT secret)
+                    if (includeKeys)
                     {
-                        var keyFiles = Directory.GetFiles(keysDirectory, "*", SearchOption.AllDirectories);
+                        var keysDirectory = !string.IsNullOrEmpty(dbDirectory) ? Path.Combine(dbDirectory, "keys") : "keys";
 
-                        foreach (var keyFile in keyFiles)
+                        if (Directory.Exists(keysDirectory))
                         {
-                            var relativePath = Path.GetRelativePath(keysDirectory, keyFile);
-                            var keyEntry = archive.CreateEntry($"keys/{relativePath}");
+                            var keyFiles = Directory.GetFiles(keysDirectory, "*", SearchOption.AllDirectories);
 
-                            using var keyEntryStream = keyEntry.Open();
-                            using var keyFileStream = System.IO.File.OpenRead(keyFile);
-                            keyFileStream.CopyTo(keyEntryStream);
+                            foreach (var keyFile in keyFiles)
+                            {
+                                var relativePath = Path.GetRelativePath(keysDirectory, keyFile);
+                                var keyEntry = archive.CreateEntry($"keys/{relativePath}");
+
+                                using var keyEntryStream = keyEntry.Open();
+                                using var keyFileStream = System.IO.File.OpenRead(keyFile);
+                                keyFileStream.CopyTo(keyEntryStream);
+                            }
+
+                            Console.WriteLine($"Exported database with {keyFiles.Length} encryption key files");
+                            includedComponents.Add("encryption keys");
+                        }
+                        else
+                        {
+                            archive.CreateEntry("keys/");
+                            Console.WriteLine("Exported database with empty keys directory (no encryption keys found)");
+                            includedComponents.Add("keys directory (empty)");
                         }
 
-                        _logger.LogInformation($"Exported database with {keyFiles.Length} encryption key files");
-                    }
-                    else
-                    {
-                        // Create empty keys directory in zip to indicate structure
-                        archive.CreateEntry("keys/");
-                        _logger.LogInformation("Exported database with empty keys directory (no encryption keys found)");
+                        // Include JWT secret as part of encryption keys
+                        if (!string.IsNullOrEmpty(dbDirectory))
+                        {
+                            var jwtSecretFile = Path.Combine(dbDirectory, "jwt-secret.key");
+                            if (System.IO.File.Exists(jwtSecretFile))
+                            {
+                                var jwtSecretEntry = archive.CreateEntry("jwt-secret.key");
+                                using var jwtSecretEntryStream = jwtSecretEntry.Open();
+                                using var jwtSecretFileStream = System.IO.File.OpenRead(jwtSecretFile);
+                                jwtSecretFileStream.CopyTo(jwtSecretEntryStream);
+                                Console.WriteLine("Included JWT secret file with encryption keys");
+                            }
+                        }
                     }
 
-                    // Add a README file explaining the contents
+                    // Include backend identity files if requested (only backend-id.txt)
+                    if (includeIdentity && !string.IsNullOrEmpty(dbDirectory))
+                    {
+                        var backendIdFile = Path.Combine(dbDirectory, "backend-id.txt");
+
+                        if (System.IO.File.Exists(backendIdFile))
+                        {
+                            var backendIdEntry = archive.CreateEntry("backend-id.txt");
+                            using var backendIdEntryStream = backendIdEntry.Open();
+                            using var backendIdFileStream = System.IO.File.OpenRead(backendIdFile);
+                            backendIdFileStream.CopyTo(backendIdEntryStream);
+                            Console.WriteLine("Included backend ID file in backup");
+                            includedComponents.Add("backend identity");
+                        }
+                    }
+
+                    // Create README with backup details
                     var readmeEntry = archive.CreateEntry("README.txt");
                     using (var readmeStream = readmeEntry.Open())
                     using (var writer = new StreamWriter(readmeStream))
@@ -244,28 +330,75 @@ namespace JunctionRelayServer.Controllers
                         writer.WriteLine();
                         writer.WriteLine("This backup contains:");
                         writer.WriteLine("- junction_backup.db: Your JunctionRelay database");
-                        writer.WriteLine("- keys/: Encryption keys for decrypting secrets");
+
+                        if (includeKeys)
+                        {
+                            writer.WriteLine("- keys/: Encryption keys for decrypting secrets");
+                            writer.WriteLine("- jwt-secret.key: JWT authentication secret");
+                        }
+
+                        if (includeIdentity)
+                        {
+                            writer.WriteLine("- backend-id.txt: Backend identity (preserves device identity)");
+                        }
+
+                        writer.WriteLine();
+                        writer.WriteLine("Backup type:");
+                        if (includeKeys && includeIdentity)
+                        {
+                            writer.WriteLine("- COMPLETE BACKUP: Full restore to same backend with all encryption");
+                        }
+                        else if (includeKeys && !includeIdentity)
+                        {
+                            writer.WriteLine("- DATA MIGRATION: Transfer data + encryption to new backend (new identity will be generated)");
+                        }
+                        else if (!includeKeys && includeIdentity)
+                        {
+                            writer.WriteLine("- BASIC BACKUP: Database + identity only (no encryption keys - will generate new JWT secret)");
+                        }
+                        else
+                        {
+                            writer.WriteLine("- DATABASE ONLY: Basic data transfer (new identity, new encryption keys)");
+                        }
+
                         writer.WriteLine();
                         writer.WriteLine("To restore:");
-                        writer.WriteLine("1. Upload this entire ZIP file using the 'Upload Database File' button");
-                        writer.WriteLine("2. The database and keys will be automatically restored");
+                        writer.WriteLine("1. Upload this ZIP file using the 'Upload Database File' button");
+                        writer.WriteLine("2. Available components will be automatically restored");
                         writer.WriteLine("3. Restart the application to apply changes");
+
+                        if (includeIdentity)
+                        {
+                            writer.WriteLine("4. Your backend will maintain the same identity after restore");
+                        }
+                        else
+                        {
+                            writer.WriteLine("4. A new backend identity will be generated");
+                        }
+
                         writer.WriteLine();
                         writer.WriteLine($"Backup created: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+                        writer.WriteLine($"Components: {string.Join(", ", includedComponents)}");
                         writer.WriteLine($"JunctionRelay Version: {GetType().Assembly.GetName().Version}");
                     }
                 }
 
                 var zipBytes = memoryStream.ToArray();
+
+                // Generate appropriate filename based on what's included
+                var backupType = includeKeys && includeIdentity ? "complete" :
+                                includeKeys ? "data_migration" :
+                                includeIdentity ? "basic" : "database_only";
+
                 var zipResult = new FileContentResult(zipBytes, "application/zip")
                 {
-                    FileDownloadName = $"junction_backup_with_keys_{timestamp}.zip"
+                    FileDownloadName = $"junction_backup_{backupType}_{timestamp}.zip"
                 };
                 return zipResult;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error exporting database");
+                Console.WriteLine($"Error exporting database: {ex.Message}");
                 return StatusCode(500, new { error = "Failed to export database", message = ex.Message });
             }
         }
@@ -291,12 +424,11 @@ namespace JunctionRelayServer.Controllers
 
                 if (isDatabaseFile)
                 {
-                    // Original behavior - just import the database file
                     var tempDbPath = _dbPath + ".pending";
                     using var stream = new FileStream(tempDbPath, FileMode.Create, FileAccess.Write);
                     await file.CopyToAsync(stream);
 
-                    _logger.LogInformation("Database import completed (database only)");
+                    Console.WriteLine("Database import completed (database only)");
                     return Ok(new
                     {
                         message = "Database uploaded. Please restart the app to apply changes.",
@@ -304,29 +436,28 @@ namespace JunctionRelayServer.Controllers
                     });
                 }
 
-                // Handle ZIP file import
                 using var fileStream = file.OpenReadStream();
                 using var archive = new ZipArchive(fileStream, ZipArchiveMode.Read);
 
                 bool databaseFound = false;
                 bool keysFound = false;
+                bool identityFilesFound = false;
                 int keysRestored = 0;
+                int identityFilesRestored = 0;
 
                 foreach (var entry in archive.Entries)
                 {
                     if (entry.Name == "junction_backup.db")
                     {
-                        // Extract database to pending location
                         var tempDbPath = _dbPath + ".pending";
                         using var entryStream = entry.Open();
                         using var dbFileStream = System.IO.File.Create(tempDbPath);
                         await entryStream.CopyToAsync(dbFileStream);
                         databaseFound = true;
-                        _logger.LogInformation("Database extracted from ZIP backup");
+                        Console.WriteLine("Database extracted from ZIP backup");
                     }
                     else if (entry.FullName.StartsWith("keys/") && !string.IsNullOrEmpty(entry.Name))
                     {
-                        // Extract encryption keys
                         keysFound = true;
                         var keyPath = Path.Combine(keysDirectory, entry.Name);
                         var keyDir = Path.GetDirectoryName(keyPath);
@@ -340,7 +471,25 @@ namespace JunctionRelayServer.Controllers
                         using var keyFileStream = System.IO.File.Create(keyPath);
                         await entryStream.CopyToAsync(keyFileStream);
                         keysRestored++;
-                        _logger.LogInformation($"Restored encryption key: {entry.Name}");
+                        Console.WriteLine($"Restored encryption key: {entry.Name}");
+                    }
+                    else if (entry.Name == "backend-id.txt" || entry.Name == "jwt-secret.key")
+                    {
+                        if (!string.IsNullOrEmpty(dbDirectory))
+                        {
+                            identityFilesFound = true;
+                            var identityPath = Path.Combine(dbDirectory, entry.Name);
+
+                            using var entryStream = entry.Open();
+                            using var identityFileStream = System.IO.File.Create(identityPath);
+                            await entryStream.CopyToAsync(identityFileStream);
+                            identityFilesRestored++;
+                            Console.WriteLine($"Restored identity file: {entry.Name}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Skipped identity file {entry.Name} - no database directory available");
+                        }
                     }
                 }
 
@@ -349,22 +498,27 @@ namespace JunctionRelayServer.Controllers
                     return BadRequest("No valid database file found in the ZIP archive");
                 }
 
-                var message = keysFound
-                    ? $"Database and {keysRestored} encryption keys uploaded. Please restart the app to apply changes."
-                    : "Database uploaded (no encryption keys found in archive). Please restart the app to apply changes.";
+                var message = $"Database";
+                if (keysFound)
+                    message += $" and {keysRestored} encryption keys";
+                if (identityFilesFound)
+                    message += $" and {identityFilesRestored} identity files";
+                message += " uploaded. Please restart the app to apply changes.";
 
-                _logger.LogInformation($"ZIP import completed. Database: {databaseFound}, Keys: {keysRestored}");
+                Console.WriteLine($"ZIP import completed. Database: {databaseFound}, Keys: {keysRestored}, Identity: {identityFilesRestored}");
 
                 return Ok(new
                 {
                     message,
                     keysRestored = keysRestored > 0,
-                    keyCount = keysRestored
+                    keyCount = keysRestored,
+                    identityRestored = identityFilesRestored > 0,
+                    identityCount = identityFilesRestored
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error importing database");
+                Console.WriteLine($"Error importing database: {ex.Message}");
                 return StatusCode(500, new { error = "Failed to import database", message = ex.Message });
             }
         }
@@ -390,7 +544,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting backup info");
+                Console.WriteLine($"Error getting backup info: {ex.Message}");
                 return StatusCode(500, new { error = "Failed to get backup info", message = ex.Message });
             }
         }

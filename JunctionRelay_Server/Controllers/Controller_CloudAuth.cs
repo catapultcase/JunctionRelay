@@ -18,6 +18,7 @@
  */
 
 
+using JunctionRelayServer.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.Json;
@@ -31,44 +32,123 @@ namespace JunctionRelayServer.Controllers
         private readonly ILogger<Controller_CloudAuth> _logger;
         private readonly IConfiguration _configuration;
         private readonly HttpClient _httpClient;
+        private readonly Service_CloudSessionStore _cloudSessionStore;
 
         public Controller_CloudAuth(
             ILogger<Controller_CloudAuth> logger,
             IConfiguration configuration,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            Service_CloudSessionStore cloudSessionStore)
         {
             _logger = logger;
             _configuration = configuration;
             _httpClient = httpClientFactory.CreateClient();
+            _cloudSessionStore = cloudSessionStore;
         }
 
         [HttpPost("initiate-login")]
-        public IActionResult InitiateLogin([FromBody] CloudAuthInitiateRequest? request)
+        public async Task<IActionResult> InitiateLogin([FromBody] CloudAuthInitiateRequest? request)
         {
             var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
             if (string.IsNullOrEmpty(cloudApiUrl))
             {
-                _logger.LogError("Cloud API URL not configured.");
+                Console.WriteLine("[CLOUD_AUTH] ❌ Cloud API URL not configured.");
                 return StatusCode(500, new { message = "Cloud API not configured." });
             }
 
             var origin = request?.Origin ?? $"{Request.Scheme}://{Request.Host}";
-            _logger.LogInformation("Initiating login. Origin: {Origin}, CloudAPI: {CloudApiUrl}", origin, cloudApiUrl);
+            var redirectUrl = request?.RedirectUrl ?? origin;
 
-            var initiateUrl = $"{cloudApiUrl}/api/auth/initiate-login";
-            var payload = new { origin = origin };
+            Console.WriteLine($"[CLOUD_AUTH] Initiating login. Origin: {origin}, Redirect: {redirectUrl}, CloudAPI: {cloudApiUrl}");
 
-            var response = _httpClient.PostAsJsonAsync(initiateUrl, payload).Result;
-            if (!response.IsSuccessStatusCode)
+            // STEP 1: If backend already has a valid session, try to match it to current frontend user
+            try
             {
-                _logger.LogError("Failed to initiate cloud auth: {StatusCode}", response.StatusCode);
-                return StatusCode(500, new { message = "Failed to initiate cloud auth" });
+                var backendToken = await _cloudSessionStore.GetValidAccessTokenAsync();
+                var backendUserId = _cloudSessionStore.GetUserId();
+
+                if (!string.IsNullOrEmpty(backendToken) && !string.IsNullOrEmpty(backendUserId))
+                {
+                    // Check frontend token if provided
+                    var frontendAuthHeader = Request.Headers.Authorization.FirstOrDefault();
+                    if (!string.IsNullOrEmpty(frontendAuthHeader) && frontendAuthHeader.StartsWith("Bearer "))
+                    {
+                        var frontendToken = frontendAuthHeader.Substring("Bearer ".Length);
+
+                        // Validate token with cloud
+                        var validateUrl = $"{cloudApiUrl}/api/auth/validate-token";
+                        using var validateRequest = new HttpRequestMessage(HttpMethod.Post, validateUrl);
+                        validateRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", frontendToken);
+
+                        var validateResponse = await _httpClient.SendAsync(validateRequest);
+                        if (validateResponse.IsSuccessStatusCode)
+                        {
+                            var json = await validateResponse.Content.ReadFromJsonAsync<JsonElement>();
+                            if (json.TryGetProperty("userId", out var frontendUserIdElement))
+                            {
+                                var frontendUserId = frontendUserIdElement.GetString();
+                                if (frontendUserId == backendUserId)
+                                {
+                                    Console.WriteLine("[CLOUD_AUTH] ✅ Frontend user matches backend session. Reusing access token.");
+                                    return Ok(new
+                                    {
+                                        alreadyAuthenticated = true,
+                                        token = backendToken,
+                                        expiresAt = DateTime.UtcNow.AddHours(8)
+                                    });
+                                }
+                                else
+                                {
+                                    Console.WriteLine("[CLOUD_AUTH] ⚠️ Frontend userId does not match backend session.");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("[CLOUD_AUTH] ⚠️ Failed to validate frontend token with cloud.");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("[CLOUD_AUTH] No frontend token provided — will initiate new login.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH] ⚠️ Failed token check or backend session validation: {ex.Message}");
             }
 
-            var json = response.Content.ReadFromJsonAsync<JsonElement>().Result;
-            _logger.LogInformation("Received successful response from cloud initiate-login.");
-            return Ok(json);
+            // STEP 2: Fallback — initiate full cloud login flow
+            var initiateUrl = $"{cloudApiUrl}/api/auth/initiate-login";
+            var backendId = _cloudSessionStore.GetBackendId();
+            var payload = new
+            {
+                origin = origin,
+                redirectUrl = redirectUrl,
+                backendId = backendId
+            };
+
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync(initiateUrl, payload);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[CLOUD_AUTH] ❌ Failed to initiate cloud auth: {response.StatusCode}");
+                    return StatusCode(500, new { message = "Failed to initiate cloud auth" });
+                }
+
+                var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+                Console.WriteLine("[CLOUD_AUTH] 🔁 Starting new cloud login flow.");
+                return Ok(json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH] ❌ Error initiating login request to cloud: {ex.Message}");
+                return StatusCode(500, new { message = "Error contacting cloud" });
+            }
         }
+
 
         [HttpPost("exchange-code")]
         public IActionResult ExchangeCode([FromBody] CloudAuthExchangeRequest request)
@@ -76,47 +156,52 @@ namespace JunctionRelayServer.Controllers
             var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
             if (string.IsNullOrEmpty(cloudApiUrl))
             {
-                _logger.LogError("Cloud API URL not configured.");
+                Console.WriteLine("❌ Cloud API URL not configured.");
                 return StatusCode(500, new { message = "Cloud API not configured." });
             }
 
-            _logger.LogInformation("Exchanging code with cloud. Code={Code}, State={State}", request.Code, request.State);
+            Console.WriteLine($"🌐 Exchanging code with cloud. Code={request.Code}, State={request.State}, Backend={request.BackendId}");
 
             var exchangeUrl = $"{cloudApiUrl}/api/auth/exchange-code";
             var payload = new
             {
                 code = request.Code,
                 state = request.State,
-                origin = request.Origin
+                origin = request.Origin,
+                backendId = request.BackendId
             };
 
             var response = _httpClient.PostAsJsonAsync(exchangeUrl, payload).Result;
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Failed to exchange code with cloud: {StatusCode}", response.StatusCode);
+                Console.WriteLine($"❌ Failed to exchange code with cloud: {response.StatusCode}");
                 return StatusCode(500, new { message = "Failed to exchange cloud auth code." });
             }
 
             var json = response.Content.ReadFromJsonAsync<JsonElement>().Result;
-            _logger.LogInformation("Successfully exchanged code and received cloud tokens.");
+            Console.WriteLine("✅ Successfully exchanged code and received cloud tokens.");
             return Ok(json);
         }
+
 
         [HttpGet("callback")]
         public async Task<IActionResult> OAuthCallback([FromQuery] string code, [FromQuery] string state)
         {
-            _logger.LogInformation("Received browser callback: Code={Code}, State={State}", code, state);
+            Console.WriteLine($"Received browser callback: Code={code}, State={state}");
 
             var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
             if (string.IsNullOrEmpty(cloudApiUrl))
             {
-                _logger.LogError("Cloud API URL not configured.");
+                Console.WriteLine("Cloud API URL not configured.");
                 return StatusCode(500, new { message = "Cloud API not configured." });
             }
 
             try
             {
-                _logger.LogInformation("DEBUG: Starting code exchange process...");
+                Console.WriteLine("DEBUG: Starting code exchange process...");
+
+                // Get backendId from session store
+                var backendId = _cloudSessionStore.GetBackendId() ?? "";
 
                 // Exchange code with cloud backend
                 var exchangeUrl = $"{cloudApiUrl}/api/auth/exchange-code";
@@ -124,74 +209,118 @@ namespace JunctionRelayServer.Controllers
                 {
                     code = code,
                     state = state,
-                    origin = $"{Request.Scheme}://{Request.Host}"
+                    origin = $"{Request.Scheme}://{Request.Host}",
+                    backendId = backendId
                 };
 
-                _logger.LogInformation("DEBUG: Making request to {ExchangeUrl} with payload: {@Payload}", exchangeUrl, payload);
+                Console.WriteLine($"DEBUG: Making request to {exchangeUrl} with payload: {System.Text.Json.JsonSerializer.Serialize(payload)}");
 
                 var response = await _httpClient.PostAsJsonAsync(exchangeUrl, payload);
 
-                _logger.LogInformation("DEBUG: Exchange response status: {StatusCode}", response.StatusCode);
+                Console.WriteLine($"DEBUG: Exchange response status: {response.StatusCode}");
 
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Failed to exchange code with cloud during callback: {StatusCode}, Content: {Content}", response.StatusCode, errorContent);
+                    Console.WriteLine($"Failed to exchange code with cloud during callback: {response.StatusCode}, Content: {errorContent}");
                     return Redirect("/settings?auth=error&message=Failed to complete authentication");
                 }
 
-                _logger.LogInformation("DEBUG: Reading response content...");
+                Console.WriteLine("DEBUG: Reading response content...");
                 var tokenData = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-                _logger.LogInformation("DEBUG: Token data received: {TokenData}", tokenData);
+                Console.WriteLine($"DEBUG: Token data received: {tokenData}");
 
-                // Extract the JWT token and refresh token from cloud response
-                _logger.LogInformation("DEBUG: Extracting tokens from response...");
-
-                if (!tokenData.TryGetProperty("token", out var tokenElement))
+                if (!tokenData.TryGetProperty("token", out var tokenElement) || !tokenData.TryGetProperty("refreshToken", out var refreshTokenElement))
                 {
-                    _logger.LogError("DEBUG: No 'token' property found in response");
-                    return Redirect("/settings?auth=error&message=Invalid response from cloud");
-                }
-
-                if (!tokenData.TryGetProperty("refreshToken", out var refreshTokenElement))
-                {
-                    _logger.LogError("DEBUG: No 'refreshToken' property found in response");
+                    Console.WriteLine("DEBUG: Missing 'token' or 'refreshToken' in response");
                     return Redirect("/settings?auth=error&message=Invalid response from cloud");
                 }
 
                 var token = tokenElement.GetString();
                 var refreshToken = refreshTokenElement.GetString();
 
-                _logger.LogInformation("DEBUG: Extracted token: {Token} (length: {TokenLength})",
-                    token?.Substring(0, Math.Min(20, token?.Length ?? 0)) + "...", token?.Length);
-                _logger.LogInformation("DEBUG: Extracted refreshToken: {RefreshToken} (length: {RefreshTokenLength})",
-                    refreshToken?.Substring(0, Math.Min(20, refreshToken?.Length ?? 0)) + "...", refreshToken?.Length);
+                Console.WriteLine($"DEBUG: Extracted token: {token?.Substring(0, Math.Min(20, token?.Length ?? 0))}... (length: {token?.Length})");
+                Console.WriteLine($"DEBUG: Extracted refreshToken: {refreshToken?.Substring(0, Math.Min(20, refreshToken?.Length ?? 0))}... (length: {refreshToken?.Length})");
 
                 if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(refreshToken))
                 {
-                    _logger.LogError("DEBUG: Token or refresh token is null/empty");
+                    Console.WriteLine("DEBUG: Token or refresh token is null/empty");
                     return Redirect("/settings?auth=error&message=Missing tokens in response");
                 }
 
-                _logger.LogInformation("Successfully exchanged code during callback, received tokens.");
+                // Extract userId from JWT token payload
+                string? userId = null;
+                try
+                {
+                    var parts = token.Split('.');
+                    if (parts.Length == 3)
+                    {
+                        var payloadBase64 = parts[1];
+                        // Pad base64 string if needed
+                        switch (payloadBase64.Length % 4)
+                        {
+                            case 2: payloadBase64 += "=="; break;
+                            case 3: payloadBase64 += "="; break;
+                        }
+                        var bytes = Convert.FromBase64String(payloadBase64);
+                        var jsonPayload = Encoding.UTF8.GetString(bytes);
+                        using var doc = JsonDocument.Parse(jsonPayload);
+                        if (doc.RootElement.TryGetProperty("userId", out var userIdElement))
+                        {
+                            userId = userIdElement.GetString();
+                            Console.WriteLine($"Extracted userId from token payload: {userId}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("WARNING: userId property not found in JWT payload");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("WARNING: JWT token format invalid");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"WARNING: Failed to parse JWT token payload: {ex.Message}");
+                }
 
-                // Redirect to settings page with tokens as URL parameters
-                // The frontend will capture these and store them appropriately
+                // Store the token in backend session store if we have userId
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    try
+                    {
+                        _cloudSessionStore.StoreSession(token, refreshToken, userId);
+                        Console.WriteLine("Stored tokens in local cloud session store successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"WARNING: Failed to store tokens in local session store: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("WARNING: userId not found in token data; cannot store session");
+                }
+
+                Console.WriteLine("Successfully exchanged code during callback, received tokens.");
+
+                // Redirect to settings page with tokens as URL parameters for frontend capture
                 var settingsUrl = $"/settings?auth=success&token={Uri.EscapeDataString(token)}&refreshToken={Uri.EscapeDataString(refreshToken)}";
 
-                _logger.LogInformation("DEBUG: Redirecting to: {SettingsUrl}", settingsUrl);
-                _logger.LogInformation("DEBUG: About to call Redirect()...");
+                Console.WriteLine($"DEBUG: Redirecting to: {settingsUrl}");
+                Console.WriteLine("DEBUG: About to call Redirect()...");
 
                 var redirectResult = Redirect(settingsUrl);
 
-                _logger.LogInformation("DEBUG: Redirect() called successfully, returning result");
+                Console.WriteLine("DEBUG: Redirect() called successfully, returning result");
 
                 return redirectResult;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "DEBUG: Exception during OAuth callback processing");
+                Console.WriteLine($"DEBUG: Exception during OAuth callback processing: {ex}");
                 return Redirect("/settings?auth=error&message=Authentication failed");
             }
         }
@@ -246,6 +375,13 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        [HttpPost("clear-access-token")]
+        public IActionResult ClearAccessTokenForDebug()
+        {
+            _cloudSessionStore.ClearAccessTokenOnly();
+            return Ok(new { message = "Access token cleared - refresh token preserved - next heartbeat will trigger refresh" });
+        }
+
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
@@ -256,54 +392,70 @@ namespace JunctionRelayServer.Controllers
                 return StatusCode(500, new { message = "Cloud API not configured." });
             }
 
-            // Get the refresh token from the request body or headers
-            var authHeader = Request.Headers.Authorization.FirstOrDefault();
-            string? refreshToken = null;
+            // Use stored refresh token from session
+            var refreshToken = _cloudSessionStore.GetRefreshToken();
 
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+            if (string.IsNullOrEmpty(refreshToken))
             {
-                // For logout, we might want to pass the refresh token
-                // You could modify this to accept refresh token in request body
-                try
-                {
-                    var requestBody = await Request.GetRawBodyStringAsync();
-                    if (!string.IsNullOrEmpty(requestBody))
-                    {
-                        var logoutData = JsonSerializer.Deserialize<JsonElement>(requestBody);
-                        if (logoutData.TryGetProperty("refreshToken", out var refreshTokenElement))
-                        {
-                            refreshToken = refreshTokenElement.GetString();
-                        }
-                    }
-                }
-                catch
-                {
-                    // If we can't parse the body, just proceed without refresh token
-                }
+                _logger.LogWarning("No refresh token found in session — skipping cloud logout");
+                _cloudSessionStore.ClearSession();
+                return Ok(new { message = "Session cleared locally (no refresh token available)" });
             }
 
             try
             {
                 var logoutUrl = $"{cloudApiUrl}/api/auth/logout";
-                var payload = new { refreshToken = refreshToken ?? "" };
+                var payload = new { refreshToken };
 
                 var response = await _httpClient.PostAsJsonAsync(logoutUrl, payload);
-
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogInformation("Successfully logged out from cloud");
+                    _cloudSessionStore.ClearSession();
                     return Ok(new { message = "Logged out from cloud successfully" });
                 }
                 else
                 {
                     _logger.LogWarning("Failed to log out from cloud: {StatusCode}", response.StatusCode);
+                    _cloudSessionStore.ClearSession();
                     return Ok(new { message = "Logged out locally (cloud logout may have failed)" });
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during cloud logout");
+                _cloudSessionStore.ClearSession();
                 return Ok(new { message = "Logged out locally (cloud logout failed)" });
+            }
+        }
+
+
+        [HttpGet("backendstatus")]
+        public IActionResult GetBackendCloudAuthStatus()
+        {
+            try
+            {
+                // Check if cloud session store has valid authentication
+                var isAuthenticated = _cloudSessionStore.IsAuthenticated;
+                var userId = _cloudSessionStore.GetUserId();
+
+                return Ok(new
+                {
+                    isAuthenticated = isAuthenticated,
+                    userId = userId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking cloud auth status");
+                return Ok(new
+                {
+                    isAuthenticated = false,
+                    userId = (string?)null,
+                    timestamp = DateTime.UtcNow,
+                    error = "Failed to check authentication status"
+                });
             }
         }
 
@@ -718,11 +870,148 @@ namespace JunctionRelayServer.Controllers
                 return StatusCode(500, new { message = "Failed to get subscription status" });
             }
         }
+
+        // TOKEN DEBUG
+
+        [HttpGet("tokens")]
+        public IActionResult GetTokensForDebug()
+        {
+            var accessToken = _cloudSessionStore.GetAccessToken();
+            var refreshToken = _cloudSessionStore.GetRefreshToken();
+            var userId = _cloudSessionStore.GetUserId();
+            var isAuthenticated = _cloudSessionStore.IsAuthenticated;
+
+            return Ok(new
+            {
+                hasAccessToken = !string.IsNullOrEmpty(accessToken),
+                hasRefreshToken = !string.IsNullOrEmpty(refreshToken),
+                userId = userId,
+                isAuthenticated = isAuthenticated,
+                accessTokenLength = accessToken?.Length ?? 0,
+                refreshTokenLength = refreshToken?.Length ?? 0,
+                // Show first 20 chars for debugging (safe to show)
+                accessTokenPreview = accessToken?.Substring(0, Math.Min(20, accessToken?.Length ?? 0)) + "...",
+                refreshTokenPreview = refreshToken?.Substring(0, Math.Min(20, refreshToken?.Length ?? 0)) + "..."
+            });
+        }
+
+        [HttpGet("validate-token")]
+        public async Task<IActionResult> ValidateTokenForDebug()
+        {
+            try
+            {
+                Console.WriteLine("[DEBUG] Starting GetValidAccessTokenAsync test...");
+                var token = await _cloudSessionStore.GetValidAccessTokenAsync();
+
+                return Ok(new
+                {
+                    success = !string.IsNullOrEmpty(token),
+                    hasToken = !string.IsNullOrEmpty(token),
+                    tokenLength = token?.Length ?? 0,
+                    tokenPreview = token?.Substring(0, Math.Min(20, token?.Length ?? 0)) + "...",
+                    isAuthenticated = _cloudSessionStore.IsAuthenticated,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new
+                {
+                    success = false,
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        [HttpGet("token-config")]
+        public IActionResult GetConfigForDebug()
+        {
+            var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
+            return Ok(new
+            {
+                cloudApiUrl = cloudApiUrl,
+                hasCloudApiUrl = !string.IsNullOrEmpty(cloudApiUrl),
+                fullRefreshUrl = !string.IsNullOrEmpty(cloudApiUrl) ? $"{cloudApiUrl}/api/auth/refresh" : "N/A"
+            });
+        }
+
+        [HttpGet("token-expiry")]
+        public IActionResult GetTokenExpiryDebug()
+        {
+            var accessToken = _cloudSessionStore.GetAccessToken();
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return Ok(new { error = "No access token available" });
+            }
+
+            try
+            {
+                // Manually extract expiry to debug
+                var parts = accessToken.Split('.');
+                if (parts.Length != 3)
+                {
+                    return Ok(new { error = "Invalid JWT format", partsCount = parts.Length });
+                }
+
+                var payload = parts[1];
+
+                // Add padding
+                switch (payload.Length % 4)
+                {
+                    case 2: payload += "=="; break;
+                    case 3: payload += "="; break;
+                }
+
+                var bytes = Convert.FromBase64String(payload);
+                var json = System.Text.Encoding.UTF8.GetString(bytes);
+
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var hasExp = doc.RootElement.TryGetProperty("exp", out var expElement);
+
+                if (hasExp)
+                {
+                    var exp = expElement.GetInt64();
+                    var expiry = DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime;
+                    var minutesLeft = expiry.Subtract(DateTime.UtcNow).TotalMinutes;
+
+                    return Ok(new
+                    {
+                        success = true,
+                        rawPayload = json,
+                        hasExpProperty = hasExp,
+                        expValue = exp,
+                        expiryTime = expiry,
+                        minutesLeft = minutesLeft,
+                        currentTime = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    return Ok(new
+                    {
+                        error = "No 'exp' property found in token",
+                        rawPayload = json
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return Ok(new
+                {
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace
+                });
+            }
+        }
     }
 
     public class CloudAuthInitiateRequest
     {
         public string Origin { get; set; } = "";
+        public string? RedirectUrl { get; set; }
     }
 
     public class CloudAuthExchangeRequest
@@ -730,6 +1019,7 @@ namespace JunctionRelayServer.Controllers
         public string Code { get; set; } = "";
         public string State { get; set; } = "";
         public string Origin { get; set; } = "";
+        public string BackendId { get; set; } = "";
     }
 }
 

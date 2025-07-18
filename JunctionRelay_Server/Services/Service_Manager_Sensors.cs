@@ -29,11 +29,12 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_JunctionLinks _linkDb;
         private readonly Service_HostInfo _hostInfoService;
 
-        public Service_Manager_Sensors(Service_Database_Manager_Sensors sensorsDbManager,
-                                       Service_Database_Manager_Devices devicesDbManager,
-                                       Service_Database_Manager_Collectors collectorsDbManager,
-                                       Service_Database_Manager_JunctionLinks linkDb,
-                                       Service_HostInfo hostInfoService)
+        public Service_Manager_Sensors(
+            Service_Database_Manager_Sensors sensorsDbManager,
+            Service_Database_Manager_Devices devicesDbManager,
+            Service_Database_Manager_Collectors collectorsDbManager,
+            Service_Database_Manager_JunctionLinks linkDb,
+            Service_HostInfo hostInfoService)
         {
             _sensorsDbManager = sensorsDbManager;
             _devicesDbManager = devicesDbManager;
@@ -46,46 +47,32 @@ namespace JunctionRelayServer.Services
         {
             try
             {
-                // Step 1: Get live sensors from device
-                List<Model_Sensor> fetchedSensors = new List<Model_Sensor>();
+                var fetchedSensors = isHostDevice
+                    ? await _hostInfoService.GetHostSensors(1000)
+                    : new List<Model_Sensor>();
 
-                if (isHostDevice)
-                {
-                    // Fetch the sensors and assign to fetchedSensors
-                    fetchedSensors = await _hostInfoService.GetHostSensors(1000); // Sample rate = 1000 ms
-                }
-                else
-                {
-                    // For non-host devices, we could fetch the sensors from some other source
-                    fetchedSensors = new List<Model_Sensor>(); // Placeholder for non-host device API
-                }
-
-                // Step 2: Get known sensors from DB
                 var existingSensors = await _sensorsDbManager.GetSensorsByDeviceIdAsync(deviceId);
-
-                // Step 3: Build hash set of existing external IDs for fast lookup
                 var existingExternalIds = new HashSet<string>(
                     existingSensors
-                        .Where(s => !string.IsNullOrEmpty(s.ExternalId)) // Filter out null or empty ExternalIds
-                        .Select(s => s.ExternalId.Trim()),  // Trim the ExternalId (no nullable values)
+                        .Where(s => !string.IsNullOrEmpty(s.ExternalId))
+                        .Select(s => s.ExternalId.Trim()),
                     StringComparer.OrdinalIgnoreCase
                 );
 
-                // Step 4: Compare fetched sensors with existing ones and find new sensors
                 var newSensors = fetchedSensors
-                    .Where(s => !string.IsNullOrEmpty(s.ExternalId?.Trim()) && !existingExternalIds.Contains(s.ExternalId?.Trim() ?? "")) // Handle null or empty ExternalId before Contains
+                    .Where(s => !string.IsNullOrWhiteSpace(s.ExternalId?.Trim())
+                                && !existingExternalIds.Contains(s.ExternalId.Trim()))
                     .Select(s =>
                     {
-                        // Set the DeviceName based on the device or collector name
-                        var deviceName = "DefaultDeviceName"; // Default value
+                        var deviceName = "DefaultDeviceName";
                         if (s.DeviceId.HasValue)
                         {
-                            var device = _devicesDbManager.GetDeviceByIdAsync(s.DeviceId.Value).Result;  // Fetch device by DeviceId
+                            var device = _devicesDbManager.GetDeviceByIdAsync(s.DeviceId.Value).Result;
                             deviceName = device?.Name ?? deviceName;
                         }
                         else if (s.CollectorId.HasValue)
                         {
-                            var collector = _collectorsDbManager.GetCollectorByIdAsync(s.CollectorId.Value).Result;  // Fetch collector by CollectorId
+                            var collector = _collectorsDbManager.GetCollectorByIdAsync(s.CollectorId.Value).Result;
                             deviceName = collector?.Name ?? deviceName;
                         }
 
@@ -97,143 +84,107 @@ namespace JunctionRelayServer.Services
                             Value = s.Value,
                             Unit = s.Unit,
                             ComponentName = s.ComponentName,
-                            SensorTag = s.SensorTag ?? "DefaultSensorTag",  // Set the required SensorTag property
-                            Category = s.Category ?? "DefaultCategory",    // Set the required Category property
-                            DeviceName = deviceName,  // Set the required DeviceName property
+                            SensorTag = s.SensorTag ?? "DefaultSensorTag",
+                            Category = s.Category ?? "DefaultCategory",
+                            DeviceName = deviceName,
                             LastUpdated = DateTime.UtcNow
                         };
                     })
                     .ToList();
 
-                // Debug log for new sensors (delta sensors)
                 Console.WriteLine("\nNew Sensors (Delta):");
-                if (newSensors.Count == 0)
-                {
-                    Console.WriteLine("No new sensors found.");
-                }
-                else
-                {
-                    foreach (var sensor in newSensors)
-                    {
-                        Console.WriteLine($"- {sensor.ExternalId}: {sensor.Name}, {sensor.SensorType}, {sensor.Value}");
-                    }
-                }
+                if (!newSensors.Any()) Console.WriteLine("No new sensors found.");
+                else newSensors.ForEach(sensor =>
+                    Console.WriteLine($"- {sensor.ExternalId}: {sensor.Name}, {sensor.SensorType}, {sensor.Value}"));
 
                 return newSensors;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error fetching new sensors: {ex.Message}");
-                return new List<Model_Sensor>();  // Return empty list on error
+                return new List<Model_Sensor>();
             }
         }
 
         public async Task<Model_Sensor> AddSensorToDeviceAsync(int deviceId, Model_Sensor newSensor)
         {
-            // Ensure the sensor has a valid DeviceId
             newSensor.DeviceId = deviceId;
-
-            // Fetch the device name from the database
             var device = await _devicesDbManager.GetDeviceByIdAsync(deviceId);
-            if (device != null)
-            {
-                newSensor.DeviceName = device.Name;  // Set the device name
-            }
-            else
-            {
+            if (device == null)
                 throw new Exception($"Device with ID {deviceId} not found.");
-            }
-
-            // Add the sensor to the database
-            var addedSensor = await _sensorsDbManager.AddSensorAsync(newSensor);
-            return addedSensor;
+            newSensor.DeviceName = device.Name;
+            return await _sensorsDbManager.AddSensorAsync(newSensor);
         }
 
         public async Task<Model_Sensor> AddSensorToCollectorAsync(int collectorId, Model_Sensor newSensor)
         {
-            // Ensure the sensor has a valid CollectorId
             newSensor.CollectorId = collectorId;
-
-            // Fetch the collector name from the database
             var collector = await _collectorsDbManager.GetCollectorByIdAsync(collectorId);
-            if (collector != null)
-            {
-                newSensor.DeviceName = collector.Name;  // Set the collector name
-            }
-            else
-            {
+            if (collector == null)
                 throw new Exception($"Collector with ID {collectorId} not found.");
-            }
-
-            // Add the sensor to the database
-            var addedSensor = await _sensorsDbManager.AddSensorAsync(newSensor);
-            return addedSensor;
+            newSensor.DeviceName = collector.Name;
+            return await _sensorsDbManager.AddSensorAsync(newSensor);
         }
 
         public async Task CloneSensorsForJunctionAsync(int junctionId, List<Model_Sensor> sensors)
         {
-            int insertedCount = 0;
+            // Preload existing junction-sensors and build composite keys
+            var existingJunctionSensors = await _sensorsDbManager.GetJunctionSensorsByJunctionIdAsync(junctionId);
+            var seenKeys = new HashSet<string>(
+                existingJunctionSensors
+                    .Select(s => $"{s.ExternalId}:{s.JunctionDeviceLinkId ?? s.JunctionCollectorLinkId}"),
+                StringComparer.OrdinalIgnoreCase
+            );
 
-            // Fetch all device links and collector links for the given junction
             var deviceLinks = await _linkDb.GetDeviceLinksByJunctionAsync(junctionId);
             var collectorLinks = await _linkDb.GetCollectorLinksByJunctionAsync(junctionId);
+            var insertedCount = 0;
 
             foreach (var sensor in sensors)
             {
-                // Check if a sensor with the same ExternalId already exists in JunctionSensors
-                var existingSensor = await _sensorsDbManager.GetSensorByExternalIdAsync(junctionId, sensor.ExternalId);
-                if (existingSensor != null)
-                {
-                    continue;  // Skip cloning if the sensor already exists
-                }
-
-                // Variable to store the JunctionDeviceLinkId or JunctionCollectorLinkId
-                int? junctionLinkId = null;
+                int? linkId = null;
+                bool isDevice = false;
 
                 if (sensor.DeviceId.HasValue)
                 {
-                    var deviceLink = deviceLinks.FirstOrDefault(dl => dl.DeviceId == sensor.DeviceId);
-                    if (deviceLink != null)
-                    {
-                        junctionLinkId = deviceLink.Id;
-                    }
+                    var dl = deviceLinks.FirstOrDefault(x => x.DeviceId == sensor.DeviceId);
+                    if (dl != null) { linkId = dl.Id; isDevice = true; }
                 }
                 else if (sensor.CollectorId.HasValue)
                 {
-                    var collectorLink = collectorLinks.FirstOrDefault(cl => cl.CollectorId == sensor.CollectorId);
-                    if (collectorLink != null)
-                    {
-                        junctionLinkId = collectorLink.Id;
-                    }
+                    var cl = collectorLinks.FirstOrDefault(x => x.CollectorId == sensor.CollectorId);
+                    if (cl != null) linkId = cl.Id;
                 }
 
-                if (junctionLinkId.HasValue)
+                if (!linkId.HasValue)
+                    continue;
+
+                var key = $"{sensor.ExternalId}:{linkId.Value}";
+                if (seenKeys.Contains(key))
+                    continue;
+                seenKeys.Add(key);
+
+                var cloned = sensor.Clone();
+                cloned.JunctionId = junctionId;
+                cloned.JunctionDeviceLinkId = isDevice ? linkId : (int?)null;
+                cloned.JunctionCollectorLinkId = !isDevice ? linkId : (int?)null;
+                cloned.LastUpdated = DateTime.UtcNow;
+
+                var maxOrder = await _sensorsDbManager.GetMaxSensorOrderAsync(junctionId) ?? 0;
+                cloned.SensorOrder = maxOrder + 1;
+
+                try
                 {
-                    // Clone the sensor for the current junction
-                    var clonedSensor = sensor.Clone();
-                    clonedSensor.JunctionId = junctionId;
-                    clonedSensor.JunctionDeviceLinkId = sensor.DeviceId.HasValue ? junctionLinkId.Value : (int?)null;
-                    clonedSensor.JunctionCollectorLinkId = sensor.CollectorId.HasValue ? junctionLinkId.Value : (int?)null;
-                    clonedSensor.LastUpdated = DateTime.UtcNow;
-
-                    // Set the SensorOrder to the current incremented value
-                    var maxSensorOrder = await _sensorsDbManager.GetMaxSensorOrderAsync(junctionId);
-                    clonedSensor.SensorOrder = (maxSensorOrder ?? 0) + 1;  // Increment the order
-
-                    try
-                    {
-                        await _sensorsDbManager.InsertJunctionSensorsAsync(junctionId, new List<Model_Sensor> { clonedSensor });
-                        insertedCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        // Handle and log any errors during insert
-                        Console.WriteLine($"❌ Error inserting sensor {sensor.ExternalId} into JunctionSensors: {ex.Message}");
-                    }
+                    await _sensorsDbManager.InsertJunctionSensorsAsync(junctionId, new List<Model_Sensor> { cloned });
+                    insertedCount++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error inserting sensor {sensor.ExternalId}: {ex.Message}");
                 }
             }
 
-            // Console.WriteLine($"✅ Cloned {insertedCount} sensors for junction {junctionId}.");
+            Console.WriteLine($"✅ Cloned {insertedCount} sensors for junction {junctionId}.");
         }
     }
 }

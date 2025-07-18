@@ -88,10 +88,10 @@ namespace JunctionRelayServer.Services
             return _sensorCache.TryGetValue(sensorId, out var sensor) ? sensor : null;
         }
 
-        // Add peers to gateway for ESP-NOW communication
+        // Add peers to gateway for ESP-NOW communication (HTTP-based)
         private async Task<bool> AddPeersToGatewayAsync(string gatewayIpAddress, List<Model_Device> targetDevices)
         {
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Adding {targetDevices.Count} peers to gateway {gatewayIpAddress}");
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Adding {targetDevices.Count} peers to HTTP gateway {gatewayIpAddress}");
 
             try
             {
@@ -142,7 +142,80 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway peer setup failed: {ex.Message}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ HTTP Gateway peer setup failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        // Add peers to COM gateway for ESP-NOW communication (COM-based)
+        private async Task<bool> AddPeersToCOMGatewayAsync(string gatewayComPort, List<Model_Device> targetDevices)
+        {
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Adding {targetDevices.Count} peers to COM gateway via {gatewayComPort}");
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var comPortManager = scope.ServiceProvider.GetRequiredService<Service_Manager_COM_Ports>();
+
+                // Ensure gateway COM port is open
+                if (!comPortManager.IsPortOpen(gatewayComPort))
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Opening COM gateway port {gatewayComPort}");
+                    comPortManager.OpenConnection(gatewayComPort, 115200);
+                    await Task.Delay(500); // Give the port time to stabilize
+
+                    // Check again after attempting to open
+                    if (!comPortManager.IsPortOpen(gatewayComPort))
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to open COM gateway port {gatewayComPort}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ COM gateway port {gatewayComPort} is already open");
+                }
+
+                bool allSuccessful = true;
+
+                foreach (var device in targetDevices)
+                {
+                    try
+                    {
+                        // Create add peer command for COM gateway
+                        var addPeerPayload = new
+                        {
+                            command = "add_peer",
+                            mac = device.UniqueIdentifier,
+                            name = device.Name
+                        };
+
+                        var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                        var serializedPayload = payloadService.SerializeGatewayCommand(
+                            addPeerPayload,
+                            includePrefix: true,  // COM always needs prefix
+                            compressPayload: false  // Gateway commands probably don't need compression
+                        );
+
+                        comPortManager.SendData(gatewayComPort, serializedPayload);
+
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Sent add peer command for {device.Name} ({device.UniqueIdentifier}) to COM gateway");
+
+                        // Small delay between peer additions
+                        await Task.Delay(200);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error adding peer {device.Name} to COM gateway: {ex.Message}");
+                        allSuccessful = false;
+                    }
+                }
+
+                return allSuccessful;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ COM Gateway peer setup failed: {ex.Message}");
                 return false;
             }
         }
@@ -228,9 +301,9 @@ namespace JunctionRelayServer.Services
             await protocolDb.GetProtocolsForJunction(junction, deviceDb, collectorDb);
 
             // Special handling for Gateway junctions - add peers before streaming
-            if (junction.Type.Equals("Gateway Junction (HTTP)", StringComparison.OrdinalIgnoreCase))
+            if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Starting Gateway junction {junctionId}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Starting HTTP Gateway junction {junctionId}");
 
                 // Get all target devices for this junction
                 var targetDevices = new List<Model_Device>();
@@ -243,19 +316,49 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
-                // Add all target devices as peers to the gateway
+                // Add all target devices as peers to the HTTP gateway
                 if (!string.IsNullOrEmpty(junction.GatewayDestination) && targetDevices.Any())
                 {
                     var peersAdded = await AddPeersToGatewayAsync(junction.GatewayDestination, targetDevices);
 
                     if (!peersAdded)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Some peers failed to be added to gateway, continuing anyway...");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Some peers failed to be added to HTTP gateway, continuing anyway...");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Gateway junction has no destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ HTTP Gateway junction has no destination or target devices specified");
+                }
+            }
+            else if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Starting COM Gateway junction {junctionId}");
+
+                // Get all target devices for this junction
+                var targetDevices = new List<Model_Device>();
+                foreach (var link in junction.TargetLinks)
+                {
+                    var device = await deviceDb.GetDeviceByIdAsync(link.DeviceId);
+                    if (device != null)
+                    {
+                        targetDevices.Add(device);
+                    }
+                }
+
+                // Add all target devices as peers to the COM gateway
+                if (!string.IsNullOrEmpty(junction.GatewayDestination) && targetDevices.Any())
+                {
+                    var peersAdded = await AddPeersToCOMGatewayAsync(junction.GatewayDestination, targetDevices);
+
+                    if (!peersAdded)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Some peers failed to be added to COM gateway, continuing anyway...");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ COM Gateway junction has no destination or target devices specified");
                 }
             }
 
@@ -272,9 +375,14 @@ namespace JunctionRelayServer.Services
                     await HandleStreamingForJunctionType(com, junction, deviceDb, selectedSensorsCopy);
                     break;
 
-                case "Gateway Junction (HTTP)":
-                    var gatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
-                    await HandleStreamingForJunctionType(gatewayStream, junction, deviceDb, selectedSensorsCopy);
+                case "Gateway Junction (COM to ESP:NOW)":
+                    var comGatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_COM>();
+                    await HandleStreamingForJunctionType(comGatewayStream, junction, deviceDb, selectedSensorsCopy);
+                    break;
+
+                case "Gateway Junction (HTTP to ESP:NOW)":
+                    var httpGatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
+                    await HandleStreamingForJunctionType(httpGatewayStream, junction, deviceDb, selectedSensorsCopy);
                     break;
 
                 default:
@@ -325,7 +433,8 @@ namespace JunctionRelayServer.Services
                             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with assigned sensors using a send rate of {defaultSendRate}ms.");
 
                             // Check if this is a Gateway junction and pass the gateway destination
-                            if (junction.Type.Equals("Gateway Junction (HTTP)", StringComparison.OrdinalIgnoreCase))
+                            if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
+                                junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                             {
                                 // Extract gateway destination from junction properties
                                 string? gatewayDestination = GetGatewayDestination(junction, device);
@@ -348,24 +457,16 @@ namespace JunctionRelayServer.Services
         // Helper method to extract gateway destination from junction properties
         private string? GetGatewayDestination(Model_Junction junction, Model_Device device)
         {
-            // Priority 1: Check if junction has a GatewayDestination property (should be gateway IP)
+            // For gateway junctions, GatewayDestination contains the target device MAC address
+            // The gateway device transport (IP/COM) is determined by the junction type and source device
+
+            // Check if junction has a GatewayDestination property (target MAC)
             if (!string.IsNullOrEmpty(junction.GatewayDestination))
             {
                 return junction.GatewayDestination;
             }
 
-            // Priority 2: Check junction description for IP address pattern (fallback)
-            if (!string.IsNullOrEmpty(junction.Description))
-            {
-                var ipPattern = @"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b";
-                var match = System.Text.RegularExpressions.Regex.Match(junction.Description, ipPattern);
-                if (match.Success)
-                {
-                    return match.Value;
-                }
-            }
-
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Gateway junction {junction.Id} has no destination specified");
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Gateway junction {junction.Id} has no target MAC address specified");
             return null;
         }
 
@@ -379,14 +480,22 @@ namespace JunctionRelayServer.Services
             var collectorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Collectors>();
 
             dynamic streamManager;
-            if (junction.Type == "MQTT Junction")
-                streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_MQTT>();
-            else if (junction.Type == "Gateway Junction (HTTP)")
-                streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
-            else if (junction.Type == "HTTP Junction")
-                streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
-            else
-                return Model_Operation_Result.Fail($"Unsupported junction type: {junction.Type}");
+            switch (junction.Type)
+            {
+                case "MQTT Junction":
+                    streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_MQTT>();
+                    break;
+
+                case "COM Junction":
+                case "Gateway Junction (COM to ESP:NOW)":
+                    streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_COM>();
+                    break;
+
+                default:
+                    // Handle Gateway Junction (HTTP to ESP:NOW), HTTP Junction, and any other types that use HTTP stream manager
+                    streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
+                    break;
+            }
 
             if (cancellationToken.IsCancellationRequested)
                 return Model_Operation_Result.Fail("Stop operation was cancelled.");

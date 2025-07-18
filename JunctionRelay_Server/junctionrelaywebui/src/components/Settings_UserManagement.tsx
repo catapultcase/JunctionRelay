@@ -1,7 +1,7 @@
 ﻿/*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,11 +17,10 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-
 import React, { useState, useEffect } from "react";
 import {
     Box, Typography, List, ListItemButton, ListItemIcon, ListItemText,
-    Paper, CircularProgress
+    Paper, CircularProgress, useTheme, useMediaQuery, ToggleButtonGroup, ToggleButton
 } from "@mui/material";
 import { AlertColor } from "@mui/material/Alert";
 import LockOpenIcon from '@mui/icons-material/LockOpen';
@@ -73,6 +72,8 @@ export interface AuthComponentProps {
 
 const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }) => {
     const { logout, user, login } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     const [authStatus, setAuthStatus] = useState<AuthStatus>({
         authMode: 'none',
@@ -103,7 +104,6 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
 
             // Store the cloud proxy tokens
             localStorage.setItem('cloud_proxy_token', token);
-            localStorage.setItem('cloud_refresh_token', refreshToken);
 
             console.log("[CLOUD_AUTH] Tokens stored in localStorage");
 
@@ -211,7 +211,6 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
             } else if (response.status === 401) {
                 console.log("[CLOUD_AUTH] Token is invalid or expired, clearing stored tokens");
                 localStorage.removeItem('cloud_proxy_token');
-                localStorage.removeItem('cloud_refresh_token');
                 localStorage.removeItem('junctionrelay_cloud_user');
                 setCloudUserInfo(null);
                 showSnackbar("Cloud session expired, please login again", "warning");
@@ -261,7 +260,6 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
     const handleCloudLogout = async () => {
         console.log("[CLOUD_AUTH] Logging out from cloud...");
         try {
-            const refreshToken = localStorage.getItem('cloud_refresh_token');
             const cloudToken = localStorage.getItem('cloud_proxy_token');
 
             const response = await fetch("/api/cloud-auth/logout", {
@@ -270,13 +268,11 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${cloudToken}`
                 },
-                body: JSON.stringify({ refreshToken })
             });
 
             if (response.ok) {
                 console.log("[CLOUD_AUTH] Successfully logged out from cloud");
                 localStorage.removeItem('cloud_proxy_token');
-                localStorage.removeItem('cloud_refresh_token');
                 localStorage.removeItem('junctionrelay_cloud_user');
                 setCloudUserInfo(null);
                 showSnackbar("Logged out from JunctionRelay Cloud", "success");
@@ -287,7 +283,6 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
             console.error("[CLOUD_AUTH] Error during cloud logout:", error);
             // Still clear local state even if server logout fails
             localStorage.removeItem('cloud_proxy_token');
-            localStorage.removeItem('cloud_refresh_token');
             localStorage.removeItem('junctionrelay_cloud_user');
             setCloudUserInfo(null);
             showSnackbar("Logged out locally from JunctionRelay Cloud", "warning");
@@ -344,13 +339,11 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
                         } else {
                             console.log("[AUTH] Existing token invalid, clearing and initiating new login");
                             localStorage.removeItem('cloud_proxy_token');
-                            localStorage.removeItem('cloud_refresh_token');
                             localStorage.removeItem('junctionrelay_cloud_user');
                         }
                     } catch (error) {
                         console.log("[AUTH] Error validating token, clearing tokens:", error);
                         localStorage.removeItem('cloud_proxy_token');
-                        localStorage.removeItem('cloud_refresh_token');
                         localStorage.removeItem('junctionrelay_cloud_user');
                     }
                 }
@@ -449,7 +442,143 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
         }
     };
 
-    return (
+    // Mobile layout with toggle buttons above
+    const renderMobileLayout = () => (
+        <Box sx={{ mb: 4 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+                Authentication Mode
+            </Typography>
+
+            {/* Mobile toggle buttons */}
+            <Box sx={{ mb: 3 }}>
+                <ToggleButtonGroup
+                    value={selectedMode}
+                    exclusive
+                    onChange={(event, newMode) => {
+                        if (newMode !== null) {
+                            setSelectedMode(newMode);
+                        }
+                    }}
+                    aria-label="authentication mode"
+                    orientation="vertical"
+                    fullWidth
+                    sx={{ gap: 1 }}
+                >
+                    {authModes.map((authMode) => (
+                        <ToggleButton
+                            key={authMode.mode}
+                            value={authMode.mode}
+                            aria-label={authMode.label}
+                            sx={{
+                                py: 2,
+                                px: 2,
+                                display: 'flex',
+                                justifyContent: 'flex-start',
+                                alignItems: 'center',
+                                gap: 2,
+                                textAlign: 'left',
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 1,
+                                '&.Mui-selected': {
+                                    backgroundColor: 'primary.main',
+                                    color: 'primary.contrastText',
+                                    '&:hover': {
+                                        backgroundColor: 'primary.dark',
+                                    }
+                                },
+                                '&:not(.Mui-selected)': {
+                                    backgroundColor: 'background.paper'
+                                }
+                            }}
+                        >
+                            <Box sx={{ color: 'inherit' }}>
+                                {authMode.icon}
+                            </Box>
+                            <Box sx={{ textAlign: 'left', flex: 1 }}>
+                                <Typography variant="body1" sx={{ fontWeight: 'medium', color: 'inherit' }}>
+                                    {authMode.label}
+                                </Typography>
+                                <Typography
+                                    variant="body2"
+                                    sx={{
+                                        color: selectedMode === authMode.mode ? 'rgba(255,255,255,0.7)' : 'text.secondary',
+                                        fontSize: '0.875rem'
+                                    }}
+                                >
+                                    {authMode.description}
+                                </Typography>
+                            </Box>
+                            {authStatus.authMode === authMode.mode && (
+                                <Box
+                                    sx={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: '50%',
+                                        backgroundColor: selectedMode === authMode.mode ? 'rgba(255,255,255,0.8)' : 'success.main'
+                                    }}
+                                />
+                            )}
+                        </ToggleButton>
+                    ))}
+                </ToggleButtonGroup>
+            </Box>
+
+            {/* Auth component content */}
+            <Box sx={{ minHeight: 300 }}>
+                {loading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
+                        <CircularProgress />
+                    </Box>
+                ) : (
+                    renderAuthComponent()
+                )}
+            </Box>
+
+            {/* Action buttons for mode changes */}
+            {selectedMode !== authStatus.authMode && (
+                <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                        Switch to {authModes.find(m => m.mode === selectedMode)?.label}?
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                        <button
+                            onClick={() => setSelectedMode(authStatus.authMode)}
+                            style={{
+                                background: 'none',
+                                border: '1px solid #ccc',
+                                borderRadius: '4px',
+                                padding: '8px 16px',
+                                cursor: 'pointer',
+                                flex: 1
+                            }}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => handleAuthModeChange(selectedMode)}
+                            disabled={loading}
+                            style={{
+                                background: '#1976d2',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '8px 16px',
+                                cursor: loading ? 'not-allowed' : 'pointer',
+                                opacity: loading ? 0.6 : 1,
+                                flex: 1
+                            }}
+                        >
+                            {loading ? 'Switching...' : 'Confirm'}
+                        </button>
+                    </Box>
+                </Box>
+            )}
+        </Box>
+    );
+
+    // Desktop layout with sidebar
+    const renderDesktopLayout = () => (
         <Box sx={{ mb: 4 }}>
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
                 Authentication Mode
@@ -559,6 +688,8 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
             )}
         </Box>
     );
+
+    return isMobile ? renderMobileLayout() : renderDesktopLayout();
 };
 
 export default Settings_UserManagement;

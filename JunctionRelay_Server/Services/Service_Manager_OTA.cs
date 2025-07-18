@@ -75,8 +75,6 @@ namespace JunctionRelayServer.Services
 
         public async Task<Result<object>> CheckForUpdate(int deviceId, bool force = false)
         {
-            const string FirmwarePrefix = "junctionrelay_";
-
             var device = await _deviceDbManager.GetDeviceByIdAsync(deviceId);
             if (device == null)
             {
@@ -221,20 +219,17 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Method to verify device firmware hash      
+        // Method to verify device firmware hash
+        // Fix for CS8602 - Line 272 - Add null check for hashResponse
 
         // Method to verify device firmware hash
         public async Task<Result<object>> VerifyDeviceFirmware(int deviceId)
         {
-            // Console.WriteLine($"[OTA VERIFY START] Device {deviceId}");
-
             var device = await _deviceDbManager.GetDeviceByIdAsync(deviceId);
             if (device == null)
             {
                 return Result<object>.Error(404, "Device not found");
             }
-
-            // Console.WriteLine($"[OTA VERIFY] Current HasCustomFirmware: {device.HasCustomFirmware}");
 
             try
             {
@@ -242,16 +237,12 @@ namespace JunctionRelayServer.Services
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(10);
 
-                // Console.WriteLine($"[OTA VERIFY] Attempting to get firmware hash from: http://{device.IPAddress}/api/firmware-hash");
                 var response = await client.GetAsync($"http://{device.IPAddress}/api/firmware-hash");
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    // Console.WriteLine($"[OTA VERIFY] Device returned {response.StatusCode} - assuming custom firmware");
-
                     // Device can't provide hash (older firmware or custom firmware) - mark as custom
                     var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, true);
-                    // Console.WriteLine($"[OTA VERIFY] Set HasCustomFirmware=true, result: {updateResult}");
 
                     var result = new
                     {
@@ -262,21 +253,17 @@ namespace JunctionRelayServer.Services
                         custom_firmware = true
                     };
 
-                    // Console.WriteLine($"[OTA VERIFY] Device {deviceId} verification result: authentic=false (no hash endpoint)");
                     return Result<object>.Success(result);
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
-                // Console.WriteLine($"[OTA VERIFY DEBUG] Raw response from device: {responseContent}");
 
                 var hashResponse = JsonSerializer.Deserialize<Dictionary<string, object>>(responseContent);
 
-                if (!hashResponse.TryGetValue("firmware_hash", out var hashObj) || hashObj?.ToString() is not string deviceHash)
+                // FIX: Add null check for hashResponse before calling TryGetValue
+                if (hashResponse == null || !hashResponse.TryGetValue("firmware_hash", out var hashObj) || hashObj?.ToString() is not string deviceHash)
                 {
-                    // Console.WriteLine("[OTA VERIFY] Invalid hash response - assuming custom firmware");
-
                     var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, true);
-                    // Console.WriteLine($"[OTA VERIFY] Set HasCustomFirmware=true, result: {updateResult}");
 
                     var result = new
                     {
@@ -290,22 +277,15 @@ namespace JunctionRelayServer.Services
                     return Result<object>.Success(result);
                 }
 
-                // Console.WriteLine($"[OTA VERIFY] Device hash: {deviceHash}");
-
                 // Check existing cached releases first (efficient path)
                 var cachedReleases = await GetReleasesFromCache();
                 if (cachedReleases != null)
                 {
-                    // Console.WriteLine($"[OTA VERIFY DEBUG] Checking device hash against {cachedReleases.Count} cached releases");
                     var matchingFirmware = FindFirmwareByHashWithDebug(cachedReleases, deviceHash);
 
                     if (matchingFirmware != null)
                     {
-                        // Console.WriteLine($"[OTA VERIFY] ✅ MATCH FOUND in cache: {matchingFirmware.Name}");
-                        // Console.WriteLine($"[OTA VERIFY] Setting HasCustomFirmware=false");
-
                         var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, false);
-                        // Console.WriteLine($"[OTA VERIFY] Database update result: {updateResult}");
 
                         var result = new
                         {
@@ -316,39 +296,23 @@ namespace JunctionRelayServer.Services
                             custom_firmware = false
                         };
 
-                        // Console.WriteLine($"[OTA VERIFY] Device {deviceId} verification result: authentic=true (cached)");
                         return Result<object>.Success(result);
                     }
-                    else
-                    {
-                        // Console.WriteLine($"[OTA VERIFY DEBUG] ❌ No match found in cached releases");
-                    }
-                }
-                else
-                {
-                    // Console.WriteLine("[OTA VERIFY DEBUG] No cached releases found");
                 }
 
                 // Only if no match in cache, refresh and try again
-                // Console.WriteLine("[OTA VERIFY DEBUG] No match in cache - refreshing firmware database...");
                 var freshReleases = await GetLatestReleasesFromGitHub();
                 if (freshReleases != null)
                 {
                     await SaveReleasesToCache(freshReleases);
-                    // Console.WriteLine($"[OTA VERIFY DEBUG] Refreshed cache with {freshReleases.Count} releases");
 
                     var matchingFirmware = FindFirmwareByHashWithDebug(freshReleases, deviceHash);
                     bool isAuthentic = matchingFirmware != null;
 
-                    // Console.WriteLine($"[OTA VERIFY] Final result: isAuthentic={isAuthentic}");
-                    // Console.WriteLine($"[OTA VERIFY] Setting HasCustomFirmware={!isAuthentic}");
-
                     var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, !isAuthentic);
-                    // Console.WriteLine($"[OTA VERIFY] Database update result: {updateResult}");
 
                     // Verify the database was actually updated
                     var verifyDevice = await _deviceDbManager.GetDeviceByIdAsync(deviceId);
-                    // Console.WriteLine($"[OTA VERIFY] After update - HasCustomFirmware: {verifyDevice?.HasCustomFirmware}");
 
                     var result = new
                     {
@@ -359,15 +323,11 @@ namespace JunctionRelayServer.Services
                         custom_firmware = !isAuthentic
                     };
 
-                    // Console.WriteLine($"[OTA VERIFY] Device {deviceId} verification result: authentic={isAuthentic} (fresh)");
                     return Result<object>.Success(result);
                 }
                 else
                 {
-                    // Console.WriteLine("[OTA VERIFY] Could not load firmware database - assuming custom firmware");
-
                     var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, true);
-                    // Console.WriteLine($"[OTA VERIFY] Set HasCustomFirmware=true, result: {updateResult}");
 
                     var result = new
                     {
@@ -400,11 +360,10 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // NEW: Clear hash cache and force recalculation
+        // Clear hash cache and force recalculation
         private async Task ClearHashCacheAndRecalculate()
         {
             // Console.WriteLine("[OTA CACHE CLEAR] Clearing firmware hash cache to force recalculation...");
-
             try
             {
                 // Delete the cache file to force fresh download and hash calculation
@@ -414,7 +373,6 @@ namespace JunctionRelayServer.Services
                     File.Delete(cacheFilePath);
                     // Console.WriteLine("[OTA CACHE CLEAR] Cache file deleted");
                 }
-
                 // Force fresh fetch from GitHub with new hashing method
                 var releases = await GetLatestReleasesFromGitHub();
                 if (releases != null)
@@ -423,9 +381,9 @@ namespace JunctionRelayServer.Services
                     // Console.WriteLine($"[OTA CACHE CLEAR] Recalculated hashes for {releases.Count} releases");
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) // Use the exception variable
             {
-                // Console.WriteLine($"[OTA CACHE CLEAR] Error clearing cache: {ex.Message}");
+                Console.WriteLine($"[OTA CACHE CLEAR] Error clearing cache: {ex.Message}");
             }
         }
 
@@ -480,10 +438,10 @@ namespace JunctionRelayServer.Services
                 {
                     var deviceSpecificReleases = allFirmwareReleases
                         .Where(release =>
-                            release.Assets.Any(a =>
-                                a.Name.StartsWith($"junctionrelay_{normalizedTarget}_v") &&
-                                a.Name.EndsWith(".bin")))
-                        .Select(release => new
+                            release.Assets?.Any(a =>
+                                a.Name?.StartsWith($"junctionrelay_{normalizedTarget}_v") == true &&
+                                a.Name.EndsWith(".bin")) == true)
+                                            .Select(release => new
                         {
                             name = release.Name,
                             assets = release.Assets

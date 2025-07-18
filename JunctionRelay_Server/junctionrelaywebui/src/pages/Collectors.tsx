@@ -555,9 +555,9 @@ const Collectors = () => {
 
     return (
         <Box sx={{ padding: 2 }}>
-            <Typography variant="h5" gutterBottom>
-                Collectors
-            </Typography>
+            {/*<Typography variant="h5" gutterBottom>*/}
+            {/*    Collectors*/}
+            {/*</Typography>*/}
 
             <Button
                 variant="contained"

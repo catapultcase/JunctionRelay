@@ -21,7 +21,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
     Typography, Box, CircularProgress, Button, Snackbar, Alert, Paper,
-    Tabs, Tab, Chip
+    Tabs, Tab, Chip, Accordion, AccordionSummary, AccordionDetails,
+    useTheme, useMediaQuery, Badge
 } from "@mui/material";
 
 // Import icons
@@ -30,7 +31,6 @@ import DevicesIcon from '@mui/icons-material/Devices';
 import UpdateIcon from '@mui/icons-material/Update';
 import SensorsIcon from '@mui/icons-material/Sensors';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SyncIcon from '@mui/icons-material/Sync';
@@ -38,21 +38,24 @@ import TuneIcon from '@mui/icons-material/Tune';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import ErrorIcon from '@mui/icons-material/Error';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import History from '@mui/icons-material/History';
+
+// Import hooks
+import { useAutoSave, useAutoSaveWithChangeDetection } from '../hooks/useAutoSave';
 
 // Import sub-components
 import DeviceInfoPanel from '../components/DeviceInfoPanel';
+import DeviceHeartbeatPanel from '../components/DeviceHeartbeatPanel';
+import DeviceHeartbeatHistoryPanel from '../components/DeviceHeartbeatHistoryPanel';
 import DeviceScreensPanel from '../components/DeviceScreensPanel';
 import FirmwareManagementPanel from '../components/FirmwareManagementPanel';
 import DeviceSensorsPanel from '../components/DeviceSensorsPanel';
 import DevicePreferencesPanel from '../components/DevicePreferencesPanel';
 import DeviceSystemStatsPanel from '../components/DeviceSystemStatsPanel';
 
-// Define interface for TabPanel props
-interface TabPanelProps {
-    children?: React.ReactNode;
-    index: number;
-    value: number;
-}
+
 
 interface FirmwareInfo {
     current_version: string;
@@ -61,7 +64,12 @@ interface FirmwareInfo {
     is_outdated: boolean;
 }
 
-// TabPanel Component
+interface TabPanelProps {
+    children?: React.ReactNode;
+    index: number;
+    value: number;
+}
+
 const TabPanel = ({ children, value, index, ...other }: TabPanelProps) => {
     return (
         <div
@@ -81,14 +89,18 @@ const TabPanel = ({ children, value, index, ...other }: TabPanelProps) => {
 const ConfigureDevice: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-    // State
+    // Basic component state
     const [loading, setLoading] = useState<boolean>(true);
     const [deviceData, setDeviceData] = useState<any>(null);
+    const [originalDeviceData, setOriginalDeviceData] = useState<any>(null);
     const [newSensors, setNewSensors] = useState<any[]>([]);
     const [error, setError] = useState<string>("");
     const [status, setStatus] = useState<string>("Loading...");
     const [deviceScreens, setDeviceScreens] = useState<any[]>([]);
+    const [originalScreens, setOriginalScreens] = useState<any[]>([]);
     const [i2cDevices, setI2cDevices] = useState<any[]>([]);
     const [layoutTemplates, setLayoutTemplates] = useState<any[]>([]);
     const [comPorts, setComPorts] = useState<string[]>([]);
@@ -111,12 +123,95 @@ const ConfigureDevice: React.FC = () => {
         }
     });
 
+    // Accordion state for mobile - supports multiple open panels
+    const [accordionStates, setAccordionStates] = useState<{ [key: string]: boolean }>(() => {
+        try {
+            const saved = localStorage.getItem('deviceConfigAccordionStates');
+            return saved ? JSON.parse(saved) : {
+                panel0: true,   // Device Details - open by default
+                panel1: false,  // Heartbeat Monitoring
+                panel2: false,  // Heartbeat History
+                panel3: false,  // Screens & I2C Bus
+                panel4: false,  // Firmware Management
+                panel5: false,  // Sensors
+                panel6: false,  // Preferences
+                panel7: false   // System Stats
+            };
+        } catch (error) {
+            console.error("Error accessing localStorage:", error);
+            return {
+                panel0: true,
+                panel1: false,
+                panel2: false,
+                panel3: false,
+                panel4: false,
+                panel5: false,
+                panel6: false,
+                panel7: false
+            };
+        }
+    });
+
     // Show snackbar notification
     const showSnackbar = useCallback((message: string, severity: "success" | "error" | "warning" | "info" = "success") => {
         setSnackbarMessage(message);
         setSnackbarSeverity(severity);
         setSnackbarOpen(true);
     }, []);
+
+    // Auto-save hooks with enhanced success callbacks
+    const deviceAutoSave = useAutoSave(
+        `/api/devices/${id}`,
+        originalDeviceData,
+        {
+            onSuccess: (savedData) => {
+                // Update the original data reference to reflect successful save
+                setOriginalDeviceData(JSON.parse(JSON.stringify(savedData)));
+                console.log('[AUTO-SAVE] Device auto-saved successfully');
+            },
+            onError: (error) => {
+                console.error('[AUTO-SAVE] Device auto-save failed:', error);
+                showSnackbar('Auto-save failed', 'error');
+            },
+            debug: true // ENABLE DEBUG for detailed logs
+        }
+    );
+
+    const screensAutoSave = useAutoSaveWithChangeDetection(
+        `/api/devices/${id}/screens/batch`, // Assuming a batch update endpoint
+        deviceScreens,
+        originalScreens,
+        [], // No fields to exclude for screens
+        {
+            onSuccess: (savedData) => {
+                setOriginalScreens(JSON.parse(JSON.stringify(deviceScreens)));
+                console.log('Screens auto-saved successfully');
+            },
+            onError: (error) => {
+                console.error('Screens auto-save failed:', error);
+                showSnackbar('Screen auto-save failed', 'error');
+            }
+        }
+    );
+
+    // Universal auto-save handler - ADD DEBUG LOGS to your working version
+    const handleAutoSave = useCallback((updatedData: any, field: string, immediate: boolean = false) => {
+        console.log(`[ConfigureDevice] handleAutoSave called:`, {
+            field,
+            immediate,
+            oldValue: deviceData?.[field],
+            newValue: updatedData[field],
+            hasDataChanged: JSON.stringify(deviceData) !== JSON.stringify(updatedData)
+        });
+
+        // Update local state
+        setDeviceData(updatedData);
+        console.log(`[ConfigureDevice] Local state updated for field: ${field}`);
+
+        // Always trigger auto-save with appropriate timing
+        console.log(`[ConfigureDevice] Calling deviceAutoSave.save for field: ${field}`);
+        deviceAutoSave.save(updatedData, { immediate });
+    }, [deviceAutoSave, deviceData]);
 
     // Handle tab change
     const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -127,6 +222,28 @@ const ConfigureDevice: React.FC = () => {
             console.error("Error saving tab state to localStorage:", error);
         }
     };
+
+    // Handle accordion change for mobile
+    const handleAccordionChange = (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
+        setAccordionStates(prev => ({
+            ...prev,
+            [panel]: isExpanded
+        }));
+    };
+
+    // Save accordion states to localStorage
+    useEffect(() => {
+        try {
+            localStorage.setItem('deviceConfigAccordionStates', JSON.stringify(accordionStates));
+        } catch (error) {
+            console.error("Error saving accordion states to localStorage:", error);
+        }
+    }, [accordionStates]);
+
+    // Update change detection when data changes
+    useEffect(() => {
+        screensAutoSave.checkForChanges();
+    }, [deviceScreens, screensAutoSave]);
 
     // Fetch device screens
     const fetchDeviceScreens = useCallback(async (deviceId: string) => {
@@ -197,12 +314,31 @@ const ConfigureDevice: React.FC = () => {
                 device.ignoreUpdates || false
             );
 
+            // Handle SSH credentials properly for existing devices
+            if (device.Id) {
+                // Store the original username (it's not sensitive)
+                const originalSshUsername = device.SshUsername;
+
+                // Add flags for existing credentials
+                device.hasSshPassword = !!(device.SshPassword && device.SshPassword.length > 0);
+                device.hasSshPrivateKey = !!(device.SshPrivateKey && device.SshPrivateKey.length > 0);
+
+                // Remove actual sensitive values - never send to frontend
+                delete device.SshPassword;
+                delete device.SshPrivateKey;
+
+                // But restore the username since it's not sensitive
+                device.SshUsername = originalSshUsername;
+            }
+
             setDeviceData(device);
+            setOriginalDeviceData(JSON.parse(JSON.stringify(device)));
             setComPorts(ports);
             setSelectedComPort(device.SelectedPort || "");
             setI2cDevices(i2c);
             setLayoutTemplates(layouts);
             setDeviceScreens(screens);
+            setOriginalScreens(JSON.parse(JSON.stringify(screens)));
             setInitialFirmwareInfo(firmwareInfo);
             setStatus("Device info loaded.");
         } catch (err: any) {
@@ -214,7 +350,7 @@ const ConfigureDevice: React.FC = () => {
         }
     }, [id, fetchDeviceScreens, checkFirmwareUpdates]);
 
-    // Initial data fetch - includes ONE firmware check using cache
+    // Initial data fetch
     useEffect(() => {
         if (id) {
             fetchDeviceData();
@@ -225,7 +361,7 @@ const ConfigureDevice: React.FC = () => {
     }, [id, fetchDeviceData]);
 
     // Handle device deletion
-    const handleDeleteDevice = async () => {
+    const handleDeleteDevice = useCallback(async () => {
         try {
             const response = await fetch(`/api/devices/${id}`, { method: "DELETE" });
             if (!response.ok) throw new Error("Failed to delete device");
@@ -235,11 +371,10 @@ const ConfigureDevice: React.FC = () => {
             console.error(err);
             showSnackbar("Failed to delete device", "error");
         }
-    };
+    }, [id, showSnackbar, navigate]);
 
-    // Replace your handleResync method with this fixed version:
-
-    const handleResync = async () => {
+    // Handle resync
+    const handleResync = useCallback(async () => {
         if (!deviceData?.ipAddress) return showSnackbar("Device IP not available for resync", "error");
         try {
             setLoading(true);
@@ -255,11 +390,9 @@ const ConfigureDevice: React.FC = () => {
             const infoJson = await infoRes.json();
             const capJson = await capRes.json();
 
-            // 2. Create properly mapped update object (only include valid Model_Device properties)
+            // 2. Create properly mapped update object
             const updated = {
-                ...deviceData, // Start with existing device data
-
-                // Update with device info (map to correct property names)
+                ...deviceData,
                 deviceModel: infoJson.deviceInfo?.deviceModel || deviceData.deviceModel,
                 deviceManufacturer: infoJson.deviceInfo?.deviceManufacturer || deviceData.deviceManufacturer,
                 firmwareVersion: infoJson.deviceInfo?.firmwareVersion || deviceData.firmwareVersion,
@@ -268,8 +401,6 @@ const ConfigureDevice: React.FC = () => {
                 flash: infoJson.deviceInfo?.flash || deviceData.flash,
                 psram: infoJson.deviceInfo?.psram || deviceData.psram,
                 uniqueIdentifier: infoJson.deviceInfo?.uniqueIdentifier || deviceData.uniqueIdentifier,
-
-                // Update with capabilities (map to correct property names)
                 hasOnboardScreen: capJson.capabilities?.HasOnboardScreen ?? deviceData.hasOnboardScreen,
                 hasOnboardLED: capJson.capabilities?.HasOnboardLED ?? deviceData.hasOnboardLED,
                 hasOnboardRGBLED: capJson.capabilities?.HasOnboardRGBLED ?? deviceData.hasOnboardRGBLED,
@@ -288,47 +419,28 @@ const ConfigureDevice: React.FC = () => {
                 hasSpeaker: capJson.capabilities?.HasSpeaker ?? deviceData.hasSpeaker,
                 hasMicroSD: capJson.capabilities?.HasMicroSD ?? deviceData.hasMicroSD,
                 isGateway: capJson.capabilities?.IsGateway ?? deviceData.isGateway,
-
-                // Update timestamp
                 lastUpdated: new Date().toISOString()
             };
 
-            // 3. Remove any properties that shouldn't be sent to backend
-            const { sensors, supportedProtocols, i2cDevices, screens, ...deviceUpdatePayload } = updated;
-
-            console.log("[DEBUG] Sending device update payload:", deviceUpdatePayload);
-
-            // 4. Update the device in the database
-            const putRes = await fetch(`/api/devices/${id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(deviceUpdatePayload)
-            });
-
-            if (!putRes.ok) {
-                const errorText = await putRes.text();
-                console.error("[DEBUG] Update failed:", errorText);
-                throw new Error(`Failed to update device: ${putRes.status} ${errorText}`);
-            }
-
-            // 5. Update local state with the full updated object
+            // 3. Use auto-save to update the device
             setDeviceData(updated);
+            await deviceAutoSave.save(updated, { immediate: true });
 
-            // 6. Trigger firmware verification if it's a JunctionRelay device
+            // 4. Update original data to reflect successful resync
+            setOriginalDeviceData(JSON.parse(JSON.stringify(updated)));
+            deviceAutoSave.updateOriginalData(updated);
+
+            // 5. Trigger firmware verification if it's a JunctionRelay device
             if (updated.isJunctionRelayDevice) {
                 try {
                     await fetch(`/api/ota/verify-firmware/${id}`, {
                         method: 'POST'
                     });
-                    console.log("Firmware verification triggered during resync");
-
-                    // 7. Refresh device data to get updated custom firmware flag
                     setTimeout(() => {
-                        fetchDeviceData(); // Use your existing fetch method
+                        fetchDeviceData();
                     }, 2000);
                 } catch (verifyErr) {
                     console.warn("Firmware verification failed during resync:", verifyErr);
-                    // Don't fail the whole resync if verification fails
                 }
             }
 
@@ -339,13 +451,13 @@ const ConfigureDevice: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [deviceData, showSnackbar, deviceAutoSave, id, fetchDeviceData]);
 
     // Handle refreshing sensors
-    const handleRefreshSensors = async () => {
+    const handleRefreshSensors = useCallback(async () => {
         try {
             setLoading(true);
-            const isHost = deviceData.type === "Host Device";
+            const isHost = deviceData?.type === "Host Device";
             const res = await fetch(`/api/devices/${id}/delta?isHostDevice=${isHost}`);
             if (!res.ok) throw new Error("Failed to fetch delta sensors.");
             const sensors = await res.json();
@@ -357,47 +469,91 @@ const ConfigureDevice: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    // Save device changes
-    const handleSave = async () => {
-        try {
-            setLoading(true);
-            const { sensors, ...withoutSensors } = deviceData;
-            withoutSensors.SelectedPort = selectedComPort;
-            const res = await fetch(`/api/devices/${id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(withoutSensors)
-            });
-            if (!res.ok) throw new Error("Failed to save changes.");
-            showSnackbar("Changes saved successfully!", "success");
-        } catch (err: any) {
-            console.error(err);
-            showSnackbar("Failed to save changes", "error");
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [id, deviceData?.type, showSnackbar]);
 
     // Handle ignoring firmware updates
     const handleUpdateIgnoreSettings = async (ignoreUpdates: boolean) => {
-        try {
-            const updatedDevice = { ...deviceData, ignoreUpdates };
-            const res = await fetch(`/api/devices/${id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatedDevice)
-            });
+        const updatedDevice = { ...deviceData, ignoreUpdates };
+        setDeviceData(updatedDevice);
 
-            if (!res.ok) throw new Error("Failed to update notification settings");
-            setDeviceData(updatedDevice);
-            showSnackbar("Notification settings updated", "success");
-        } catch (error) {
-            console.error("Error updating notification settings:", error);
-            showSnackbar("Failed to update notification settings", "error");
-        }
+        // Use auto-save for immediate update
+        await deviceAutoSave.save(updatedDevice, { immediate: true });
+        showSnackbar("Notification settings updated", "success");
     };
+
+    // Listen for bottom action bar events on mobile
+    useEffect(() => {
+        if (!isMobile) return;
+
+        const handleBottomActionResync = () => handleResync();
+        const handleBottomActionRefreshSensors = () => handleRefreshSensors();
+        const handleBottomActionDelete = () => {
+            if (window.confirm('Are you sure you want to delete this device?')) {
+                handleDeleteDevice();
+            }
+        };
+
+        window.addEventListener('bottom-action-resync', handleBottomActionResync);
+        window.addEventListener('bottom-action-refresh-sensors', handleBottomActionRefreshSensors);
+        window.addEventListener('bottom-action-delete-device', handleBottomActionDelete);
+
+        return () => {
+            window.removeEventListener('bottom-action-resync', handleBottomActionResync);
+            window.removeEventListener('bottom-action-refresh-sensors', handleBottomActionRefreshSensors);
+            window.removeEventListener('bottom-action-delete-device', handleBottomActionDelete);
+        };
+    }, [isMobile, handleDeleteDevice, handleRefreshSensors, handleResync]);
+
+    // Dispatch bottom action bar configuration for mobile
+    useEffect(() => {
+        if (isMobile && deviceData) {
+            const event = new CustomEvent('configure-device-bottom-actions', {
+                detail: {
+                    secondaryActions: [
+                        ...(deviceData.type !== "Host Device" ? [{
+                            icon: <SyncIcon />,
+                            label: 'Resync',
+                            onClick: () => window.dispatchEvent(new CustomEvent('bottom-action-resync'))
+                        }] : []),
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => window.dispatchEvent(new CustomEvent('bottom-action-refresh-sensors'))
+                        },
+                        ...(deviceData.type !== "Host Device" ? [{
+                            icon: <DeleteIcon />,
+                            label: 'Delete',
+                            color: 'error' as const,
+                            onClick: () => window.dispatchEvent(new CustomEvent('bottom-action-delete-device'))
+                        }] : [])
+                    ],
+                    // Add status indicator for auto-save status
+                    statusIndicator: deviceAutoSave.status === 'saving' ? {
+                        text: 'Saving...',
+                        color: 'info',
+                        icon: '~'
+                    } : (deviceAutoSave.status === 'saved' ? {
+                        text: 'Saved',
+                        color: 'success',
+                        icon: '+'
+                    } : (deviceAutoSave.status === 'error' ? {
+                        text: 'Save failed',
+                        color: 'error',
+                        icon: '!'
+                    } : undefined))
+                }
+            });
+            window.dispatchEvent(event);
+        }
+
+        return () => {
+            if (isMobile) {
+                window.dispatchEvent(new CustomEvent('configure-device-bottom-actions', {
+                    detail: { clear: true }
+                }));
+            }
+        };
+    }, [isMobile, deviceData, deviceAutoSave.status]);
 
     if (loading) {
         return (
@@ -424,10 +580,134 @@ const ConfigureDevice: React.FC = () => {
     const isCustom = deviceData.type === "Custom";
     const isJunctionRelayDevice = deviceData.isJunctionRelayDevice || false;
 
+    // Define accordion panels configuration - UPDATED with new Heartbeat History panel
+    const accordionPanels = [
+        {
+            id: 'panel0',
+            icon: <InfoIcon />,
+            title: 'Device Details',
+            badge: null,
+            content: (
+                <DeviceInfoPanel
+                    deviceData={deviceData}
+                    setDeviceData={setDeviceData}
+                    isCustom={isCustom}
+                    comPorts={comPorts}
+                    selectedComPort={selectedComPort}
+                    setSelectedComPort={setSelectedComPort}
+                    onAutoSave={handleAutoSave}
+                />
+            )
+        },
+        {
+            id: 'panel1',
+            icon: <MonitorHeartIcon />,
+            title: 'Heartbeat Configuration',
+            badge: null,
+            content: (
+                <DeviceHeartbeatPanel
+                    deviceData={deviceData}
+                    onAutoSave={handleAutoSave}
+                />
+            )
+        },
+        {
+            id: 'panel2',
+            icon: <History />,
+            title: 'Heartbeat History',
+            badge: null,
+            content: (
+                <DeviceHeartbeatHistoryPanel deviceId={id || ""} />
+            )
+        },
+        {
+            id: 'panel3',
+            icon: <DevicesIcon />,
+            title: 'Screens & I2C Bus',
+            badge: null,
+            content: (
+                <DeviceScreensPanel
+                    deviceId={id || ""}
+                    deviceScreens={deviceScreens}
+                    setDeviceScreens={setDeviceScreens}
+                    i2cDevices={i2cDevices}
+                    setI2cDevices={setI2cDevices}
+                    layoutTemplates={layoutTemplates}
+                    isCustom={isCustom}
+                    showSnackbar={showSnackbar}
+                    onScreenChange={(screens) => {
+                        setDeviceScreens(screens);
+                        screensAutoSave.markChanged();
+                    }}
+                />
+            )
+        },
+        {
+            id: 'panel4',
+            icon: <UpdateIcon />,
+            title: 'Firmware Management',
+            badge: initialFirmwareInfo?.is_outdated ? 1 : null,
+            content: (
+                <FirmwareManagementPanel
+                    deviceId={id || ""}
+                    currentFirmware={deviceData.firmwareVersion || "Unknown"}
+                    isJunctionRelayDevice={isJunctionRelayDevice}
+                    ignoreUpdates={deviceData.ignoreUpdates || false}
+                    hasCustomFirmware={deviceData.hasCustomFirmware || false}
+                    refreshDeviceData={fetchDeviceData}
+                    showSnackbar={showSnackbar}
+                    onUpdateIgnoreSettings={handleUpdateIgnoreSettings}
+                    initialFirmwareInfo={initialFirmwareInfo}
+                />
+            )
+        },
+        {
+            id: 'panel5',
+            icon: <SensorsIcon />,
+            title: 'Sensors',
+            badge: newSensors.length > 0 ? newSensors.length : null,
+            content: (
+                <DeviceSensorsPanel
+                    deviceId={id || ""}
+                    deviceData={deviceData}
+                    newSensors={newSensors}
+                    setNewSensors={setNewSensors}
+                    showSnackbar={showSnackbar}
+                />
+            )
+        },
+        {
+            id: 'panel6',
+            icon: <TuneIcon />,
+            title: 'Preferences',
+            badge: null,
+            content: (
+                <DevicePreferencesPanel
+                    deviceId={id || ""}
+                    deviceData={deviceData}
+                    showSnackbar={showSnackbar}
+                />
+            )
+        },
+        {
+            id: 'panel7',
+            icon: <AnalyticsIcon />,
+            title: 'System Stats',
+            badge: null,
+            content: (
+                <DeviceSystemStatsPanel
+                    deviceId={id || ""}
+                    deviceData={deviceData}
+                    showSnackbar={showSnackbar}
+                />
+            )
+        }
+    ];
+
     return (
-        <Box sx={{ padding: 2 }}>
+        <Box sx={{ padding: isMobile ? 1 : 2 }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h4">
+                <Typography variant={isMobile ? "h5" : "h4"}>
                     Configure Device: {deviceData.name}
                 </Typography>
                 <Box>
@@ -437,114 +717,211 @@ const ConfigureDevice: React.FC = () => {
                         startIcon={<ArrowBackIcon />}
                         onClick={() => navigate("/devices")}
                     >
-                        Back to Devices
+                        {isMobile ? 'Back' : 'Back to Devices'}
                     </Button>
                 </Box>
             </Box>
 
-            {/* Device Status & Action Buttons */}
-            <Paper
-                elevation={2}
-                sx={{
-                    p: 3,
-                    mb: 3,
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                }}
-            >
-                <Box display="flex" alignItems="center">
-                    <Box
-                        component="span"
-                        sx={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: "50%",
-                            bgcolor: deviceData.status === "Online" ? "green" :
-                                deviceData.status === "Offline" ? "red" : "#f0ad4e",
-                            mr: 1,
-                            display: "inline-block"
-                        }}
-                    />
-                    <Typography variant="subtitle1" fontWeight="medium">
-                        Status: {deviceData.status || "Unknown"}
-                    </Typography>
-                    {deviceData.firmwareVersion && (
-                        <Chip
-                            label={`Firmware ${deviceData.firmwareVersion}`}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            sx={{ ml: 2 }}
+            {/* Device Status & Action Buttons - Only show on desktop */}
+            {!isMobile && (
+                <Paper
+                    elevation={2}
+                    sx={{
+                        p: 3,
+                        mb: 3,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}
+                >
+                    <Box display="flex" alignItems="center">
+                        <Box
+                            component="span"
+                            sx={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: "50%",
+                                bgcolor: deviceData.status === "Online" ? "green" :
+                                    deviceData.status === "Offline" ? "red" : "#f0ad4e",
+                                mr: 1,
+                                display: "inline-block"
+                            }}
                         />
-                    )}
-                    {/* NEW: Add firmware authenticity indicator */}
-                    {isJunctionRelayDevice && (
-                        <Chip
-                            icon={deviceData.hasCustomFirmware ? <ErrorIcon /> : <VerifiedIcon />}
-                            label={deviceData.hasCustomFirmware ? "Custom Firmware" : "Authentic Firmware"}
-                            size="small"
-                            color={deviceData.hasCustomFirmware ? "warning" : "success"}
-                            variant="outlined"
-                            sx={{ ml: 1 }}
-                        />
-                    )}
-                    {initialFirmwareInfo?.is_outdated && (
-                        <Chip
-                            label="Update Available"
-                            size="small"
-                            color="warning"
-                            variant="outlined"
-                            sx={{ ml: 1 }}
-                        />
-                    )}
-                </Box>
+                        <Typography variant="subtitle1" fontWeight="medium">
+                            Status: {deviceData.status || "Unknown"}
+                        </Typography>
+                        {deviceData.firmwareVersion && (
+                            <Chip
+                                label={`Firmware ${deviceData.firmwareVersion}`}
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                sx={{ ml: 2 }}
+                            />
+                        )}
+                        {/* Firmware authenticity indicator */}
+                        {isJunctionRelayDevice && (
+                            <Chip
+                                icon={deviceData.hasCustomFirmware ? <ErrorIcon /> : <VerifiedIcon />}
+                                label={deviceData.hasCustomFirmware ? "Custom Firmware" : "Authentic Firmware"}
+                                size="small"
+                                color={deviceData.hasCustomFirmware ? "warning" : "success"}
+                                variant="outlined"
+                                sx={{ ml: 1 }}
+                            />
+                        )}
+                        {initialFirmwareInfo?.is_outdated && (
+                            <Chip
+                                label="Update Available"
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                sx={{ ml: 1 }}
+                            />
+                        )}
+                    </Box>
 
-                <Box display="flex" gap={2}>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleSave}
-                        startIcon={<SaveIcon />}
-                        size="small"
-                    >
-                        Save Changes
-                    </Button>
+                    <Box display="flex" gap={2} alignItems="center">
+                        {deviceData.type !== "Host Device" && (
+                            <Button
+                                variant="outlined"
+                                startIcon={<SyncIcon />}
+                                size="small"
+                                onClick={handleResync}
+                            >
+                                Resync Device
+                            </Button>
+                        )}
 
-                    {deviceData.type !== "Host Device" && (
                         <Button
                             variant="outlined"
-                            startIcon={<SyncIcon />}
+                            startIcon={<RefreshIcon />}
                             size="small"
-                            onClick={handleResync}
+                            onClick={handleRefreshSensors}
                         >
-                            Resync Device
+                            Refresh Sensors
                         </Button>
-                    )}
 
-                    <Button
-                        variant="outlined"
-                        startIcon={<RefreshIcon />}
-                        size="small"
-                        onClick={handleRefreshSensors}
-                    >
-                        Refresh Sensors
-                    </Button>
+                        {deviceData.type !== "Host Device" && (
+                            <Button
+                                variant="outlined"
+                                color="error"
+                                startIcon={<DeleteIcon />}
+                                size="small"
+                                onClick={handleDeleteDevice}
+                            >
+                                Delete Device
+                            </Button>
+                        )}
 
-                    {deviceData.type !== "Host Device" && (
-                        <Button
-                            variant="outlined"
-                            color="error"
-                            startIcon={<DeleteIcon />}
-                            size="small"
-                            onClick={handleDeleteDevice}
-                        >
-                            Delete Device
-                        </Button>
-                    )}
-                </Box>
-            </Paper>
+                        {/* Auto-save status indicator */}
+                        {deviceAutoSave.status !== 'idle' && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                {deviceAutoSave.status === 'saving' && (
+                                    <>
+                                        <CircularProgress size={12} />
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                            Saving...
+                                        </Typography>
+                                    </>
+                                )}
+                                {deviceAutoSave.status === 'saved' && (
+                                    <Typography variant="body2" color="success.main" sx={{ fontSize: '0.75rem' }}>
+                                        Saved
+                                    </Typography>
+                                )}
+                                {deviceAutoSave.status === 'error' && (
+                                    <Typography variant="body2" color="error.main" sx={{ fontSize: '0.75rem' }}>
+                                        Save failed
+                                    </Typography>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                </Paper>
+            )}
+
+            {/* Mobile Status Bar - Compact version for mobile */}
+            {isMobile && (
+                <Paper
+                    elevation={2}
+                    sx={{
+                        p: 2,
+                        mb: 2,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}
+                >
+                    <Box display="flex" alignItems="center" flex={1}>
+                        <Box
+                            component="span"
+                            sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                bgcolor: deviceData.status === "Online" ? "green" :
+                                    deviceData.status === "Offline" ? "red" : "#f0ad4e",
+                                mr: 1,
+                                display: "inline-block"
+                            }}
+                        />
+                        <Typography variant="body2" fontWeight="medium">
+                            {deviceData.status || "Unknown"}
+                        </Typography>
+                        {deviceData.firmwareVersion && (
+                            <Chip
+                                label={`v${deviceData.firmwareVersion}`}
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                            />
+                        )}
+                    </Box>
+
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                        {isJunctionRelayDevice && (
+                            <Chip
+                                icon={deviceData.hasCustomFirmware ? <ErrorIcon fontSize="small" /> : <VerifiedIcon fontSize="small" />}
+                                label={deviceData.hasCustomFirmware ? "Custom" : "Authentic"}
+                                size="small"
+                                color={deviceData.hasCustomFirmware ? "warning" : "success"}
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                            />
+                        )}
+                        {initialFirmwareInfo?.is_outdated && (
+                            <Chip
+                                label="Update"
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                            />
+                        )}
+
+                        {/* Mobile auto-save status */}
+                        {deviceAutoSave.status !== 'idle' && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
+                                {deviceAutoSave.status === 'saving' && <CircularProgress size={8} />}
+                                {deviceAutoSave.status === 'saved' && (
+                                    <Typography variant="body2" color="success.main" sx={{ fontSize: '0.6rem' }}>
+                                        OK
+                                    </Typography>
+                                )}
+                                {deviceAutoSave.status === 'error' && (
+                                    <Typography variant="body2" color="error.main" sx={{ fontSize: '0.6rem' }}>
+                                        ERR
+                                    </Typography>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                </Paper>
+            )}
 
             {/* Delta Sensors Notification */}
             {newSensors.length > 0 && (
@@ -560,128 +937,226 @@ const ConfigureDevice: React.FC = () => {
                 </Paper>
             )}
 
-            {/* Main Tabs Interface */}
-            <Paper sx={{ width: '100%', mb: 4 }} elevation={2}>
-                <Tabs
-                    value={tabValue}
-                    onChange={handleTabChange}
-                    aria-label="device configuration tabs"
-                    sx={{ borderBottom: 1, borderColor: 'divider' }}
-                >
-                    <Tab
-                        icon={<InfoIcon />}
-                        iconPosition="start"
-                        label="Device Details"
-                        id="device-tab-0"
-                        aria-controls="device-tabpanel-0"
-                    />
-                    <Tab
-                        icon={<DevicesIcon />}
-                        iconPosition="start"
-                        label="Screens & I2C Bus"
-                        id="device-tab-1"
-                        aria-controls="device-tabpanel-1"
-                    />
-                    <Tab
-                        icon={<UpdateIcon />}
-                        iconPosition="start"
-                        label="Firmware Management"
-                        id="device-tab-2"
-                        aria-controls="device-tabpanel-2"
-                    />
-                    <Tab
-                        icon={<SensorsIcon />}
-                        iconPosition="start"
-                        label="Sensors"
-                        id="device-tab-3"
-                        aria-controls="device-tabpanel-3"
-                    />
-                    <Tab
-                        icon={<TuneIcon />}
-                        iconPosition="start"
-                        label="Preferences"
-                        id="device-tab-4"
-                        aria-controls="device-tabpanel-4"
-                    />
-                    <Tab
-                        icon={<AnalyticsIcon />}
-                        iconPosition="start"
-                        label="System Stats"
-                        id="device-tab-5"
-                        aria-controls="device-tabpanel-5"
-                    />
-                </Tabs>
+            {isMobile ? (
+                // Mobile Accordion View - FIXED STYLING
+                <Box sx={{
+                    mb: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1  // Add gap between accordions like Settings
+                }}>
+                    {accordionPanels.map((panel) => (
+                        <Accordion
+                            key={panel.id}
+                            expanded={accordionStates[panel.id] || false}
+                            onChange={handleAccordionChange(panel.id)}
+                            elevation={isMobile ? 1 : 2}  // Match Settings elevation
+                            sx={{
+                                // Remove individual accordion margins and borders
+                                mb: 0,  // Remove margin bottom
+                                '&:before': {
+                                    display: 'none',  // Remove default MUI before element
+                                },
+                                '&.Mui-expanded': {
+                                    margin: 0,  // Remove expanded margin
+                                },
+                                // No border radius - let the container handle it
+                                borderRadius: 0,
+                                overflow: 'visible'  // Don't clip content
+                            }}
+                        >
+                            <AccordionSummary
+                                expandIcon={<ExpandMoreIcon />}
+                                aria-controls={`${panel.id}-content`}
+                                id={`${panel.id}-header`}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    {panel.badge ? (
+                                        <Badge badgeContent={panel.badge} color="error" sx={{ mr: 1 }}>
+                                            {panel.icon}
+                                        </Badge>
+                                    ) : (
+                                        <Box sx={{ mr: 1 }}>
+                                            {panel.icon}
+                                        </Box>
+                                    )}
+                                    <Typography variant="h6">
+                                        {panel.title}
+                                    </Typography>
+                                </Box>
+                            </AccordionSummary>
+                            <AccordionDetails sx={{
+                                px: isMobile ? 1 : 3  // Match Settings padding
+                            }}>
+                                {panel.content}
+                            </AccordionDetails>
+                        </Accordion>
+                    ))}
+                </Box>
+            ) : (
+                // Desktop Tabs View - UPDATED with new Heartbeat History tab
+                <Paper sx={{ width: '100%', mb: 4 }} elevation={2}>
+                    <Tabs
+                        value={tabValue}
+                        onChange={handleTabChange}
+                        aria-label="device configuration tabs"
+                        sx={{ borderBottom: 1, borderColor: 'divider' }}
+                    >
+                        <Tab
+                            icon={<InfoIcon />}
+                            iconPosition="start"
+                            label="Device Details"
+                            id="device-tab-0"
+                            aria-controls="device-tabpanel-0"
+                        />
+                        <Tab
+                            icon={<MonitorHeartIcon />}
+                            iconPosition="start"
+                            label="Heartbeat Config"
+                            id="device-tab-1"
+                            aria-controls="device-tabpanel-1"
+                        />
+                        <Tab
+                            icon={<History />}
+                            iconPosition="start"
+                            label="Heartbeat History"
+                            id="device-tab-2"
+                            aria-controls="device-tabpanel-2"
+                        />
+                        <Tab
+                            icon={<DevicesIcon />}
+                            iconPosition="start"
+                            label="Screens & I2C"
+                            id="device-tab-3"
+                            aria-controls="device-tabpanel-3"
+                        />
+                        <Tab
+                            icon={initialFirmwareInfo?.is_outdated ? (
+                                <Badge badgeContent={1} color="error">
+                                    <UpdateIcon />
+                                </Badge>
+                            ) : <UpdateIcon />}
+                            iconPosition="start"
+                            label="Firmware"
+                            id="device-tab-4"
+                            aria-controls="device-tabpanel-4"
+                        />
+                        <Tab
+                            icon={newSensors.length > 0 ? (
+                                <Badge badgeContent={newSensors.length} color="error">
+                                    <SensorsIcon />
+                                </Badge>
+                            ) : <SensorsIcon />}
+                            iconPosition="start"
+                            label="Sensors"
+                            id="device-tab-5"
+                            aria-controls="device-tabpanel-5"
+                        />
+                        <Tab
+                            icon={<TuneIcon />}
+                            iconPosition="start"
+                            label="Preferences"
+                            id="device-tab-6"
+                            aria-controls="device-tabpanel-6"
+                        />
+                        <Tab
+                            icon={<AnalyticsIcon />}
+                            iconPosition="start"
+                            label="System Stats"
+                            id="device-tab-7"
+                            aria-controls="device-tabpanel-7"
+                        />
+                    </Tabs>
 
-                {/* Device Details Tab */}
-                <TabPanel value={tabValue} index={0}>
-                    <DeviceInfoPanel
-                        deviceData={deviceData}
-                        setDeviceData={setDeviceData}
-                        isCustom={isCustom}
-                        comPorts={comPorts}
-                        selectedComPort={selectedComPort}
-                        setSelectedComPort={setSelectedComPort}
-                    />
-                </TabPanel>
+                    {/* Device Details Tab */}
+                    <TabPanel value={tabValue} index={0}>
+                        <DeviceInfoPanel
+                            deviceData={deviceData}
+                            setDeviceData={setDeviceData}
+                            isCustom={isCustom}
+                            comPorts={comPorts}
+                            selectedComPort={selectedComPort}
+                            setSelectedComPort={setSelectedComPort}
+                            onAutoSave={handleAutoSave}
+                        />
+                    </TabPanel>
 
-                {/* Screens & I2C Bus Tab */}
-                <TabPanel value={tabValue} index={1}>
-                    <DeviceScreensPanel
-                        deviceId={id || ""}
-                        deviceScreens={deviceScreens}
-                        setDeviceScreens={setDeviceScreens}
-                        i2cDevices={i2cDevices}
-                        setI2cDevices={setI2cDevices}
-                        layoutTemplates={layoutTemplates}
-                        isCustom={isCustom}
-                        showSnackbar={showSnackbar}
-                    />
-                </TabPanel>
+                    {/* Heartbeat Configuration Tab */}
+                    <TabPanel value={tabValue} index={1}>
+                        <DeviceHeartbeatPanel
+                            deviceData={deviceData}
+                            onAutoSave={handleAutoSave}
+                        />
+                    </TabPanel>
 
-                {/* Firmware Management Tab */}
-                <TabPanel value={tabValue} index={2}>
-                    <FirmwareManagementPanel
-                        deviceId={id || ""}
-                        currentFirmware={deviceData.firmwareVersion || "Unknown"}
-                        isJunctionRelayDevice={isJunctionRelayDevice}
-                        ignoreUpdates={deviceData.ignoreUpdates || false}
-                        hasCustomFirmware={deviceData.hasCustomFirmware || false}
-                        refreshDeviceData={fetchDeviceData}
-                        showSnackbar={showSnackbar}
-                        onUpdateIgnoreSettings={handleUpdateIgnoreSettings}
-                        initialFirmwareInfo={initialFirmwareInfo}
-                    />
-                </TabPanel>
+                    {/* NEW: Heartbeat History Tab */}
+                    <TabPanel value={tabValue} index={2}>
+                        <DeviceHeartbeatHistoryPanel deviceId={id || ""} />
+                    </TabPanel>
 
-                {/* Sensors Tab */}
-                <TabPanel value={tabValue} index={3}>
-                    <DeviceSensorsPanel
-                        deviceId={id || ""}
-                        deviceData={deviceData}
-                        newSensors={newSensors}
-                        setNewSensors={setNewSensors}
-                        showSnackbar={showSnackbar}
-                    />
-                </TabPanel>
+                    {/* Screens & I2C Bus Tab */}
+                    <TabPanel value={tabValue} index={3}>
+                        <DeviceScreensPanel
+                            deviceId={id || ""}
+                            deviceScreens={deviceScreens}
+                            setDeviceScreens={setDeviceScreens}
+                            i2cDevices={i2cDevices}
+                            setI2cDevices={setI2cDevices}
+                            layoutTemplates={layoutTemplates}
+                            isCustom={isCustom}
+                            showSnackbar={showSnackbar}
+                            onScreenChange={(screens) => {
+                                setDeviceScreens(screens);
+                                screensAutoSave.markChanged();
+                            }}
+                        />
+                    </TabPanel>
 
-                {/* Preferences Tab */}
-                <TabPanel value={tabValue} index={4}>
-                    <DevicePreferencesPanel
-                        deviceId={id || ""}
-                        deviceData={deviceData}
-                        showSnackbar={showSnackbar}
-                    />
-                </TabPanel>
+                    {/* Firmware Management Tab */}
+                    <TabPanel value={tabValue} index={4}>
+                        <FirmwareManagementPanel
+                            deviceId={id || ""}
+                            currentFirmware={deviceData.firmwareVersion || "Unknown"}
+                            isJunctionRelayDevice={isJunctionRelayDevice}
+                            ignoreUpdates={deviceData.ignoreUpdates || false}
+                            hasCustomFirmware={deviceData.hasCustomFirmware || false}
+                            refreshDeviceData={fetchDeviceData}
+                            showSnackbar={showSnackbar}
+                            onUpdateIgnoreSettings={handleUpdateIgnoreSettings}
+                            initialFirmwareInfo={initialFirmwareInfo}
+                        />
+                    </TabPanel>
 
-                {/* System Stats Tab */}
-                <TabPanel value={tabValue} index={5}>
-                    <DeviceSystemStatsPanel
-                        deviceId={id || ""}
-                        deviceData={deviceData}
-                        showSnackbar={showSnackbar}
-                    />
-                </TabPanel>
-            </Paper>
+                    {/* Sensors Tab */}
+                    <TabPanel value={tabValue} index={5}>
+                        <DeviceSensorsPanel
+                            deviceId={id || ""}
+                            deviceData={deviceData}
+                            newSensors={newSensors}
+                            setNewSensors={setNewSensors}
+                            showSnackbar={showSnackbar}
+                        />
+                    </TabPanel>
+
+                    {/* Preferences Tab */}
+                    <TabPanel value={tabValue} index={6}>
+                        <DevicePreferencesPanel
+                            deviceId={id || ""}
+                            deviceData={deviceData}
+                            showSnackbar={showSnackbar}
+                        />
+                    </TabPanel>
+
+                    {/* System Stats Tab */}
+                    <TabPanel value={tabValue} index={7}>
+                        <DeviceSystemStatsPanel
+                            deviceId={id || ""}
+                            deviceData={deviceData}
+                            showSnackbar={showSnackbar}
+                        />
+                    </TabPanel>
+                </Paper>
+            )}
 
             {/* Snackbar for notifications */}
             <Snackbar

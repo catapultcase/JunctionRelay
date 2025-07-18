@@ -513,9 +513,9 @@ const Services = () => {
 
     return (
         <Box sx={{ padding: 2 }}>
-            <Typography variant="h5" gutterBottom>
-                Services
-            </Typography>
+            {/*<Typography variant="h5" gutterBottom>*/}
+            {/*    Services*/}
+            {/*</Typography>*/}
 
             <Button
                 variant="contained"

@@ -38,7 +38,7 @@ namespace JunctionRelayServer.Collectors
         {
             _baseUrl = collector.URL?.TrimEnd('/')
                 ?? throw new ArgumentException("Collector.URL is required.");
-            _accessToken = collector.AccessToken
+            _accessToken = collector.DecryptedAccessToken
                 ?? throw new ArgumentException("Collector.AccessToken is required.");
             // Set the CollectorId from the Model_Collector.
             CollectorId = collector.Id;

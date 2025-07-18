@@ -16,22 +16,20 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
 namespace JunctionRelayServer.Models
 {
     public class Model_Device_Preferences
     {
-        public string ConnMode { get; set; }
-        public string WifiSSID { get; set; }
-        public string WifiPassword { get; set; }
-        public string MqttBroker { get; set; }
-        public string MqttUsername { get; set; }
-        public string MqttPassword { get; set; }
+        public required string ConnMode { get; set; }
+        public required string WifiSSID { get; set; }
+        public required string WifiPassword { get; set; }
+        public required string MqttBroker { get; set; }
+        public required string MqttUsername { get; set; }
+        public required string MqttPassword { get; set; }
         public int Rotation { get; set; }
         public bool? SwapBlueGreen { get; set; }
         public bool? Restart { get; set; }
         public string? ExternalNeoPixelsData1 { get; set; }
         public string? ExternalNeoPixelsData2 { get; set; }
-
     }
 }

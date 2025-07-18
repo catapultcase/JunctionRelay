@@ -21,92 +21,169 @@ using System.Text;
 
 namespace JunctionRelayServer.Services
 {
-    public class Service_Send_Data_COM
+    public class Service_Send_Data_COM : IDisposable
     {
         private readonly string _comPort;
         private readonly Service_Manager_COM_Ports _comPortManager;
+        private bool _disposed = false;
 
-        // Constructor remains unchanged; it still accepts comPort dynamically
         public Service_Send_Data_COM(Service_Manager_COM_Ports comPortManager, string comPort)
         {
-            _comPortManager = comPortManager;
-            _comPort = comPort;
+            _comPortManager = comPortManager ?? throw new ArgumentNullException(nameof(comPortManager));
+            _comPort = comPort ?? throw new ArgumentNullException(nameof(comPort));
         }
 
-        // This method sends the payload asynchronously.
-        public async Task<(bool Success, string ResponseMessage)> SendPayloadAsync(string payload)
+        public Task<(bool Success, string ResponseMessage)> SendPayloadAsync(string payload)
         {
             try
             {
-                // Ensure the port is open before sending data
-                if (!_comPortManager.IsPortOpen(_comPort))
-                {
-                    Console.WriteLine($"[DEBUG] COM port {_comPort} is not open, opening it now.");
-                    _comPortManager.OpenConnection(_comPort, 115200);  // Open connection with default baud rate
-                }
+                if (_disposed)
+                    return Task.FromResult((false, "COM sender has been disposed."));
+
+                if (string.IsNullOrEmpty(payload))
+                    return Task.FromResult((false, "Payload cannot be null or empty."));
 
                 if (!_comPortManager.IsPortOpen(_comPort))
                 {
-                    return (false, $"Failed to open COM port {_comPort}.");
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] COM port {_comPort} not open. Attempting to open...");
+                    _comPortManager.OpenConnection(_comPort, 115200);
                 }
 
-                // Convert the payload to bytes and send
-                byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
-                _comPortManager.SendData(_comPort, payload);
+                if (!_comPortManager.IsPortOpen(_comPort))
+                    return Task.FromResult((false, $"Failed to open COM port {_comPort}."));
 
-                return (true, "ACK"); // Return ACK for successful data sending
+                // ⚠️ Remove all trailing newline/control characters
+                string cleaned = payload.TrimEnd('\n', '\r', '\0');
+
+                // Convert to raw UTF-8 bytes (for JSON/prefix compatibility)
+                byte[] payloadBytes = Encoding.UTF8.GetBytes(cleaned);
+
+                // ✅ Send raw bytes only, no extra newline or terminator
+                _comPortManager.SendData(_comPort, payloadBytes);
+                // Flush buffer
+                _comPortManager.Flush(_comPort);
+
+                return Task.FromResult((true, "ACK"));
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Error sending data on COM port {_comPort}: {ex.Message}");
-                return (false, ex.Message);  // Return error message if something goes wrong
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error sending string to {_comPort}: {ex.Message}");
+                return Task.FromResult((false, ex.Message));
             }
         }
 
-        // Start the streaming process (i.e., continuously sending data at intervals)
-        public async Task StartStreamAsync(int rate, CancellationToken cancellationToken)
+
+        public Task<(bool Success, string ResponseMessage)> SendPayloadAsync(byte[] payloadBytes)
         {
-            // Send an initial configuration payload before starting the sensor stream
-            string configPayload = Service_Payload_Generator_Config.GenerateConfigurationPayload("onboard");
-            Console.WriteLine($"[DEBUG] Sending initial config payload to COM port {_comPort}: {configPayload}");
-
-            var (configSent, configResponse) = await SendPayloadAsync(configPayload);
-            if (!configSent)
+            try
             {
-                Console.WriteLine("[ERROR] Failed to send initial config payload before streaming.");
-                return;
-            }
+                if (_disposed)
+                    return Task.FromResult((false, "COM sender has been disposed."));
 
-            // Continuous loop for sending sensor data
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                string sensorPayload = Service_Payload_Generator_Sensors.GenerateSensorPayloadForScreen("onboard",8); // HARDCODED FOR NOW
-                var (sensorSent, sensorResponse) = await SendPayloadAsync(sensorPayload);
+                if (payloadBytes == null || payloadBytes.Length == 0)
+                    return Task.FromResult((false, "Payload cannot be null or empty."));
 
-                if (!sensorSent)
+                if (!_comPortManager.IsPortOpen(_comPort))
                 {
-                    Console.WriteLine("[ERROR] Failed to send data during streaming.");
-                    break;
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] COM port {_comPort} not open. Attempting to open...");
+                    _comPortManager.OpenConnection(_comPort, 115200);
                 }
 
-                // Delay before sending the next sensor payload
-                await Task.Delay(rate, cancellationToken);
-            }
+                if (!_comPortManager.IsPortOpen(_comPort))
+                    return Task.FromResult((false, $"Failed to open COM port {_comPort}."));
 
-            Console.WriteLine($"[DEBUG] Streaming loop exited for device {_comPort}.");
+                // Send raw binary data
+                _comPortManager.SendData(_comPort, payloadBytes);
+                // Flush buffer
+                _comPortManager.Flush(_comPort);
+
+                // Console.WriteLine($"[SERVICE_SEND_DATA_COM] Sent {payloadBytes.Length} bytes (binary) to {_comPort}");
+                return Task.FromResult((true, "ACK"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error sending bytes to {_comPort}: {ex.Message}");
+                return Task.FromResult((false, ex.Message));
+            }
         }
 
-        // This method ensures the COM port is open before communication starts
+
         public void OpenPortIfNotOpen(int baudRate = 115200)
         {
-            if (!_comPortManager.IsPortOpen(_comPort))
+            try
             {
-                Console.WriteLine($"[DEBUG] COM port {_comPort} is not open, opening it now.");
-                _comPortManager.OpenConnection(_comPort, baudRate);  // Open connection with specified baud rate
+                if (_disposed)
+                {
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] Cannot open port {_comPort} - sender has been disposed.");
+                    return;
+                }
+
+                if (!_comPortManager.IsPortOpen(_comPort))
+                {
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] Opening COM port {_comPort} at {baudRate} baud...");
+                    _comPortManager.OpenConnection(_comPort, baudRate);
+
+                    // Verify the port opened successfully
+                    if (_comPortManager.IsPortOpen(_comPort))
+                    {
+                        Console.WriteLine($"[SERVICE_SEND_DATA_COM] Successfully opened COM port {_comPort}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[SERVICE_SEND_DATA_COM] Failed to open COM port {_comPort}.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] COM port {_comPort} already open.");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine($"[DEBUG] COM port {_comPort} already open.");
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error opening COM port {_comPort}: {ex.Message}");
+            }
+        }
+
+        public bool IsOpen()
+        {
+            if (_disposed)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _comPortManager.IsPortOpen(_comPort);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error checking if port {_comPort} is open: {ex.Message}");
+                return false;
+            }
+        }
+
+        public void ClosePort()
+        {
+            try
+            {
+                if (!_disposed && _comPortManager.IsPortOpen(_comPort))
+                {
+                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] Closing COM port {_comPort}...");
+                    _comPortManager.CloseConnection(_comPort);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error closing COM port {_comPort}: {ex.Message}");
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                ClosePort();
+                _disposed = true;
             }
         }
     }

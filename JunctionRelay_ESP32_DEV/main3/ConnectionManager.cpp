@@ -379,8 +379,8 @@ void ConnectionManager::setupProtocolBasedServices() {
         server.begin();
         Serial.println("[HTTP] Server started on port 80");
         
-        // Setup WebSocket client (for backend communication)
-        webSocketHelper->setupClient();
+        // FIXED: Setup WebSocket server (not client)
+        webSocketHelper->setupServer();
         
         // Setup MQTT if configured (independent of primary protocol)
         if (!mqttBroker.isEmpty()) {
@@ -1211,12 +1211,15 @@ void ConnectionManager::sendGenericData(const JsonDocument& data) {
             
         case PrimaryProtocol::WEBSOCKET_HTTP:
         case PrimaryProtocol::GATEWAY:
-            if (webSocketHelper && webSocketHelper->isConnected()) {
-                webSocketHelper->sendData(data);
+            // FIXED: Use WebSocket server broadcast instead of client methods
+            if (webSocketHelper && webSocketHelper->hasConnectedClients()) {
+                webSocketHelper->broadcastData(data);
+                Serial.println("[DATA] Broadcast via WebSocket to connected backends");
             } else if (httpHelper && isNetworkAvailable() && !backendServerIP.isEmpty()) {
                 httpHelper->sendDataWithPrefix(data, backendServerIP, backendServerPort);
+                Serial.println("[DATA] Sent via HTTP fallback");
             } else {
-                Serial.println("[DATA] ⚠️ No network available, data queued");
+                Serial.println("[DATA] ⚠️ No connected backends, data queued");
                 // TODO: Implement data queuing for retry
             }
             break;
@@ -1976,7 +1979,8 @@ void ConnectionManager::reconnectMQTT() {
 // ==========================================
 
 bool ConnectionManager::isWebSocketConnected() const {
-    return webSocketHelper ? webSocketHelper->isConnected() : false;
+    // FIXED: Check if any backends are connected to our WebSocket server
+    return webSocketHelper ? webSocketHelper->hasConnectedClients() : false;
 }
 
 String ConnectionManager::getActiveNetworkType() const {
@@ -2057,14 +2061,12 @@ void ConnectionManager::setStatusUpdateCallback(StatusCb cb) {
 void ConnectionManager::handleNetworkEvent(const String& networkType, bool connected) {
     Serial.printf("[Network] Event: %s %s\n", networkType.c_str(), connected ? "connected" : "disconnected");
     
-    if (connected && webSocketHelper) {
-        // Only try to connect if we're not already connected
-        if (!webSocketHelper->isConnected()) {
-            webSocketHelper->handleConnection();
-            Serial.printf("[Network] WebSocket connection initiated for %s\n", networkType.c_str());
-        } else {
-            Serial.printf("[Network] WebSocket already connected, skipping connection attempt for %s\n", networkType.c_str());
-        }
+    if (connected) {
+        // FIXED: No need to initiate connections - we're now a server
+        // Backends will connect to us automatically
+        Serial.printf("[Network] WebSocket server ready for connections on %s\n", networkType.c_str());
+    } else {
+        Serial.printf("[Network] Network disconnected on %s - WebSocket server unavailable\n", networkType.c_str());
     }
     
     // Update status
@@ -2076,21 +2078,19 @@ void ConnectionManager::handleNetworkEvent(const String& networkType, bool conne
 // ==========================================
 
 void ConnectionManager::handleConnection() {
-    // This method can be used for any connection-related maintenance
-    // Most connection handling is now done automatically by helper classes
+    // FIXED: This method no longer needs to manage WebSocket connections
+    // since we're now a server. Just update status and handle other tasks.
     
     // Update backend server IP if network is available and not set
-    // if (isNetworkAvailable() && backendServerIP.isEmpty() && httpHelper) {
-    //     String detectedIP = httpHelper->detectBackendServer();
-    //     if (!detectedIP.isEmpty()) {
-    //         backendServerIP = detectedIP;
-    //         webSocketHelper->setServerIP(backendServerIP);
-    //         Serial.printf("[ConnectionManager] Backend server detected: %s\n", backendServerIP.c_str());
-    //     }
-    // }
-    
-    // Try WebSocket connection if network is available but WebSocket is not connected
-    if (isNetworkAvailable() && !isWebSocketConnected() && webSocketHelper) {
-        webSocketHelper->handleConnection();
+    // (This is still useful for HTTP fallback)
+    if (isNetworkAvailable() && backendServerIP.isEmpty() && httpHelper) {
+        String detectedIP = httpHelper->detectBackendServer();
+        if (!detectedIP.isEmpty()) {
+            backendServerIP = detectedIP;
+            Serial.printf("[ConnectionManager] Backend server detected: %s\n", backendServerIP.c_str());
+        }
     }
+    
+    // No WebSocket client connection management needed anymore
+    // Backends connect to our server automatically
 }

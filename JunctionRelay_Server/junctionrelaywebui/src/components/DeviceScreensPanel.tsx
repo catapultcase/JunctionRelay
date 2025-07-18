@@ -17,17 +17,19 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
     Typography, Box, Paper, Button, Modal, FormControl, InputLabel, Select,
     MenuItem, TextField, Table, TableHead, TableRow, TableCell, TableBody,
-    TableContainer, CircularProgress, FormControlLabel, Switch
+    TableContainer, CircularProgress, FormControlLabel, Switch, useTheme,
+    useMediaQuery, Card, CardContent, Chip, Divider, IconButton
 } from "@mui/material";
 import ScreenshotIcon from '@mui/icons-material/Screenshot';
 import MemoryIcon from '@mui/icons-material/Memory';
 import AddIcon from '@mui/icons-material/Add';
-import SaveIcon from '@mui/icons-material/Save';
 import SubscriptionsIcon from '@mui/icons-material/Subscriptions';
+import EditIcon from '@mui/icons-material/Edit';
+import CloseIcon from '@mui/icons-material/Close';
 
 interface I2CEndpoint {
     id: number;
@@ -58,19 +60,8 @@ interface DeviceScreensPanelProps {
     layoutTemplates: any[];
     isCustom: boolean;
     showSnackbar: (message: string, severity: "success" | "error" | "warning" | "info") => void;
+    onScreenChange?: (screens: any[]) => void;
 }
-
-const modalStyle = {
-    position: "absolute" as const,
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    width: 400,
-    bgcolor: "background.paper",
-    boxShadow: 24,
-    p: 4,
-    borderRadius: 2,
-};
 
 const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     deviceId,
@@ -80,8 +71,32 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     setI2cDevices,
     layoutTemplates,
     isCustom,
-    showSnackbar
+    showSnackbar,
+    onScreenChange
 }) => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+    // Debounce timers for auto-save
+    const debounceTimersRef = useRef<{ [screenId: number]: NodeJS.Timeout }>({});
+
+    // Modal style - responsive
+    const modalStyle = {
+        position: "absolute" as const,
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: isMobile ? "95%" : 400,
+        maxWidth: 400,
+        bgcolor: "background.paper",
+        boxShadow: 24,
+        p: isMobile ? 2 : 4,
+        borderRadius: 2,
+        maxHeight: "90vh",
+        overflow: "auto"
+    };
+
     // Modal state for screens
     const [openScreenModal, setOpenScreenModal] = useState(false);
     const [newScreenKey, setNewScreenKey] = useState("");
@@ -105,6 +120,131 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     const [newEndpointQoS, setNewEndpointQoS] = useState<number>(0);
     const [newEndpointNotes, setNewEndpointNotes] = useState("");
 
+    // Modal state for MQTT subscription
+    const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
+    const [selectedEndpoint, setSelectedEndpoint] = useState<string>("");
+    const [availableServices, setAvailableServices] = useState<any[]>([]);
+    const [selectedServiceId, setSelectedServiceId] = useState<string>("");
+    const [topicQoS, setTopicQoS] = useState<number>(0);
+    const [loadingServices, setLoadingServices] = useState(false);
+
+    // Auto-save individual screen changes
+    const autoSaveScreen = useCallback(async (screen: any, immediate: boolean = false) => {
+        const screenId = screen.id;
+
+        console.log(`[DeviceScreensPanel] Auto-saving screen ${screenId}, immediate: ${immediate}`);
+
+        // Clear existing timer for this screen
+        if (debounceTimersRef.current[screenId]) {
+            clearTimeout(debounceTimersRef.current[screenId]);
+            delete debounceTimersRef.current[screenId];
+        }
+
+        const performSave = async () => {
+            try {
+                console.log(`[DeviceScreensPanel] Executing save for screen ${screenId}`);
+                const res = await fetch(`/api/devices/${screen.deviceId}/screens/${screen.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        displayName: screen.displayName,
+                        screenLayoutId: screen.screenLayoutId,
+                        supportsConfigPayloads: screen.supportsConfigPayloads,
+                        supportsSensorPayloads: screen.supportsSensorPayloads
+                    })
+                });
+                if (!res.ok) throw new Error("Failed to update screen.");
+                console.log(`[DeviceScreensPanel] Screen ${screenId} saved successfully`);
+            } catch (error) {
+                console.error(`[DeviceScreensPanel] Error auto-saving screen ${screenId}:`, error);
+                showSnackbar("Failed to auto-save screen changes", "error");
+            }
+        };
+
+        if (immediate) {
+            // Immediate save for dropdowns and toggles
+            await performSave();
+        } else {
+            // Debounced save for text inputs (2 seconds)
+            debounceTimersRef.current[screenId] = setTimeout(performSave, 2000);
+        }
+    }, [showSnackbar]);
+
+    // Handle text field changes with debounced auto-save
+    const handleScreenTextChange = useCallback((screenId: number, field: string) =>
+        (event: React.ChangeEvent<HTMLInputElement>) => {
+            const newValue = event.target.value;
+            console.log(`[DeviceScreensPanel] Text change for screen ${screenId}.${field}: ${newValue}`);
+
+            const updatedScreens = deviceScreens.map(screen =>
+                screen.id === screenId ? { ...screen, [field]: newValue } : screen
+            );
+
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
+
+            // Find the updated screen and auto-save it with debounce
+            const updatedScreen = updatedScreens.find(s => s.id === screenId);
+            if (updatedScreen) {
+                autoSaveScreen(updatedScreen, false); // Debounced save
+            }
+        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
+
+    // Handle select changes with immediate auto-save
+    const handleScreenSelectChange = useCallback((screenId: number, field: string) =>
+        (event: any) => {
+            const newValue = event.target.value;
+            console.log(`[DeviceScreensPanel] Select change for screen ${screenId}.${field}: ${newValue}`);
+
+            const updatedScreens = deviceScreens.map(screen =>
+                screen.id === screenId ? { ...screen, [field]: newValue } : screen
+            );
+
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
+
+            // Find the updated screen and auto-save it immediately
+            const updatedScreen = updatedScreens.find(s => s.id === screenId);
+            if (updatedScreen) {
+                autoSaveScreen(updatedScreen, true); // Immediate save
+            }
+        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
+
+    // Handle boolean changes with immediate auto-save
+    const handleScreenBooleanChange = useCallback((screenId: number, field: string) =>
+        (event: React.ChangeEvent<HTMLInputElement>) => {
+            const newValue = event.target.checked;
+            console.log(`[DeviceScreensPanel] Boolean change for screen ${screenId}.${field}: ${newValue}`);
+
+            const updatedScreens = deviceScreens.map(screen =>
+                screen.id === screenId ? { ...screen, [field]: newValue } : screen
+            );
+
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
+
+            // Find the updated screen and auto-save it immediately
+            const updatedScreen = updatedScreens.find(s => s.id === screenId);
+            if (updatedScreen) {
+                autoSaveScreen(updatedScreen, true); // Immediate save
+            }
+        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
+
+    // Cleanup timers on unmount
+    useEffect(() => {
+        return () => {
+            Object.values(debounceTimersRef.current).forEach(timer => {
+                clearTimeout(timer);
+            });
+        };
+    }, []);
+
     // Add new screen
     const handleAddScreen = async () => {
         try {
@@ -123,7 +263,11 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             });
             if (!res.ok) throw new Error("Failed to add screen.");
             const created = await res.json();
-            setDeviceScreens([...deviceScreens, created]);
+            const updatedScreens = [...deviceScreens, created];
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
             setOpenScreenModal(false);
             setNewScreenKey("");
             setNewScreenDisplayName("");
@@ -134,27 +278,6 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
         } catch (err: any) {
             console.error(err);
             showSnackbar("Failed to add screen", "error");
-        }
-    };
-
-    // Update device screen
-    const updateDeviceScreen = async (screen: any) => {
-        try {
-            const res = await fetch(`/api/devices/${screen.deviceId}/screens/${screen.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    displayName: screen.displayName,
-                    screenLayoutId: screen.screenLayoutId,
-                    supportsConfigPayloads: screen.supportsConfigPayloads,
-                    supportsSensorPayloads: screen.supportsSensorPayloads
-                })
-            });
-            if (!res.ok) throw new Error("Failed to update screen.");
-            showSnackbar("Screen updated successfully", "success");
-        } catch (error) {
-            console.error("Error updating screen:", error);
-            showSnackbar("Failed to update screen", "error");
         }
     };
 
@@ -230,14 +353,6 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
         }
     };
 
-    // Handle MQTT subscription
-    const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
-    const [selectedEndpoint, setSelectedEndpoint] = useState<string>("");
-    const [availableServices, setAvailableServices] = useState<any[]>([]);
-    const [selectedServiceId, setSelectedServiceId] = useState<string>("");
-    const [topicQoS, setTopicQoS] = useState<number>(0);
-    const [loadingServices, setLoadingServices] = useState(false);
-
     // Fetch available MQTT services when the subscription modal opens
     useEffect(() => {
         if (subscribeModalOpen) {
@@ -307,15 +422,377 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
         }
     };
 
+    // Render mobile-friendly screen cards
+    const renderMobileScreenCards = () => (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {deviceScreens.length > 0 ? (
+                deviceScreens.map(screen => (
+                    <Card key={screen.id} elevation={1} sx={{ borderRadius: 2 }}>
+                        <CardContent sx={{ pb: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                                <Box>
+                                    <Typography variant="subtitle2" fontWeight="bold" sx={{ fontSize: '0.9rem' }}>
+                                        {screen.screenKey}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                        Screen Key
+                                    </Typography>
+                                </Box>
+                                <IconButton size="small" color="primary">
+                                    <EditIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+
+                            <Box sx={{ mb: 2 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+                                    Display Name
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    value={screen.displayName || ""}
+                                    onChange={handleScreenTextChange(screen.id, 'displayName')}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: '0.8rem',
+                                            padding: '6px 8px'
+                                        }
+                                    }}
+                                />
+                            </Box>
+
+                            <Box sx={{ mb: 2 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+                                    Screen Layout
+                                </Typography>
+                                <FormControl fullWidth size="small">
+                                    <Select
+                                        value={screen.screenLayoutId || ""}
+                                        onChange={handleScreenSelectChange(screen.id, 'screenLayoutId')}
+                                        sx={{
+                                            '& .MuiSelect-select': {
+                                                fontSize: '0.8rem',
+                                                padding: '6px 8px'
+                                            }
+                                        }}
+                                    >
+                                        {layoutTemplates.map((t: any) => (
+                                            <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={screen.supportsConfigPayloads}
+                                            onChange={handleScreenBooleanChange(screen.id, 'supportsConfigPayloads')}
+                                            size="small"
+                                        />
+                                    }
+                                    label={
+                                        <Typography sx={{ fontSize: '0.8rem' }}>
+                                            Config Payloads
+                                        </Typography>
+                                    }
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={screen.supportsSensorPayloads}
+                                            onChange={handleScreenBooleanChange(screen.id, 'supportsSensorPayloads')}
+                                            size="small"
+                                        />
+                                    }
+                                    label={
+                                        <Typography sx={{ fontSize: '0.8rem' }}>
+                                            Sensor Payloads
+                                        </Typography>
+                                    }
+                                />
+                            </Box>
+                        </CardContent>
+                    </Card>
+                ))
+            ) : (
+                <Card elevation={1}>
+                    <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                        <ScreenshotIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                        <Typography variant="body2" color="text.secondary">
+                            No device screens configured
+                        </Typography>
+                    </CardContent>
+                </Card>
+            )}
+        </Box>
+    );
+
+    // Render mobile-friendly I2C device cards
+    const renderMobileI2CCards = () => (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {i2cDevices.length > 0 ? (
+                i2cDevices.map(device => (
+                    <Card key={device.id} elevation={1} sx={{ borderRadius: 2 }}>
+                        <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                                <Box>
+                                    <Typography variant="subtitle2" fontWeight="bold" sx={{ fontSize: '0.9rem' }}>
+                                        {device.i2CAddress}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                        {device.deviceType}
+                                    </Typography>
+                                </Box>
+                                <Chip
+                                    label={device.isEnabled ? 'Enabled' : 'Disabled'}
+                                    size="small"
+                                    color={device.isEnabled ? 'success' : 'default'}
+                                    sx={{ fontSize: '0.7rem' }}
+                                />
+                            </Box>
+
+                            {device.endpoints && device.endpoints.length > 0 && (
+                                <Box>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 1 }}>
+                                        Endpoints ({device.endpoints.length})
+                                    </Typography>
+                                    {device.endpoints.map((endpoint, index) => (
+                                        <Box key={endpoint.id}>
+                                            {index > 0 && <Divider sx={{ my: 1 }} />}
+                                            <Box sx={{
+                                                p: 1.5,
+                                                bgcolor: 'rgba(0, 0, 0, 0.02)',
+                                                borderRadius: 1,
+                                                border: '1px solid rgba(0, 0, 0, 0.05)'
+                                            }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <Typography variant="body2" fontWeight="medium" sx={{ fontSize: '0.8rem' }}>
+                                                            {endpoint.endpointType}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                                                            {endpoint.address}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Chip
+                                                        label={`QoS ${endpoint.qoS}`}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{ fontSize: '0.7rem', ml: 1 }}
+                                                    />
+                                                </Box>
+                                                {endpoint.notes && (
+                                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 1 }}>
+                                                        {endpoint.notes}
+                                                    </Typography>
+                                                )}
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    startIcon={<SubscriptionsIcon />}
+                                                    onClick={() => handleSubscribe(endpoint.address)}
+                                                    fullWidth
+                                                    sx={{ fontSize: '0.75rem' }}
+                                                >
+                                                    Subscribe to MQTT
+                                                </Button>
+                                            </Box>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+
+                            {(!device.endpoints || device.endpoints.length === 0) && (
+                                <Box sx={{ textAlign: 'center', py: 2 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                        No endpoints configured
+                                    </Typography>
+                                </Box>
+                            )}
+                        </CardContent>
+                    </Card>
+                ))
+            ) : (
+                <Card elevation={1}>
+                    <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                        <MemoryIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                        <Typography variant="body2" color="text.secondary">
+                            No I2C devices found
+                        </Typography>
+                    </CardContent>
+                </Card>
+            )}
+        </Box>
+    );
+
+    // Render desktop table for screens - NO SAVE BUTTONS, AUTO-SAVE INSTEAD
+    const renderDesktopScreensTable = () => (
+        <TableContainer>
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Screen Key</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Friendly Name</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default Screen Layout</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Config Payloads</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Sensor Payloads</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {deviceScreens.length > 0 ? (
+                        deviceScreens.map(screen => (
+                            <TableRow key={screen.id}>
+                                <TableCell>{screen.screenKey}</TableCell>
+                                <TableCell>
+                                    <TextField
+                                        size="small"
+                                        value={screen.displayName || ""}
+                                        onChange={handleScreenTextChange(screen.id, 'displayName')}
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    <FormControl fullWidth size="small">
+                                        <Select
+                                            value={screen.screenLayoutId || ""}
+                                            onChange={handleScreenSelectChange(screen.id, 'screenLayoutId')}
+                                        >
+                                            {layoutTemplates.map((t: any) => (
+                                                <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </TableCell>
+                                <TableCell>
+                                    <Switch
+                                        checked={screen.supportsConfigPayloads}
+                                        onChange={handleScreenBooleanChange(screen.id, 'supportsConfigPayloads')}
+                                        size="small"
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    <Switch
+                                        checked={screen.supportsSensorPayloads}
+                                        onChange={handleScreenBooleanChange(screen.id, 'supportsSensorPayloads')}
+                                        size="small"
+                                    />
+                                </TableCell>
+                            </TableRow>
+                        ))
+                    ) : (
+                        <TableRow>
+                            <TableCell colSpan={5} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                    No device screens configured
+                                </Typography>
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+        </TableContainer>
+    );
+
+    // Render desktop table for I2C devices
+    const renderDesktopI2CTable = () => (
+        <TableContainer>
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>I2C Address</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Device Type</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Endpoint</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>MQTT Address</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default QoS</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Notes</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Actions</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {i2cDevices.length > 0 ? (
+                        i2cDevices.map(dev => (
+                            <React.Fragment key={dev.id}>
+                                <TableRow>
+                                    <TableCell rowSpan={dev.endpoints.length || 1}>{dev.i2CAddress}</TableCell>
+                                    <TableCell rowSpan={dev.endpoints.length || 1}>{dev.deviceType}</TableCell>
+                                    {dev.endpoints.length > 0 ? (
+                                        <>
+                                            <TableCell>{dev.endpoints[0].endpointType}</TableCell>
+                                            <TableCell>{dev.endpoints[0].address}</TableCell>
+                                            <TableCell>{dev.endpoints[0].qoS}</TableCell>
+                                            <TableCell>{dev.endpoints[0].notes}</TableCell>
+                                            <TableCell>
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    startIcon={<SubscriptionsIcon />}
+                                                    onClick={() => handleSubscribe(dev.endpoints[0].address)}
+                                                >
+                                                    Subscribe
+                                                </Button>
+                                            </TableCell>
+                                        </>
+                                    ) : (
+                                        <TableCell colSpan={5}>
+                                            <Typography variant="body2" color="text.secondary">
+                                                No endpoints
+                                            </Typography>
+                                        </TableCell>
+                                    )}
+                                </TableRow>
+                                {dev.endpoints.slice(1).map(ep => (
+                                    <TableRow key={ep.id}>
+                                        <TableCell>{ep.endpointType}</TableCell>
+                                        <TableCell>{ep.address}</TableCell>
+                                        <TableCell>{ep.qoS}</TableCell>
+                                        <TableCell>{ep.notes}</TableCell>
+                                        <TableCell>
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<SubscriptionsIcon />}
+                                                onClick={() => handleSubscribe(ep.address)}
+                                            >
+                                                Subscribe
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </React.Fragment>
+                        ))
+                    ) : (
+                        <TableRow>
+                            <TableCell colSpan={7} align="center">
+                                <Typography variant="body2" color="text.secondary">
+                                    No I2C devices found
+                                </Typography>
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+        </TableContainer>
+    );
+
     return (
         <Box>
             {/* Action Buttons for Adding Screens & I2C Devices */}
             {isCustom && (
-                <Box sx={{ mb: 3, display: "flex", gap: 2 }}>
+                <Box sx={{
+                    mb: 3,
+                    display: "flex",
+                    gap: isMobile ? 1 : 2,
+                    flexDirection: isMobile ? 'column' : 'row',
+                    flexWrap: 'wrap'
+                }}>
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={() => setOpenScreenModal(true)}
+                        size={isMobile ? "small" : "medium"}
+                        fullWidth={isMobile}
+                        sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                     >
                         Add Device Screen
                     </Button>
@@ -323,6 +800,9 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={() => setOpenBusModal(true)}
+                        size={isMobile ? "small" : "medium"}
+                        fullWidth={isMobile}
+                        sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                     >
                         Add I2C Bus
                     </Button>
@@ -330,6 +810,9 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={() => setOpenEndpointModal(true)}
+                        size={isMobile ? "small" : "medium"}
+                        fullWidth={isMobile}
+                        sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                     >
                         Add I2C Endpoint
                     </Button>
@@ -337,217 +820,82 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             )}
 
             {/* Device Screens */}
-            <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+            <Paper elevation={2} sx={{
+                p: isMobile ? 2 : 3,
+                mb: 3,
+                borderRadius: 2,
+                overflow: 'hidden'
+            }}>
                 <Typography variant="subtitle1" gutterBottom sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    mb: 2
+                    mb: 2,
+                    fontSize: isMobile ? '1rem' : '1.1rem'
                 }}>
-                    <ScreenshotIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                    <ScreenshotIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
                     Device Screens
                 </Typography>
 
-                <TableContainer>
-                    <Table size="small">
-                        <TableHead>
-                            <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Screen Key</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Friendly Name</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default Screen Layout</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Config Payloads</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Sensor Payloads</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {deviceScreens.length > 0 ? (
-                                deviceScreens.map(screen => (
-                                    <TableRow key={screen.id}>
-                                        <TableCell>{screen.screenKey}</TableCell>
-                                        <TableCell>
-                                            <TextField
-                                                size="small"
-                                                value={screen.displayName || ""}
-                                                onChange={e => {
-                                                    const updatedScreens = [...deviceScreens];
-                                                    const idx = updatedScreens.findIndex(s => s.id === screen.id);
-                                                    updatedScreens[idx].displayName = e.target.value;
-                                                    setDeviceScreens(updatedScreens);
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <FormControl fullWidth size="small">
-                                                <Select
-                                                    value={screen.screenLayoutId || ""}
-                                                    onChange={e => {
-                                                        const updatedScreens = [...deviceScreens];
-                                                        const idx = updatedScreens.findIndex(s => s.id === screen.id);
-                                                        updatedScreens[idx].screenLayoutId = Number(e.target.value);
-                                                        setDeviceScreens(updatedScreens);
-                                                    }}
-                                                >
-                                                    {layoutTemplates.map((t: any) => (
-                                                        <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Switch
-                                                checked={screen.supportsConfigPayloads}
-                                                onChange={() => {
-                                                    const updatedScreens = [...deviceScreens];
-                                                    const idx = updatedScreens.findIndex(s => s.id === screen.id);
-                                                    updatedScreens[idx].supportsConfigPayloads = !updatedScreens[idx].supportsConfigPayloads;
-                                                    setDeviceScreens(updatedScreens);
-                                                }}
-                                                size="small"
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Switch
-                                                checked={screen.supportsSensorPayloads}
-                                                onChange={() => {
-                                                    const updatedScreens = [...deviceScreens];
-                                                    const idx = updatedScreens.findIndex(s => s.id === screen.id);
-                                                    updatedScreens[idx].supportsSensorPayloads = !updatedScreens[idx].supportsSensorPayloads;
-                                                    setDeviceScreens(updatedScreens);
-                                                }}
-                                                size="small"
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                startIcon={<SaveIcon />}
-                                                onClick={() => updateDeviceScreen(screen)}
-                                            >
-                                                Save
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={6} align="center">
-                                        <Typography variant="body2" color="text.secondary">
-                                            No device screens configured
-                                        </Typography>
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                {isMobile ? renderMobileScreenCards() : renderDesktopScreensTable()}
             </Paper>
 
             {/* I2C Devices and Endpoints */}
-            <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
+            <Paper elevation={2} sx={{
+                p: isMobile ? 2 : 3,
+                borderRadius: 2,
+                overflow: 'hidden'
+            }}>
                 <Typography variant="subtitle1" gutterBottom sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    mb: 2
+                    mb: 2,
+                    fontSize: isMobile ? '1rem' : '1.1rem'
                 }}>
-                    <MemoryIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                    <MemoryIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
                     Device I2C Bus
                 </Typography>
 
-                <TableContainer>
-                    <Table size="small">
-                        <TableHead>
-                            <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>I2C Address</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Device Type</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Endpoint</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>MQTT Address</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default QoS</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Notes</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {i2cDevices.length > 0 ? (
-                                i2cDevices.map(dev => (
-                                    <React.Fragment key={dev.id}>
-                                        <TableRow>
-                                            <TableCell rowSpan={dev.endpoints.length || 1}>{dev.i2CAddress}</TableCell>
-                                            <TableCell rowSpan={dev.endpoints.length || 1}>{dev.deviceType}</TableCell>
-                                            {dev.endpoints.length > 0 ? (
-                                                <>
-                                                    <TableCell>{dev.endpoints[0].endpointType}</TableCell>
-                                                    <TableCell>{dev.endpoints[0].address}</TableCell>
-                                                    <TableCell>{dev.endpoints[0].qoS}</TableCell>
-                                                    <TableCell>{dev.endpoints[0].notes}</TableCell>
-                                                    <TableCell>
-                                                        <Button
-                                                            variant="outlined"
-                                                            size="small"
-                                                            startIcon={<SubscriptionsIcon />}
-                                                            onClick={() => handleSubscribe(dev.endpoints[0].address)}
-                                                        >
-                                                            Subscribe
-                                                        </Button>
-                                                    </TableCell>
-                                                </>
-                                            ) : (
-                                                <TableCell colSpan={5}>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        No endpoints
-                                                    </Typography>
-                                                </TableCell>
-                                            )}
-                                        </TableRow>
-                                        {dev.endpoints.slice(1).map(ep => (
-                                            <TableRow key={ep.id}>
-                                                <TableCell>{ep.endpointType}</TableCell>
-                                                <TableCell>{ep.address}</TableCell>
-                                                <TableCell>{ep.qoS}</TableCell>
-                                                <TableCell>{ep.notes}</TableCell>
-                                                <TableCell>
-                                                    <Button
-                                                        variant="outlined"
-                                                        size="small"
-                                                        startIcon={<SubscriptionsIcon />}
-                                                        onClick={() => handleSubscribe(ep.address)}
-                                                    >
-                                                        Subscribe
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </React.Fragment>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={7} align="center">
-                                        <Typography variant="body2" color="text.secondary">
-                                            No I2C devices found
-                                        </Typography>
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                {isMobile ? renderMobileI2CCards() : renderDesktopI2CTable()}
             </Paper>
 
             {/* Add Screen Modal */}
             <Modal open={openScreenModal} onClose={() => setOpenScreenModal(false)}>
                 <Paper sx={modalStyle}>
-                    <Typography variant="h6" gutterBottom>Add Device Screen</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6" sx={{ fontSize: isMobile ? '1.1rem' : '1.25rem' }}>
+                            Add Device Screen
+                        </Typography>
+                        {isMobile && (
+                            <IconButton onClick={() => setOpenScreenModal(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        )}
+                    </Box>
                     <TextField
-                        fullWidth label="Screen Key" size="small"
+                        fullWidth
+                        label="Screen Key"
+                        size="small"
                         value={newScreenKey}
                         onChange={e => setNewScreenKey(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="Display Name" size="small"
+                        fullWidth
+                        label="Display Name"
+                        size="small"
                         value={newScreenDisplayName}
                         onChange={e => setNewScreenDisplayName(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
                         <InputLabel>Layout</InputLabel>
@@ -555,6 +903,11 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                             label="Layout"
                             value={newScreenScreenLayoutId}
                             onChange={e => setNewScreenScreenLayoutId(Number(e.target.value))}
+                            sx={{
+                                '& .MuiSelect-select': {
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                }
+                            }}
                         >
                             {layoutTemplates.map((t: any) => (
                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
@@ -569,7 +922,11 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                 size="small"
                             />
                         }
-                        label="Supports Config Payloads"
+                        label={
+                            <Typography sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
+                                Supports Config Payloads
+                            </Typography>
+                        }
                     />
                     <FormControlLabel
                         control={
@@ -579,14 +936,32 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                 size="small"
                             />
                         }
-                        label="Supports Sensor Payloads"
+                        label={
+                            <Typography sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
+                                Supports Sensor Payloads
+                            </Typography>
+                        }
                     />
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                        <Button onClick={() => setOpenScreenModal(false)} sx={{ mr: 1 }}>Cancel</Button>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        mt: 2,
+                        gap: 1,
+                        flexDirection: isMobile ? 'column-reverse' : 'row'
+                    }}>
+                        <Button
+                            onClick={() => setOpenScreenModal(false)}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
+                        >
+                            Cancel
+                        </Button>
                         <Button
                             variant="contained"
                             onClick={handleAddScreen}
                             disabled={!newScreenKey || !newScreenDisplayName || !newScreenScreenLayoutId}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >
                             Add
                         </Button>
@@ -597,24 +972,54 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             {/* Add I2C Bus Modal */}
             <Modal open={openBusModal} onClose={() => setOpenBusModal(false)}>
                 <Paper sx={modalStyle}>
-                    <Typography variant="h6" gutterBottom>Add Device I2C Bus</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6" sx={{ fontSize: isMobile ? '1.1rem' : '1.25rem' }}>
+                            Add Device I2C Bus
+                        </Typography>
+                        {isMobile && (
+                            <IconButton onClick={() => setOpenBusModal(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        )}
+                    </Box>
                     <TextField
-                        fullWidth label="I2C Address" size="small"
+                        fullWidth
+                        label="I2C Address"
+                        size="small"
                         value={newBusAddress}
                         onChange={e => setNewBusAddress(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="Device Type" size="small"
+                        fullWidth
+                        label="Device Type"
+                        size="small"
                         value={newBusDeviceType}
                         onChange={e => setNewBusDeviceType(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="Comm Protocol" size="small"
+                        fullWidth
+                        label="Comm Protocol"
+                        size="small"
                         value={newBusProtocol}
                         onChange={e => setNewBusProtocol(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
                         <InputLabel>Enabled</InputLabel>
@@ -622,17 +1027,36 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                             label="Enabled"
                             value={newBusEnabled ? "Yes" : "No"}
                             onChange={e => setNewBusEnabled(e.target.value === "Yes")}
+                            sx={{
+                                '& .MuiSelect-select': {
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                }
+                            }}
                         >
                             <MenuItem value="Yes">Yes</MenuItem>
                             <MenuItem value="No">No</MenuItem>
                         </Select>
                     </FormControl>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                        <Button onClick={() => setOpenBusModal(false)} sx={{ mr: 1 }}>Cancel</Button>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        mt: 2,
+                        gap: 1,
+                        flexDirection: isMobile ? 'column-reverse' : 'row'
+                    }}>
+                        <Button
+                            onClick={() => setOpenBusModal(false)}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
+                        >
+                            Cancel
+                        </Button>
                         <Button
                             variant="contained"
                             onClick={handleAddBus}
                             disabled={!newBusAddress || !newBusDeviceType}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >
                             Add
                         </Button>
@@ -643,13 +1067,27 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             {/* Add I2C Endpoint Modal */}
             <Modal open={openEndpointModal} onClose={() => setOpenEndpointModal(false)}>
                 <Paper sx={modalStyle}>
-                    <Typography variant="h6" gutterBottom>Add Device I2C Endpoint</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6" sx={{ fontSize: isMobile ? '1.1rem' : '1.25rem' }}>
+                            Add Device I2C Endpoint
+                        </Typography>
+                        {isMobile && (
+                            <IconButton onClick={() => setOpenEndpointModal(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        )}
+                    </Box>
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
                         <InputLabel>Parent Bus</InputLabel>
                         <Select
                             label="Parent Bus"
                             value={endpointParentBusId}
                             onChange={e => setEndpointParentBusId(Number(e.target.value))}
+                            sx={{
+                                '& .MuiSelect-select': {
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                }
+                            }}
                         >
                             {i2cDevices.map(bus => (
                                 <MenuItem key={bus.id} value={bus.id}>
@@ -659,35 +1097,78 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         </Select>
                     </FormControl>
                     <TextField
-                        fullWidth label="Endpoint Type" size="small"
+                        fullWidth
+                        label="Endpoint Type"
+                        size="small"
                         value={newEndpointType}
                         onChange={e => setNewEndpointType(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="Address" size="small"
+                        fullWidth
+                        label="Address"
+                        size="small"
                         value={newEndpointAddress}
                         onChange={e => setNewEndpointAddress(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="QoS" size="small" type="number"
+                        fullWidth
+                        label="QoS"
+                        size="small"
+                        type="number"
                         value={newEndpointQoS}
                         onChange={e => setNewEndpointQoS(Number(e.target.value))}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
                     <TextField
-                        fullWidth label="Notes" size="small"
+                        fullWidth
+                        label="Notes"
+                        size="small"
                         value={newEndpointNotes}
                         onChange={e => setNewEndpointNotes(e.target.value)}
-                        sx={{ mb: 2 }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': {
+                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                            }
+                        }}
                     />
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                        <Button onClick={() => setOpenEndpointModal(false)} sx={{ mr: 1 }}>Cancel</Button>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        mt: 2,
+                        gap: 1,
+                        flexDirection: isMobile ? 'column-reverse' : 'row'
+                    }}>
+                        <Button
+                            onClick={() => setOpenEndpointModal(false)}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
+                        >
+                            Cancel
+                        </Button>
                         <Button
                             variant="contained"
                             onClick={handleAddEndpoint}
                             disabled={!endpointParentBusId || !newEndpointType || !newEndpointAddress}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >
                             Add
                         </Button>
@@ -698,10 +1179,19 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             {/* Subscribe to Topic Modal */}
             <Modal open={subscribeModalOpen} onClose={() => setSubscribeModalOpen(false)}>
                 <Paper sx={modalStyle}>
-                    <Typography variant="h6" gutterBottom>Subscribe to I2C Endpoint</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6" sx={{ fontSize: isMobile ? '1.1rem' : '1.25rem' }}>
+                            Subscribe to I2C Endpoint
+                        </Typography>
+                        {isMobile && (
+                            <IconButton onClick={() => setSubscribeModalOpen(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        )}
+                    </Box>
 
                     <Box sx={{ mb: 3 }}>
-                        <Typography variant="body1" sx={{ mb: 1 }}>
+                        <Typography variant="body1" sx={{ mb: 1, fontSize: isMobile ? '0.9rem' : '1rem' }}>
                             <strong>Topic:</strong> {selectedEndpoint}
                         </Typography>
 
@@ -717,6 +1207,11 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                         label="MQTT Service"
                                         value={selectedServiceId}
                                         onChange={e => setSelectedServiceId(e.target.value)}
+                                        sx={{
+                                            '& .MuiSelect-select': {
+                                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                            }
+                                        }}
                                     >
                                         {availableServices.length === 0 ? (
                                             <MenuItem value="" disabled>
@@ -738,6 +1233,11 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                         label="QoS Level"
                                         value={topicQoS}
                                         onChange={e => setTopicQoS(Number(e.target.value))}
+                                        sx={{
+                                            '& .MuiSelect-select': {
+                                                fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                            }
+                                        }}
                                     >
                                         <MenuItem value={0}>0 - At most once</MenuItem>
                                         <MenuItem value={1}>1 - At least once</MenuItem>
@@ -748,10 +1248,17 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         )}
                     </Box>
 
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        mt: 2,
+                        gap: 1,
+                        flexDirection: isMobile ? 'column-reverse' : 'row'
+                    }}>
                         <Button
                             onClick={() => setSubscribeModalOpen(false)}
-                            sx={{ mr: 1 }}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >
                             Cancel
                         </Button>
@@ -759,6 +1266,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                             variant="contained"
                             onClick={handleSubmitSubscription}
                             disabled={loadingServices || !selectedServiceId}
+                            fullWidth={isMobile}
+                            sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >
                             Subscribe
                         </Button>

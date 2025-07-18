@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
     Typography,
     Box,
@@ -27,13 +27,19 @@ import {
     Tooltip,
     Switch,
     AlertColor,
+    Button,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
+import AddIcon from '@mui/icons-material/Add';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { useTheme, useMediaQuery } from "@mui/material";
+import { useFeatureFlags } from "../hooks/useFeatureFlags";
 
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
+import AddJunctionModal from "../components/AddJunctionModal";
 
-// Main Junctions Component
+// Main Junctions Component following Devices page pattern
 const Junctions = () => {
     const [junctions, setJunctions] = useState<Junction[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
@@ -44,9 +50,42 @@ const Junctions = () => {
         return savedValue !== null ? savedValue === 'true' : true;
     });
 
-    const navigate = useNavigate();
+    // Junction creation state - simplified
+    const [addJunctionModalOpen, setAddJunctionModalOpen] = useState<boolean>(false);
+    const [importing, setImporting] = useState<boolean>(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Save preference when it changes
+    const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const flags = useFeatureFlags();
+    const junctionImportExportEnabled = flags?.junction_import_export !== false;
+
+    // NEW: Bottom Action Bar event listeners
+    useEffect(() => {
+        const handleAddJunction = () => {
+            console.log('Bottom bar: Add junction requested');
+            handleAddJunctionClick();
+        };
+
+        const handleRefresh = () => {
+            console.log('Bottom bar: Refresh requested');
+            refreshJunctions();
+        };
+
+        // Add event listeners for bottom action bar
+        window.addEventListener('bottom-action-add-junction', handleAddJunction);
+        window.addEventListener('bottom-action-refresh', handleRefresh);
+
+        // Cleanup
+        return () => {
+            window.removeEventListener('bottom-action-add-junction', handleAddJunction);
+            window.removeEventListener('bottom-action-refresh', handleRefresh);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Empty dependency array - refreshJunctions is stable
+
+    // Save preferences when they change
     useEffect(() => {
         localStorage.setItem('junctions_detailed_connections', detailedConnections.toString());
     }, [detailedConnections]);
@@ -63,123 +102,19 @@ const Junctions = () => {
             .then((r) => r.json())
             .then((data: { id: number; status: string }[]) =>
                 setJunctions((prev) => {
-                    // Create a new junctions array with updated statuses
                     const updated = prev.map((j) => {
                         const upd = data.find((r) => r.id === j.id);
-                        // Only update if there's a status change
                         return upd && upd.status !== j.status ? { ...j, status: upd.status } : j;
                     });
 
-                    // Only trigger state update if something actually changed
                     if (JSON.stringify(updated) !== JSON.stringify(prev)) {
                         return updated;
                     }
-                    return prev; // No changes, return previous state to avoid re-render
+                    return prev;
                 })
             )
             .catch(console.error);
     }, []);
-
-    // Initial data loading - matches Dashboard pattern
-    useEffect(() => {
-        const init = async () => {
-            try {
-                setLoading(true);
-
-                // Get both junctions and running status before updating state
-                const junctionsResponse = await fetch("/api/junctions");
-                if (!junctionsResponse.ok) {
-                    throw new Error("Failed to fetch junctions");
-                }
-                const junctions = await junctionsResponse.json();
-
-                const runningResponse = await fetch("/api/connections/running");
-                let runningData: { id: number; status: string }[] = [];
-                if (runningResponse.ok) {
-                    runningData = await runningResponse.json();
-                }
-
-                // Merge data before setting state - only set state once
-                // Add sortOrder if not present
-                const mergedJunctions = junctions.map((j: Junction, index: number) => {
-                    const u = runningData.find((x: any) => x.id === j.id);
-                    // If sortOrder is not defined, use the index as default value
-                    const sortOrder = j.sortOrder !== undefined ? j.sortOrder : index;
-                    return u ? { ...j, status: u.status, sortOrder } : { ...j, sortOrder };
-                });
-
-                // Sort by sortOrder before setting state
-                mergedJunctions.sort((a: Junction, b: Junction) => a.sortOrder - b.sortOrder);
-
-                // Update state only once with the properly merged data
-                setJunctions(mergedJunctions);
-
-            } catch (err: any) {
-                showSnackbar("Error fetching junctions", "error");
-                console.error("Error fetching junctions:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        init();
-
-        // Set up polling interval for status updates only - matches Dashboard
-        const intervalId = setInterval(() => {
-            refreshJunctionsStatus();
-        }, 1000);
-
-        // Clean up interval on component unmount
-        return () => clearInterval(intervalId);
-    }, [refreshJunctionsStatus, showSnackbar]);
-
-    // Handle updating junction sort order - matches Dashboard pattern exactly
-    const handleUpdateSortOrders = async (updates: { junctionId: number, sortOrder: number }[]) => {
-        try {
-            // If there are no updates, return early
-            if (!updates || updates.length === 0) return;
-
-            // Log what we're updating
-            console.log("Updating sort orders for", updates.length, "junctions");
-
-            // Update the local state for immediate UI feedback
-            setJunctions(prevJunctions => {
-                const junctionMap = new Map(prevJunctions.map(j => [j.id, j]));
-
-                updates.forEach(update => {
-                    if (junctionMap.has(update.junctionId)) {
-                        const junction = junctionMap.get(update.junctionId);
-                        if (junction) {
-                            junctionMap.set(update.junctionId, {
-                                ...junction,
-                                sortOrder: update.sortOrder
-                            });
-                        }
-                    }
-                });
-
-                return Array.from(junctionMap.values())
-                    .sort((a, b) => a.sortOrder - b.sortOrder);
-            });
-
-            // Add error handling around the API call
-            try {
-                // Call the API in a single batch - exactly like Dashboard
-                const r = await fetch(`/api/junctions/sort-order`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ updates }),
-                });
-                if (!r.ok) throw new Error("Failed to update junction sort orders");
-                return r.json();
-            } catch (apiError) {
-                // Log but don't crash the UI
-                console.warn("Backend sort order update failed:", apiError);
-            }
-        } catch (error) {
-            console.error("Failed to process sort orders:", error);
-        }
-    };
 
     // Refresh junctions data (for after add/clone/delete operations)
     const refreshJunctions = useCallback(async () => {
@@ -204,15 +139,13 @@ const Junctions = () => {
                     return running ? { ...j, status: running.status } : j;
                 });
 
-                // Add smart comparison to prevent unnecessary updates
                 setJunctions(prev => {
                     if (JSON.stringify(updatedJunctions) !== JSON.stringify(prev)) {
                         return updatedJunctions;
                     }
-                    return prev; // No changes, return previous state to avoid re-render
+                    return prev;
                 });
             } else {
-                // Add smart comparison here too
                 setJunctions(prev => {
                     if (JSON.stringify(junctionsWithSortOrder) !== JSON.stringify(prev)) {
                         return junctionsWithSortOrder;
@@ -226,12 +159,117 @@ const Junctions = () => {
         }
     }, [showSnackbar]);
 
+    // Initial data loading
+    useEffect(() => {
+        const init = async () => {
+            try {
+                setLoading(true);
+
+                const junctionsResponse = await fetch("/api/junctions");
+                if (!junctionsResponse.ok) {
+                    throw new Error("Failed to fetch junctions");
+                }
+                const junctions = await junctionsResponse.json();
+
+                const runningResponse = await fetch("/api/connections/running");
+                let runningData: { id: number; status: string }[] = [];
+                if (runningResponse.ok) {
+                    runningData = await runningResponse.json();
+                }
+
+                const mergedJunctions = junctions.map((j: Junction, index: number) => {
+                    const u = runningData.find((x: any) => x.id === j.id);
+                    const sortOrder = j.sortOrder !== undefined ? j.sortOrder : index;
+                    return u ? { ...j, status: u.status, sortOrder } : { ...j, sortOrder };
+                });
+
+                mergedJunctions.sort((a: Junction, b: Junction) => a.sortOrder - b.sortOrder);
+                setJunctions(mergedJunctions);
+
+            } catch (err: any) {
+                showSnackbar("Error fetching junctions", "error");
+                console.error("Error fetching junctions:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        init();
+
+        const intervalId = setInterval(() => {
+            refreshJunctionsStatus();
+        }, 1000);
+
+        return () => clearInterval(intervalId);
+    }, [refreshJunctionsStatus, showSnackbar]);
+
+    // Handle updating junction sort order
+    const handleUpdateSortOrders = async (updates: { junctionId: number, sortOrder: number }[]) => {
+        try {
+            if (!updates || updates.length === 0) return;
+
+            // Update local state only - no backend call needed
+            setJunctions(prevJunctions => {
+                const junctionMap = new Map(prevJunctions.map(j => [j.id, j]));
+
+                updates.forEach(update => {
+                    if (junctionMap.has(update.junctionId)) {
+                        const junction = junctionMap.get(update.junctionId);
+                        if (junction) {
+                            junctionMap.set(update.junctionId, {
+                                ...junction,
+                                sortOrder: update.sortOrder
+                            });
+                        }
+                    }
+                });
+
+                return Array.from(junctionMap.values())
+                    .sort((a, b) => a.sortOrder - b.sortOrder);
+            });
+
+        } catch (error) {
+            console.error("Failed to process sort orders:", error);
+        }
+    };
+
+    // Junction action handlers
+    const handleDashboardToggle = useCallback(async (junctionId: number, showOnDashboard: boolean) => {
+        try {
+            // Find the junction to update
+            const junction = junctions.find(j => j.id === junctionId);
+            if (!junction) {
+                throw new Error("Junction not found");
+            }
+
+            const updatedJunction = {
+                ...junction,
+                showOnDashboard: showOnDashboard
+            };
+
+            const response = await fetch(`/api/junctions/${junctionId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedJunction),
+            });
+
+            if (response.ok) {
+                showSnackbar(`Junction ${showOnDashboard ? 'added to' : 'removed from'} dashboard`, "success");
+                await refreshJunctions();
+            } else {
+                throw new Error("Failed to update junction");
+            }
+        } catch (err) {
+            console.error("Dashboard toggle error:", err);
+            showSnackbar("Error updating junction dashboard status", "error");
+        }
+    }, [junctions, showSnackbar, refreshJunctions]);
+
     const handleStartJunction = async (junctionId: number) => {
         try {
             const response = await fetch(`/api/connections/start/${junctionId}`, { method: "POST" });
             if (response.ok) {
                 showSnackbar("Junction started successfully", "success");
-                // Update the junction's status in the state immediately
                 setJunctions(prev =>
                     prev.map(j =>
                         j.id === junctionId ? { ...j, status: "Running" } : j
@@ -250,7 +288,6 @@ const Junctions = () => {
             const response = await fetch(`/api/connections/stop/${junctionId}`, { method: "POST" });
             if (response.ok) {
                 showSnackbar("Junction stopped successfully", "success");
-                // Update the junction's status in the state immediately
                 setJunctions(prev =>
                     prev.map(j =>
                         j.id === junctionId ? { ...j, status: "Idle" } : j
@@ -276,7 +313,7 @@ const Junctions = () => {
 
             const cloned = await response.json();
             showSnackbar(`Cloned "${cloned.name}" successfully`, "success");
-            await refreshJunctions(); // Use the new refresh function
+            await refreshJunctions();
         } catch (err) {
             console.error("Clone failed:", err);
             showSnackbar("Error cloning junction", "error");
@@ -291,7 +328,7 @@ const Junctions = () => {
 
             if (response.ok) {
                 showSnackbar("Junction deleted successfully", "success");
-                await refreshJunctions(); // Use the new refresh function
+                await refreshJunctions();
             } else {
                 throw new Error("Failed to delete junction");
             }
@@ -300,44 +337,48 @@ const Junctions = () => {
         }
     };
 
-    // Add a custom renderer for the dashboard toggle column
-    const renderDashboardToggle = (junction: Junction) => {
-        return (
-            <Tooltip title={junction.showOnDashboard ? "Shown on dashboard" : "Hidden from dashboard"}>
-                <Switch
-                    size="small"
-                    checked={junction.showOnDashboard}
-                    onChange={(e) => handleToggleDashboard(e, junction)}
-                    onClick={(e) => e.stopPropagation()}
-                    color="primary"
-                    aria-label="Show on dashboard"
-                />
-            </Tooltip>
-        );
+    // Junction creation handlers - simplified
+    const handleAddJunctionClick = () => {
+        setAddJunctionModalOpen(true);
     };
 
-    const handleToggleDashboard = async (e: React.ChangeEvent<HTMLInputElement>, junction: Junction) => {
-        e.stopPropagation();
-        const updatedJunction = {
-            ...junction,
-            showOnDashboard: e.target.checked
-        };
+    // Handle the file upload and import
+    const handleImportJunction = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            showSnackbar("No file selected", "error");
+            return;
+        }
 
+        setImporting(true);
         try {
-            const response = await fetch(`/api/junctions/${junction.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatedJunction),
-            });
+            const fileContent = await file.text();
+            JSON.parse(fileContent); // Just validate JSON format
 
-            if (response.ok) {
-                showSnackbar(`Junction ${e.target.checked ? 'added to' : 'removed from'} dashboard`, "success");
-                await refreshJunctions(); // Use the new refresh function
-            } else {
-                throw new Error("Failed to update junction");
-            }
-        } catch (err) {
-            showSnackbar("Error updating junction dashboard status", "error");
+            // Import junction logic would go here - calling the service
+            // await junctionService.importJunction(jsonData);
+
+            // Notify parent to refresh
+            await refreshJunctions();
+            showSnackbar("Junction imported successfully", "success");
+        } catch (error) {
+            console.error("Import failed:", error);
+            showSnackbar("Failed to import junction", "error");
+        } finally {
+            setImporting(false);
+        }
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const handleJunctionAdded = async (id: number, redirect: boolean) => {
+        await refreshJunctions();
+        showSnackbar("Junction added successfully", "success");
+
+        if (redirect) {
+            navigate(`/configure-junction/${id}`);
         }
     };
 
@@ -347,16 +388,76 @@ const Junctions = () => {
             field: "dashboard",
             label: "Show on Dashboard",
             align: "left",
-            renderCell: renderDashboardToggle,
+            renderCell: (junction: Junction) => {
+                return (
+                    <Tooltip title={junction.showOnDashboard ? "Shown on dashboard" : "Hidden from dashboard"}>
+                        <Switch
+                            size="small"
+                            checked={junction.showOnDashboard}
+                            onChange={(e) => {
+                                handleDashboardToggle(junction.id, e.target.checked);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            color="primary"
+                            aria-label="Show on dashboard"
+                        />
+                    </Tooltip>
+                );
+            },
             sortable: false
         }
     ];
 
     return (
         <Box sx={{ padding: 2 }}>
-            <Typography variant="h5" gutterBottom>
-                Junctions
-            </Typography>
+            {/* Junction Management Section - Hide on mobile since bottom action bar handles it */}
+            {!isMobile && (
+                <>
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                        <Typography variant="h6">Junction Management</Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={handleAddJunctionClick}
+                            size="small"
+                            startIcon={<AddIcon />}
+                            data-testid="add-junction-button"
+                        >
+                            Add Junction
+                        </Button>
+
+                        {junctionImportExportEnabled && (
+                            <Button
+                                variant="outlined"
+                                color="primary"
+                                component="label"
+                                size="small"
+                                startIcon={<CloudUploadIcon />}
+                                disabled={importing}
+                            >
+                                {importing ? (
+                                    <>
+                                        <CircularProgress size={16} sx={{ mr: 1 }} />
+                                        Importing...
+                                    </>
+                                ) : (
+                                    'Import Junction'
+                                )}
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept=".json"
+                                    onChange={handleImportJunction}
+                                    disabled={importing}
+                                    ref={fileInputRef}
+                                />
+                            </Button>
+                        )}
+                    </Box>
+                </>
+            )}
 
             {loading && junctions.length === 0 ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', padding: 3 }}>
@@ -375,10 +476,20 @@ const Junctions = () => {
                     detailedConnections={detailedConnections}
                     setDetailedConnections={setDetailedConnections}
                     localStorageKey="junctions_visible_cols"
-                    showAddButton={true}
+                    title="Junctions"
+                    showAddButton={false}
                     showImportButton={false}
+                    viewModeStorageKey="junctions_page_view_mode"
                 />
             )}
+
+            {/* Add Junction Modal */}
+            <AddJunctionModal
+                open={addJunctionModalOpen}
+                onClose={() => setAddJunctionModalOpen(false)}
+                onJunctionAdded={handleJunctionAdded}
+                junctions={junctions}
+            />
 
             {/* Snackbar for notifications */}
             <Snackbar

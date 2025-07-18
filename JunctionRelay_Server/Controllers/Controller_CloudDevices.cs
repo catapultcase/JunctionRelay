@@ -30,13 +30,16 @@ namespace JunctionRelayServer.Controllers
     {
         private readonly Service_Manager_CloudDevices _cloudDeviceService;
         private readonly Service_Database_Manager_Devices _deviceDb;
+        private readonly Service_Manager_CloudNotifications _cloudNotificationService;
 
         public Controller_CloudDevices(
             Service_Manager_CloudDevices cloudDeviceService,
-            Service_Database_Manager_Devices deviceDb)
+            Service_Database_Manager_Devices deviceDb,
+            Service_Manager_CloudNotifications cloudNotificationService)
         {
             _cloudDeviceService = cloudDeviceService;
             _deviceDb = deviceDb;
+            _cloudNotificationService = cloudNotificationService;
         }
 
         // GET: api/cloud-auth/devices/pending
@@ -79,23 +82,19 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // POST: api/cloud-auth/devices/{deviceId}/confirm
-        [HttpPost("devices/{deviceId}/confirm")]
-        public async Task<IActionResult> ConfirmCloudDevice(string deviceId, [FromBody] ConfirmDeviceRequest request)
+        // POST: api/cloud-auth/devices/{cloudDeviceId}/confirm
+        [HttpPost("devices/{cloudDeviceId}/confirm")]
+        public async Task<IActionResult> ConfirmCloudDevice(int cloudDeviceId, [FromBody] ConfirmDeviceRequest request)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(deviceId))
-                {
-                    return BadRequest(new { message = "Device ID is required" });
-                }
+                Console.WriteLine($"Attempting to confirm cloud device ID: {cloudDeviceId}, Accept: {request.Accept}");
 
                 if (request == null)
                 {
                     return BadRequest(new { message = "Request body is required" });
                 }
 
-                // Check if user has cloud authentication
                 var authHeader = Request.Headers.Authorization.FirstOrDefault();
                 if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
                 {
@@ -105,28 +104,52 @@ namespace JunctionRelayServer.Controllers
                 var cloudToken = authHeader.Substring("Bearer ".Length);
 
                 // Confirm device with cloud service
-                var success = await _cloudDeviceService.ConfirmCloudDeviceAsync(cloudToken, deviceId, request.Accept);
+                var success = await _cloudDeviceService.ConfirmCloudDeviceAsync(cloudToken, cloudDeviceId, request.Accept);
+                Console.WriteLine($"Cloud confirmation result: {success}");
 
                 if (success)
                 {
-                    var action = request.Accept ? "approved" : "rejected";
+                    // Find and update local device
+                    var allLocalDevices = await _deviceDb.GetAllDevicesAsync();
+                    var localDevice = allLocalDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceId);
+
+                    Console.WriteLine($"Found local device: {localDevice?.Name ?? "None"}");
+
+                    if (localDevice != null)
+                    {
+                        if (request.Accept)
+                        {
+                            localDevice.Status = "Active";
+                            localDevice.IsCloudDevice = true;
+                        }
+                        else
+                        {
+                            localDevice.Status = "Rejected";
+                            localDevice.IsCloudDevice = false;
+                            localDevice.CloudDeviceId = null;
+                        }
+
+                        await _deviceDb.UpdateCloudDeviceStatusAsync(localDevice);
+                        Console.WriteLine($"Updated local device status to: {localDevice.Status}");
+                    }
+
+                    var action = request.Accept ? "accepted" : "rejected";
                     return Ok(new
                     {
                         success = true,
-                        message = $"Device {action} successfully"
+                        message = $"Device {action} successfully",
+                        deviceId = cloudDeviceId,
+                        action = action
                     });
                 }
                 else
                 {
-                    return NotFound(new { message = $"Device '{deviceId}' not found" });
+                    return NotFound(new { message = "Cloud device not found" });
                 }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Unauthorized(new { message = "Invalid cloud authentication token" });
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error confirming cloud device: {ex.Message}");
                 return StatusCode(500, new
                 {
                     success = false,
@@ -297,17 +320,12 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // DELETE: api/cloud-auth/devices/{deviceId}
-        [HttpDelete("devices/{deviceId}")]
-        public async Task<IActionResult> UnregisterCloudDevice(string deviceId)
+        // DELETE: api/cloud-auth/devices/{cloudDeviceId}
+        [HttpDelete("devices/{cloudDeviceId}")]
+        public async Task<IActionResult> UnregisterCloudDevice(int cloudDeviceId)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(deviceId))
-                {
-                    return BadRequest(new { message = "Device ID is required" });
-                }
-
                 // Check if user has cloud authentication
                 var authHeader = Request.Headers.Authorization.FirstOrDefault();
                 if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
@@ -317,20 +335,32 @@ namespace JunctionRelayServer.Controllers
 
                 var cloudToken = authHeader.Substring("Bearer ".Length);
 
-                // Unregister the device from the cloud service
-                var success = await _cloudDeviceService.UnregisterCloudDeviceAsync(cloudToken, deviceId);
+                // Unregister the device from the cloud service using CloudDeviceId directly
+                var success = await _cloudDeviceService.UnregisterCloudDeviceAsync(cloudToken, cloudDeviceId);
 
                 if (success)
                 {
+                    // Find and update local device if it exists
+                    var allLocalDevices = await _deviceDb.GetAllDevicesAsync();
+                    var localDevice = allLocalDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceId);
+
+                    if (localDevice != null)
+                    {
+                        localDevice.IsCloudDevice = false;
+                        localDevice.CloudDeviceId = null;
+                        localDevice.Status = "offline";
+                        await _deviceDb.UpdateCloudDeviceStatusAsync(localDevice);
+                    }
+
                     return Ok(new
                     {
                         success = true,
-                        message = $"Cloud device '{deviceId}' unregistered successfully"
+                        message = $"Cloud device unregistered successfully"
                     });
                 }
                 else
                 {
-                    return NotFound(new { message = $"Cloud device '{deviceId}' not found" });
+                    return NotFound(new { message = $"Cloud device not found" });
                 }
             }
             catch (UnauthorizedAccessException)
@@ -343,6 +373,196 @@ namespace JunctionRelayServer.Controllers
                 {
                     success = false,
                     message = "Failed to unregister cloud device",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // POST: api/cloud-auth/devices/{deviceId}/notifications/enable
+        [HttpPost("devices/{deviceId}/notifications/enable")]
+        public async Task<IActionResult> EnableDeviceNotifications(int deviceId)
+        {
+            try
+            {
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Cloud authentication required" });
+                }
+
+                var cloudToken = authHeader.Substring("Bearer ".Length);
+
+                // Get the device from local database
+                var allLocalDevices = await _deviceDb.GetAllDevicesAsync();
+                var localDevice = allLocalDevices.FirstOrDefault(d => d.Id == deviceId);
+
+                if (localDevice == null)
+                {
+                    return NotFound(new { message = "Device not found" });
+                }
+
+                // Check if notifications are already enabled
+                if (localDevice.PushNotifications == true)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Notifications already enabled for device '{localDevice.Name}'",
+                        deviceId = deviceId,
+                        notificationsEnabled = true
+                    });
+                }
+
+                // Determine which cloud endpoint to call based on sync mode
+                var syncMode = localDevice.SyncMode ?? "Health";
+                bool cloudRegistrationSuccess = false;
+                string? cloudError = null;
+
+                try
+                {
+                    if (syncMode.Equals("FullSync", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Register for full sync (includes notifications)
+                        cloudRegistrationSuccess = await _cloudNotificationService.RegisterForFullSyncAsync(
+                            cloudToken,
+                            localDevice.UniqueIdentifier ?? localDevice.Name,
+                            localDevice.Name);
+                    }
+                    else
+                    {
+                        // Register for health monitoring only (includes notifications)
+                        cloudRegistrationSuccess = await _cloudNotificationService.RegisterForHealthMonitoringAsync(
+                            cloudToken,
+                            localDevice.UniqueIdentifier ?? localDevice.Name,
+                            localDevice.Name);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    cloudError = ex.Message ?? "Unknown error occurred";
+                    Console.WriteLine($"Failed to register device with cloud service: {ex.Message}");
+                }
+
+                if (cloudRegistrationSuccess)
+                {
+                    // Update local device notification setting only if cloud registration succeeded
+                    await _deviceDb.UpdateDeviceNotificationSettingAsync(deviceId, true);
+
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Notifications enabled for device '{localDevice.Name}' with {syncMode} sync mode",
+                        deviceId = deviceId,
+                        notificationsEnabled = true,
+                        syncMode = syncMode
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        message = "Failed to enable notifications - cloud registration failed",
+                        error = cloudError ?? "Unknown cloud registration error",
+                        deviceId = deviceId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to enable device notifications",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // POST: api/cloud-auth/devices/{deviceId}/notifications/disable
+        [HttpPost("devices/{deviceId}/notifications/disable")]
+        public async Task<IActionResult> DisableDeviceNotifications(int deviceId)
+        {
+            try
+            {
+                // Check if user has cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Cloud authentication required" });
+                }
+
+                var cloudToken = authHeader.Substring("Bearer ".Length);
+
+                // Get the device from local database
+                var allLocalDevices = await _deviceDb.GetAllDevicesAsync();
+                var localDevice = allLocalDevices.FirstOrDefault(d => d.Id == deviceId);
+
+                if (localDevice == null)
+                {
+                    return NotFound(new { message = "Device not found" });
+                }
+
+                // Check if notifications are already disabled
+                if (localDevice.PushNotifications != true)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Notifications already disabled for device '{localDevice.Name}'",
+                        deviceId = deviceId,
+                        notificationsEnabled = false
+                    });
+                }
+
+                // Disable notifications in cloud service
+                bool cloudUnregistrationSuccess = false;
+                string? cloudError = null;
+
+                try
+                {
+                    // Unregister from cloud notifications
+                    cloudUnregistrationSuccess = await _cloudNotificationService.UnregisterFromNotificationsAsync(
+                        cloudToken,
+                        localDevice.UniqueIdentifier ?? localDevice.Name);
+                }
+                catch (Exception ex)
+                {
+                    cloudError = ex.Message ?? "Unknown error occurred";
+                    Console.WriteLine($"Failed to unregister device from cloud service: {ex.Message}");
+                }
+
+                if (cloudUnregistrationSuccess)
+                {
+                    // Update local device notification setting only if cloud unregistration succeeded
+                    await _deviceDb.UpdateDeviceNotificationSettingAsync(deviceId, false);
+
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Notifications disabled for device '{localDevice.Name}'",
+                        deviceId = deviceId,
+                        notificationsEnabled = false
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        message = "Failed to disable notifications - cloud unregistration failed",
+                        error = cloudError ?? "Unknown cloud unregistration error",
+                        deviceId = deviceId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to disable device notifications",
                     error = ex.Message
                 });
             }
