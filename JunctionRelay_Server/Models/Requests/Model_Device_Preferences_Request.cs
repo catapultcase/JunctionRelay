@@ -21,7 +21,7 @@ namespace JunctionRelayServer.Models.Requests
 {
     public class Model_Device_Preferences_Request
     {
-        public string Ip { get; set; }
-        public Model_Device_Preferences Preferences { get; set; }
+        public required string Ip { get; set; }
+        public required Model_Device_Preferences Preferences { get; set; }
     }
 }

@@ -21,7 +21,7 @@ namespace JunctionRelayServer.Models
 {
     public class Model_ScannedDevice
     {
-        public string Instance { get; set; }
-        public string IpAddress { get; set; }
+        public required string Instance { get; set; }
+        public required string IpAddress { get; set; }
     }
 }

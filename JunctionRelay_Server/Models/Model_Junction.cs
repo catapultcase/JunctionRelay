@@ -31,7 +31,7 @@ namespace JunctionRelayServer.Models
         // Basic metadata
         public required string Name { get; set; }
         public string Description { get; set; } = string.Empty;
-        public string Type { get; set; }
+        public required string Type { get; set; }
         public string Status { get; set; } = "Idle";
         public int SortOrder { get; set; }
         public bool ShowOnDashboard { get; set; } = true;
@@ -39,9 +39,16 @@ namespace JunctionRelayServer.Models
         public string? CronExpression { get; set; }
         public bool AllTargetsAllData { get; set; } = false;
         public bool AllTargetsAllScreens { get; set; } = false;
+        public bool CompressPayload { get; set; }
 
         // Gateway configuration (only needed when Type = "Gateway")
+        public int? GatewayDeviceId { get; set; }
         public string? GatewayDestination { get; set; }
+        public string? DestinationOverride { get; set; }
+
+        // COM configuration
+
+        public int? BaudRate { get; set; }
 
         // Services configuration
         public int? MQTTBrokerId { get; set; }
@@ -63,7 +70,7 @@ namespace JunctionRelayServer.Models
         public int HealthCheckIntervalMs { get; set; } = 60_000;
 
         // Notifications
-        public bool EnableNotifications { get; set; } = false;      
+        public bool EnableNotifications { get; set; } = false;
 
         // Related entities
         public List<Model_JunctionDeviceLink> DeviceLinks { get; set; } = new();

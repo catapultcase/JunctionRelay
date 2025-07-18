@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -63,7 +62,6 @@ interface RegistrationTokenResponse {
 
 function TabPanel(props: TabPanelProps) {
     const { children, value, index, ...other } = props;
-
     return (
         <div
             role="tabpanel"
@@ -89,14 +87,13 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
     const [tabValue, setTabValue] = useState(0);
     const [token, setToken] = useState<string>('');
     const [qrCodeData, setQrCodeData] = useState<string>('');
-    const [expiresIn, setExpiresIn] = useState<number>(0);
     const [timeRemaining, setTimeRemaining] = useState<number>(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string>('');
     const [copySuccess, setCopySuccess] = useState(false);
     const [authError, setAuthError] = useState<string>('');
 
-    const generateToken = async () => {
+    const generateToken = useCallback(async () => {
         try {
             setLoading(true);
             setError('');
@@ -116,18 +113,14 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
                     setLoading(false);
                     return;
                 }
-
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Failed to generate registration token');
             }
 
             const data: RegistrationTokenResponse = await response.json();
-
             setToken(data.registrationToken);
             setQrCodeData(data.qrCodeData);
-            setExpiresIn(data.expiresIn);
             setTimeRemaining(data.expiresIn);
-
         } catch (err: any) {
             console.error('Token generation error:', err);
             if (err.message.includes('authentication') || err.message.includes('auth')) {
@@ -138,7 +131,7 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     const handleCopy = async () => {
         try {
@@ -168,7 +161,6 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
                     return prev - 1;
                 });
             }, 1000);
-
             return () => clearInterval(timer);
         }
     }, [timeRemaining]);
@@ -178,7 +170,7 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
         if (open && !token) {
             generateToken();
         }
-    }, [open]);
+    }, [open, token, generateToken]);
 
     // Reset state when modal closes
     useEffect(() => {
@@ -282,9 +274,11 @@ const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = ({
                                     <TextField
                                         fullWidth
                                         value={token}
-                                        InputProps={{
-                                            readOnly: true,
-                                            sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
+                                        slotProps={{
+                                            input: {
+                                                readOnly: true,
+                                                sx: { fontFamily: 'monospace', fontSize: '0.875rem' }
+                                            }
                                         }}
                                         variant="outlined"
                                     />

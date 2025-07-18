@@ -17,12 +17,12 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     Typography, Box, Paper, CircularProgress, Alert, Button,
     Table, TableRow, TableCell, TableBody, TableContainer,
     LinearProgress, Chip, Divider, Switch, FormControlLabel,
-    Tooltip
+    Tooltip, FormControl, InputLabel, Select, MenuItem
 } from "@mui/material";
 import MemoryIcon from '@mui/icons-material/Memory';
 import QueueIcon from '@mui/icons-material/Queue';
@@ -32,11 +32,14 @@ import BatteryFullIcon from '@mui/icons-material/BatteryFull';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TaskIcon from '@mui/icons-material/Task';
+import PowerIcon from '@mui/icons-material/Power';
+import HttpIcon from '@mui/icons-material/Http';
 
 interface DeviceSystemStatsPanelProps {
     deviceId: string;
     deviceData: any;
     showSnackbar: (message: string, severity?: "success" | "error" | "warning" | "info") => void;
+    isVisible?: boolean;
 }
 
 interface SystemStats {
@@ -111,48 +114,42 @@ interface SystemStats {
 const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
     deviceId,
     deviceData,
-    showSnackbar
+    showSnackbar,
+    isVisible = true
 }) => {
     const [stats, setStats] = useState<SystemStats | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
+    const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string>("");
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-    const [useFastMode, setUseFastMode] = useState<boolean>(() => {
-        // Load from localStorage on component initialization
-        const saved = localStorage.getItem('deviceStatsMode');
-        return saved ? JSON.parse(saved) : false; // Default to full stats
-    });
 
-    // Map FreeRTOS task state numbers to user-friendly labels based on context
+    // Simple state - defaults to OFF
+    const [statsEnabled, setStatsEnabled] = useState<boolean>(false);
+    const [selectedProtocol, setSelectedProtocol] = useState<string>('http');
+    const [useFastMode, setUseFastMode] = useState<boolean>(true);
+
+    // Use useRef for interval to avoid dependency cycles
+    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Helper functions
     const getTaskStatusLabel = (stateCode: number, taskName: string, queueDepth: number, hasConfig: boolean): { label: string; color: "success" | "warning" | "error" | "info" } => {
-        // For suspended/deleted tasks, show the actual problem
         if (stateCode === 3) return { label: "Suspended", color: "error" };
         if (stateCode === 4) return { label: "Deleted", color: "error" };
 
-        // For normal operation (Ready/Blocked), show meaningful status based on context
         if (taskName.toLowerCase().includes("sensor")) {
-            if (!hasConfig) {
-                return { label: "Waiting for Config", color: "warning" };
-            }
-            if (queueDepth > 0) {
-                return { label: "Processing Data", color: "success" };
-            }
+            if (!hasConfig) return { label: "Waiting for Config", color: "warning" };
+            if (queueDepth > 0) return { label: "Processing Data", color: "success" };
             return { label: "Ready for Data", color: "info" };
         }
 
         if (taskName.toLowerCase().includes("config")) {
-            if (queueDepth > 0) {
-                return { label: "Processing Config", color: "success" };
-            }
+            if (queueDepth > 0) return { label: "Processing Config", color: "success" };
             return { label: "Ready for Config", color: "info" };
         }
 
-        // Fallback for unknown tasks
         if (stateCode === 0) return { label: "Running", color: "success" };
         return { label: "Ready", color: "info" };
     };
 
-    // Helper functions
     const formatBytes = (bytes: number): string => {
         if (bytes === 0) return '0 B';
         const k = 1024;
@@ -184,8 +181,6 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
     };
 
     const getWifiSignalInfo = (rssi: number): { percent: number; color: "success" | "warning" | "error"; label: string } => {
-        // Convert dBm to percentage (0-100%) for display
-        // -30 dBm = 100%, -90 dBm = 0%
         const percent = Math.max(0, Math.min(100, (rssi + 90) * (100 / 60)));
 
         if (rssi >= -50) return { percent, color: "success", label: "Excellent" };
@@ -195,11 +190,10 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
         return { percent, color: "error", label: "Very Poor" };
     };
 
-    // Fetch system stats via backend
+    // Simple fetch function
     const fetchSystemStats = async () => {
         if (!deviceId) {
             setError("Device ID not available");
-            setLoading(false);
             return;
         }
 
@@ -207,12 +201,11 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
             setLoading(true);
             setError("");
 
-            // ✅ FIXED: Use the backend API endpoints (not direct ESP32 calls)
             const endpoint = useFastMode
-                ? `/api/devices/${deviceId}/system-stats-lite`  // Backend proxies to ESP32's /api/system/statslite
-                : `/api/devices/${deviceId}/system-stats`;       // Backend proxies to ESP32's /api/system/stats
+                ? `/api/devices/${deviceId}/system-stats-lite`
+                : `/api/devices/${deviceId}/system-stats`;
 
-            console.log(`[DEBUG] Fetching from endpoint: ${endpoint}`);
+            console.log(`[DEBUG] Fetching from endpoint: ${endpoint}, useFastMode: ${useFastMode}`);
 
             const response = await fetch(endpoint);
 
@@ -228,7 +221,6 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
                 }
             }
 
-            // ✅ Add content type check to catch HTML responses
             const contentType = response.headers.get("content-type");
             if (!contentType || !contentType.includes("application/json")) {
                 const text = await response.text();
@@ -237,453 +229,362 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
             }
 
             const data = await response.json();
+            console.log(`[DEBUG] Received data from ${endpoint}:`, data);
+            console.log(`[DEBUG] Data has tasks:`, !!data.tasks);
+            console.log(`[DEBUG] Data has wifi:`, !!data.wifi);
+            console.log(`[DEBUG] Data has battery:`, !!data.battery);
+
             setStats(data);
             setLastUpdated(new Date());
 
         } catch (err: any) {
-            console.error("Error fetching system stats:", err);
+            console.error("[DEBUG] Error fetching system stats:", err);
             setError(err.message);
             showSnackbar(`Failed to fetch system stats: ${err.message}`, "error");
+
+            // Stop the interval on any error
+            clearStatsInterval();
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle mode toggle and save to localStorage
+    // Clear interval helper
+    const clearStatsInterval = () => {
+        if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+        }
+    };
+
+    // Start interval helper
+    const startIntervalWithMode = (fastMode: boolean) => {
+        clearStatsInterval(); // Clear any existing
+        const refreshRate = fastMode ? 1000 : 2000;
+        console.log(`[DEBUG] Starting interval with ${refreshRate}ms refresh rate, fastMode: ${fastMode}`);
+        intervalRef.current = setInterval(() => {
+            console.log(`[DEBUG] Interval fetch triggered, using fastMode: ${fastMode}`);
+
+            // Create endpoint based on the mode passed to this function
+            const endpoint = fastMode
+                ? `/api/devices/${deviceId}/system-stats-lite`
+                : `/api/devices/${deviceId}/system-stats`;
+
+            console.log(`[DEBUG] Interval calling endpoint: ${endpoint}`);
+
+            // Call fetch with specific endpoint
+            fetchWithEndpoint(endpoint);
+        }, refreshRate);
+    };
+
+    // Fetch with specific endpoint
+    const fetchWithEndpoint = async (endpoint: string) => {
+        if (!deviceId) {
+            setError("Device ID not available");
+            return;
+        }
+
+        try {
+            setLoading(true);
+            setError("");
+
+            console.log(`[DEBUG] fetchWithEndpoint calling: ${endpoint}`);
+
+            const response = await fetch(endpoint);
+
+            if (!response.ok) {
+                if (response.status === 503) {
+                    throw new Error("Device is unreachable");
+                } else if (response.status === 408) {
+                    throw new Error("Device response timeout");
+                } else if (response.status === 404) {
+                    throw new Error(`Endpoint not found: ${endpoint}`);
+                } else {
+                    throw new Error(`Failed to fetch system stats: ${response.status}`);
+                }
+            }
+
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                const text = await response.text();
+                console.error("[DEBUG] Received non-JSON response:", text.substring(0, 200));
+                throw new Error("Server returned non-JSON response");
+            }
+
+            const data = await response.json();
+            console.log(`[DEBUG] fetchWithEndpoint received data from ${endpoint}:`, data);
+            console.log(`[DEBUG] fetchWithEndpoint - Data has tasks:`, !!data.tasks);
+            console.log(`[DEBUG] fetchWithEndpoint - Data has wifi:`, !!data.wifi);
+            console.log(`[DEBUG] fetchWithEndpoint - Data has battery:`, !!data.battery);
+
+            setStats(data);
+            setLastUpdated(new Date());
+
+        } catch (err: any) {
+            console.error("[DEBUG] Error in fetchWithEndpoint:", err);
+            setError(err.message);
+            showSnackbar(`Failed to fetch system stats: ${err.message}`, "error");
+            clearStatsInterval();
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle toggle
+    const handleStatsToggle = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const enabled = event.target.checked;
+        setStatsEnabled(enabled);
+
+        if (enabled) {
+            showSnackbar("System stats enabled", "success");
+            fetchSystemStats(); // Initial fetch
+            startIntervalWithMode(useFastMode); // Start auto-refresh
+        } else {
+            showSnackbar("System stats disabled", "info");
+            clearStatsInterval(); // Stop auto-refresh
+            setError(""); // Clear errors
+            setStats(null); // Clear data
+        }
+    };
+
+    // Handle protocol change
+    const handleProtocolChange = (event: any) => {
+        const protocol = event.target.value;
+        setSelectedProtocol(protocol);
+        showSnackbar(`Protocol switched to ${protocol.toUpperCase()}`, "info");
+    };
+
+    // Handle mode toggle
     const handleModeToggle = (event: React.ChangeEvent<HTMLInputElement>) => {
         const newMode = event.target.checked;
-        setUseFastMode(newMode);
-        localStorage.setItem('deviceStatsMode', JSON.stringify(newMode));
+        console.log(`[DEBUG] Mode toggle: ${newMode ? 'Fast' : 'Full'} mode selected`);
 
-        // Show feedback to user
+        // Clear interval first to stop old closures
+        clearStatsInterval();
+
+        // Update state
+        setUseFastMode(newMode);
+
         showSnackbar(
             newMode ? "Switched to Fast Mode (lightweight stats)" : "Switched to Full Mode (detailed stats)",
             "info"
         );
 
-        // Immediately fetch with new mode
-        setTimeout(fetchSystemStats, 100);
+        // If enabled, fetch immediately and restart interval
+        if (statsEnabled) {
+            console.log(`[DEBUG] Fetching immediately after mode change with newMode: ${newMode}`);
+
+            // Determine endpoint for immediate fetch
+            const endpoint = newMode
+                ? `/api/devices/${deviceId}/system-stats-lite`
+                : `/api/devices/${deviceId}/system-stats`;
+
+            console.log(`[DEBUG] Immediate fetch will use endpoint: ${endpoint}`);
+            fetchWithEndpoint(endpoint);
+
+            // Start interval with the new mode (no timeout needed)
+            startIntervalWithMode(newMode);
+        }
     };
 
-    // Initial fetch and periodic updates
+    // Manual refresh
+    const handleRetry = () => {
+        setError("");
+        if (statsEnabled) {
+            fetchSystemStats();
+            // Restart the interval after successful retry
+            startIntervalWithMode(useFastMode);
+        }
+    };
+
+    // Single effect to manage everything
     useEffect(() => {
-        fetchSystemStats();
+        // Cleanup function
+        return () => {
+            clearStatsInterval();
+        };
+    }, []); // Only run on mount/unmount
 
-        // Auto-refresh every 1 second for fast mode, 2 seconds for full mode
-        const refreshInterval = useFastMode ? 1000 : 2000;
-        const interval = setInterval(fetchSystemStats, refreshInterval);
-
-        return () => clearInterval(interval);
-    }, [deviceId, useFastMode]); // Re-run when mode changes
-
-    if (loading && !stats) {
-        return (
-            <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={4}>
-                <CircularProgress size={50} />
-                <Typography variant="h6" sx={{ mt: 2 }}>Loading system statistics...</Typography>
-            </Box>
-        );
-    }
-
-    if (error && !stats) {
-        return (
-            <Box p={2}>
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    <Typography>{error}</Typography>
-                </Alert>
-                <Button
-                    variant="contained"
-                    startIcon={<RefreshIcon />}
-                    onClick={fetchSystemStats}
-                >
-                    Retry
-                </Button>
-            </Box>
-        );
-    }
-
-    if (!stats) {
-        return (
-            <Box p={2}>
-                <Alert severity="warning">
-                    <Typography>System statistics not available for this device.</Typography>
-                </Alert>
-            </Box>
-        );
-    }
+    // Effect for visibility changes
+    useEffect(() => {
+        if (!isVisible && intervalRef.current) {
+            clearStatsInterval(); // Pause when not visible
+        } else if (isVisible && statsEnabled) {
+            startIntervalWithMode(useFastMode); // Resume when visible again
+        }
+    }, [isVisible, statsEnabled]);
 
     return (
         <Box>
-            {/* Header with mode toggle and refresh button */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h6">Real-Time System Statistics</Typography>
-                <Box display="flex" alignItems="center" gap={2}>
-                    {/* Mode Toggle */}
-                    <Tooltip title={useFastMode ?
-                        "Fast Mode: Lightweight stats with 1s refresh. Switch to Full Mode for detailed information." :
-                        "Full Mode: Detailed stats with 2s refresh. Switch to Fast Mode for quicker updates."
-                    }>
+            {/* System Stats Control Card - Always visible */}
+            <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 2
+                }}>
+                    {/* Left side - Main controls */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                        {/* Enable/Disable Toggle */}
                         <FormControlLabel
                             control={
                                 <Switch
-                                    checked={useFastMode}
-                                    onChange={handleModeToggle}
-                                    size="small"
+                                    checked={statsEnabled}
+                                    onChange={handleStatsToggle}
                                     color="primary"
                                 />
                             }
                             label={
-                                <Box display="flex" alignItems="center" gap={1}>
-                                    <Typography variant="body2" color="textSecondary">
-                                        {useFastMode ? "Fast" : "Full"}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <PowerIcon sx={{ fontSize: '1.1rem' }} />
+                                    <Typography variant="body2" fontWeight="medium">
+                                        Enable System Stats
                                     </Typography>
-                                    <Chip
-                                        label={useFastMode ? "1s" : "2s"}
-                                        size="small"
-                                        variant="outlined"
-                                        color="primary"
-                                    />
                                 </Box>
                             }
-                            labelPlacement="start"
-                            sx={{ mr: 1 }}
                         />
-                    </Tooltip>
 
-                    {lastUpdated && (
-                        <Typography variant="body2" color="textSecondary">
-                            Last updated: {lastUpdated.toLocaleTimeString()}
-                        </Typography>
-                    )}
+                        {/* Protocol Selector */}
+                        <FormControl size="small" sx={{ minWidth: 120 }} disabled={!statsEnabled}>
+                            <InputLabel>Protocol</InputLabel>
+                            <Select
+                                value={selectedProtocol}
+                                onChange={handleProtocolChange}
+                                label="Protocol"
+                                startAdornment={<HttpIcon sx={{ mr: 1, fontSize: '1rem' }} />}
+                            >
+                                <MenuItem value="http">HTTP</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        {/* Mode Toggle - Only show when enabled */}
+                        {statsEnabled && (
+                            <Tooltip title={useFastMode ?
+                                "Fast Mode: Lightweight stats with 1s refresh. Switch to Full Mode for detailed information." :
+                                "Full Mode: Detailed stats with 2s refresh. Switch to Fast Mode for quicker updates."
+                            }>
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={useFastMode}
+                                            onChange={handleModeToggle}
+                                            size="small"
+                                            color="primary"
+                                        />
+                                    }
+                                    label={
+                                        <Box display="flex" alignItems="center" gap={1}>
+                                            <Typography variant="body2" color="textSecondary">
+                                                {useFastMode ? "Fast" : "Full"}
+                                            </Typography>
+                                            <Chip
+                                                label={useFastMode ? "1s" : "2s"}
+                                                size="small"
+                                                variant="outlined"
+                                                color="primary"
+                                            />
+                                        </Box>
+                                    }
+                                    labelPlacement="start"
+                                />
+                            </Tooltip>
+                        )}
+                    </Box>
+
+                    {/* Right side - Status and controls */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {statsEnabled && lastUpdated && (
+                            <Typography variant="body2" color="textSecondary">
+                                Last updated: {lastUpdated.toLocaleTimeString()}
+                            </Typography>
+                        )}
+
+                        {statsEnabled && (
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<RefreshIcon />}
+                                onClick={handleRetry}
+                                disabled={loading}
+                            >
+                                {error ? 'Retry' : 'Refresh'}
+                            </Button>
+                        )}
+                    </Box>
+                </Box>
+            </Paper>
+
+            {/* Error Alert */}
+            {error && statsEnabled && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    <Typography fontWeight="medium">System Stats Error</Typography>
+                    <Typography>{error}</Typography>
                     <Button
                         variant="outlined"
                         size="small"
                         startIcon={<RefreshIcon />}
-                        onClick={fetchSystemStats}
-                        disabled={loading}
+                        onClick={handleRetry}
+                        sx={{ mt: 1 }}
                     >
-                        Refresh
+                        Retry Connection
                     </Button>
-                </Box>
-            </Box>
-
-            {error && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                    <Typography>Auto-refresh failed: {error}</Typography>
                 </Alert>
             )}
 
-            {/* Fast Mode Notice */}
-            {useFastMode && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                    <Typography>
-                        <strong>Fast Mode:</strong> Showing lightweight system statistics for quicker updates.
-                        Switch to Full Mode for detailed information about tasks, WiFi, battery, and more.
+            {/* Stats Disabled Message */}
+            {!statsEnabled && (
+                <Paper elevation={1} sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
+                    <PowerIcon sx={{ fontSize: '3rem', color: 'text.secondary', mb: 2 }} />
+                    <Typography variant="h6" color="textSecondary" gutterBottom>
+                        System Statistics Disabled
                     </Typography>
-                </Alert>
+                    <Typography variant="body2" color="textSecondary">
+                        Enable system stats above to view real-time device information including memory usage,
+                        queue status, task information, and more.
+                    </Typography>
+                </Paper>
             )}
 
-            {/* Main content area using flexbox layout */}
-            <Box sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 3
-            }}>
-                {/* First row - System Overview and Memory */}
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    gap: 3
-                }}>
-                    {/* System Overview */}
-                    <Box sx={{ flex: 1 }}>
-                        <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                            <Typography variant="subtitle1" gutterBottom sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                mb: 2
-                            }}>
-                                <SpeedIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                System Overview
-                            </Typography>
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableBody>
-                                        <TableRow>
-                                            <TableCell><strong>Uptime</strong></TableCell>
-                                            <TableCell>{formatUptime(stats.system.uptime)}</TableCell>
-                                        </TableRow>
-                                        <TableRow>
-                                            <TableCell><strong>CPU Frequency</strong></TableCell>
-                                            <TableCell>{stats.system.cpuFreqMHz} MHz</TableCell>
-                                        </TableRow>
-                                        <TableRow>
-                                            <TableCell><strong>Connection Mode</strong></TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={stats.connectionMode.toUpperCase()}
-                                                    size="small"
-                                                    color="primary"
-                                                    variant="outlined"
-                                                />
-                                            </TableCell>
-                                        </TableRow>
-                                        {/* Only show flash info in full mode */}
-                                        {!useFastMode && stats.system.flashSize && (
-                                            <>
-                                                <TableRow>
-                                                    <TableCell><strong>Flash Size</strong></TableCell>
-                                                    <TableCell>{formatBytes(stats.system.flashSize)}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell><strong>Sketch Size</strong></TableCell>
-                                                    <TableCell>{formatBytes(stats.system.sketchSize || 0)}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell><strong>Free Sketch Space</strong></TableCell>
-                                                    <TableCell>{formatBytes(stats.system.freeSketchSpace || 0)}</TableCell>
-                                                </TableRow>
-                                            </>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        </Paper>
-                    </Box>
-
-                    {/* Memory Statistics */}
-                    <Box sx={{ flex: 1 }}>
-                        <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                            <Typography variant="subtitle1" gutterBottom sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                mb: 2
-                            }}>
-                                <MemoryIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                Memory Usage
-                            </Typography>
-
-                            {/* Heap Memory */}
-                            <Box sx={{ mb: 2 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Heap Memory
-                                </Typography>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize)}
-                                    sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                                    color={getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize) > 80 ? "error" :
-                                        getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize) > 60 ? "warning" : "success"}
-                                />
-                                <Typography variant="body2" color="textSecondary">
-                                    {formatBytes(stats.memory.freeHeap)} free of {formatBytes(stats.memory.heapSize)}
-                                </Typography>
-                            </Box>
-
-                            {/* PSRAM (if available) */}
-                            {stats.memory.psramSize && (
-                                <Box sx={{ mb: 2 }}>
-                                    <Typography variant="body2" fontWeight="medium">
-                                        PSRAM
-                                    </Typography>
-                                    <LinearProgress
-                                        variant="determinate"
-                                        value={getMemoryUsagePercent(stats.memory.freePsram || 0, stats.memory.psramSize)}
-                                        sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                                        color="primary"
-                                    />
-                                    <Typography variant="body2" color="textSecondary">
-                                        {formatBytes(stats.memory.freePsram || 0)} free of {formatBytes(stats.memory.psramSize)}
-                                    </Typography>
-                                </Box>
-                            )}
-
-                            {/* Only show detailed memory info in full mode */}
-                            {!useFastMode && (
-                                <>
-                                    <Divider sx={{ my: 2 }} />
-                                    <TableContainer>
-                                        <Table size="small">
-                                            <TableBody>
-                                                <TableRow>
-                                                    <TableCell><strong>Min Free Heap</strong></TableCell>
-                                                    <TableCell>{formatBytes(stats.memory.minFreeHeap)}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell><strong>Max Alloc</strong></TableCell>
-                                                    <TableCell>{formatBytes(stats.memory.maxAllocHeap)}</TableCell>
-                                                </TableRow>
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                </>
-                            )}
-                        </Paper>
-                    </Box>
+            {/* Loading State */}
+            {statsEnabled && loading && !stats && (
+                <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={4}>
+                    <CircularProgress size={50} />
+                    <Typography variant="h6" sx={{ mt: 2 }}>Loading system statistics...</Typography>
                 </Box>
+            )}
 
-                {/* Second row - Queue Status and Task Status */}
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    gap: 3
-                }}>
-                    {/* Queue Status */}
-                    <Box sx={{ flex: 1 }}>
-                        <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                            <Typography variant="subtitle1" gutterBottom sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                mb: 2
-                            }}>
-                                <QueueIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                Queue Status
+            {/* Stats Content */}
+            {statsEnabled && stats && !error && (
+                <>
+                    <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
+                        Real-Time System Statistics
+                    </Typography>
+
+                    {/* Fast Mode Notice */}
+                    {useFastMode && (
+                        <Alert severity="info" sx={{ mb: 3 }}>
+                            <Typography>
+                                <strong>Fast Mode:</strong> Showing lightweight system statistics for quicker updates.
+                                Switch to Full Mode for detailed information about tasks, WiFi, battery, and more.
                             </Typography>
-
-                            {/* Sensor Queue */}
-                            <Box sx={{ mb: 2 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Sensor Queue
-                                </Typography>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={(stats.queues.sensor.depth / stats.queues.sensor.maxSize) * 100}
-                                    sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                                    color={stats.queues.sensor.depth > stats.queues.sensor.maxSize * 0.8 ? "error" : "success"}
-                                />
-                                <Typography variant="body2" color="textSecondary">
-                                    {stats.queues.sensor.depth} / {stats.queues.sensor.maxSize} items
-                                </Typography>
-                            </Box>
-
-                            {/* Config Queue */}
-                            <Box sx={{ mb: 2 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Config Queue
-                                </Typography>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={(stats.queues.config.depth / stats.queues.config.maxSize) * 100}
-                                    sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                                    color={stats.queues.config.depth > stats.queues.config.maxSize * 0.8 ? "error" : "success"}
-                                />
-                                <Typography variant="body2" color="textSecondary">
-                                    {stats.queues.config.depth} / {stats.queues.config.maxSize} items
-                                </Typography>
-                            </Box>
-                        </Paper>
-                    </Box>
-
-                    {/* Task Status - Only show in full mode */}
-                    {!useFastMode && stats.tasks && (
-                        <Box sx={{ flex: 1 }}>
-                            <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                                <Typography variant="subtitle1" gutterBottom sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    mb: 2
-                                }}>
-                                    <TaskIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                    Task Status
-                                </Typography>
-                                <TableContainer>
-                                    <Table size="small">
-                                        <TableBody>
-                                            <TableRow>
-                                                <TableCell><strong>Sensor Processing</strong></TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={getTaskStatusLabel(
-                                                            stats.tasks.sensorProcessing.state,
-                                                            "sensorProcessing",
-                                                            stats.queues.sensor.depth,
-                                                            stats.configuration.hasReceivedConfig
-                                                        ).label}
-                                                        size="small"
-                                                        color={getTaskStatusLabel(
-                                                            stats.tasks.sensorProcessing.state,
-                                                            "sensorProcessing",
-                                                            stats.queues.sensor.depth,
-                                                            stats.configuration.hasReceivedConfig
-                                                        ).color}
-                                                        variant="outlined"
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell><strong>Config Processing</strong></TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={getTaskStatusLabel(
-                                                            stats.tasks.configProcessing.state,
-                                                            "configProcessing",
-                                                            stats.queues.config.depth,
-                                                            stats.configuration.hasReceivedConfig
-                                                        ).label}
-                                                        size="small"
-                                                        color={getTaskStatusLabel(
-                                                            stats.tasks.configProcessing.state,
-                                                            "configProcessing",
-                                                            stats.queues.config.depth,
-                                                            stats.configuration.hasReceivedConfig
-                                                        ).color}
-                                                        variant="outlined"
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell><strong>Sensor Memory Safety</strong></TableCell>
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <Typography variant="body2">
-                                                            {formatBytes(stats.tasks.sensorProcessing.stackHighWaterMark)} free
-                                                        </Typography>
-                                                        <Chip
-                                                            label={stats.tasks.sensorProcessing.stackHighWaterMark > 2000 ? "Healthy" :
-                                                                stats.tasks.sensorProcessing.stackHighWaterMark > 500 ? "Low" : "Critical"}
-                                                            size="small"
-                                                            color={stats.tasks.sensorProcessing.stackHighWaterMark > 2000 ? "success" :
-                                                                stats.tasks.sensorProcessing.stackHighWaterMark > 500 ? "warning" : "error"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell><strong>Config Memory Safety</strong></TableCell>
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <Typography variant="body2">
-                                                            {formatBytes(stats.tasks.configProcessing.stackHighWaterMark)} free
-                                                        </Typography>
-                                                        <Chip
-                                                            label={stats.tasks.configProcessing.stackHighWaterMark > 2000 ? "Healthy" :
-                                                                stats.tasks.configProcessing.stackHighWaterMark > 500 ? "Low" : "Critical"}
-                                                            size="small"
-                                                            color={stats.tasks.configProcessing.stackHighWaterMark > 2000 ? "success" :
-                                                                stats.tasks.configProcessing.stackHighWaterMark > 500 ? "warning" : "error"}
-                                                            variant="outlined"
-                                                        />
-                                                    </Box>
-                                                </TableCell>
-                                            </TableRow>
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </Paper>
-                        </Box>
+                        </Alert>
                     )}
-                </Box>
 
-                {/* Third row - WiFi and Battery (only in full mode) */}
-                {!useFastMode && (stats.wifi || stats.battery) && (
+                    {/* Main content area */}
                     <Box sx={{
                         display: 'flex',
-                        flexDirection: { xs: 'column', md: 'row' },
+                        flexDirection: 'column',
                         gap: 3
                     }}>
-                        {/* WiFi Status */}
-                        {stats.wifi && (
+                        {/* First row - System Overview and Memory */}
+                        <Box sx={{
+                            display: 'flex',
+                            flexDirection: { xs: 'column', md: 'row' },
+                            gap: 3
+                        }}>
+                            {/* System Overview */}
                             <Box sx={{ flex: 1 }}>
                                 <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
                                     <Typography variant="subtitle1" gutterBottom sx={{
@@ -691,210 +592,531 @@ const DeviceSystemStatsPanel: React.FC<DeviceSystemStatsPanelProps> = ({
                                         alignItems: 'center',
                                         mb: 2
                                     }}>
-                                        <WifiIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                        WiFi Status
+                                        <SpeedIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                        System Overview
                                     </Typography>
-
-                                    {/* Signal Strength Bar */}
-                                    <Box sx={{ mb: 2 }}>
-                                        <Typography variant="body2" fontWeight="medium">
-                                            Signal Strength
-                                        </Typography>
-                                        <LinearProgress
-                                            variant="determinate"
-                                            value={getWifiSignalInfo(stats.wifi.rssi).percent}
-                                            sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                                            color={getWifiSignalInfo(stats.wifi.rssi).color}
-                                        />
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Typography variant="body2" color="textSecondary">
-                                                {stats.wifi.rssi} dBm
-                                            </Typography>
-                                            <Chip
-                                                label={getWifiSignalInfo(stats.wifi.rssi).label}
-                                                size="small"
-                                                color={getWifiSignalInfo(stats.wifi.rssi).color}
-                                                variant="outlined"
-                                            />
-                                        </Box>
-                                    </Box>
-
                                     <TableContainer>
                                         <Table size="small">
                                             <TableBody>
                                                 <TableRow>
-                                                    <TableCell><strong>Channel</strong></TableCell>
-                                                    <TableCell>{stats.wifi.channel}</TableCell>
+                                                    <TableCell><strong>Uptime</strong></TableCell>
+                                                    <TableCell>{formatUptime(stats.system.uptime)}</TableCell>
                                                 </TableRow>
                                                 <TableRow>
-                                                    <TableCell><strong>TX Power</strong></TableCell>
-                                                    <TableCell>{stats.wifi.txPower}</TableCell>
+                                                    <TableCell><strong>CPU Frequency</strong></TableCell>
+                                                    <TableCell>{stats.system.cpuFreqMHz} MHz</TableCell>
                                                 </TableRow>
                                                 <TableRow>
-                                                    <TableCell><strong>Auto Reconnect</strong></TableCell>
-                                                    <TableCell>{stats.wifi.autoReconnect ? "Enabled" : "Disabled"}</TableCell>
-                                                </TableRow>
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                </Paper>
-                            </Box>
-                        )}
-
-                        {/* Battery Status */}
-                        {stats.battery && (
-                            <Box sx={{ flex: 1 }}>
-                                <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
-                                    <Typography variant="subtitle1" gutterBottom sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        mb: 2
-                                    }}>
-                                        <BatteryFullIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                                        Battery Status
-                                    </Typography>
-
-                                    <Box sx={{ mb: 2 }}>
-                                        <Typography variant="body2" fontWeight="medium">
-                                            Battery Level
-                                        </Typography>
-                                        <LinearProgress
-                                            variant="determinate"
-                                            value={stats.battery.percent}
-                                            sx={{ mb: 1, height: 12, borderRadius: 6 }}
-                                            color={getBatteryColor(stats.battery.percent)}
-                                        />
-                                        <Typography variant="body2" color="textSecondary">
-                                            {stats.battery.percent.toFixed(1)}% ({stats.battery.voltage.toFixed(2)}V)
-                                        </Typography>
-                                    </Box>
-
-                                    <TableContainer>
-                                        <Table size="small">
-                                            <TableBody>
-                                                <TableRow>
-                                                    <TableCell><strong>Status</strong></TableCell>
+                                                    <TableCell><strong>Connection Mode</strong></TableCell>
                                                     <TableCell>
                                                         <Chip
-                                                            label={stats.battery.status}
+                                                            label={stats.connectionMode.toUpperCase()}
                                                             size="small"
-                                                            color={getBatteryColor(stats.battery.percent)}
+                                                            color="primary"
                                                             variant="outlined"
                                                         />
                                                     </TableCell>
                                                 </TableRow>
-                                                <TableRow>
-                                                    <TableCell><strong>Charging</strong></TableCell>
-                                                    <TableCell>{stats.battery.isCharging ? "Yes" : "No"}</TableCell>
-                                                </TableRow>
-                                                {stats.battery.lowBattery && (
-                                                    <TableRow>
-                                                        <TableCell colSpan={2}>
-                                                            <Alert severity="warning" sx={{ mt: 1 }}>
-                                                                Low Battery Warning
-                                                            </Alert>
-                                                        </TableCell>
-                                                    </TableRow>
+                                                {!useFastMode && stats.system.flashSize && (
+                                                    <>
+                                                        <TableRow>
+                                                            <TableCell><strong>Flash Size</strong></TableCell>
+                                                            <TableCell>{formatBytes(stats.system.flashSize)}</TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Sketch Size</strong></TableCell>
+                                                            <TableCell>{formatBytes(stats.system.sketchSize || 0)}</TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Free Sketch Space</strong></TableCell>
+                                                            <TableCell>{formatBytes(stats.system.freeSketchSpace || 0)}</TableCell>
+                                                        </TableRow>
+                                                    </>
                                                 )}
                                             </TableBody>
                                         </Table>
                                     </TableContainer>
                                 </Paper>
                             </Box>
-                        )}
-                    </Box>
-                )}
 
-                {/* Configuration Status - Full width */}
-                <Box>
-                    <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
-                        <Typography variant="subtitle1" gutterBottom sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            mb: 2
-                        }}>
-                            <SettingsIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                            Configuration Status
-                        </Typography>
+                            {/* Memory Statistics */}
+                            <Box sx={{ flex: 1 }}>
+                                <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                                    <Typography variant="subtitle1" gutterBottom sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        mb: 2
+                                    }}>
+                                        <MemoryIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                        Memory Usage
+                                    </Typography>
 
-                        <Box sx={{
-                            display: 'flex',
-                            flexDirection: { xs: 'column', sm: 'row' },
-                            gap: 3
-                        }}>
-                            <Box sx={{
-                                flex: 1,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="h4" color={stats.configuration.hasReceivedConfig ? "success.main" : "warning.main"}>
-                                    {stats.configuration.hasReceivedConfig ? "✓" : "⚠"}
-                                </Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Configuration Status
-                                </Typography>
-                                <Typography variant="body2" color="textSecondary">
-                                    {stats.configuration.hasReceivedConfig ? "Configured" : "Needs Config"}
-                                </Typography>
-                            </Box>
+                                    {/* Heap Memory */}
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Heap Memory
+                                        </Typography>
+                                        <LinearProgress
+                                            variant="determinate"
+                                            value={getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize)}
+                                            sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                                            color={getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize) > 80 ? "error" :
+                                                getMemoryUsagePercent(stats.memory.freeHeap, stats.memory.heapSize) > 60 ? "warning" : "success"}
+                                        />
+                                        <Typography variant="body2" color="textSecondary">
+                                            {formatBytes(stats.memory.freeHeap)} free of {formatBytes(stats.memory.heapSize)}
+                                        </Typography>
+                                    </Box>
 
-                            <Box sx={{
-                                flex: 1,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="h4" color="primary.main">
-                                    {stats.configuration.configCount}
-                                </Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Configs Received
-                                </Typography>
-                                <Typography variant="body2" color="textSecondary">
-                                    Total count
-                                </Typography>
-                            </Box>
+                                    {/* PSRAM (if available) */}
+                                    {stats.memory.psramSize && (
+                                        <Box sx={{ mb: 2 }}>
+                                            <Typography variant="body2" fontWeight="medium">
+                                                PSRAM
+                                            </Typography>
+                                            <LinearProgress
+                                                variant="determinate"
+                                                value={getMemoryUsagePercent(stats.memory.freePsram || 0, stats.memory.psramSize)}
+                                                sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                                                color="primary"
+                                            />
+                                            <Typography variant="body2" color="textSecondary">
+                                                {formatBytes(stats.memory.freePsram || 0)} free of {formatBytes(stats.memory.psramSize)}
+                                            </Typography>
+                                        </Box>
+                                    )}
 
-                            <Box sx={{
-                                flex: 1,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="h4" color={stats.configuration.readyForSensorData ? "success.main" : "warning.main"}>
-                                    {stats.configuration.readyForSensorData ? "✓" : "✗"}
-                                </Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Sensor Data Ready
-                                </Typography>
-                                <Typography variant="body2" color="textSecondary">
-                                    {stats.configuration.readyForSensorData ? "Ready" : "Not Ready"}
-                                </Typography>
-                            </Box>
-
-                            <Box sx={{
-                                flex: 1,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="h4" color="info.main">
-                                    {stats.configuration.lastConfigTimestamp > 0 ?
-                                        formatUptime(stats.timestamp - stats.configuration.lastConfigTimestamp) : "Never"}
-                                </Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                    Last Config
-                                </Typography>
-                                <Typography variant="body2" color="textSecondary">
-                                    Time ago
-                                </Typography>
+                                    {!useFastMode && (
+                                        <>
+                                            <Divider sx={{ my: 2 }} />
+                                            <TableContainer>
+                                                <Table size="small">
+                                                    <TableBody>
+                                                        <TableRow>
+                                                            <TableCell><strong>Min Free Heap</strong></TableCell>
+                                                            <TableCell>{formatBytes(stats.memory.minFreeHeap)}</TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Max Alloc</strong></TableCell>
+                                                            <TableCell>{formatBytes(stats.memory.maxAllocHeap)}</TableCell>
+                                                        </TableRow>
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        </>
+                                    )}
+                                </Paper>
                             </Box>
                         </Box>
 
-                        {!stats.configuration.hasReceivedConfig && (
-                            <Alert severity="warning" sx={{ mt: 2 }}>
-                                <Typography>
-                                    This device needs to receive a configuration before it can process sensor data.
-                                    Send a configuration payload to initialize the device properly.
-                                </Typography>
-                            </Alert>
+                        {/* Second row - Queue Status and Task Status */}
+                        <Box sx={{
+                            display: 'flex',
+                            flexDirection: { xs: 'column', md: 'row' },
+                            gap: 3
+                        }}>
+                            {/* Queue Status */}
+                            <Box sx={{ flex: 1 }}>
+                                <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                                    <Typography variant="subtitle1" gutterBottom sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        mb: 2
+                                    }}>
+                                        <QueueIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                        Queue Status
+                                    </Typography>
+
+                                    {/* Sensor Queue */}
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Sensor Queue
+                                        </Typography>
+                                        <LinearProgress
+                                            variant="determinate"
+                                            value={(stats.queues.sensor.depth / stats.queues.sensor.maxSize) * 100}
+                                            sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                                            color={stats.queues.sensor.depth > stats.queues.sensor.maxSize * 0.8 ? "error" : "success"}
+                                        />
+                                        <Typography variant="body2" color="textSecondary">
+                                            {stats.queues.sensor.depth} / {stats.queues.sensor.maxSize} items
+                                        </Typography>
+                                    </Box>
+
+                                    {/* Config Queue */}
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Config Queue
+                                        </Typography>
+                                        <LinearProgress
+                                            variant="determinate"
+                                            value={(stats.queues.config.depth / stats.queues.config.maxSize) * 100}
+                                            sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                                            color={stats.queues.config.depth > stats.queues.config.maxSize * 0.8 ? "error" : "success"}
+                                        />
+                                        <Typography variant="body2" color="textSecondary">
+                                            {stats.queues.config.depth} / {stats.queues.config.maxSize} items
+                                        </Typography>
+                                    </Box>
+                                </Paper>
+                            </Box>
+
+                            {/* Task Status - Only in full mode */}
+                            {!useFastMode && (
+                                <Box sx={{ flex: 1 }}>
+                                    <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                                        <Typography variant="subtitle1" gutterBottom sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            mb: 2
+                                        }}>
+                                            <TaskIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                            Task Status
+                                        </Typography>
+                                        {stats.tasks ? (
+                                            <TableContainer>
+                                                <Table size="small">
+                                                    <TableBody>
+                                                        <TableRow>
+                                                            <TableCell><strong>Sensor Processing</strong></TableCell>
+                                                            <TableCell>
+                                                                <Chip
+                                                                    label={getTaskStatusLabel(
+                                                                        stats.tasks.sensorProcessing.state,
+                                                                        "sensorProcessing",
+                                                                        stats.queues.sensor.depth,
+                                                                        stats.configuration.hasReceivedConfig
+                                                                    ).label}
+                                                                    size="small"
+                                                                    color={getTaskStatusLabel(
+                                                                        stats.tasks.sensorProcessing.state,
+                                                                        "sensorProcessing",
+                                                                        stats.queues.sensor.depth,
+                                                                        stats.configuration.hasReceivedConfig
+                                                                    ).color}
+                                                                    variant="outlined"
+                                                                />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Config Processing</strong></TableCell>
+                                                            <TableCell>
+                                                                <Chip
+                                                                    label={getTaskStatusLabel(
+                                                                        stats.tasks.configProcessing.state,
+                                                                        "configProcessing",
+                                                                        stats.queues.config.depth,
+                                                                        stats.configuration.hasReceivedConfig
+                                                                    ).label}
+                                                                    size="small"
+                                                                    color={getTaskStatusLabel(
+                                                                        stats.tasks.configProcessing.state,
+                                                                        "configProcessing",
+                                                                        stats.queues.config.depth,
+                                                                        stats.configuration.hasReceivedConfig
+                                                                    ).color}
+                                                                    variant="outlined"
+                                                                />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Sensor Memory Safety</strong></TableCell>
+                                                            <TableCell>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <Typography variant="body2">
+                                                                        {formatBytes(stats.tasks.sensorProcessing.stackHighWaterMark)} free
+                                                                    </Typography>
+                                                                    <Chip
+                                                                        label={stats.tasks.sensorProcessing.stackHighWaterMark > 2000 ? "Healthy" :
+                                                                            stats.tasks.sensorProcessing.stackHighWaterMark > 500 ? "Low" : "Critical"}
+                                                                        size="small"
+                                                                        color={stats.tasks.sensorProcessing.stackHighWaterMark > 2000 ? "success" :
+                                                                            stats.tasks.sensorProcessing.stackHighWaterMark > 500 ? "warning" : "error"}
+                                                                        variant="outlined"
+                                                                    />
+                                                                </Box>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        <TableRow>
+                                                            <TableCell><strong>Config Memory Safety</strong></TableCell>
+                                                            <TableCell>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <Typography variant="body2">
+                                                                        {formatBytes(stats.tasks.configProcessing.stackHighWaterMark)} free
+                                                                    </Typography>
+                                                                    <Chip
+                                                                        label={stats.tasks.configProcessing.stackHighWaterMark > 2000 ? "Healthy" :
+                                                                            stats.tasks.configProcessing.stackHighWaterMark > 500 ? "Low" : "Critical"}
+                                                                        size="small"
+                                                                        color={stats.tasks.configProcessing.stackHighWaterMark > 2000 ? "success" :
+                                                                            stats.tasks.configProcessing.stackHighWaterMark > 500 ? "warning" : "error"}
+                                                                        variant="outlined"
+                                                                    />
+                                                                </Box>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        ) : loading ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <CircularProgress size={30} />
+                                                <Typography variant="body2" sx={{ ml: 2 }}>Loading task data...</Typography>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <Typography variant="body2" color="textSecondary">Task data not available</Typography>
+                                            </Box>
+                                        )}
+                                    </Paper>
+                                </Box>
+                            )}
+                        </Box>
+
+                        {/* Third row - WiFi and Battery (only in full mode) */}
+                        {!useFastMode && (
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: { xs: 'column', md: 'row' },
+                                gap: 3
+                            }}>
+                                {/* WiFi Status */}
+                                <Box sx={{ flex: 1 }}>
+                                    <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                                        <Typography variant="subtitle1" gutterBottom sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            mb: 2
+                                        }}>
+                                            <WifiIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                            WiFi Status
+                                        </Typography>
+
+                                        {stats.wifi ? (
+                                            <>
+                                                {/* Signal Strength Bar */}
+                                                <Box sx={{ mb: 2 }}>
+                                                    <Typography variant="body2" fontWeight="medium">
+                                                        Signal Strength
+                                                    </Typography>
+                                                    <LinearProgress
+                                                        variant="determinate"
+                                                        value={getWifiSignalInfo(stats.wifi.rssi).percent}
+                                                        sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                                                        color={getWifiSignalInfo(stats.wifi.rssi).color}
+                                                    />
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Typography variant="body2" color="textSecondary">
+                                                            {stats.wifi.rssi} dBm
+                                                        </Typography>
+                                                        <Chip
+                                                            label={getWifiSignalInfo(stats.wifi.rssi).label}
+                                                            size="small"
+                                                            color={getWifiSignalInfo(stats.wifi.rssi).color}
+                                                            variant="outlined"
+                                                        />
+                                                    </Box>
+                                                </Box>
+
+                                                <TableContainer>
+                                                    <Table size="small">
+                                                        <TableBody>
+                                                            <TableRow>
+                                                                <TableCell><strong>Channel</strong></TableCell>
+                                                                <TableCell>{stats.wifi.channel}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><strong>TX Power</strong></TableCell>
+                                                                <TableCell>{stats.wifi.txPower}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><strong>Auto Reconnect</strong></TableCell>
+                                                                <TableCell>{stats.wifi.autoReconnect ? "Enabled" : "Disabled"}</TableCell>
+                                                            </TableRow>
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
+                                            </>
+                                        ) : loading ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <CircularProgress size={30} />
+                                                <Typography variant="body2" sx={{ ml: 2 }}>Loading WiFi data...</Typography>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <Typography variant="body2" color="textSecondary">WiFi data not available</Typography>
+                                            </Box>
+                                        )}
+                                    </Paper>
+                                </Box>
+
+                                {/* Battery Status */}
+                                <Box sx={{ flex: 1 }}>
+                                    <Paper elevation={2} sx={{ p: 3, height: '100%', borderRadius: 2 }}>
+                                        <Typography variant="subtitle1" gutterBottom sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            mb: 2
+                                        }}>
+                                            <BatteryFullIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                            Battery Status
+                                        </Typography>
+
+                                        {stats.battery ? (
+                                            <>
+                                                <Box sx={{ mb: 2 }}>
+                                                    <Typography variant="body2" fontWeight="medium">
+                                                        Battery Level
+                                                    </Typography>
+                                                    <LinearProgress
+                                                        variant="determinate"
+                                                        value={stats.battery.percent}
+                                                        sx={{ mb: 1, height: 12, borderRadius: 6 }}
+                                                        color={getBatteryColor(stats.battery.percent)}
+                                                    />
+                                                    <Typography variant="body2" color="textSecondary">
+                                                        {stats.battery.percent.toFixed(1)}% ({stats.battery.voltage.toFixed(2)}V)
+                                                    </Typography>
+                                                </Box>
+
+                                                <TableContainer>
+                                                    <Table size="small">
+                                                        <TableBody>
+                                                            <TableRow>
+                                                                <TableCell><strong>Status</strong></TableCell>
+                                                                <TableCell>
+                                                                    <Chip
+                                                                        label={stats.battery.status}
+                                                                        size="small"
+                                                                        color={getBatteryColor(stats.battery.percent)}
+                                                                        variant="outlined"
+                                                                    />
+                                                                </TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><strong>Charging</strong></TableCell>
+                                                                <TableCell>{stats.battery.isCharging ? "Yes" : "No"}</TableCell>
+                                                            </TableRow>
+                                                            {stats.battery.lowBattery && (
+                                                                <TableRow>
+                                                                    <TableCell colSpan={2}>
+                                                                        <Alert severity="warning" sx={{ mt: 1 }}>
+                                                                            Low Battery Warning
+                                                                        </Alert>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )}
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
+                                            </>
+                                        ) : loading ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <CircularProgress size={30} />
+                                                <Typography variant="body2" sx={{ ml: 2 }}>Loading battery data...</Typography>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
+                                                <Typography variant="body2" color="textSecondary">Battery data not available</Typography>
+                                            </Box>
+                                        )}
+                                    </Paper>
+                                </Box>
+                            </Box>
                         )}
-                    </Paper>
-                </Box>
-            </Box>
+
+                        {/* Configuration Status - Full width */}
+                        <Box>
+                            <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
+                                <Typography variant="subtitle1" gutterBottom sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    mb: 2
+                                }}>
+                                    <SettingsIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+                                    Configuration Status
+                                </Typography>
+
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: { xs: 'column', sm: 'row' },
+                                    gap: 3
+                                }}>
+                                    <Box sx={{
+                                        flex: 1,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Typography variant="h4" color={stats.configuration.hasReceivedConfig ? "success.main" : "warning.main"}>
+                                            {stats.configuration.hasReceivedConfig ? "✓" : "⚠"}
+                                        </Typography>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Configuration Status
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary">
+                                            {stats.configuration.hasReceivedConfig ? "Configured" : "Needs Config"}
+                                        </Typography>
+                                    </Box>
+
+                                    <Box sx={{
+                                        flex: 1,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Typography variant="h4" color="primary.main">
+                                            {stats.configuration.configCount}
+                                        </Typography>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Configs Received
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary">
+                                            Total count
+                                        </Typography>
+                                    </Box>
+
+                                    <Box sx={{
+                                        flex: 1,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Typography variant="h4" color={stats.configuration.readyForSensorData ? "success.main" : "warning.main"}>
+                                            {stats.configuration.readyForSensorData ? "✓" : "✗"}
+                                        </Typography>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Sensor Data Ready
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary">
+                                            {stats.configuration.readyForSensorData ? "Ready" : "Not Ready"}
+                                        </Typography>
+                                    </Box>
+
+                                    <Box sx={{
+                                        flex: 1,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Typography variant="h4" color="info.main">
+                                            {stats.configuration.lastConfigTimestamp > 0 ?
+                                                formatUptime(stats.timestamp - stats.configuration.lastConfigTimestamp) : "Never"}
+                                        </Typography>
+                                        <Typography variant="body2" fontWeight="medium">
+                                            Last Config
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary">
+                                            Time ago
+                                        </Typography>
+                                    </Box>
+                                </Box>
+
+                                {!stats.configuration.hasReceivedConfig && (
+                                    <Alert severity="warning" sx={{ mt: 2 }}>
+                                        <Typography>
+                                            This device needs to receive a configuration before it can process sensor data.
+                                            Send a configuration payload to initialize the device properly.
+                                        </Typography>
+                                    </Alert>
+                                )}
+                            </Paper>
+                        </Box>
+                    </Box>
+                </>
+            )}
         </Box>
     );
 };

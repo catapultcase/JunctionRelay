@@ -44,12 +44,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
     const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(false);
     const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
 
-    // Profile update states
-    const [profileDialogOpen, setProfileDialogOpen] = useState<boolean>(false);
-    const [firstName, setFirstName] = useState<string>('');
-    const [lastName, setLastName] = useState<string>('');
-    const [profileLoading, setProfileLoading] = useState<boolean>(false);
-
     // Password change states
     const [passwordDialogOpen, setPasswordDialogOpen] = useState<boolean>(false);
     const [currentPassword, setCurrentPassword] = useState<string>('');
@@ -106,6 +100,11 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
         window.open(stripeBillingPortalUrl, '_blank');
     };
 
+    const handleManageAccount = () => {
+        // Open Clerk user portal for account management
+        window.open('https://accounts.junctionrelay.com/user', '_blank');
+    };
+
     const handleSubscribe = async (planType: 'monthly' | 'annual') => {
         try {
             setSubscriptionLoading(true);
@@ -160,44 +159,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             showSnackbar(error.message || "Error starting subscription", "error");
         } finally {
             setSubscriptionLoading(false);
-        }
-    };
-
-    const handleUpdateProfile = async () => {
-        if (!firstName.trim() && !lastName.trim()) {
-            showSnackbar("Please enter at least a first or last name", "error");
-            return;
-        }
-
-        try {
-            setProfileLoading(true);
-            const cloudToken = localStorage.getItem('cloud_proxy_token');
-
-            const response = await fetch("/api/cloud-auth/update-profile", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${cloudToken}`
-                },
-                body: JSON.stringify({
-                    firstName: firstName.trim(),
-                    lastName: lastName.trim()
-                })
-            });
-
-            if (response.ok) {
-                setProfileDialogOpen(false);
-                setFirstName('');
-                setLastName('');
-                showSnackbar("Profile updated successfully!", "success");
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || "Failed to update profile");
-            }
-        } catch (error: any) {
-            showSnackbar(error.message || "Error updating profile", "error");
-        } finally {
-            setProfileLoading(false);
         }
     };
 
@@ -271,6 +232,24 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                     Enables cloud authentication, version checking, and supports project development. Available with free cloud accounts.
+                </Typography>
+            </Box>
+
+            <Box sx={{
+                p: 2,
+                bgcolor: 'rgba(255, 152, 0, 0.08)',
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'rgba(255, 152, 0, 0.23)',
+                mb: 2
+            }}>
+                <Typography variant="body2" color="warning.main" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <VpnKeyIcon sx={{ mr: 1, fontSize: 18 }} />
+                    Device Ownership
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    The backend database is linked to your cloud account. It is possible to backup/migrate the data only, or start a completely fresh database
+                    in the Database & Backup tab. Note that deleting the database will clear all data and generate a new device identity.
                 </Typography>
             </Box>
 
@@ -392,9 +371,9 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                                 variant="outlined"
                                 size="small"
                                 startIcon={<PersonIcon />}
-                                onClick={() => setProfileDialogOpen(true)}
+                                onClick={handleManageAccount}
                             >
-                                Update Profile
+                                Manage Account
                             </Button>
                             <Button
                                 variant="outlined"
@@ -437,67 +416,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                     </Button>
                 </Box>
             )}
-
-            {/* Update Profile Dialog */}
-            <Dialog
-                open={profileDialogOpen}
-                onClose={() => {
-                    setProfileDialogOpen(false);
-                    setFirstName('');
-                    setLastName('');
-                }}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Update Profile</DialogTitle>
-                <DialogContent>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Update your name and profile information.
-                    </Typography>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="First Name"
-                        type="text"
-                        fullWidth
-                        variant="outlined"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        disabled={profileLoading}
-                        sx={{ mb: 2 }}
-                    />
-                    <TextField
-                        margin="dense"
-                        label="Last Name"
-                        type="text"
-                        fullWidth
-                        variant="outlined"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        disabled={profileLoading}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => {
-                            setProfileDialogOpen(false);
-                            setFirstName('');
-                            setLastName('');
-                        }}
-                        disabled={profileLoading}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleUpdateProfile}
-                        variant="contained"
-                        disabled={profileLoading || (!firstName.trim() && !lastName.trim())}
-                        startIcon={profileLoading ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {profileLoading ? 'Updating...' : 'Update Profile'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Change Password Dialog */}
             <Dialog

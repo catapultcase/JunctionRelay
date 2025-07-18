@@ -23,6 +23,7 @@ using JunctionRelayServer.Models;
 using Newtonsoft.Json;
 using JunctionRelayServer.Models.Requests;
 using JunctionRelay_Server.Models.Requests;
+using System.Diagnostics;
 
 namespace JunctionRelayServer.Controllers
 {
@@ -55,20 +56,26 @@ namespace JunctionRelayServer.Controllers
             _cloudDeviceService = cloudDeviceService;
         }
 
+        // Update the GetAllDevices method in Controller_Devices.cs
+
         [HttpGet]
-        public async Task<IActionResult> GetAllDevices()
+        public async Task<IActionResult> GetAllDevices([FromQuery] bool skipCloudSync = false)
         {
             try
             {
-                // Check if user has cloud authentication
-                var authHeader = Request.Headers.Authorization.FirstOrDefault();
-                bool hasCloudAuth = !string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ");
-
-                // If user is cloud authenticated, sync cloud devices first
-                if (hasCloudAuth)
+                // Only sync cloud devices if not explicitly skipped
+                if (!skipCloudSync)
                 {
-                    var cloudToken = authHeader.Substring("Bearer ".Length);
-                    await _cloudDeviceService.SyncCloudDevicesAsync(cloudToken);
+                    // Check if user has cloud authentication
+                    var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                    bool hasCloudAuth = !string.IsNullOrEmpty(authHeader) && authHeader?.StartsWith("Bearer ") == true;
+
+                    // If user is cloud authenticated, sync cloud devices first
+                    if (hasCloudAuth)
+                    {
+                        var cloudToken = authHeader!.Substring("Bearer ".Length);
+                        await _cloudDeviceService.SyncCloudDevicesAsync(cloudToken);
+                    }
                 }
 
                 // Return unified device list from local database (includes both local and synced cloud devices)
@@ -79,6 +86,7 @@ namespace JunctionRelayServer.Controllers
             {
                 // Log error but still return local devices if cloud sync fails
                 // This ensures the page doesn't break if cloud is unavailable
+                Console.WriteLine($"Cloud sync failed: {ex.Message}");
                 var localDevices = await _deviceDb.GetAllDevicesAsync();
                 return Ok(localDevices);
             }
@@ -124,108 +132,36 @@ namespace JunctionRelayServer.Controllers
 
 
         [HttpGet("scan")]
-        public async Task<IActionResult> ScanNetwork()
+        public async Task<IActionResult> ScanNetwork([FromQuery] string? type = null)
+        {
+            bool isFullScan = type?.ToLower() == "full";
+
+            if (isFullScan)
+            {
+                // For full scan, use the streaming endpoint
+                await ScanNetworkStreaming();
+                return new EmptyResult(); // Return empty result since streaming handles the response
+            }
+            else
+            {
+                // Keep original behavior for JunctionRelay-only scans
+                return await ScanNetworkStandard();
+            }
+        }
+
+        private async Task<IActionResult> ScanNetworkStandard()
         {
             try
             {
-                var results = await _networkScan.ScanNetworkAsync(); // Get the devices found on the network
+                var results = await _networkScan.ScanNetworkAsync();
                 var enrichedResults = new List<object>();
-                // Get all devices from the database
+
                 var existingDevices = await _deviceDb.GetAllDevicesAsync();
 
-                foreach (var result in results)
+                foreach (var device in results)
                 {
-                    // Ensure we are working with Model_ScannedDevice
-                    var device = result as Model_ScannedDevice;
-                    if (device == null)
-                    {
-                        // If it's not a Model_ScannedDevice, skip it (or handle as needed)
-                        continue;
-                    }
-
-                    // Fetch device info (including MAC address) using the IP address from the scan results
-                    var deviceInfoResponse = await GetDeviceInfo(device.IpAddress);
-                    string macAddress = "Unknown";
-                    if (deviceInfoResponse is OkObjectResult okResult && okResult.Value != null)
-                    {
-                        // Deserialize the response into Model_Device_Info
-                        var deviceInfoWrapper = okResult.Value as dynamic; // Use dynamic to access the 'deviceInfo' property
-                        var deviceInfo = deviceInfoWrapper?.deviceInfo;
-                        if (deviceInfo != null)
-                        {
-                            // Safe null handling with explicit ToString() and null coalescing
-                            var uniqueId = deviceInfo?.UniqueIdentifier;
-                            macAddress = uniqueId?.ToString() ?? "Unknown";
-                        }
-                    }
-
-                    // Find all devices matching by IP or MAC address
-                    var matchedByMac = existingDevices.Where(d => d.UniqueIdentifier == macAddress).ToList();
-                    var matchedByIp = existingDevices.Where(d => d.IPAddress == device.IpAddress).ToList();
-
-                    // Default values
-                    string status = "NEW_DEVICE";
-                    bool needsResync = false;
-                    string? currentIpInDb = null;
-
-                    // Determine if any device with this MAC has a different IP than the scanned one
-                    bool hasDifferentIp = matchedByMac.Any(d => d.IPAddress != device.IpAddress);
-
-                    // Determine status and resync need
-                    if (matchedByIp.Any() && matchedByMac.Any())
-                    {
-                        if (matchedByIp.Any(d => matchedByMac.Contains(d)))
-                        {
-                            // The device exists with the same MAC and IP
-                            status = "DEVICE_EXISTS";
-
-                            // Even if there's an exact match, check if ANY device with this MAC has a different IP
-                            if (hasDifferentIp)
-                            {
-                                needsResync = true;
-                                status = "NEEDS_RESYNC";
-                            }
-                        }
-                        else
-                        {
-                            // We have matches for both IP and MAC but in different devices
-                            status = "CONFLICTING_RECORDS";
-                            needsResync = true;  // This is a conflict, so resync is likely needed
-                        }
-                    }
-                    else if (matchedByIp.Any())
-                    {
-                        status = "IP_IN_USE";
-                    }
-                    else if (matchedByMac.Any())
-                    {
-                        // At least one device with this MAC exists but with a different IP
-                        status = "NEEDS_RESYNC";
-                        needsResync = true;
-                    }
-
-                    // Get the current IPs in the database for this MAC if there are any matches
-                    if (matchedByMac.Any())
-                    {
-                        var existingIps = matchedByMac
-                            .Where(d => !string.IsNullOrEmpty(d.IPAddress)) // Filter out null IPs
-                            .Select(d => d.IPAddress!)                      // Non-null assertion since we filtered
-                            .Distinct()
-                            .ToList();
-                        currentIpInDb = string.Join(", ", existingIps);
-                    }
-
-                    // Add the enriched result with status
-                    enrichedResults.Add(new
-                    {
-                        Instance = device.Instance,
-                        IpAddress = device.IpAddress,
-                        MacAddress = macAddress,
-                        Status = status,
-                        MatchingDeviceCount = matchedByMac.Count,
-                        NeedsResync = needsResync,
-                        CurrentIpInDb = currentIpInDb
-                    });
+                    var enriched = await EnrichSingleDevice(device, existingDevices, "standard");
+                    enrichedResults.Add(enriched);
                 }
 
                 return Ok(enrichedResults);
@@ -236,6 +172,244 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        [HttpGet("scan/stream")]
+        public async Task ScanNetworkStreaming()
+        {
+            Response.Headers["Content-Type"] = "text/event-stream";
+            Response.Headers["Cache-Control"] = "no-cache";
+            Response.Headers["Connection"] = "keep-alive";
+            Response.Headers["Access-Control-Allow-Origin"] = "*";
+
+            try
+            {
+                var existingDevices = await _deviceDb.GetAllDevicesAsync();
+                var processedIps = new HashSet<string>();
+
+                await foreach (var deviceWithMethod in _networkScan.ScanNetworkStreamAsyncWithMethod())
+                {
+                    if (processedIps.Contains(deviceWithMethod.Device.IpAddress))
+                        continue;
+
+                    processedIps.Add(deviceWithMethod.Device.IpAddress);
+
+                    // Enrich the single device with discovery method
+                    var enrichedDevice = await EnrichSingleDevice(deviceWithMethod.Device, existingDevices, deviceWithMethod.DiscoveryMethod);
+
+                    // Send as SSE event
+                    var json = System.Text.Json.JsonSerializer.Serialize(enrichedDevice);
+                    await Response.WriteAsync($"data: {json}\n\n");
+                    await Response.Body.FlushAsync();
+
+                    // Small delay to prevent overwhelming the client
+                    await Task.Delay(50);
+                }
+
+                // Send completion event
+                await Response.WriteAsync("event: complete\ndata: {\"status\": \"complete\"}\n\n");
+                await Response.Body.FlushAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in streaming scan: {ex.Message}");
+                try
+                {
+                    var errorJson = System.Text.Json.JsonSerializer.Serialize(new { error = ex.Message });
+                    await Response.WriteAsync($"event: error\ndata: {errorJson}\n\n");
+                    await Response.Body.FlushAsync();
+                }
+                catch
+                {
+                    // If we can't write the error, the connection is probably closed
+                    Console.WriteLine("Could not write error to stream - connection likely closed");
+                }
+            }
+
+            // Don't return anything - the response is already complete
+        }
+
+        private async Task<List<object>> EnrichScanResults(List<Model_ScannedDevice> results)
+        {
+            var existingDevices = await _deviceDb.GetAllDevicesAsync();
+            var enrichedResults = new List<object>();
+
+            foreach (var device in results)
+            {
+                var enriched = await EnrichSingleDevice(device, existingDevices, "standard");
+                enrichedResults.Add(enriched);
+            }
+
+            return enrichedResults;
+        }
+
+        private async Task<object> EnrichSingleDevice(Model_ScannedDevice device, List<Model_Device> existingDevices, string discoveryMethod = "unknown")
+        {
+            Console.WriteLine($"[ENRICH] Processing device {device.IpAddress} discovered via {discoveryMethod}");
+
+            string macAddress = "Unknown";
+            bool isJunctionRelayDevice = false;
+
+            // Try to get JunctionRelay device info if:
+            // 1. Device was discovered via JunctionRelay mDNS scan, OR
+            // 2. Device already exists in our database, OR  
+            // 3. This is the standard (JunctionRelay-only) scan
+            bool shouldTryJunctionRelayInfo = discoveryMethod == "junctionrelay" ||
+                                            existingDevices.Any(d => d.IPAddress == device.IpAddress) ||
+                                            discoveryMethod == "standard";
+
+            Console.WriteLine($"[ENRICH] Device {device.IpAddress}: shouldTryJunctionRelayInfo = {shouldTryJunctionRelayInfo}");
+
+            if (shouldTryJunctionRelayInfo)
+            {
+                Console.WriteLine($"[ENRICH] Attempting to get JunctionRelay device info for {device.IpAddress}");
+                try
+                {
+                    var deviceInfoResponse = await GetDeviceInfo(device.IpAddress);
+                    if (deviceInfoResponse is OkObjectResult okResult && okResult.Value != null)
+                    {
+                        var deviceInfoWrapper = okResult.Value as dynamic;
+                        var deviceInfo = deviceInfoWrapper?.deviceInfo;
+                        if (deviceInfo != null)
+                        {
+                            var uniqueId = deviceInfo?.UniqueIdentifier;
+                            macAddress = uniqueId?.ToString() ?? "Unknown";
+                            isJunctionRelayDevice = true;
+                            Console.WriteLine($"[ENRICH] Successfully got JunctionRelay info for {device.IpAddress}: MAC = {macAddress}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ENRICH] Failed to get device info for {device.IpAddress}: {ex.Message}");
+                    // For devices from JunctionRelay scan that fail, still try ARP
+                    if (discoveryMethod == "junctionrelay" || discoveryMethod == "standard")
+                    {
+                        Console.WriteLine($"[ENRICH] Trying ARP for JunctionRelay device {device.IpAddress}");
+                        macAddress = await GetMacAddressFromArp(device.IpAddress) ?? "Unknown";
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[ENRICH] Skipping JunctionRelay API call for {device.IpAddress}, using ARP only");
+                // For subnet-discovered devices, just get MAC via ARP
+                macAddress = await GetMacAddressFromArp(device.IpAddress) ?? "Unknown";
+            }
+
+            Console.WriteLine($"[ENRICH] Final MAC for {device.IpAddress}: {macAddress}");
+
+            // Find all devices matching by IP or MAC address
+            var matchedByMac = existingDevices.Where(d => d.UniqueIdentifier == macAddress).ToList();
+            var matchedByIp = existingDevices.Where(d => d.IPAddress == device.IpAddress).ToList();
+
+            // Default values
+            string status = "NEW_DEVICE";
+            bool needsResync = false;
+            string? currentIpInDb = null;
+
+            // Determine if any device with this MAC has a different IP than the scanned one
+            bool hasDifferentIp = matchedByMac.Any(d => d.IPAddress != device.IpAddress);
+
+            // Determine status and resync need
+            if (matchedByIp.Any() && matchedByMac.Any())
+            {
+                if (matchedByIp.Any(d => matchedByMac.Contains(d)))
+                {
+                    status = "DEVICE_EXISTS";
+                    if (hasDifferentIp)
+                    {
+                        needsResync = true;
+                        status = "NEEDS_RESYNC";
+                    }
+                }
+                else
+                {
+                    status = "CONFLICTING_RECORDS";
+                    needsResync = true;
+                }
+            }
+            else if (matchedByIp.Any())
+            {
+                status = "IP_IN_USE";
+            }
+            else if (matchedByMac.Any())
+            {
+                status = "NEEDS_RESYNC";
+                needsResync = true;
+            }
+
+            // Get the current IPs in the database for this MAC if there are any matches
+            if (matchedByMac.Any())
+            {
+                var existingIps = matchedByMac
+                    .Where(d => !string.IsNullOrEmpty(d.IPAddress))
+                    .Select(d => d.IPAddress!)
+                    .Distinct()
+                    .ToList();
+                currentIpInDb = string.Join(", ", existingIps);
+            }
+
+            var result = new
+            {
+                Instance = device.Instance,
+                IpAddress = device.IpAddress,
+                MacAddress = macAddress,
+                Status = status,
+                IsJunctionRelayDevice = isJunctionRelayDevice,
+                DiscoveryMethod = discoveryMethod,
+                MatchingDeviceCount = matchedByMac.Count,
+                NeedsResync = needsResync,
+                CurrentIpInDb = currentIpInDb
+            };
+
+            Console.WriteLine($"[ENRICH] Completed enrichment for {device.IpAddress}: Status = {status}, MAC = {macAddress}");
+            return result;
+        }
+
+        private async Task<string?> GetMacAddressFromArp(string ipAddress)
+        {
+            try
+            {
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "arp",
+                        Arguments = $"-a {ipAddress}",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                // Parse ARP output to extract MAC address
+                var lines = output.Split('\n');
+                foreach (var line in lines)
+                {
+                    if (line.Contains(ipAddress))
+                    {
+                        var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2)
+                        {
+                            var macCandidate = parts[1];
+                            if (macCandidate.Contains("-") || macCandidate.Contains(":"))
+                            {
+                                return macCandidate;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to get MAC from ARP for {ipAddress}: {ex.Message}");
+            }
+
+            return null;
+        }
 
         [HttpPost("resync")]
         public async Task<IActionResult> ResyncDevice([FromBody] Model_ResyncDeviceRequest request)
@@ -1369,6 +1543,75 @@ namespace JunctionRelayServer.Controllers
             {
                 return StatusCode(500, $"Error fetching available gateways: {ex.Message}");
             }
+        }
+
+        // Add this endpoint to your Controller_Devices class, after your existing endpoints:
+
+        // POST: api/devices/{id}/sync-mode
+        [HttpPost("{id:int}/sync-mode")]
+        public async Task<IActionResult> UpdateDeviceSyncMode(int id, [FromBody] UpdateSyncModeRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.SyncMode))
+                {
+                    return BadRequest("Sync mode is required.");
+                }
+
+                // Validate sync mode values
+                var validSyncModes = new[] { "cloud_health", "cloud_sync", "local_health", "local_sync", "disabled" };
+                if (!validSyncModes.Contains(request.SyncMode.ToLower()))
+                {
+                    return BadRequest($"Invalid sync mode. Valid values are: {string.Join(", ", validSyncModes)}");
+                }
+
+                // Get the device from database
+                var device = await _deviceDb.GetDeviceByIdAsync(id);
+                if (device == null)
+                {
+                    return NotFound($"Device with ID {id} not found.");
+                }
+
+                // Update the sync mode
+                device.SyncMode = request.SyncMode;
+                device.LastUpdated = DateTime.UtcNow;
+
+                var success = await _deviceDb.UpdateDeviceAsync(id, device);
+
+                if (success)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Sync mode updated to '{request.SyncMode}' for device '{device.Name}'",
+                        deviceId = id,
+                        deviceName = device.Name,
+                        syncMode = request.SyncMode
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        message = "Failed to update device sync mode"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error updating device sync mode",
+                    error = ex.Message
+                });
+            }
+        }
+
+        public class UpdateSyncModeRequest
+        {
+            public string SyncMode { get; set; } = string.Empty;
         }
     }
 }

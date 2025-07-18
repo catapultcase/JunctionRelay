@@ -19,12 +19,14 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-    Typography, Box, Button, Table, TableHead,
-    TableRow, TableCell, TableBody, 
-    CircularProgress, Tabs, Tab, Paper,
-    Alert, Snackbar, SelectChangeEvent, TableContainer
+    Typography, Box, Button, Card, CardContent, CircularProgress, Paper,
+    Alert, Snackbar, SelectChangeEvent,
+    TextField, Select, MenuItem, FormControl, InputLabel,
+    FormControlLabel, Switch, Accordion, AccordionSummary,
+    AccordionDetails, useTheme, useMediaQuery
 } from "@mui/material";
 import { useParams } from "react-router-dom";
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // Import the useFeatureFlags hook
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
@@ -36,17 +38,18 @@ import * as junctionService from '../services/junctionApiService';
 import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
 import ScreenSelectionModal from '../components/ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/AvailableSourcesTargetsTable';
-import JunctionConfigPanel from '../components/JunctionConfigPanel';
 import DeviceScreenLayoutsCard from '../components/DeviceScreenLayoutsCard';
+import Junction_Setup_COM from '../components/Junction_Setup_COM'; // Import the new component
 
 // Icon imports
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
-import SensorsIcon from '@mui/icons-material/Sensors';
 import SettingsIcon from '@mui/icons-material/Settings';
-import AnalyticsIcon from '@mui/icons-material/Analytics';
+import SaveIcon from '@mui/icons-material/Save';
+import LinkIcon from '@mui/icons-material/Link';
+
 interface SourceOrTarget {
     linkId?: number;
     id: number;
@@ -59,40 +62,6 @@ interface SourceOrTarget {
     pollRateOverride?: number;
     sendRateOverride?: number;
 }
-
-const headerStyle = {
-    padding: '8px 16px',
-    borderBottom: '2px solid #ddd',
-    fontWeight: 'bold',
-    backgroundColor: '#f5f5f5'
-};
-
-const cellStyle = {
-    padding: '6px 16px'
-};
-
-// Interface tabs
-interface TabPanelProps {
-    children?: React.ReactNode;
-    index: number;
-    value: number;
-}
-
-const TabPanel = ({ children, value, index, ...other }: TabPanelProps) => {
-    return (
-        <div
-            role="tabpanel"
-            hidden={value !== index}
-            id={`junction-tabpanel-${index}`}
-            aria-labelledby={`junction-tab-${index}`}
-            {...other}
-        >
-            {value === index && (
-                <Box sx={{ p: 3 }}>{children}</Box>
-            )}
-        </div>
-    );
-};
 
 const getDefaultJunctionColumns = () => {
     return [
@@ -108,34 +77,42 @@ const getDefaultJunctionColumns = () => {
     ];
 };
 
+// Junction types available
+const JUNCTION_TYPES = [
+    "COM Junction",
+    "HTTP Junction",
+    "MQTT Junction",
+    "Websocket Junction",
+    "Gateway Junction (COM to ESP:NOW)",
+    "Gateway Junction (HTTP to ESP:NOW)",
+    "Gateway Junction (Websocket to ESP:NOW)"
+];
+
+// Helper function to determine if COM setup should be shown
+const shouldShowCOMSetup = (junctionType: string) => {
+    return junctionType === "COM Junction" ||
+        junctionType === "Gateway Junction (COM to ESP:NOW)";
+};
+
 // Main Component
 const ConfigureJunction: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const junctionId = parseInt(id || "0", 10);
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     // Hooks
     const flags = useFeatureFlags();
     const junctionImportExportEnabled = flags?.junction_import_export !== false;
 
-    // State for tabs
-    const [tabValue, setTabValue] = useState(() => {
-        try {
-            const savedTab = localStorage.getItem('junctionConfigTab');
-            return savedTab ? parseInt(savedTab, 10) : 0;
-        } catch (error) {
-            console.error("Error accessing localStorage:", error);
-            return 0;
-        }
-    });
-
     // State for Show Selected Only
     const [showSelectedOnly, setShowSelectedOnly] = useState(() => {
         try {
             const savedFilter = localStorage.getItem(`junction${junctionId}ShowSelectedOnly`);
-            return savedFilter === 'true'; // Convert string to boolean
+            return savedFilter === 'true';
         } catch (error) {
             console.error("Error accessing localStorage:", error);
-            return false; // Default value
+            return false;
         }
     });
 
@@ -172,9 +149,6 @@ const ConfigureJunction: React.FC = () => {
         [sensorId: number]: { deviceId: number, screenIds: number[] }[]
     }>({});
 
-    // State for real-time data
-    const [cachedData, setCachedData] = useState<any[]>([]);
-
     // State for modified sensor data
     const [modifiedSensorOrders, setModifiedSensorOrders] = useState<{ [sensorId: number]: number }>({});
     const [modifiedSensors, setModifiedSensors] = useState<{ [sensorId: number]: string }>({});
@@ -183,20 +157,21 @@ const ConfigureJunction: React.FC = () => {
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
 
+    // Settings accordion state with localStorage
+    const [settingsExpanded, setSettingsExpanded] = useState(() => {
+        try {
+            const saved = localStorage.getItem('junctionSettingsExpanded');
+            return saved !== null ? saved === 'true' : false;
+        } catch (error) {
+            console.error("Error accessing localStorage for settings:", error);
+            return false;
+        }
+    });
+
     // Show snackbar notification
     const showSnackbar = (message: string, severity: "success" | "info" | "warning" | "error" = "success") => {
         setSnackMessage(message);
         setSnackbarSeverity(severity);
-    };
-
-    // Handle tab change
-    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-        setTabValue(newValue);
-        try {
-            localStorage.setItem('junctionConfigTab', newValue.toString());
-        } catch (error) {
-            console.error("Error saving tab state to localStorage:", error);
-        }
     };
 
     const handleExportJunction = async () => {
@@ -211,7 +186,7 @@ const ConfigureJunction: React.FC = () => {
             const blob = await response.blob();
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
-            link.download = `junction_${junctionId}.json`;  // Set the filename
+            link.download = `junction_${junctionId}.json`;
             link.click();
             URL.revokeObjectURL(link.href);
 
@@ -224,25 +199,17 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
-
-
-
     // Fetch MQTT Brokers
     const fetchMqttBrokers = async () => {
         try {
-            console.log("Fetching MQTT brokers...");
             const res = await fetch("/api/services");
             if (!res.ok) {
                 throw new Error(`Failed to fetch services: ${res.status} ${res.statusText}`);
             }
             const data = await res.json();
-            console.log("All services from API:", data);
-
             const mqttBrokers = data.filter((service: any) => service.type === "MQTT Broker");
-            console.log("Filtered MQTT brokers:", mqttBrokers);
-
             setMqttBrokers(mqttBrokers);
-            return mqttBrokers; // Return the brokers so we can use them immediately
+            return mqttBrokers;
         } catch (error) {
             console.error("Error fetching MQTT brokers:", error);
             showSnackbar("Failed to load MQTT brokers", "error");
@@ -257,23 +224,13 @@ const ConfigureJunction: React.FC = () => {
         try {
             setLoading(true);
 
-            // First ensure MQTT brokers are loaded
             await fetchMqttBrokers();
-
-            // Fetch junction data
             const data = await junctionService.getJunctionData(junctionId);
 
-            // Debug logging
-            console.log("Junction data from API:", data);
-            console.log("MQTT Broker ID from data:", data.mqttBrokerId, "Type:", typeof data.mqttBrokerId);
-
-            // Also fetch running status data to merge with junction data
             try {
                 const runningData = await junctionService.getJunctionStatus();
-                // Find this specific junction's status
                 const junctionStatus = runningData.find((r: any) => r.id === junctionId);
                 if (junctionStatus) {
-                    // Merge status with junction data
                     data.status = junctionStatus.status;
                 }
             } catch (error) {
@@ -282,20 +239,11 @@ const ConfigureJunction: React.FC = () => {
 
             setJunctionData(data);
 
-            // Set the selected MQTT broker ID with better handling
             let selectedId = "";
-
             if (data.mqttBrokerId != null && data.mqttBrokerId !== undefined) {
                 selectedId = data.mqttBrokerId.toString();
-                console.log("Setting selected MQTT broker ID to:", selectedId);
-            } else {
-                console.log("No MQTT broker ID found in junction data");
             }
-
             setSelectedMqttBrokerId(selectedId);
-
-            // Debug: Log available brokers to compare (this should now have data)
-            console.log("Available MQTT brokers after fetch:", mqttBrokers);
 
         } catch (error) {
             console.error("Error fetching junction data:", error);
@@ -325,6 +273,16 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
+    // Handle settings accordion expansion
+    const handleSettingsExpandedChange = (isExpanded: boolean) => {
+        setSettingsExpanded(isExpanded);
+        try {
+            localStorage.setItem('junctionSettingsExpanded', isExpanded.toString());
+        } catch (error) {
+            console.error("Error saving settings expansion state to localStorage:", error);
+        }
+    };
+
     // Save junction data
     const saveJunction = async () => {
         if (!id) return;
@@ -332,7 +290,6 @@ const ConfigureJunction: React.FC = () => {
         try {
             setLoading(true);
 
-            // Create an update payload with proper types
             const updatePayload: junctionService.JunctionUpdatePayload = {
                 Name: junctionData.name,
                 Type: junctionData.type,
@@ -348,156 +305,20 @@ const ConfigureJunction: React.FC = () => {
                 EnableTests: junctionData.enableTests,
                 EnableHealthCheck: junctionData.enableHealthCheck,
                 HealthCheckIntervalMs: junctionData.healthCheckIntervalMs,
-                EnableNotifications: junctionData.enableNotifications
+                EnableNotifications: junctionData.enableNotifications,
+                CompressPayload: junctionData.compressPayload,
+                GatewayDeviceId: junctionData.gatewayDeviceId,
+                GatewayDestination: junctionData.gatewayDestination,
+                DestinationOverride: junctionData.destinationOverride,
+                BaudRate: junctionData.baudRate,
             };
 
             await junctionService.updateJunction(parseInt(id), updatePayload);
-
             showSnackbar("Junction updated successfully", "success");
         } catch (err) {
             console.error("Error updating junction:", err);
             showSnackbar("Failed to update junction", "error");
         } finally {
-            setLoading(false);
-        }
-    };
-
-    const assignScreenToTarget = async (sensorId: number, deviceId: number, screenId: number) => {
-        try {
-            console.log(`Assigning screen ${screenId} to sensor ${sensorId} for device ${deviceId}`);
-
-            // Use the endpoint that's designed for adding a screen to an existing target
-            const response = await fetch(`/api/sensors/junction-sensors/${junctionId}/${sensorId}/assign-screen`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    DeviceId: deviceId,
-                    ScreenId: screenId
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`Failed to assign screen: ${errorText}`);
-                throw new Error(`Failed to assign screen: ${response.status} ${response.statusText}`);
-            }
-
-            return await response.json();
-        } catch (error: unknown) {
-            // Proper TypeScript error handling
-            if (error instanceof Error) {
-                throw error;
-            } else {
-                throw new Error(String(error));
-            }
-        }
-    };
-
-
-    // The key function to update screen assignments
-    const handleScreenAssignmentUpdate = async (sensorId: number, deviceId: number, screenIds: number[]) => {
-        try {
-            // Start loading state
-            setLoading(true);
-
-            // First check what screens we already have assigned
-            const targetData = sensorTargets[sensorId]?.find(t => t.deviceId === deviceId);
-            const existingScreenIds = targetData?.screenIds || [];
-
-            // If no existing target relationship, we need to create it first
-            if (!targetData && screenIds.length > 0) {
-                console.log(`Creating initial sensor target for sensor ${sensorId} and device ${deviceId}`);
-
-                try {
-                    // First create the target relationship without any screen
-                    await junctionService.assignSensorTarget(junctionId, sensorId, deviceId, null);
-
-                    // Short wait to ensure server-side processing completes
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                } catch (error) {
-                    console.error("Failed to create initial target relationship:", error);
-                    showSnackbar("Failed to create target relationship: " +
-                        (error instanceof Error ? error.message : String(error)), "error");
-                    setLoading(false);
-                    return; // Stop further processing
-                }
-            }
-
-            // Determine screens to add and remove
-            const screensToRemove = existingScreenIds.filter(id => !screenIds.includes(id));
-            const screensToAdd = screenIds.filter(id => !existingScreenIds.includes(id));
-            let operationsFailed = false;
-
-            // Process screen removals sequentially to avoid race conditions
-            for (const screenId of screensToRemove) {
-                try {
-                    console.log(`Removing screen ${screenId} from sensor ${sensorId} and device ${deviceId}`);
-                    await junctionService.removeSensorScreen(junctionId, sensorId, deviceId, screenId);
-                    // Add a small delay between operations
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                } catch (error) {
-                    console.error(`Error removing screen ${screenId}:`, error);
-                    operationsFailed = true;
-                    // Continue with other operations
-                }
-            }
-
-            // Process screen additions sequentially
-            for (const screenId of screensToAdd) {
-                try {
-                    console.log(`Assigning screen ${screenId} to sensor ${sensorId} and device ${deviceId}`);
-                    await junctionService.assignScreenToTarget(junctionId, sensorId, deviceId, screenId);
-                    // Add a small delay between operations
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                } catch (error) {
-                    console.error(`Error adding screen ${screenId}:`, error);
-                    operationsFailed = true;
-                    // Continue with other screens
-                }
-            }
-
-            // Update local state after all API calls complete, regardless of failures
-            setSensorTargets(prev => {
-                const updatedTargets = [...(prev[sensorId] || [])];
-                const targetIndex = updatedTargets.findIndex(t => t.deviceId === deviceId);
-
-                if (targetIndex >= 0) {
-                    // Update existing target
-                    updatedTargets[targetIndex] = {
-                        ...updatedTargets[targetIndex],
-                        screenIds
-                    };
-                } else if (screenIds.length > 0) {
-                    // Add new target if we have screens to add
-                    updatedTargets.push({
-                        deviceId,
-                        screenIds
-                    });
-                }
-
-                return {
-                    ...prev,
-                    [sensorId]: updatedTargets
-                };
-            });
-
-            // Only show error messages, not success messages
-            if (operationsFailed) {
-                showSnackbar("Some screen assignments could not be updated", "warning");
-            }
-        } catch (error) {
-            console.error("Error updating screen assignments:", error);
-
-            let errorMessage = "Unknown error";
-            if (error instanceof Error) {
-                errorMessage = error.message;
-            } else if (error !== null && error !== undefined) {
-                errorMessage = String(error);
-            }
-
-            showSnackbar(`Failed to update screen assignments: ${errorMessage}`, "error");
-        } finally {
-            // Always ensure loading state is reset
             setLoading(false);
         }
     };
@@ -521,18 +342,99 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
+    // The key function to update screen assignments
+    const handleScreenAssignmentUpdate = async (sensorId: number, deviceId: number, screenIds: number[]) => {
+        try {
+            setLoading(true);
+
+            const targetData = sensorTargets[sensorId]?.find(t => t.deviceId === deviceId);
+            const existingScreenIds = targetData?.screenIds || [];
+
+            if (!targetData && screenIds.length > 0) {
+                try {
+                    await junctionService.assignSensorTarget(junctionId, sensorId, deviceId, null);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (error) {
+                    console.error("Failed to create initial target relationship:", error);
+                    showSnackbar("Failed to create target relationship: " +
+                        (error instanceof Error ? error.message : String(error)), "error");
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            const screensToRemove = existingScreenIds.filter(id => !screenIds.includes(id));
+            const screensToAdd = screenIds.filter(id => !existingScreenIds.includes(id));
+            let operationsFailed = false;
+
+            for (const screenId of screensToRemove) {
+                try {
+                    await junctionService.removeSensorScreen(junctionId, sensorId, deviceId, screenId);
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                } catch (error) {
+                    console.error(`Error removing screen ${screenId}:`, error);
+                    operationsFailed = true;
+                }
+            }
+
+            for (const screenId of screensToAdd) {
+                try {
+                    await junctionService.assignScreenToTarget(junctionId, sensorId, deviceId, screenId);
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                } catch (error) {
+                    console.error(`Error adding screen ${screenId}:`, error);
+                    operationsFailed = true;
+                }
+            }
+
+            setSensorTargets(prev => {
+                const updatedTargets = [...(prev[sensorId] || [])];
+                const targetIndex = updatedTargets.findIndex(t => t.deviceId === deviceId);
+
+                if (targetIndex >= 0) {
+                    updatedTargets[targetIndex] = {
+                        ...updatedTargets[targetIndex],
+                        screenIds
+                    };
+                } else if (screenIds.length > 0) {
+                    updatedTargets.push({
+                        deviceId,
+                        screenIds
+                    });
+                }
+
+                return {
+                    ...prev,
+                    [sensorId]: updatedTargets
+                };
+            });
+
+            if (operationsFailed) {
+                showSnackbar("Some screen assignments could not be updated", "warning");
+            }
+        } catch (error) {
+            console.error("Error updating screen assignments:", error);
+            let errorMessage = "Unknown error";
+            if (error instanceof Error) {
+                errorMessage = error.message;
+            } else if (error !== null && error !== undefined) {
+                errorMessage = String(error);
+            }
+            showSnackbar(`Failed to update screen assignments: ${errorMessage}`, "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Update sensor order
     const handleSensorOrderChange = async (sensor: any, newOrder: number) => {
-        // Skip if order hasn't changed
         if (sensor.SensorOrder === newOrder) return;
 
-        // Update local state
         setModifiedSensorOrders((prev) => ({
             ...prev,
             [sensor.Id]: newOrder,
         }));
 
-        // Update filtered sensors list
         setFilteredSensors((prev) =>
             prev.map((s) =>
                 s.Id === sensor.Id ? { ...s, SensorOrder: newOrder } : s
@@ -550,16 +452,13 @@ const ConfigureJunction: React.FC = () => {
 
     // Update sensor tag
     const handleSensorTagChange = async (sensor: any, newTag: string) => {
-        // Skip if tag hasn't changed
         if (sensor.SensorTag === newTag) return;
 
-        // Update local state
         setModifiedSensors((prev) => ({
             ...prev,
             [sensor.Id]: newTag,
         }));
 
-        // Update filtered sensors list
         setFilteredSensors((prev) =>
             prev.map((s) =>
                 s.Id === sensor.Id ? { ...s, SensorTag: newTag } : s
@@ -589,22 +488,18 @@ const ConfigureJunction: React.FC = () => {
         );
     }, [availableSensors, modifiedSensors, modifiedSensorOrders]);
 
-    // Updated useEffect to handle when mqttBrokers state changes
+    // Populate MQTT broker dropdown with DB value on mount
     useEffect(() => {
-        if (junctionData?.mqttBrokerId && mqttBrokers.length > 0 && !selectedMqttBrokerId) {
+        if (junctionData?.mqttBrokerId && mqttBrokers.length > 0) {
             const brokerExists = mqttBrokers.some(broker =>
                 broker.id.toString() === junctionData.mqttBrokerId.toString()
             );
 
             if (brokerExists) {
-                console.log("Setting MQTT broker ID from useEffect:", junctionData.mqttBrokerId.toString());
                 setSelectedMqttBrokerId(junctionData.mqttBrokerId.toString());
-            } else {
-                console.warn("MQTT Broker ID", junctionData.mqttBrokerId, "not found in available brokers");
-                console.warn("Available broker IDs:", mqttBrokers.map(b => b.id));
             }
         }
-    }, [junctionData, mqttBrokers, selectedMqttBrokerId]);
+    }, [junctionData.mqttBrokerId, mqttBrokers]);
 
     // Get current sensor order and tag values
     const getSensorOrder = (sensor: any) => {
@@ -628,7 +523,6 @@ const ConfigureJunction: React.FC = () => {
                 junctionService.getJunctionLinks(junctionId),
             ]);
 
-            // Process device links
             const deviceLinks: SourceOrTarget[] = (links.deviceLinks || []).map((d: any) => ({
                 linkId: d.id,
                 id: d.deviceId,
@@ -641,7 +535,6 @@ const ConfigureJunction: React.FC = () => {
                 sendRateOverride: d.sendRateOverride,
             }));
 
-            // Process collector links
             const collectorLinks: SourceOrTarget[] = (links.collectorLinks || []).map((c: any) => ({
                 linkId: c.id,
                 id: c.collectorId,
@@ -654,7 +547,6 @@ const ConfigureJunction: React.FC = () => {
                 sendRateOverride: c.sendRateOverride,
             }));
 
-            // Fetch screens for each device
             const screenMap: { [deviceId: number]: any[] } = {};
             await Promise.all(deviceLinks.map(async (link) => {
                 try {
@@ -669,7 +561,6 @@ const ConfigureJunction: React.FC = () => {
             }));
             setDeviceScreensMap(screenMap);
 
-            // Set sources and targets
             setSources([
                 ...deviceLinks.filter((link: SourceOrTarget) => link.role === "Source"),
                 ...collectorLinks.filter((link: SourceOrTarget) => link.role === "Source"),
@@ -680,7 +571,6 @@ const ConfigureJunction: React.FC = () => {
                 ...collectorLinks.filter((link: SourceOrTarget) => link.role === "Target"),
             ]);
 
-            // Set rate overrides
             setDevicePollRates(deviceLinks.reduce((acc: any, link: any) => {
                 acc[link.linkId || link.id] = link.pollRateOverride || 0;
                 return acc;
@@ -701,14 +591,12 @@ const ConfigureJunction: React.FC = () => {
                 return acc;
             }, {}));
 
-            // Set available devices and collectors
             const linkedDeviceIds = new Set(deviceLinks.map((link: SourceOrTarget) => link.id));
             const linkedCollectorIds = new Set(collectorLinks.map((link: SourceOrTarget) => link.id));
 
             setAllDevices(deviceData.filter((d: any) => !linkedDeviceIds.has(d.id)));
             setAllCollectors(collectorData.filter((c: any) => !linkedCollectorIds.has(c.id)));
 
-            // Get available sensors
             const sensorsData = await junctionService.getAvailableSensors(junctionId);
             const normalizedSensors = sensorsData.map((s: any) => ({
                 ...s,
@@ -717,23 +605,16 @@ const ConfigureJunction: React.FC = () => {
             }));
             setAvailableSensors(normalizedSensors);
 
-            // Load sensor targets for all sensors in one batch request
             try {
                 const res = await fetch(`/api/sensors/junction-sensors/by-junction/${junctionId}/targets-grouped`);
                 if (res.ok) {
                     const groupedTargets = await res.json();
-
-                    // Process the grouped targets
                     const allTargets: { [sensorId: number]: { deviceId: number; screenIds: number[] }[] } = {};
 
-                    // For each sensor ID and its targets
                     Object.entries(groupedTargets).forEach(([sensorIdStr, targetsArray]) => {
                         const sensorId = parseInt(sensorIdStr);
-
-                        // Type assertion to tell TypeScript that targetsArray is an array
                         const targets = targetsArray as any[];
 
-                        // Group targets by deviceId
                         const grouped: { [deviceId: number]: number[] } = {};
                         for (const target of targets) {
                             if (!grouped[target.deviceId]) {
@@ -744,7 +625,6 @@ const ConfigureJunction: React.FC = () => {
                             }
                         }
 
-                        // Convert to the format expected by the UI
                         allTargets[sensorId] = Object.entries(grouped).map(([deviceId, screenIds]) => ({
                             deviceId: parseInt(deviceId),
                             screenIds,
@@ -753,13 +633,10 @@ const ConfigureJunction: React.FC = () => {
 
                     setSensorTargets(allTargets);
                 } else {
-                    console.error(`Failed to fetch sensor targets: ${res.status}`);
-                    // Still set an empty object to avoid undefined errors
                     setSensorTargets({});
                 }
             } catch (error) {
                 console.error("Error fetching sensor targets:", error);
-                // Set empty object on error
                 setSensorTargets({});
             }
 
@@ -776,75 +653,30 @@ const ConfigureJunction: React.FC = () => {
         fetchData();
     }, [fetchData]);
 
-    // Poll for real-time sensor data
-    useEffect(() => {
-        if (!id) return;
-
-        const intervalId = setInterval(async () => {
-            // Skip data refresh when the modal is open
-            if (screenSelectionModalOpen) {
-                return;
-            }
-
-            try {
-                const data = await junctionService.getSensorData(junctionId);
-                const formattedData = data.map((sensor: any) => ({
-                    ...sensor,
-                    lastUpdated: junctionService.getTimeAgoInSeconds(sensor.lastUpdated),
-                }));
-
-                setCachedData(formattedData);
-            } catch (err) {
-                console.error("Error fetching cached data", err);
-                // No need to show a snackbar for periodic refresh errors
-            }
-        }, 1000);
-
-        return () => clearInterval(intervalId);
-    }, [id, junctionId, screenSelectionModalOpen]);
-
     const handleAdd = async (item: SourceOrTarget, role: string) => {
         try {
-            console.log(`Adding ${item.type} as ${role}:`, item);
-
-            // Find the original device/collector to get its default poll/send rates
             let originalRates;
 
             if (item.type === "device") {
-                // Find the original device from allDevices
                 const originalDevice = allDevices.find(device => device.id === item.id);
-                console.log(`Original device found:`, originalDevice);
-
                 if (originalDevice) {
                     originalRates = {
                         pollRateOverride: originalDevice.pollRate,
                         sendRateOverride: originalDevice.sendRate
                     };
-                    console.log(`Using device rates from original device:`, originalRates);
-                } else {
-                    console.warn(`Original device not found for id ${item.id}`);
                 }
-
                 await junctionService.addDeviceLink(junctionId, item.id, role, originalRates);
             } else {
-                // Find the original collector from allCollectors
                 const originalCollector = allCollectors.find(collector => collector.id === item.id);
-                console.log(`Original collector found:`, originalCollector);
-
                 if (originalCollector) {
                     originalRates = {
                         pollRateOverride: originalCollector.pollRate,
                         sendRateOverride: originalCollector.sendRate
                     };
-                    console.log(`Using collector rates from original collector:`, originalRates);
-                } else {
-                    console.warn(`Original collector not found for id ${item.id}`);
                 }
-
                 await junctionService.addCollectorLink(junctionId, item.id, role, originalRates);
             }
 
-            console.log(`Successfully added ${item.type} as ${role}`);
             await fetchData();
             showSnackbar(`${item.name} added as ${role.toLowerCase()}`, "success");
         } catch (error) {
@@ -902,20 +734,16 @@ const ConfigureJunction: React.FC = () => {
     useEffect(() => {
         if (!id) return;
 
-        // Function to fetch only the junction's status
         const refreshJunctionStatus = async () => {
-            // Skip status refresh when the modal is open
             if (screenSelectionModalOpen) {
                 return;
             }
 
             try {
                 const runningData = await junctionService.getJunctionStatus();
-                // Find this specific junction's status
                 const junctionStatus = runningData.find((r: any) => r.id === junctionId);
 
                 if (junctionStatus) {
-                    // Only update the status property, not the entire junction data
                     setJunctionData((prevData: any) => ({
                         ...prevData,
                         status: junctionStatus.status
@@ -926,12 +754,10 @@ const ConfigureJunction: React.FC = () => {
             }
         };
 
-        // Set up polling interval for status updates only
         const statusIntervalId = setInterval(() => {
             refreshJunctionStatus();
         }, 1000);
 
-        // Clean up interval on component unmount
         return () => clearInterval(statusIntervalId);
     }, [id, junctionId, screenSelectionModalOpen]);
 
@@ -941,7 +767,6 @@ const ConfigureJunction: React.FC = () => {
             setLoading(true);
             await junctionService.startJunction(junctionId);
 
-            // Immediately update the UI status without waiting for the next poll
             setJunctionData((prevData: any) => ({
                 ...prevData,
                 status: "Running"
@@ -962,7 +787,6 @@ const ConfigureJunction: React.FC = () => {
             setLoading(true);
             await junctionService.stopJunction(junctionId);
 
-            // Immediately update the UI status without waiting for the next poll
             setJunctionData((prevData: any) => ({
                 ...prevData,
                 status: "Idle"
@@ -986,7 +810,6 @@ const ConfigureJunction: React.FC = () => {
         const newPollRate = parseInt(event.target.value, 10);
         if (isNaN(newPollRate)) return;
 
-        // Update local state
         if (type === "device" && linkId !== undefined) {
             setDevicePollRates((prev) => ({
                 ...prev,
@@ -1016,7 +839,6 @@ const ConfigureJunction: React.FC = () => {
         const newSendRate = parseInt(event.target.value, 10);
         if (isNaN(newSendRate)) return;
 
-        // Update local state
         if (type === "device" && linkId !== undefined) {
             setDeviceSendRates((prev) => ({
                 ...prev,
@@ -1038,220 +860,50 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
-    // Render Junction Configuration Tab
-    const renderJunctionConfigTab = () => (
-        <JunctionConfigPanel
-            loading={loading}
-            junctionData={junctionData}
-            setJunctionData={setJunctionData}
-            selectedMqttBrokerId={selectedMqttBrokerId}
-            setSelectedMqttBrokerId={setSelectedMqttBrokerId}
-            mqttBrokers={mqttBrokers}
-            saveJunction={saveJunction}
-            connectToMQTTBroker={connectToMQTTBroker}
-        />
-    );
-
-    // Render Sources, Targets, and Sensors Tab
-    const renderSourcesTargetsTab = () => (
-        <Box>
-            {loading ? (
-                <Box display="flex" justifyContent="center" my={4}>
-                    <CircularProgress />
-                </Box>
-            ) : (
-                <>
-                    <AvailableSourcesTargetsTable
-                        loading={loading}
-                        allDevices={allDevices}
-                        allCollectors={allCollectors}
-                        sources={sources}
-                        targets={targets}
-                        devicePollRates={devicePollRates}
-                        deviceSendRates={deviceSendRates}
-                        collectorPollRates={collectorPollRates}
-                        collectorSendRates={collectorSendRates}
-                        handleAdd={handleAdd}
-                        handleRemove={handleRemove}
-                        handlePollRateOverrideChange={handlePollRateOverrideChange}
-                        handleSendRateOverrideChange={handleSendRateOverrideChange}
-                        />
-
-                        <DeviceScreenLayoutsCard
-                            junctionId={junctionId}
-                            deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
-                            loading={loading}
-                            showSnackbar={showSnackbar}
-                        />
-
-                        <EnhancedSensorsTable
-                            availableSensors={availableSensors}
-                            handleSensorSelect={handleSensorSelect}
-                            handleSensorOrderChange={handleSensorOrderChange}
-                            handleSensorTagChange={handleSensorTagChange}
-                            getSensorOrder={getSensorOrder}
-                            getSensorTag={getSensorTag}
-                            sensorTargets={sensorTargets}
-                            targets={targets}
-                            removeSensorTarget={(junctionId, sensorId, deviceId) =>
-                                junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
-                            assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
-                                junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
-                            setCurrentSensor={setCurrentSensor}
-                            setCurrentTargetDevice={setCurrentTargetDevice}
-                            setScreenSelectionModalOpen={setScreenSelectionModalOpen}
-                            showSnackbar={showSnackbar}
-                            setSensorTargets={setSensorTargets}
-                            showSelectedOnly={showSelectedOnly}
-                            setShowSelectedOnly={handleShowSelectedOnlyChange}
-                            // Add these new props
-                            defaultVisibleColumns={getDefaultJunctionColumns()}
-                            localStorageKey="junction_sensors_columns"
-                            junctionId={junctionId}
-                        />
-                </>
-            )}
-        </Box>
-    );
-
-    // Render Analytics Tab
-    const renderAnalyticsTab = () => (
-        <Box>
-            <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    mb: 2
-                }}>
-                    <AnalyticsIcon sx={{ mr: 1 }} />
-                    Real-time Sensor Data
-                </Typography>
-
-                <Box display="flex" justifyContent="space-between" mb={2}>
-                    <Typography variant="body2" color="text.secondary">
-                        Live data is refreshed automatically every second
-                    </Typography>
-
-                    <Button
-                        size="small"
-                        startIcon={<RefreshIcon />}
-                        onClick={() => {
-                            // Manually refresh sensor data
-                            const fetchCachedData = async () => {
-                                try {
-                                    const data = await junctionService.getSensorData(junctionId);
-                                    const formattedData = data.map((sensor: any) => ({
-                                        ...sensor,
-                                        lastUpdated: junctionService.getTimeAgoInSeconds(sensor.lastUpdated),
-                                    }));
-                                    setCachedData(formattedData);
-                                    showSnackbar("Sensor data refreshed", "success");
-                                } catch (err) {
-                                    console.error("Error fetching cached data", err);
-                                    showSnackbar("Failed to refresh sensor data", "error");
-                                }
-                            };
-                            fetchCachedData();
-                        }}
-                    >
-                        Refresh Now
-                    </Button>
-                </Box>
-
-                <TableContainer component={Paper} variant="outlined">
-                    <Table size="small" stickyHeader>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell sx={headerStyle}>Sensor Name</TableCell>
-                                <TableCell sx={headerStyle}>Sensor Tag</TableCell>
-                                <TableCell sx={headerStyle}>Value</TableCell>
-                                <TableCell sx={headerStyle}>Unit</TableCell>
-                                <TableCell sx={headerStyle}>Component</TableCell>
-                                <TableCell sx={headerStyle}>Last Updated</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {cachedData.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            {junctionData?.status === "Running"
-                                                ? "No sensor data available yet. Make sure sensors are selected and the junction is properly configured."
-                                                : "Junction is not running. Start the junction to see real-time sensor data."
-                                            }
-                                        </Typography>
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                cachedData.map((sensor, index) => (
-                                    <TableRow key={`sensor-${sensor.Id || index}`} hover>
-                                        <TableCell sx={cellStyle}>{sensor.name}</TableCell>
-                                        <TableCell sx={cellStyle}>{sensor.sensorTag}</TableCell>
-                                        <TableCell sx={cellStyle}>
-                                            <Typography
-                                                fontWeight="medium"
-                                                variant="body2"
-                                            >
-                                                {sensor.value !== undefined ? sensor.value : '—'}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell sx={cellStyle}>{sensor.unit || '—'}</TableCell>
-                                        <TableCell sx={cellStyle}>{sensor.componentName || '—'}</TableCell>
-                                        <TableCell sx={cellStyle}>{sensor.lastUpdated}</TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </Paper>
-        </Box>
-    );
-
     return (
-        <Box sx={{ padding: 2 }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h4">
+        <Box sx={{ padding: { xs: 1, sm: 2 } }}>
+            {/* Header */}
+            <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} mb={3} gap={2}>
+                <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}>
                     Configure Junction
                 </Typography>
-                <Box>
+                <Box display="flex" gap={1} flexWrap="wrap">
+                    {junctionImportExportEnabled && (
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={handleExportJunction}
+                            startIcon={<DownloadIcon />}
+                            size="small"
+                            disabled={loading}
+                            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+                        >
+                            Export
+                        </Button>
+                    )}
                     <Button
                         variant="outlined"
                         size="small"
                         onClick={() => console.log("Back to Junctions")}
+                        sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
-                        Back to Junctions
+                        Back
                     </Button>
                 </Box>
             </Box>
 
-            {/* Action Buttons with margin */}
-            <Box display="flex" gap={2} mt={3} mb={3} sx={{ marginBottom: 3 }}>
-                {/* Export Button - only show if feature flag is enabled */}
-                {junctionImportExportEnabled && (
-                    <Button
-                        variant="outlined"
-                        color="primary"
-                        onClick={handleExportJunction}
-                        startIcon={<DownloadIcon />}
-                        size="small"
-                        disabled={false}
-                    >
-                        Export Junction
-                    </Button>
-                )}
-            </Box>
-
-            {/* Junction Controls Card - Persistent Above Tabs */}
+            {/* Junction Controls Card */}
             <Paper
                 elevation={2}
                 sx={{
-                    p: 3,
+                    p: { xs: 2, sm: 3 },
                     mb: 3,
                     borderRadius: 2,
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    alignItems: { xs: 'stretch', sm: 'center' },
+                    justifyContent: 'space-between',
+                    gap: 2
                 }}
             >
                 <Box display="flex" alignItems="center">
@@ -1268,12 +920,12 @@ const ConfigureJunction: React.FC = () => {
                             display: "inline-block"
                         }}
                     />
-                    <Typography variant="subtitle1" fontWeight="medium">
+                    <Typography variant="subtitle1" fontWeight="medium" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>
                         Status: {junctionData?.status || "Unknown"}
                     </Typography>
                 </Box>
 
-                <Box display="flex" gap={2}>
+                <Box display="flex" gap={1} flexWrap="wrap">
                     <Button
                         variant="contained"
                         color="success"
@@ -1281,8 +933,9 @@ const ConfigureJunction: React.FC = () => {
                         startIcon={<PlayArrowIcon />}
                         size="small"
                         disabled={loading || junctionData?.status === "Running"}
+                        sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
-                        Start Junction
+                        Start
                     </Button>
 
                     <Button
@@ -1292,8 +945,9 @@ const ConfigureJunction: React.FC = () => {
                         startIcon={<StopIcon />}
                         size="small"
                         disabled={loading || junctionData?.status !== "Running"}
+                        sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
-                        Stop Junction
+                        Stop
                     </Button>
 
                     <Button
@@ -1301,51 +955,304 @@ const ConfigureJunction: React.FC = () => {
                         startIcon={<RefreshIcon />}
                         size="small"
                         onClick={fetchData}
+                        sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
-                        Refresh Data
+                        Refresh
                     </Button>
                 </Box>
             </Paper>
 
-            <Paper sx={{ width: '100%', mb: 4 }} elevation={2}>
-                <Tabs
-                    value={tabValue}
-                    onChange={handleTabChange}
-                    aria-label="junction configuration tabs"
-                    sx={{ borderBottom: 1, borderColor: 'divider' }}
-                >
-                    <Tab
-                        icon={<SettingsIcon />}
-                        iconPosition="start"
-                        label="Junction Configuration"
-                        id="junction-tab-0"
-                        aria-controls="junction-tabpanel-0"
+            {/* Compact Settings Section */}
+            <Accordion
+                expanded={settingsExpanded}
+                onChange={(event, isExpanded) => handleSettingsExpandedChange(isExpanded)}
+                sx={{ mb: 3 }}
+            >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <SettingsIcon />
+                        <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                            Junction Settings
+                        </Typography>
+                    </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <Box display="flex" flexDirection="column" gap={2}>
+
+                        {/* Junction Info */}
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>Junction Info</Typography>
+                                <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} gap={1}>
+                                    <TextField
+                                        fullWidth
+                                        label="Name"
+                                        value={junctionData.name || ""}
+                                        onChange={(e) => setJunctionData({ ...junctionData, name: e.target.value })}
+                                        size="small"
+                                    />
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel>Type</InputLabel>
+                                        <Select
+                                            value={junctionData.type || ""}
+                                            label="Type"
+                                            onChange={(e) => setJunctionData({ ...junctionData, type: e.target.value })}
+                                        >
+                                            {JUNCTION_TYPES.map((type) => (
+                                                <MenuItem key={type} value={type}>{type}</MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </Box>
+                                <TextField
+                                    fullWidth
+                                    label="Description"
+                                    value={junctionData.description || ""}
+                                    onChange={(e) => setJunctionData({ ...junctionData, description: e.target.value })}
+                                    multiline
+                                    rows={2}
+                                    size="small"
+                                    sx={{ mt: 1 }}
+                                />
+                            </CardContent>
+                        </Card>
+
+                        {/* Junction Configuration */}
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>Junction Configuration</Typography>
+
+                                <Box display="flex" flexWrap="wrap" gap={1}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.showOnDashboard || false}
+                                                onChange={(e) => setJunctionData({ ...junctionData, showOnDashboard: e.target.checked })}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Show on Dashboard"
+                                    />
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.autoStartOnLaunch || false}
+                                                onChange={(e) => setJunctionData({ ...junctionData, autoStartOnLaunch: e.target.checked })}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Auto Start on Launch"
+                                    />
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.compressPayload || false}
+                                                onChange={(e) => setJunctionData({ ...junctionData, compressPayload: e.target.checked })}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Enable Payload Compression"
+                                    />
+                                </Box>
+
+                                <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={1} mt={1}>
+                                    <TextField
+                                        fullWidth
+                                        label="Retry Count"
+                                        type="number"
+                                        value={junctionData.retryCount || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, retryCount: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Retry Interval (ms)"
+                                        type="number"
+                                        value={junctionData.retryIntervalMs || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, retryIntervalMs: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Stream Timeout (ms)"
+                                        type="number"
+                                        value={junctionData.streamAutoTimeoutMs || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, streamAutoTimeoutMs: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                </Box>
+                            </CardContent>
+                        </Card>
+
+                        {/* Gateway Configuration */}
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>Gateway Configuration</Typography>
+
+                                <Box display="flex" flexDirection="column" gap={1}>
+                                    <TextField
+                                        label="Gateway Device"
+                                        value={junctionData.gatewayDeviceId || ''}
+                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDeviceId: e.target.value })}
+                                        size="small"
+                                        helperText="This device will forward received payloads via ESP:NOW to selected target devices below"
+                                    />
+                                    <TextField
+                                        label="Gateway Destination"
+                                        value={junctionData.gatewayDestination || ''}
+                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDestination: e.target.value })}
+                                        placeholder=""
+                                        size="small"
+                                        helperText="(For internet protocols, this will be the IP Address of the Gateway. For COM/USB/Serial, this should be a port e.g. COM3 or /dev/ttyUSB0)"
+                                    />
+                                    <TextField
+                                        label="Baud Rate"
+                                        type="number"
+                                        value={junctionData.baudRate || 115200}
+                                        onChange={(e) => setJunctionData({ ...junctionData, baudRate: parseInt(e.target.value) || 115200 })}
+                                        size="small"
+                                        helperText="Only applies for UART protocol"
+                                    />
+                                </Box>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>MQTT Broker Configuration</Typography>
+
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        flexDirection: { xs: 'column', md: 'row' },
+                                        gap: 1,
+                                        alignItems: { xs: 'stretch', md: 'flex-end' }
+                                    }}
+                                >
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel>MQTT Broker</InputLabel>
+                                        <Select
+                                            value={selectedMqttBrokerId}
+                                            label="MQTT Broker"
+                                            onChange={handleMqttBrokerChange}
+                                        >
+                                            <MenuItem value="">
+                                                <em>None</em>
+                                            </MenuItem>
+                                            {mqttBrokers.map((broker) => (
+                                                <MenuItem key={broker.id} value={broker.id.toString()}>
+                                                    {broker.name}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+
+                                    <Box sx={{ width: { xs: '100%', md: 'auto' }, minWidth: { md: '120px' } }}>
+                                        <Button
+                                            fullWidth
+                                            variant="outlined"
+                                            onClick={connectToMQTTBroker}
+                                            startIcon={<LinkIcon />}
+                                            disabled={!selectedMqttBrokerId || loading}
+                                            size="small"
+                                        >
+                                            Connect
+                                        </Button>
+                                    </Box>
+                                </Box>
+                            </CardContent>
+                        </Card>
+
+
+                        {/* Save Button aligned right */}
+                        <Box display="flex" justifyContent="flex-end">
+                            <Button
+                                variant="contained"
+                                onClick={saveJunction}
+                                startIcon={<SaveIcon />}
+                                disabled={loading}
+                                size="small"
+                            >
+                                Save Junction Settings
+                            </Button>
+                        </Box>
+                    </Box>
+                </AccordionDetails>
+
+            </Accordion>
+
+            {/* COM Setup Advice - Only show for COM and Gateway COM junctions */}
+            {shouldShowCOMSetup(junctionData.type) && (
+                <Accordion sx={{ mb: 3 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Box display="flex" alignItems="center" gap={1}>
+                            <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                                COM Junction Setup Guidance
+                            </Typography>
+                        </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                        <Junction_Setup_COM />
+                    </AccordionDetails>
+                </Accordion>
+            )}
+
+            {/* Main Content */}
+            {loading ? (
+                <Box display="flex" justifyContent="center" my={4}>
+                    <CircularProgress />
+                </Box>
+            ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <AvailableSourcesTargetsTable
+                        loading={loading}
+                        allDevices={allDevices}
+                        allCollectors={allCollectors}
+                        sources={sources}
+                        targets={targets}
+                        devicePollRates={devicePollRates}
+                        deviceSendRates={deviceSendRates}
+                        collectorPollRates={collectorPollRates}
+                        collectorSendRates={collectorSendRates}
+                        handleAdd={handleAdd}
+                        handleRemove={handleRemove}
+                        handlePollRateOverrideChange={handlePollRateOverrideChange}
+                        handleSendRateOverrideChange={handleSendRateOverrideChange}
                     />
-                    <Tab
-                        icon={<SensorsIcon />}
-                        iconPosition="start"
-                        label="Sources, Targets & Sensors"
-                        id="junction-tab-1"
-                        aria-controls="junction-tabpanel-1"
+
+                    <DeviceScreenLayoutsCard
+                        junctionId={junctionId}
+                        deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
+                        loading={loading}
+                        showSnackbar={showSnackbar}
                     />
-                    <Tab
-                        icon={<AnalyticsIcon />}
-                        iconPosition="start"
-                        label="Analytics"
-                        id="junction-tab-2"
-                        aria-controls="junction-tabpanel-2"
+
+                    <EnhancedSensorsTable
+                        availableSensors={availableSensors}
+                        handleSensorSelect={handleSensorSelect}
+                        handleSensorOrderChange={handleSensorOrderChange}
+                        handleSensorTagChange={handleSensorTagChange}
+                        getSensorOrder={getSensorOrder}
+                        getSensorTag={getSensorTag}
+                        sensorTargets={sensorTargets}
+                        targets={targets}
+                        removeSensorTarget={(junctionId, sensorId, deviceId) =>
+                            junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
+                        assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
+                            junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
+                        setCurrentSensor={setCurrentSensor}
+                        setCurrentTargetDevice={setCurrentTargetDevice}
+                        setScreenSelectionModalOpen={setScreenSelectionModalOpen}
+                        showSnackbar={showSnackbar}
+                        setSensorTargets={setSensorTargets}
+                        showSelectedOnly={showSelectedOnly}
+                        setShowSelectedOnly={handleShowSelectedOnlyChange}
+                        defaultVisibleColumns={getDefaultJunctionColumns()}
+                        localStorageKey="junction_sensors_columns"
+                        junctionId={junctionId}
                     />
-                </Tabs>
-                <TabPanel value={tabValue} index={0}>
-                    {renderJunctionConfigTab()}
-                </TabPanel>
-                <TabPanel value={tabValue} index={1}>
-                    {renderSourcesTargetsTab()}
-                </TabPanel>
-                <TabPanel value={tabValue} index={2}>
-                    {renderAnalyticsTab()}
-                </TabPanel>
-            </Paper>
+                </Box>
+            )}
 
             {/* Snackbar for notifications */}
             <Snackbar

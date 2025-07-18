@@ -20,6 +20,7 @@
 using JunctionRelayServer.Models;
 using Dapper;
 using System.Data;
+using JunctionRelayServer.Interfaces;
 
 namespace JunctionRelayServer.Services
 {
@@ -29,16 +30,19 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_Sensors _sensorsDbManager;
         private readonly Service_HostInfo _hostInfo;
         private readonly Service_Database_Manager_Device_I2CDevices _i2cDeviceDbManager;
+        private readonly ISecretsService _secretsService;
 
         public Service_Database_Manager_Devices(IDbConnection dbConnection,
                                                 Service_Database_Manager_Sensors sensorsDbManager,
                                                 Service_HostInfo hostInfo,
-                                                Service_Database_Manager_Device_I2CDevices i2cDeviceDbManager) // Injected here
+                                                Service_Database_Manager_Device_I2CDevices i2cDeviceDbManager,
+                                                ISecretsService secretsService)
         {
             _db = dbConnection;
             _sensorsDbManager = sensorsDbManager;
             _hostInfo = hostInfo;
-            _i2cDeviceDbManager = i2cDeviceDbManager; // Set the injected value
+            _i2cDeviceDbManager = i2cDeviceDbManager;
+            _secretsService = secretsService;
         }
 
         public async Task<List<Model_Device>> GetAllDevicesAsync()
@@ -108,53 +112,80 @@ namespace JunctionRelayServer.Services
 
         public async Task<Model_Device> AddDeviceAsync(Model_Device newDevice)
         {
-            newDevice.Status ??= "Offline";
+            newDevice.Status ??= "Active";
             newDevice.LastUpdated = DateTime.UtcNow;
 
-            // Set device type based on IsGateway flag and GatewayId
-            if (newDevice.IsGateway)
+            // If the device is marked as a Cloud Device, set its type explicitly
+            if (newDevice.IsCloudDevice)
             {
-                newDevice.Type = "Gateway";
+                newDevice.Type = "Cloud Device";
             }
-            else if (newDevice.GatewayId.HasValue && newDevice.GatewayId > 0)
+            else if (newDevice.Type != "Custom")
             {
-                newDevice.Type = "Child";
+                // Otherwise, determine type based on gateway info (only if not already set to Custom)
+                if (newDevice.IsGateway)
+                {
+                    newDevice.Type = "Gateway";
+                }
+                else if (newDevice.GatewayId.HasValue && newDevice.GatewayId > 0)
+                {
+                    newDevice.Type = "Child";
+                }
+                else
+                {
+                    newDevice.Type = "Standalone";
+                }
             }
-            else
+            // If Type is already "Custom", we preserve it
+
+            // Encrypt SSH secrets before storing
+            if (!string.IsNullOrEmpty(newDevice.SshPassword))
             {
-                newDevice.Type = "Standalone";
+                newDevice.SshPassword = await _secretsService.EncryptSecretAsync(newDevice.SshPassword);
+            }
+            if (!string.IsNullOrEmpty(newDevice.SshPrivateKey))
+            {
+                newDevice.SshPrivateKey = await _secretsService.EncryptSecretAsync(newDevice.SshPrivateKey);
             }
 
             var sql = @"
-        INSERT INTO Devices (
-            Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayDevice,
-            IsCloudDevice, CloudDeviceId,
-            ConnMode, SelectedPort,
-            DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
+INSERT INTO Devices (
+    Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayDevice,
+    IsCloudDevice, CloudDeviceId, LastEncryptedSensorData, LastHealthReportAt,
+    ConnMode, SelectedPort,
+    DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
 
-            HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
-            LastPingAttempt, LastPinged, LastPingStatus, LastPingDurationMs, ConsecutivePingFailures,
-            ConfigLastAppliedAt, SensorPayloadLastAckAt,
+    HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
+    UseStreamAsHeartbeat, StreamHeartbeatThresholdMs,
+    ConnectionStatusEnabled, ConnectionStatusIntervalMs, LastConnectionStatusCheck,
+    LastPingAttempt, LastPinged, LastPingStatus, LastPingDurationMs, ConsecutivePingFailures,
+    ConfigLastAppliedAt, SensorPayloadLastAckAt,
 
-            HasOnboardScreen, HasOnboardLED, HasOnboardRGBLED, HasExternalNeopixels, HasExternalMatrix, HasExternalI2CDevices,
-            HasButtons, HasBattery, SupportsWiFi, SupportsBLE, SupportsUSB, SupportsESPNow, SupportsHTTP, SupportsMQTT, SupportsWebSockets,
-            HasSpeaker, HasMicroSD
-        )
-        VALUES (
-            @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayDevice,
-            @IsCloudDevice, @CloudDeviceId,
-            @ConnMode, @SelectedPort,
-            @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
+    SshUsername, SshPassword, SshPort, SshTimeoutMs, SshPrivateKey, UseSshKeyAuth, SshConnectionRetries, SshVerifyHostKey,
 
-            @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
-            @LastPingAttempt, @LastPinged, @LastPingStatus, @LastPingDurationMs, @ConsecutivePingFailures,
-            @ConfigLastAppliedAt, @SensorPayloadLastAckAt,
+    HasOnboardScreen, HasOnboardLED, HasOnboardRGBLED, HasExternalNeopixels, HasExternalMatrix, HasExternalI2CDevices,
+    HasButtons, HasBattery, SupportsWiFi, SupportsBLE, SupportsUSB, SupportsESPNow, SupportsHTTP, SupportsMQTT, SupportsWebSockets,
+    HasSpeaker, HasMicroSD, SupportsEthernet, PushNotifications, SyncMode
+)
+VALUES (
+    @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayDevice,
+    @IsCloudDevice, @CloudDeviceId, @LastEncryptedSensorData, @LastHealthReportAt,
+    @ConnMode, @SelectedPort,
+    @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
 
-            @HasOnboardScreen, @HasOnboardLED, @HasOnboardRGBLED, @HasExternalNeopixels, @HasExternalMatrix, @HasExternalI2CDevices,
-            @HasButtons, @HasBattery, @SupportsWiFi, @SupportsBLE, @SupportsUSB, @SupportsESPNow, @SupportsHTTP, @SupportsMQTT, @SupportsWebSockets,
-            @HasSpeaker, @HasMicroSD
-        );
-        SELECT last_insert_rowid();";
+    @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
+    @UseStreamAsHeartbeat, @StreamHeartbeatThresholdMs,
+    @ConnectionStatusEnabled, @ConnectionStatusIntervalMs, @LastConnectionStatusCheck,
+    @LastPingAttempt, @LastPinged, @LastPingStatus, @LastPingDurationMs, @ConsecutivePingFailures,
+    @ConfigLastAppliedAt, @SensorPayloadLastAckAt,
+
+    @SshUsername, @SshPassword, @SshPort, @SshTimeoutMs, @SshPrivateKey, @UseSshKeyAuth, @SshConnectionRetries, @SshVerifyHostKey,
+
+    @HasOnboardScreen, @HasOnboardLED, @HasOnboardRGBLED, @HasExternalNeopixels, @HasExternalMatrix, @HasExternalI2CDevices,
+    @HasButtons, @HasBattery, @SupportsWiFi, @SupportsBLE, @SupportsUSB, @SupportsESPNow, @SupportsHTTP, @SupportsMQTT, @SupportsWebSockets,
+    @HasSpeaker, @HasMicroSD, @SupportsEthernet, @PushNotifications, @SyncMode
+);
+SELECT last_insert_rowid();";
 
             int newId = await _db.ExecuteScalarAsync<int>(sql, newDevice);
             newDevice.Id = newId;
@@ -326,6 +357,71 @@ namespace JunctionRelayServer.Services
             return affected > 0;
         }
 
+        // NEW: Cloud device status update method
+        public async Task<bool> UpdateCloudDeviceStatusAsync(Model_Device device)
+        {
+            const string sql = @"
+        UPDATE Devices
+        SET Status = @Status,
+            IsCloudDevice = @IsCloudDevice,
+            CloudDeviceId = @CloudDeviceId,
+            LastPinged = @LastPinged,
+            LastUpdated = @LastUpdated
+        WHERE Id = @Id;";
+
+            device.LastUpdated = DateTime.UtcNow;
+
+            int affected = await _db.ExecuteAsync(sql, new
+            {
+                Status = device.Status,
+                IsCloudDevice = device.IsCloudDevice,
+                CloudDeviceId = device.CloudDeviceId,
+                LastPinged = device.LastPinged,
+                LastUpdated = device.LastUpdated,
+                Id = device.Id
+            });
+
+            return affected > 0;
+        }
+
+        // NEW: Method to update device notification setting
+        public async Task<bool> UpdateDeviceNotificationSettingAsync(int deviceId, bool enableNotifications)
+        {
+            const string sql = @"
+        UPDATE Devices
+        SET PushNotifications = @PushNotifications,
+            LastUpdated = @LastUpdated
+        WHERE Id = @Id;";
+
+            int affected = await _db.ExecuteAsync(sql, new
+            {
+                PushNotifications = enableNotifications,                
+                LastUpdated = DateTime.UtcNow,
+                Id = deviceId
+            });
+
+            return affected > 0;
+        }
+
+        // NEW: Method to update device sync mode
+        public async Task<bool> UpdateDeviceSyncModeAsync(int deviceId, string syncMode)
+        {
+            const string sql = @"
+        UPDATE Devices
+        SET SyncMode = @SyncMode,
+            LastUpdated = @LastUpdated
+        WHERE Id = @Id;";
+
+            int affected = await _db.ExecuteAsync(sql, new
+            {
+                SyncMode = syncMode,
+                LastUpdated = DateTime.UtcNow,
+                Id = deviceId
+            });
+
+            return affected > 0;
+        }
+
         public async Task<bool> UpdateDeviceAsync(int id, Model_Device updatedDevice)
         {
             var existing = await _db.QuerySingleOrDefaultAsync<Model_Device>("SELECT * FROM Devices WHERE Id = @Id", new { Id = id });
@@ -334,69 +430,97 @@ namespace JunctionRelayServer.Services
             updatedDevice.LastUpdated = DateTime.UtcNow;
             updatedDevice.Id = id;
 
+            // Encrypt SSH secrets before storing (only if they've changed)
+            if (!string.IsNullOrEmpty(updatedDevice.SshPassword) && updatedDevice.SshPassword != existing.SshPassword)
+            {
+                updatedDevice.SshPassword = await _secretsService.EncryptSecretAsync(updatedDevice.SshPassword);
+            }
+            if (!string.IsNullOrEmpty(updatedDevice.SshPrivateKey) && updatedDevice.SshPrivateKey != existing.SshPrivateKey)
+            {
+                updatedDevice.SshPrivateKey = await _secretsService.EncryptSecretAsync(updatedDevice.SshPrivateKey);
+            }
+
             // SQL update statement for the main device attributes
             var sql = @"
-                UPDATE Devices SET
-                Name = @Name,
-                Description = @Description,
-                Type = @Type,
-                Status = @Status,
-                LastUpdated = @LastUpdated,
-                IPAddress = @IPAddress,
-                PollRate = @PollRate,
-                SendRate = @SendRate,
-                IsGateway = @IsGateway,
-                GatewayId = @GatewayId,
-                IsJunctionRelayDevice = @IsJunctionRelayDevice,
-                IsCloudDevice = @IsCloudDevice,
-                CloudDeviceId = @CloudDeviceId,
-                ConnMode = @ConnMode,
-                SelectedPort = @SelectedPort,
-                DeviceModel = @DeviceModel,
-                DeviceManufacturer = @DeviceManufacturer,
-                FirmwareVersion = @FirmwareVersion,
-                HasCustomFirmware = @HasCustomFirmware,
-                IgnoreUpdates = @IgnoreUpdates,
-                MCU = @MCU,
-                WirelessConnectivity = @WirelessConnectivity,
-                Flash = @Flash,
-                PSRAM = @PSRAM,
-                UniqueIdentifier = @UniqueIdentifier,
+UPDATE Devices SET
+Name = @Name,
+Description = @Description,
+Type = @Type,
+Status = @Status,
+LastUpdated = @LastUpdated,
+IPAddress = @IPAddress,
+PollRate = @PollRate,
+SendRate = @SendRate,
+IsGateway = @IsGateway,
+GatewayId = @GatewayId,
+IsJunctionRelayDevice = @IsJunctionRelayDevice,
+IsCloudDevice = @IsCloudDevice,
+CloudDeviceId = @CloudDeviceId,
+LastEncryptedSensorData = @LastEncryptedSensorData,
+LastHealthReportAt = @LastHealthReportAt,
+ConnMode = @ConnMode,
+SelectedPort = @SelectedPort,
+DeviceModel = @DeviceModel,
+DeviceManufacturer = @DeviceManufacturer,
+FirmwareVersion = @FirmwareVersion,
+HasCustomFirmware = @HasCustomFirmware,
+IgnoreUpdates = @IgnoreUpdates,
+MCU = @MCU,
+WirelessConnectivity = @WirelessConnectivity,
+Flash = @Flash,
+PSRAM = @PSRAM,
+UniqueIdentifier = @UniqueIdentifier,
 
-                HeartbeatProtocol = @HeartbeatProtocol,
-                HeartbeatTarget = @HeartbeatTarget,
-                HeartbeatExpectedValue = @HeartbeatExpectedValue,
-                HeartbeatEnabled = @HeartbeatEnabled,
-                HeartbeatIntervalMs = @HeartbeatIntervalMs,
-                HeartbeatGracePeriodMs = @HeartbeatGracePeriodMs,
-                HeartbeatMaxRetryAttempts = @HeartbeatMaxRetryAttempts,
-                LastPingAttempt = @LastPingAttempt,
-                LastPinged = @LastPinged,
-                LastPingStatus = @LastPingStatus,
-                LastPingDurationMs = @LastPingDurationMs,
-                ConsecutivePingFailures = @ConsecutivePingFailures,
-                ConfigLastAppliedAt = @ConfigLastAppliedAt,
-                SensorPayloadLastAckAt = @SensorPayloadLastAckAt,
+HeartbeatProtocol = @HeartbeatProtocol,
+HeartbeatTarget = @HeartbeatTarget,
+HeartbeatExpectedValue = @HeartbeatExpectedValue,
+HeartbeatEnabled = @HeartbeatEnabled,
+HeartbeatIntervalMs = @HeartbeatIntervalMs,
+HeartbeatGracePeriodMs = @HeartbeatGracePeriodMs,
+HeartbeatMaxRetryAttempts = @HeartbeatMaxRetryAttempts,
+UseStreamAsHeartbeat = @UseStreamAsHeartbeat,
+StreamHeartbeatThresholdMs = @StreamHeartbeatThresholdMs,
+ConnectionStatusEnabled = @ConnectionStatusEnabled,
+ConnectionStatusIntervalMs = @ConnectionStatusIntervalMs,
+LastConnectionStatusCheck = @LastConnectionStatusCheck,
+LastPingAttempt = @LastPingAttempt,
+LastPinged = @LastPinged,
+LastPingStatus = @LastPingStatus,
+LastPingDurationMs = @LastPingDurationMs,
+ConsecutivePingFailures = @ConsecutivePingFailures,
+ConfigLastAppliedAt = @ConfigLastAppliedAt,
+SensorPayloadLastAckAt = @SensorPayloadLastAckAt,
 
-                HasOnboardScreen = @HasOnboardScreen,
-                HasOnboardLED = @HasOnboardLED,
-                HasOnboardRGBLED = @HasOnboardRGBLED,
-                HasExternalNeopixels = @HasExternalNeopixels,
-                HasExternalMatrix = @HasExternalMatrix,
-                HasExternalI2CDevices = @HasExternalI2CDevices,
-                HasButtons = @HasButtons,
-                HasBattery = @HasBattery,
-                SupportsWiFi = @SupportsWiFi,
-                SupportsBLE = @SupportsBLE,
-                SupportsUSB = @SupportsUSB,
-                SupportsESPNow = @SupportsESPNow,
-                SupportsHTTP = @SupportsHTTP,
-                SupportsMQTT = @SupportsMQTT,
-                SupportsWebSockets = @SupportsWebSockets,
-                HasSpeaker = @HasSpeaker,
-                HasMicroSD = @HasMicroSD
-                WHERE Id = @Id;";
+SshUsername = @SshUsername,
+SshPassword = @SshPassword,
+SshPort = @SshPort,
+SshTimeoutMs = @SshTimeoutMs,
+SshPrivateKey = @SshPrivateKey,
+UseSshKeyAuth = @UseSshKeyAuth,
+SshConnectionRetries = @SshConnectionRetries,
+SshVerifyHostKey = @SshVerifyHostKey,
 
+HasOnboardScreen = @HasOnboardScreen,
+HasOnboardLED = @HasOnboardLED,
+HasOnboardRGBLED = @HasOnboardRGBLED,
+HasExternalNeopixels = @HasExternalNeopixels,
+HasExternalMatrix = @HasExternalMatrix,
+HasExternalI2CDevices = @HasExternalI2CDevices,
+HasButtons = @HasButtons,
+HasBattery = @HasBattery,
+SupportsWiFi = @SupportsWiFi,
+SupportsBLE = @SupportsBLE,
+SupportsUSB = @SupportsUSB,
+SupportsESPNow = @SupportsESPNow,
+SupportsHTTP = @SupportsHTTP,
+SupportsMQTT = @SupportsMQTT,
+SupportsWebSockets = @SupportsWebSockets,
+HasSpeaker = @HasSpeaker,
+HasMicroSD = @HasMicroSD,
+SupportsEthernet = @SupportsEthernet,
+PushNotifications = @PushNotifications,
+SyncMode = @SyncMode
+WHERE Id = @Id;";
 
             // Update Supported Protocols if provided
             if (updatedDevice.SupportedProtocols != null)
@@ -420,9 +544,9 @@ namespace JunctionRelayServer.Services
                 {
                     // Update screens if necessary
                     var screenSql = @"
-                UPDATE Screens
-                SET DisplayName = @DisplayName, ScreenLayoutId = @ScreenLayoutId
-                WHERE DeviceId = @DeviceId AND Id = @Id;";
+UPDATE Screens
+SET DisplayName = @DisplayName, ScreenLayoutId = @ScreenLayoutId
+WHERE DeviceId = @DeviceId AND Id = @Id;";
                     await _db.ExecuteAsync(screenSql, new { screen.DisplayName, screen.ScreenLayoutId, DeviceId = id, screen.Id });
                 }
             }
@@ -434,9 +558,9 @@ namespace JunctionRelayServer.Services
                 {
                     // Update I2C device details if necessary
                     var i2cSql = @"
-                UPDATE I2CDevices
-                SET DeviceType = @DeviceType, CommunicationProtocol = @CommunicationProtocol, IsEnabled = @IsEnabled
-                WHERE DeviceId = @DeviceId AND Id = @Id;";
+UPDATE I2CDevices
+SET DeviceType = @DeviceType, CommunicationProtocol = @CommunicationProtocol, IsEnabled = @IsEnabled
+WHERE DeviceId = @DeviceId AND Id = @Id;";
                     await _db.ExecuteAsync(i2cSql, new { i2cDevice.DeviceType, i2cDevice.CommunicationProtocol, i2cDevice.IsEnabled, DeviceId = id, i2cDevice.Id });
                 }
             }

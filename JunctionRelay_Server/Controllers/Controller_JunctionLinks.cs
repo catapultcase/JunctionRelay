@@ -71,7 +71,7 @@ namespace JunctionRelayServer.Controllers
                 {
                     link.DeviceName = device.Name;
                     link.DeviceDescription = device.Description;
-                    link.DeviceStatus = device.Status; // ADD THIS LINE
+                    link.DeviceStatus = device.Status;
                 }
             }
 
@@ -83,7 +83,7 @@ namespace JunctionRelayServer.Controllers
                 {
                     link.CollectorName = collector.Name;
                     link.CollectorDescription = collector.Description;
-                    link.CollectorStatus = collector.Status; // ADD THIS LINE
+                    link.CollectorStatus = collector.Status;
                 }
             }
 

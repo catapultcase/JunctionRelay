@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ interface LoginOnlyProps {
 
 // Cloud Auth Service for proxy mode
 class CloudAuthService {
-    async initiateLogin(): Promise<{ authUrl: string }> {
+    async initiateLogin(): Promise<{ authUrl?: string; alreadyAuthenticated?: boolean; token?: string; expiresAt?: string }> {
         const response = await fetch('/api/cloud-auth/initiate-login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -88,24 +88,22 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
     }, []);
 
     const checkAuthCallback = () => {
-        // Check for auth callback from cloud proxy
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
+        const refreshToken = urlParams.get('refreshToken');
         const authStatus = urlParams.get('auth');
 
-        if (token && authStatus === 'success') {
+        if (token && refreshToken && authStatus === 'success') {
             localStorage.setItem('cloud_proxy_token', token);
-            // Clear URL parameters
             window.history.replaceState({}, document.title, window.location.pathname);
-            // Trigger auth recheck
             triggerAuthChange();
             showSnackbar('Successfully authenticated with JunctionRelay Cloud!', 'success');
         } else if (authStatus === 'error') {
-            // Clear URL parameters
             window.history.replaceState({}, document.title, window.location.pathname);
             showSnackbar('Cloud authentication failed. Please try again.', 'error');
         }
     };
+
 
     const fetchAuthStatus = async () => {
         try {
@@ -227,19 +225,31 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
 
         try {
             console.log('Initiating cloud proxy login...');
-            const { authUrl } = await cloudAuth.initiateLogin();
+            const response = await cloudAuth.initiateLogin();
 
-            console.log('Redirecting to cloud authentication...');
-            showSnackbar('Redirecting to JunctionRelay Cloud...', 'info');
+            if (response.alreadyAuthenticated && response.token) {
+                console.log('Already authenticated, using token directly');
+                localStorage.setItem('cloud_proxy_token', response.token);
+                triggerAuthChange();
+                showSnackbar('Already authenticated with JunctionRelay Cloud!', 'success');
+                return;
+            }
 
-            // Redirect to cloud authentication
-            window.location.href = authUrl;
+            if (response.authUrl) {
+                console.log('Redirecting to cloud authentication...');
+                showSnackbar('Redirecting to JunctionRelay Cloud...', 'info');
+                window.location.href = response.authUrl;
+            } else {
+                throw new Error('No authUrl returned from cloud');
+            }
         } catch (error: any) {
             console.error('Cloud proxy login error:', error);
             showSnackbar(`Cloud login error: ${error.message}`, 'error');
+        } finally {
             setCloudLoginLoading(false);
         }
     };
+
 
     if (loading) {
         return (

@@ -225,8 +225,8 @@ const ConfigureCollector = () => {
                 sensorTag: sensor.sensorTag || sensor.externalId || "",
                 deviceName: sensor.deviceName || "Collector",
                 category: sensor.componentName || "Sensor",
-                mqttTopic: sensor.mqttTopic || "",
-                mqttQoS: sensor.mqttQoS ?? 0 // Default to 0 if undefined
+                mqttTopic: sensor.mqttTopic,
+                mqttQoS: sensor.mqttQoS
             };
 
             console.log("Sending payload to server:", JSON.stringify(payload, null, 2));

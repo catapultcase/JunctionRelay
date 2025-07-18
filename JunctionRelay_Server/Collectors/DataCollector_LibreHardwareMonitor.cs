@@ -37,7 +37,7 @@ namespace JunctionRelayServer.Collectors
         {
             _baseUrl = collector.URL?.TrimEnd('/')
                 ?? throw new ArgumentException("Collector.URL is required.");
-            _accessToken = collector.AccessToken // We keep the accessToken for flexibility, though it isn't used.
+            _accessToken = collector.DecryptedAccessToken // We keep the accessToken for flexibility, though it isn't used.
                 ?? throw new ArgumentException("Collector.AccessToken is required."); // Optional in this case
             // Set the CollectorId from the Model_Collector.
             CollectorId = collector.Id;
@@ -61,23 +61,35 @@ namespace JunctionRelayServer.Collectors
 
             List<Model_Sensor> sensorReadings = new List<Model_Sensor>();
 
-            foreach (var hardware in jsonData["Children"])
+            var children = jsonData["Children"];
+            if (children != null)
             {
-                string hardwareName = hardware["Text"]?.ToString();
-                if (hardwareName == null)
+                foreach (var hardware in children)
                 {
-                    continue; // Skip if no name is found
-                }
+                    if (hardware == null) continue;
 
-                foreach (var component in hardware["Children"])
-                {
-                    string componentName = component["Text"]?.ToString();
-                    if (componentName == null)
+                    string? hardwareName = hardware["Text"]?.ToString();
+                    if (string.IsNullOrEmpty(hardwareName))
                     {
-                        continue; // Skip if no component name is found
+                        continue; // Skip if no name is found
                     }
 
-                    ProcessComponents(component, hardwareName, componentName, sensorReadings);
+                    var hardwareChildren = hardware["Children"];
+                    if (hardwareChildren != null)
+                    {
+                        foreach (var component in hardwareChildren)
+                        {
+                            if (component == null) continue;
+
+                            string? componentName = component["Text"]?.ToString();
+                            if (string.IsNullOrEmpty(componentName))
+                            {
+                                continue; // Skip if no component name is found
+                            }
+
+                            ProcessComponents(component, hardwareName, componentName, sensorReadings);
+                        }
+                    }
                 }
             }
 
@@ -119,37 +131,51 @@ namespace JunctionRelayServer.Collectors
         {
             string componentName = component["Text"]?.ToString() ?? parentComponentName;
 
-            foreach (var child in component["Children"] ?? Enumerable.Empty<JToken>())
+            var componentChildren = component["Children"];
+            if (componentChildren?.HasValues == true)
             {
-                if (child["Children"] != null && child["Children"].HasValues)
+                foreach (var child in componentChildren)
                 {
-                    // New component branch detected
-                    string newComponentName = $"{componentName}";
-                    ProcessComponents(child, hardwareName, newComponentName, sensorReadings);
-                }
-                else
-                {
-                    // Process sensors directly under the component
-                    string sensorName = child["Text"]?.ToString();
-                    string sensorType = child["Type"]?.ToString();
-                    string sensorValue = child["Value"]?.ToString() ?? "N/A";
-                    string sensorId = child["SensorId"]?.ToString() ?? string.Empty;
+                    if (child == null) continue;
 
-                    Model_Sensor sensorModel = new Model_Sensor
+                    var childChildren = child["Children"];
+                    if (childChildren?.HasValues == true)
                     {
-                        Name = sensorName,
-                        ComponentName = $"{hardwareName} - {parentComponentName}",
-                        Category = sensorType,
-                        Unit = GetSensorUnit(sensorType),
-                        Value = StripUnits(sensorValue),
-                        ExternalId = sensorId,
-                        SensorType = "API", // Set this required property
-                        DeviceName = "LibreHardwareMonitor", // Set this required property
-                        SensorTag = sensorId, // Set this required property
-                        LastUpdated = DateTime.UtcNow
-                    };
+                        // New component branch detected
+                        string newComponentName = componentName;
+                        ProcessComponents(child, hardwareName, newComponentName, sensorReadings);
+                    }
+                    else
+                    {
+                        // Process sensors directly under the component
+                        string? sensorName = child["Text"]?.ToString();
+                        string? sensorType = child["Type"]?.ToString();
+                        string sensorValue = child["Value"]?.ToString() ?? "N/A";
+                        string sensorId = child["SensorId"]?.ToString() ?? string.Empty;
 
-                    sensorReadings.Add(sensorModel);
+                        // Skip if essential data is missing
+                        if (string.IsNullOrEmpty(sensorName) || string.IsNullOrEmpty(sensorType))
+                        {
+                            continue;
+                        }
+
+                        Model_Sensor sensorModel = new Model_Sensor
+                        {
+                            Name = sensorName,
+                            ComponentName = $"{hardwareName} - {parentComponentName}",
+                            Category = sensorType,
+                            Unit = GetSensorUnit(sensorType),
+                            Value = StripUnits(sensorValue),
+                            ExternalId = $"{sensorId}::{sensorName}",
+                            SensorType = "API", // Set this required property
+                            DeviceName = "LibreHardwareMonitor", // Set this required property
+                            SensorTag = $"{sensorId}::{sensorName}",
+                            LastUpdated = DateTime.UtcNow
+                        };
+
+                        sensorReadings.Add(sensorModel);
+                        //Console.WriteLine($"[Collector] {sensorModel.ExternalId} → {sensorModel.Name} ({sensorModel.ComponentName})");
+                    }
                 }
             }
         }
@@ -162,30 +188,19 @@ namespace JunctionRelayServer.Collectors
 
         private string GetSensorUnit(string sensorType)
         {
-            switch (sensorType)
+            return sensorType switch
             {
-                case "Voltage":
-                    return "V";
-                case "Clock":
-                    return "MHz";
-                case "Temperature":
-                    return "°C";
-                case "Load":
-                    return "%";
-                case "Fan":
-                    return "RPM";
-                case "Flow":
-                    return "L/h";
-                case "Control":
-                case "Level":
-                    return "%";
-                case "Power":
-                    return "W";
-                case "Data":
-                    return "GB";
-                default:
-                    return "";
-            }
+                "Voltage" => "V",
+                "Clock" => "MHz",
+                "Temperature" => "°C",
+                "Load" => "%",
+                "Fan" => "RPM",
+                "Flow" => "L/h",
+                "Control" or "Level" => "%",
+                "Power" => "W",
+                "Data" => "GB",
+                _ => string.Empty
+            };
         }
     }
 }

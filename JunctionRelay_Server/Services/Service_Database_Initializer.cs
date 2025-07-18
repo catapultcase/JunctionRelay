@@ -67,23 +67,25 @@ namespace JunctionRelayServer.Services
                     Type TEXT NOT NULL,
                     Status TEXT DEFAULT 'Offline',
                     LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
-
                     IsConnected BOOLEAN DEFAULT 0,
                     IPAddress TEXT,
                     HasMQTTConfig BOOLEAN DEFAULT 0,
-
                     PollRate INTEGER DEFAULT 5000,
                     SendRate INTEGER DEFAULT 5000,
-
                     LastPolled DATETIME DEFAULT CURRENT_TIMESTAMP,
                     IsGateway BOOLEAN DEFAULT 0,
                     GatewayId INTEGER,
                     IsJunctionRelayDevice BOOLEAN DEFAULT 0,
-
                     -- Cloud device support
                     IsCloudDevice BOOLEAN DEFAULT 0,
                     CloudDeviceId INTEGER,
-
+                    LastEncryptedSensorData TEXT,
+                    LastHealthReportAt DATETIME,
+                    CreatedAt DATETIME,
+                    LastHealthAlertSent DATETIME,
+                    LastHealthReminderSent DATETIME,
+                    PushNotifications BOOLEAN DEFAULT 0,
+                    SyncMode TEXT DEFAULT 'Health',
                     ConnMode TEXT,
                     SelectedPort TEXT,
                     DeviceModel TEXT,
@@ -96,7 +98,6 @@ namespace JunctionRelayServer.Services
                     Flash TEXT,
                     PSRAM TEXT,
                     UniqueIdentifier TEXT NOT NULL,
-
                     -- Heartbeat Configuration
                     HeartbeatProtocol TEXT DEFAULT 'HTTP',
                     HeartbeatTarget TEXT,
@@ -105,15 +106,30 @@ namespace JunctionRelayServer.Services
                     HeartbeatIntervalMs INTEGER DEFAULT 60000,
                     HeartbeatGracePeriodMs INTEGER DEFAULT 180000,
                     HeartbeatMaxRetryAttempts INTEGER DEFAULT 3,
+                    -- Stream heartbeat configuration
+                    UseStreamAsHeartbeat BOOLEAN DEFAULT 1,
+                    StreamHeartbeatThresholdMs INTEGER DEFAULT 3000,
+                    -- Connection Status Configuration
+                    ConnectionStatusEnabled BOOLEAN DEFAULT 1,
+                    ConnectionStatusIntervalMs INTEGER DEFAULT 300000,
+                    LastConnectionStatusCheck DATETIME,
+                    -- Heartbeat Status
                     LastPingAttempt DATETIME,
                     LastPinged DATETIME,
                     LastPingStatus TEXT,
                     LastPingDurationMs INTEGER,
                     ConsecutivePingFailures INTEGER DEFAULT 0,
-
                     ConfigLastAppliedAt DATETIME,
                     SensorPayloadLastAckAt DATETIME,
-
+                    -- SSH Configuration
+                    SshUsername TEXT,
+                    SshPassword TEXT,  -- Should be encrypted/hashed in your service layer
+                    SshPort INTEGER DEFAULT 22,
+                    SshTimeoutMs INTEGER DEFAULT 10000,
+                    SshPrivateKey TEXT,  -- Should be encrypted in your service layer
+                    UseSshKeyAuth BOOLEAN DEFAULT 0,  -- 0 = password auth, 1 = key auth
+                    SshConnectionRetries INTEGER DEFAULT 3,
+                    SshVerifyHostKey BOOLEAN DEFAULT 1,
                     -- Capabilities
                     HasOnboardScreen BOOLEAN DEFAULT 0,
                     HasOnboardLED BOOLEAN DEFAULT 0,
@@ -132,11 +148,11 @@ namespace JunctionRelayServer.Services
                     SupportsWebSockets BOOLEAN DEFAULT 0,
                     HasSpeaker BOOLEAN DEFAULT 0,
                     HasMicroSD BOOLEAN DEFAULT 0,
-
+                    -- Add Ethernet support (missing from original)
+                    SupportsEthernet BOOLEAN DEFAULT 0,
                     FOREIGN KEY(GatewayId) REFERENCES Devices(Id)
                 );
             ");
-
 
             // Create Services table
             _db.Execute(@"
@@ -476,9 +492,13 @@ namespace JunctionRelayServer.Services
                     ShowOnDashboard          BOOLEAN NOT NULL DEFAULT 1,
                     AutoStartOnLaunch        BOOLEAN NOT NULL DEFAULT 0,
                     CronExpression           TEXT,
+                    GatewayDeviceId          INTEGER,
+                    GatewayDestination       TEXT,
+                    DestinationOverride      TEXT,
+                    BaudRate                 INTEGER,   
                     AllTargetsAllData        BOOLEAN NOT NULL DEFAULT 0,
                     AllTargetsAllScreens     BOOLEAN NOT NULL DEFAULT 0,
-                    GatewayDestination       TEXT,
+                    CompressPayload          BOOLEAN NOT NULL DEFAULT 0,
                     MQTTBrokerId             INTEGER,
                     SelectedPayloadAttributes TEXT   NOT NULL DEFAULT '',
                     StreamAutoTimeout        BOOLEAN NOT NULL DEFAULT 0,
@@ -645,9 +665,43 @@ namespace JunctionRelayServer.Services
                     FOREIGN KEY(JunctionId) REFERENCES Junctions(Id)
                 );
             ");
+           
+            _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS StreamHistoryConfiguration (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    RetentionHours REAL NOT NULL DEFAULT 24,
+                    MaxEntriesPerStream INTEGER NOT NULL DEFAULT 10000,
+                    LoggingEnabled BOOLEAN NOT NULL DEFAULT 1,                    
+                    CleanupIntervalMinutes INTEGER NOT NULL DEFAULT 15,
+                    UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
 
-            // Create Auth table
-            await CreateAuthTablesAsync();
+
+                _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS AuthUsers (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Username TEXT NOT NULL UNIQUE,
+                    PasswordHash TEXT NOT NULL,
+                    IsActive BOOLEAN DEFAULT 1,
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    LastLoginAt DATETIME,
+                    LastLoginIP TEXT
+                );
+            ");
+
+            _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS CloudSessions (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    UserId TEXT NOT NULL,
+                    BackendId TEXT NOT NULL,
+                    EncryptedRefreshToken TEXT NOT NULL,
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(UserId, BackendId)
+                );
+            ");
+
 
             // Insert protocols if table is empty
             var protocolCount = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM Protocols");
@@ -669,37 +723,22 @@ namespace JunctionRelayServer.Services
 
         }
 
-        public async Task CreateAuthTablesAsync()
-        {
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS AuthUsers (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Username TEXT NOT NULL UNIQUE,
-                    PasswordHash TEXT NOT NULL,
-                    IsActive BOOLEAN DEFAULT 1,
-                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    LastLoginAt DATETIME,
-                    LastLoginIP TEXT
-                );
-            ");
-
-            Console.WriteLine("✅ AuthUsers table created/verified");
-            await Task.CompletedTask; // Make method async-compatible
-        }
-
         public async Task SeedInitialSettingsAsync()
         {
             // Define the default settings
             var defaultSettings = new List<(string Key, string Value, string Description)>
-    {
-        ("custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
-        ("combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
-        ("host_charts", "false", "If true, show the demo tab for host charts via React"),
-        ("hyperlink_rows", "true", "If true, junction list views will include hyperlinks for navigating to collector/device configuration pages"),
-        ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: Only works if all other references have the same ID - useful for development only"),
-        ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables. Valid values: Left, Right"),
-        ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in junction tables. Valid values: Left, Right")
-    };
+            {
+                ("combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
+                ("custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
+                ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
+                ("host_charts", "false", "If true, show the tab for host charts"),
+                ("hyperlink_rows", "true", "If true, The Junction list views will embed hyperlinks for navigating to collector/devices"),
+                ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
+                ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: This feature only works if all other references have the same ID - useful for development only"),
+                ("show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
+                ("use_mobile_navigation", "false", "If true, use the mobile navbar even on the desktop experience")
+            };
+
             int addedCount = 0;
             // Check and insert each setting individually if it doesn't exist
             foreach (var setting in defaultSettings)

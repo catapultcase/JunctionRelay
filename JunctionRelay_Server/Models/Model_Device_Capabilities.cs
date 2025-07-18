@@ -29,6 +29,7 @@ public class Model_Device_Capabilities
     public bool HasExternalI2CDevices { get; set; }
     public bool HasButtons { get; set; }
     public bool HasBattery { get; set; }
+    public bool SupportsEthernet { get; set; }
     public bool SupportsWiFi { get; set; }
     public bool SupportsBLE { get; set; }
     public bool SupportsUSB { get; set; }

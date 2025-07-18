@@ -81,7 +81,10 @@ namespace JunctionRelayServer.Services
             CronExpression,
             AllTargetsAllData,
             AllTargetsAllScreens,
+            GatewayDeviceId,
             GatewayDestination,
+            DestinationOverride,
+            BaudRate,
             MQTTBrokerId,
             SelectedPayloadAttributes,
             StreamAutoTimeout,
@@ -91,7 +94,8 @@ namespace JunctionRelayServer.Services
             EnableTests,
             EnableHealthCheck,
             HealthCheckIntervalMs,
-            EnableNotifications
+            EnableNotifications,
+            CompressPayload
         )
         VALUES (
             @Name,
@@ -104,7 +108,10 @@ namespace JunctionRelayServer.Services
             @CronExpression,
             @AllTargetsAllData,
             @AllTargetsAllScreens,
+            @GatewayDeviceId,
             @GatewayDestination,
+            @DestinationOverride,
+            @BaudRate,
             @MQTTBrokerId,
             @SelectedPayloadAttributes,
             @StreamAutoTimeout,
@@ -114,7 +121,8 @@ namespace JunctionRelayServer.Services
             @EnableTests,
             @EnableHealthCheck,
             @HealthCheckIntervalMs,
-            @EnableNotifications
+            @EnableNotifications,
+            @CompressPayload
         );
         SELECT last_insert_rowid();";
 
@@ -124,37 +132,40 @@ namespace JunctionRelayServer.Services
             return newJunction;
         }
 
-
         public async Task<bool> UpdateJunctionAsync(int id, Model_Junction updated)
         {
             var sql = @"
-UPDATE Junctions SET
-    Name                     = @Name,
-    Description              = @Description,
-    Type                     = @Type,
-    SortOrder                = @SortOrder,
-    ShowOnDashboard          = @ShowOnDashboard,
-    AutoStartOnLaunch        = @AutoStartOnLaunch,
-    CronExpression           = @CronExpression,
-    AllTargetsAllData        = @AllTargetsAllData,
-    AllTargetsAllScreens     = @AllTargetsAllScreens,
-    GatewayDestination       = @GatewayDestination,
-    MQTTBrokerId             = @MQTTBrokerId,
-    SelectedPayloadAttributes= @SelectedPayloadAttributes,
-    StreamAutoTimeout        = @StreamAutoTimeout,
-    StreamAutoTimeoutMs      = @StreamAutoTimeoutMs,
-    RetryCount               = @RetryCount,
-    RetryIntervalMs          = @RetryIntervalMs,
-    EnableTests              = @EnableTests,
-    EnableHealthCheck        = @EnableHealthCheck,
-    HealthCheckIntervalMs    = @HealthCheckIntervalMs,
-    EnableNotifications      = @EnableNotifications
-WHERE Id = @Id;";
+            UPDATE Junctions SET
+                Name                     = @Name,
+                Description              = @Description,
+                Type                     = @Type,
+                SortOrder                = @SortOrder,
+                ShowOnDashboard          = @ShowOnDashboard,
+                AutoStartOnLaunch        = @AutoStartOnLaunch,
+                CronExpression           = @CronExpression,
+                AllTargetsAllData        = @AllTargetsAllData,
+                AllTargetsAllScreens     = @AllTargetsAllScreens,
+                GatewayDeviceId          = @GatewayDeviceId,    
+                GatewayDestination       = @GatewayDestination,
+                DestinationOverride      = @DestinationOverride,
+                BaudRate                 = @BaudRate,
+                MQTTBrokerId             = @MQTTBrokerId,
+                SelectedPayloadAttributes= @SelectedPayloadAttributes,
+                StreamAutoTimeout        = @StreamAutoTimeout,
+                StreamAutoTimeoutMs      = @StreamAutoTimeoutMs,
+                RetryCount               = @RetryCount,
+                RetryIntervalMs          = @RetryIntervalMs,
+                EnableTests              = @EnableTests,
+                EnableHealthCheck        = @EnableHealthCheck,
+                HealthCheckIntervalMs    = @HealthCheckIntervalMs,
+                EnableNotifications      = @EnableNotifications,
+                CompressPayload          = @CompressPayload
+            WHERE Id = @Id;";
 
             updated.Id = id;
             var affected = await _db.ExecuteAsync(sql, updated);
             return affected > 0;
-        }       
+        }
 
         public async Task<bool> DeleteJunctionAsync(int id)
         {
@@ -303,19 +314,22 @@ WHERE Id = @Id;";
 
             const string insertSql = @"
     INSERT INTO Junctions (
-        Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
-        CronExpression, AllTargetsAllData, AllTargetsAllScreens, , GatewayDestination, MQTTBrokerId,
-        SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
-        RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
-        HealthCheckIntervalMs, EnableNotifications
-    ) VALUES (
-        @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
-        @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @MQTTBrokerId,
-        @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
-        @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
-        @HealthCheckIntervalMs, @EnableNotifications
-    );
-    SELECT last_insert_rowid();";
+    Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
+    CronExpression, AllTargetsAllData, AllTargetsAllScreens,
+    GatewayDeviceId, GatewayDestination, DestinationOverride, BaudRate,
+    MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
+    RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
+    HealthCheckIntervalMs, EnableNotifications, CompressPayload
+) VALUES (
+    @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
+    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
+    @GatewayDeviceId, @GatewayDestination, @DestinationOverride, @BaudRate,
+    @MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
+    @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
+    @HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
+);
+SELECT last_insert_rowid();
+";
 
             int newJunctionId = await _db.ExecuteScalarAsync<int>(insertSql, source);
 

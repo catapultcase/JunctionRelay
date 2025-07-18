@@ -301,7 +301,7 @@ const Layouts: React.FC = () => {
 
     return (
         <Box sx={{ padding: 2 }}>
-            <Typography variant="h5" gutterBottom>Payloads</Typography>
+            {/*<Typography variant="h5" gutterBottom>Payloads</Typography>*/}
 
             <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
                 <Button

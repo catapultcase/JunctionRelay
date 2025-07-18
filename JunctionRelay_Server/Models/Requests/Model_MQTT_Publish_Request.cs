@@ -16,13 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
 namespace JunctionRelayServer.Models.Requests
 {
     public class Model_MQTT_Publish_Request
     {
-        public string Topic { get; set; }
-        public string Message { get; set; }
+        public required string Topic { get; set; }
+        public required string Message { get; set; }
     }
-
 }

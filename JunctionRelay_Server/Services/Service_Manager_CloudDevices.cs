@@ -80,7 +80,7 @@ namespace JunctionRelayServer.Services
 
                 return tokenResponse;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
@@ -92,13 +92,27 @@ namespace JunctionRelayServer.Services
             {
                 var cloudDevices = await FetchCloudDevicesAsync(cloudToken);
 
-                if (cloudDevices == null || !cloudDevices.Any())
+                if (cloudDevices == null)
                 {
                     return 0;
                 }
 
                 var existingCloudDevices = await GetExistingCloudDevicesAsync();
 
+                // Build a lookup for incoming cloud device IDs
+                var incomingCloudIds = cloudDevices.Select(cd => cd.Id).ToHashSet();
+
+                // Remove any local cloud devices that are no longer present in the cloud
+                var devicesToRemove = existingCloudDevices
+                    .Where(d => d.CloudDeviceId.HasValue && !incomingCloudIds.Contains(d.CloudDeviceId.Value))
+                    .ToList();
+
+                foreach (var device in devicesToRemove)
+                {
+                    await _deviceDb.DeleteDeviceAsync(device.Id);
+                }
+
+                // Upsert or insert the current cloud devices
                 int syncedCount = 0;
                 foreach (var cloudDevice in cloudDevices)
                 {
@@ -108,11 +122,12 @@ namespace JunctionRelayServer.Services
 
                 return syncedCount;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
         }
+
 
         public async Task<CloudDeviceResponse> RegisterCloudDeviceAsync(string cloudToken, string deviceId, string deviceName)
         {
@@ -171,7 +186,7 @@ namespace JunctionRelayServer.Services
 
                 return cloudResponse.Device;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
@@ -184,13 +199,13 @@ namespace JunctionRelayServer.Services
                 var cloudDevices = await FetchCloudDevicesAsync(cloudToken);
                 return cloudDevices ?? new List<CloudDeviceResponse>();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
         }
 
-        public async Task<bool> UnregisterCloudDeviceAsync(string cloudToken, string deviceId)
+        public async Task<bool> UnregisterCloudDeviceAsync(string cloudToken, int cloudDeviceId)
         {
             try
             {
@@ -200,7 +215,7 @@ namespace JunctionRelayServer.Services
                     throw new InvalidOperationException("Cloud API URL not configured.");
                 }
 
-                var unregisterUrl = $"{cloudApiUrl}/cloud/devices/{deviceId}";
+                var unregisterUrl = $"{cloudApiUrl}/cloud/devices/{cloudDeviceId}";
 
                 using var request = new HttpRequestMessage(HttpMethod.Delete, unregisterUrl);
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
@@ -223,19 +238,17 @@ namespace JunctionRelayServer.Services
                     throw new HttpRequestException($"Failed to unregister cloud device. Status: {response.StatusCode}, Content: {errorContent}");
                 }
 
-                if (int.TryParse(deviceId, out int cloudDeviceIdInt))
+                // Find and remove local device record
+                var existingCloudDevices = await GetExistingCloudDevicesAsync();
+                var localDevice = existingCloudDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceId);
+                if (localDevice != null)
                 {
-                    var existingCloudDevices = await GetExistingCloudDevicesAsync();
-                    var localDevice = existingCloudDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceIdInt);
-                    if (localDevice != null)
-                    {
-                        await _deviceDb.DeleteDeviceAsync(localDevice.Id);
-                    }
+                    await _deviceDb.DeleteDeviceAsync(localDevice.Id);
                 }
 
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
@@ -276,7 +289,7 @@ namespace JunctionRelayServer.Services
 
                 return validationResponse?.Valid == true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return false;
             }
@@ -333,10 +346,8 @@ namespace JunctionRelayServer.Services
         {
             try
             {
-                if (!int.TryParse(cloudDevice.DeviceId, out int cloudDeviceId))
-                {
-                    return false;
-                }
+                // Use the cloud database ID directly (no parsing needed)
+                int cloudDeviceId = cloudDevice.Id;
 
                 var existingDevice = existingCloudDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceId);
 
@@ -351,6 +362,8 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
+                // Add logging here
+                Console.WriteLine($"Error upserting cloud device: {ex.Message}");
                 return false;
             }
         }
@@ -358,54 +371,110 @@ namespace JunctionRelayServer.Services
         private async Task<bool> UpdateExistingCloudDeviceAsync(Model_Device existingDevice, CloudDeviceResponse cloudDevice)
         {
             existingDevice.Name = cloudDevice.Name;
+            existingDevice.Description = "Cloud Device";
             existingDevice.Type = "Cloud Device";
-            existingDevice.LastPinged = DateTime.TryParse(cloudDevice.LastUpdated, out var lastUpdated)
-                ? lastUpdated
-                : DateTime.UtcNow;
-            existingDevice.LastUpdated = DateTime.UtcNow;
+            existingDevice.Status = cloudDevice.Status;
+            existingDevice.UniqueIdentifier = cloudDevice.DeviceId;
+            existingDevice.IsCloudDevice = true;
+            existingDevice.CloudDeviceId = cloudDevice.Id;
+            existingDevice.PushNotifications = cloudDevice.PushNotifications;
 
-            var success = await _deviceDb.UpdateDeviceAsync(existingDevice.Id, existingDevice);
-            return success;
+            if (!string.IsNullOrWhiteSpace(cloudDevice.LastUpdated) &&
+                DateTime.TryParse(cloudDevice.LastUpdated.Trim(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedPinged))
+            {
+                existingDevice.LastPinged = parsedPinged;
+            }
+
+
+            existingDevice.LastPingStatus = cloudDevice.LastHealthStatus;
+            existingDevice.LastEncryptedSensorData = cloudDevice.LastEncryptedSensorData;
+
+            existingDevice.SyncMode = cloudDevice.DeviceType?.ToLower() switch
+            {
+                "cloud" => "cloud_health",
+                "cloud_health" => "cloud_health",
+                "cloud_sync" => "cloud_sync",
+                string other => other
+            };
+
+            // Safely parse timestamps
+            existingDevice.CreatedAt = DateTime.TryParse(cloudDevice.CreatedAt, out var createdAt)
+                ? DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
+                : null;
+
+            existingDevice.LastHealthAlertSent = DateTime.TryParse(cloudDevice.LastHealthAlertSent, out var alertAt)
+                ? DateTime.SpecifyKind(alertAt, DateTimeKind.Utc)
+                : null;
+
+            existingDevice.LastHealthReminderSent = DateTime.TryParse(cloudDevice.LastHealthReminderSent, out var reminderAt)
+                ? DateTime.SpecifyKind(reminderAt, DateTimeKind.Utc)
+                : null;
+
+            return await _deviceDb.UpdateDeviceAsync(existingDevice.Id, existingDevice);
         }
+
 
         private async Task<bool> InsertNewCloudDeviceAsync(CloudDeviceResponse cloudDevice, int cloudDeviceId)
         {
             try
             {
+                // Parse values that require DateTime? assignment
+                DateTime? parsedPinged = DateTime.TryParse(cloudDevice.LastUpdated, out var pinged)
+                    ? DateTime.SpecifyKind(pinged, DateTimeKind.Utc)
+                    : null;
+
+                DateTime? reportAt = DateTime.TryParse(cloudDevice.LastHealthReportAt, out var parsedReport)
+                    ? DateTime.SpecifyKind(parsedReport, DateTimeKind.Utc)
+                    : null;
+
+                DateTime? createdAt = DateTime.TryParse(cloudDevice.CreatedAt, out var parsedCreated)
+                    ? DateTime.SpecifyKind(parsedCreated, DateTimeKind.Utc)
+                    : null;
+
+                DateTime? alertAt = DateTime.TryParse(cloudDevice.LastHealthAlertSent, out var parsedAlert)
+                    ? DateTime.SpecifyKind(parsedAlert, DateTimeKind.Utc)
+                    : null;
+
+                DateTime? reminderAt = DateTime.TryParse(cloudDevice.LastHealthReminderSent, out var parsedReminder)
+                    ? DateTime.SpecifyKind(parsedReminder, DateTimeKind.Utc)
+                    : null;
+
                 var newDevice = new Model_Device
                 {
                     Name = cloudDevice.Name,
                     Description = "Cloud Device",
                     Type = "Cloud Device",
-                    Status = "Online",
-                    UniqueIdentifier = $"CLOUD_{cloudDevice.DeviceId}",
+                    Status = cloudDevice.Status,
+                    UniqueIdentifier = cloudDevice.DeviceId,
                     IsCloudDevice = true,
                     CloudDeviceId = cloudDeviceId,
-                    LastPinged = DateTime.TryParse(cloudDevice.LastUpdated, out var lastUpdated)
-                        ? lastUpdated
-                        : DateTime.UtcNow,
-                    LastUpdated = DateTime.UtcNow,
-                    IsConnected = false,
-                    IsGateway = false,
-                    IsJunctionRelayDevice = false,
-                    HasCustomFirmware = false,
-                    IgnoreUpdates = false,
-                    HeartbeatEnabled = false,
-                    SupportedProtocols = new List<Model_Protocol>(),
-                    Sensors = new List<Model_Sensor>(),
-                    Peers = new List<Model_Device>(),
-                    Screens = new List<Model_Device_Screens>(),
-                    I2cDevices = new List<Model_Device_I2CDevice>()
+                    PushNotifications = cloudDevice.PushNotifications,
+                    LastPinged = parsedPinged,
+                    LastPingStatus = cloudDevice.LastHealthStatus,
+                    LastEncryptedSensorData = cloudDevice.LastEncryptedSensorData,
+                    CreatedAt = createdAt,
+                    LastHealthAlertSent = alertAt,
+                    LastHealthReminderSent = reminderAt,
+
+                    SyncMode = cloudDevice.DeviceType?.ToLower() switch
+                    {
+                        "cloud" => "cloud_health",
+                        "cloud_health" => "cloud_health",
+                        "cloud_sync" => "cloud_sync",
+                        string other => other
+                    }
                 };
 
                 var addedDevice = await _deviceDb.AddDeviceAsync(newDevice);
-                return true;
+                return addedDevice != null;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error inserting new cloud device: {ex.Message}");
                 return false;
             }
         }
+
 
         private async Task RemoveDeletedCloudDevicesAsync(List<CloudDeviceResponse> cloudDevices, List<Model_Device> existingCloudDevices)
         {
@@ -460,13 +529,13 @@ namespace JunctionRelayServer.Services
 
                 return cloudResponse?.Devices ?? new List<PendingCloudDeviceResponse>();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
         }
 
-        public async Task<bool> ConfirmCloudDeviceAsync(string cloudToken, string deviceId, bool accept)
+        public async Task<bool> ConfirmCloudDeviceAsync(string cloudToken, int cloudDeviceId, bool accept)
         {
             try
             {
@@ -476,7 +545,7 @@ namespace JunctionRelayServer.Services
                     throw new InvalidOperationException("Cloud API URL not configured.");
                 }
 
-                var confirmUrl = $"{cloudApiUrl}/cloud/devices/{deviceId}/confirm";
+                var confirmUrl = $"{cloudApiUrl}/cloud/devices/{cloudDeviceId}/confirm";
 
                 var confirmRequest = new { accept = accept };
                 var jsonContent = JsonSerializer.Serialize(confirmRequest);
@@ -505,7 +574,7 @@ namespace JunctionRelayServer.Services
 
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
@@ -514,9 +583,10 @@ namespace JunctionRelayServer.Services
 
     public class PendingCloudDeviceResponse
     {
-        public string DeviceId { get; set; } = string.Empty;
+        public int Id { get; set; }                    // Cloud database ID
+        public string DeviceId { get; set; } = string.Empty;  // MAC address
         public string Name { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
     }
 
     public class PendingCloudDevicesApiResponse
@@ -541,11 +611,23 @@ namespace JunctionRelayServer.Services
 
     public class CloudDeviceResponse
     {
+        public int Id { get; set; }
+        public string UserId { get; set; } = string.Empty;
         public string DeviceId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string LastHealthStatus { get; set; } = string.Empty;
+        public string LastEncryptedSensorData { get; set; } = string.Empty;
+        public string LastHealthReportAt { get; set; } = string.Empty;
+        public string LastHealthAlertSent { get; set; } = string.Empty;
+        public string LastHealthReminderSent { get; set; } = string.Empty;
+        public string DeviceType { get; set; } = string.Empty;
+        public string CreatedAt { get; set; } = string.Empty;
         public string LastUpdated { get; set; } = string.Empty;
+        public bool PushNotifications { get; set; }
+        public bool ClearAlertsOnHealthy { get; set; }
     }
+
 
     public class CloudDeviceRegistrationResponse
     {

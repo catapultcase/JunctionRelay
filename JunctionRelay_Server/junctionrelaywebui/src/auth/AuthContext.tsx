@@ -79,8 +79,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         localStorage.removeItem('junctionrelay_username');
         localStorage.removeItem('junctionrelay_expiry');
 
-        // Clear cloud auth
+        // Clear cloud auth - BOTH tokens
         localStorage.removeItem('cloud_proxy_token');
+        localStorage.removeItem('junctionrelay_cloud_user');
 
         setUser(null);
         setCloudUserInfo(null);
@@ -269,12 +270,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 await fetch('/api/auth/logout', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${user.token}` }
-                }).catch(() => { });
+                }).catch(() => {});
             } else if (user?.authType === 'cloud' && user?.token) {
+                // No need to pass refreshToken anymore — backend has it
                 await fetch('/api/cloud-auth/logout', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${user.token}` }
-                }).catch(() => { });
+                    headers: {
+                        'Authorization': `Bearer ${user.token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }).catch(() => {});
             }
         } catch (error) {
             console.error('Error during logout:', error);

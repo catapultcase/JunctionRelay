@@ -35,7 +35,8 @@ import {
 } from '@mui/icons-material';
 
 interface PendingDevice {
-    deviceId: string;
+    id: number;              // DATABASE ID - this is what we need for the API call
+    deviceId: string;        // MAC address - for display only
     name: string;
     type?: string;
 }
@@ -53,7 +54,7 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
 }) => {
     const [pendingDevices, setPendingDevices] = useState<PendingDevice[]>([]);
     const [loading, setLoading] = useState(false);
-    const [confirmingDevice, setConfirmingDevice] = useState<string | null>(null);
+    const [confirmingDevice, setConfirmingDevice] = useState<number | null>(null);
 
     // Fetch pending cloud devices
     const fetchPendingDevices = useCallback(async () => {
@@ -63,6 +64,7 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
 
             if (response.ok) {
                 const data = await response.json();
+                console.log('Pending devices response:', data); // Debug log
                 setPendingDevices(data.devices || []);
             } else if (response.status === 401) {
                 // No cloud auth, just set empty array
@@ -80,10 +82,13 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
     }, []);
 
     // Handle device confirmation (approve/reject)
-    const handleConfirmDevice = async (deviceId: string, accept: boolean) => {
-        setConfirmingDevice(deviceId);
+    const handleConfirmDevice = async (cloudDeviceId: number, deviceName: string, accept: boolean) => {
+        setConfirmingDevice(cloudDeviceId);
         try {
-            const response = await fetch(`/api/cloud-auth/devices/${deviceId}/confirm`, {
+            console.log(`Confirming device ID: ${cloudDeviceId}, Accept: ${accept}`); // Debug log
+
+            // USE THE DATABASE ID (cloudDeviceId) instead of MAC address
+            const response = await fetch(`/api/cloud-auth/devices/${cloudDeviceId}/confirm`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -93,7 +98,7 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
 
             if (response.ok) {
                 const action = accept ? 'approved' : 'rejected';
-                onSuccess?.(`Device ${action} successfully`);
+                onSuccess?.(`Device "${deviceName}" ${action} successfully`);
 
                 // Refresh pending devices and notify parent
                 await fetchPendingDevices();
@@ -104,7 +109,7 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
             }
         } catch (err: any) {
             console.error("Error confirming device:", err);
-            onError?.(`Failed to confirm device: ${err.message}`);
+            onError?.(`Failed to confirm device "${deviceName}": ${err.message}`);
         } finally {
             setConfirmingDevice(null);
         }
@@ -132,7 +137,7 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {pendingDevices.map((device) => (
-                    <Card key={device.deviceId} sx={{ border: '2px solid', borderColor: 'warning.light' }}>
+                    <Card key={device.id} sx={{ border: '2px solid', borderColor: 'warning.light' }}>
                         <CardContent>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Box sx={{ flex: 1 }}>
@@ -141,6 +146,9 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
                                     </Typography>
                                     <Typography color="textSecondary" variant="body2" sx={{ fontFamily: 'monospace' }}>
                                         Device ID: {device.deviceId}
+                                    </Typography>
+                                    <Typography color="textSecondary" variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                        Cloud ID: {device.id}
                                     </Typography>
                                     <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
                                         <Chip
@@ -161,8 +169,8 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
                                         variant="contained"
                                         color="success"
                                         startIcon={<CheckCircleIcon />}
-                                        onClick={() => handleConfirmDevice(device.deviceId, true)}
-                                        disabled={confirmingDevice === device.deviceId}
+                                        onClick={() => handleConfirmDevice(device.id, device.name, true)}
+                                        disabled={confirmingDevice === device.id}
                                         size="small"
                                     >
                                         Approve
@@ -171,13 +179,13 @@ const PendingDevicesSection: React.FC<PendingDevicesSectionProps> = ({
                                         variant="outlined"
                                         color="error"
                                         startIcon={<CloseIcon />}
-                                        onClick={() => handleConfirmDevice(device.deviceId, false)}
-                                        disabled={confirmingDevice === device.deviceId}
+                                        onClick={() => handleConfirmDevice(device.id, device.name, false)}
+                                        disabled={confirmingDevice === device.id}
                                         size="small"
                                     >
                                         Reject
                                     </Button>
-                                    {confirmingDevice === device.deviceId && (
+                                    {confirmingDevice === device.id && (
                                         <CircularProgress size={20} />
                                     )}
                                 </Box>

@@ -21,6 +21,7 @@ using JunctionRelayServer.Models;
 using JunctionRelayServer.Interfaces;
 using Dapper;
 using System.Data;
+using System.Collections.Concurrent;
 
 namespace JunctionRelayServer.Services
 {
@@ -34,6 +35,8 @@ namespace JunctionRelayServer.Services
             _db = db;
             _secretsService = secretsService;
         }
+
+        private static readonly ConcurrentDictionary<string, string> _decryptedTokenCache = new();
 
         // Fetch all collectors
         public async Task<List<Model_Collector>> GetAllCollectorsAsync()
@@ -156,18 +159,48 @@ namespace JunctionRelayServer.Services
         {
             if (!string.IsNullOrEmpty(collector.AccessToken))
             {
-                collector.AccessToken = _secretsService.EncryptSecret(collector.AccessToken);
+                if (!string.IsNullOrEmpty(collector.AccessToken) && !_secretsService.IsEncrypted(collector.AccessToken))
+                {
+                    collector.AccessToken = _secretsService.EncryptSecret(collector.AccessToken);
+                }
+
             }
         }
 
+
         // Helper method to decrypt secrets in a collector
+
+
         private void DecryptCollectorSecrets(Model_Collector collector)
         {
             if (!string.IsNullOrEmpty(collector.AccessToken))
             {
-                collector.AccessToken = _secretsService.DecryptSecret(collector.AccessToken);
+                var encrypted = collector.AccessToken;
+                var cacheKey = ComputeStableHash(encrypted);
+
+                if (_decryptedTokenCache.TryGetValue(cacheKey, out var cached))
+                {
+                    collector.DecryptedAccessToken = cached;
+                    // Console.WriteLine($"[COLLECTOR_CACHE] ✅ Cache hit for collector {collector.Id}");
+                }
+                else
+                {
+                    var decrypted = _secretsService.DecryptSecret(encrypted);
+                    _decryptedTokenCache[cacheKey] = decrypted;
+                    collector.DecryptedAccessToken = decrypted;
+                    Console.WriteLine($"[COLLECTOR_CACHE] 🔓 Cache miss - decrypted and cached collector {collector.Id}");
+                }
             }
         }
+
+        private static string ComputeStableHash(string input)
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(input);
+            var hash = sha256.ComputeHash(bytes);
+            return Convert.ToBase64String(hash); // or BitConverter.ToString(hash).Replace("-", "")
+        }
+
 
         // Helper to create a copy of the collector for database operations
         private Model_Collector CreateCollectorCopy(Model_Collector original)

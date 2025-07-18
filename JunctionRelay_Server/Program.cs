@@ -23,134 +23,17 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebSockets;
 using Microsoft.AspNetCore.Authorization;
 
-// Helper method to generate or load unique JWT secret per installation (LOCAL AUTH ONLY)
-static string GenerateOrLoadInstallationSecret(string dbDirectory)
-{
-    var secretFile = Path.Combine(dbDirectory, "jwt-secret.key");
-
-    try
-    {
-        // Try to load existing secret
-        if (File.Exists(secretFile))
-        {
-            var existingSecret = File.ReadAllText(secretFile);
-            if (!string.IsNullOrWhiteSpace(existingSecret) && existingSecret.Length >= 32)
-            {
-                // Console.WriteLine("Loaded existing JWT secret from installation");
-                return existingSecret;
-            }
-        }
-
-        // Generate new random secret (64 characters for extra security)
-        var randomBytes = new byte[48]; // 48 bytes = 64 base64 characters
-        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
-        {
-            rng.GetBytes(randomBytes);
-        }
-        var newSecret = Convert.ToBase64String(randomBytes);
-
-        // Save the secret for future use
-        File.WriteAllText(secretFile, newSecret);
-        // Console.WriteLine("Generated new JWT secret for this installation");
-
-        return newSecret;
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"FATAL ERROR: Could not generate/load JWT secret: {ex.Message}");
-        Console.WriteLine("Unable to secure local authentication. Please check file permissions and reinstall.");
-        Environment.Exit(1);
-        return string.Empty; // This line will never execute, but satisfies the compiler
-    }
-}
-
 var builder = WebApplication.CreateBuilder(args);
 
-// Check for database deletion marker BEFORE setting up database paths
-var deleteMarkerPath = Path.Combine(builder.Environment.ContentRootPath, ".delete-all-data");
-if (File.Exists(deleteMarkerPath))
+// Register identity and deletion services early
+builder.Services.AddSingleton<Service_BackendIdentity>();
+builder.Services.AddSingleton<Service_DataDeletion>();
+
+// Handle deletion marker before setup - USING SERVICE NOW
+var tempDataDeletionService = new Service_DataDeletion();
+if (tempDataDeletionService.HasDeletionMarker())
 {
-    try
-    {
-        Console.WriteLine("Database deletion marker found - proceeding with data cleanup...");
-
-        // Determine database paths for deletion
-        string deletionDbPath;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            deletionDbPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "JunctionRelay",
-                "jr_database.db"
-            );
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            deletionDbPath = Path.Combine(Directory.GetCurrentDirectory(), "data", "jr_database.db");
-        }
-        else
-        {
-            deletionDbPath = "jr_database.db";
-        }
-
-        var deletionDbDirectory = Path.GetDirectoryName(deletionDbPath);
-
-        // Delete database files
-        if (File.Exists(deletionDbPath))
-        {
-            File.Delete(deletionDbPath);
-            Console.WriteLine("Deleted main database file");
-        }
-
-        // Delete database journal files (SQLite artifacts)
-        if (!string.IsNullOrEmpty(deletionDbDirectory))
-        {
-            var dbFileName = Path.GetFileNameWithoutExtension(deletionDbPath);
-            var journalFiles = Directory.GetFiles(deletionDbDirectory, $"{dbFileName}.*")
-                .Where(f => f.EndsWith(".db-journal") || f.EndsWith(".db-wal") || f.EndsWith(".db-shm"));
-
-            foreach (var file in journalFiles)
-            {
-                File.Delete(file);
-                Console.WriteLine($"Deleted database artifact: {Path.GetFileName(file)}");
-            }
-        }
-
-        // Delete encryption keys directory
-        var deletionKeysDirectory = !string.IsNullOrEmpty(deletionDbDirectory) ? Path.Combine(deletionDbDirectory, "keys") : "keys";
-        if (Directory.Exists(deletionKeysDirectory))
-        {
-            Directory.Delete(deletionKeysDirectory, true);
-            Console.WriteLine("Deleted encryption keys directory");
-        }
-
-        // Delete cache directories
-        var firmwareDirectory = Path.Combine(builder.Environment.ContentRootPath, "Firmware");
-        if (Directory.Exists(firmwareDirectory))
-        {
-            Directory.Delete(firmwareDirectory, true);
-            Console.WriteLine("Deleted firmware cache directory");
-        }
-
-        // Delete logs directory
-        var logsDirectory = Path.Combine(builder.Environment.ContentRootPath, "Logs");
-        if (Directory.Exists(logsDirectory))
-        {
-            Directory.Delete(logsDirectory, true);
-            Console.WriteLine("Deleted logs directory");
-        }
-
-        // Remove the marker file
-        File.Delete(deleteMarkerPath);
-        Console.WriteLine("Removed deletion marker file");
-
-        Console.WriteLine("Database deletion completed successfully - starting with fresh setup");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error during database deletion: {ex.Message}");
-        // Continue with startup even if deletion fails
-    }
+    tempDataDeletionService.ProcessDeletionMarker();
 }
 
 builder.Services.AddCors(options =>
@@ -173,24 +56,8 @@ builder.Services.AddWebSockets(options =>
 // Add HttpClient for cloud functionality
 builder.Services.AddHttpClient();
 
-string dbPath;
-if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-{
-    dbPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "JunctionRelay",
-        "jr_database.db"
-    );
-}
-else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-{
-    dbPath = Path.Combine(Directory.GetCurrentDirectory(), "data", "jr_database.db");
-}
-else
-{
-    dbPath = "jr_database.db";
-}
-
+// Use the service to get database path
+var dbPath = Service_BackendIdentity.GetDatabasePath();
 var dbDirectory = Path.GetDirectoryName(dbPath);
 if (!string.IsNullOrEmpty(dbDirectory) && !Directory.Exists(dbDirectory))
 {
@@ -215,11 +82,13 @@ builder.Services.AddDataProtection()
 
 // Register the secrets service
 builder.Services.AddSingleton<ISecretsService, SecretsService>();
+builder.Services.AddSingleton<Service_CloudSessionStore>();
 
 // DUAL AUTHENTICATION: Support BOTH Local JWT and Clerk tokens
-// LOCAL AUTH: Generate unique JWT secret per installation for better security
-var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ??
-                   GenerateOrLoadInstallationSecret(dbDirectory ?? ".");
+// Get JWT secret and backend ID from services
+var backendIdentityService = new Service_BackendIdentity(builder.Environment);
+var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ?? backendIdentityService.GetJwtSecret();
+var backendId = backendIdentityService.GetBackendId();
 
 // IMPORTANT: Set the generated secret in configuration so Service_Jwt can access it
 builder.Configuration["Jwt:SecretKey"] = jwtSecretKey;
@@ -352,6 +221,7 @@ builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
+builder.Services.AddScoped<Service_Manager_CloudNotifications>();
 
 builder.Services.AddSingleton<StartupSignals>();
 builder.Services.AddHostedService<Service_Heartbeats>();
@@ -364,8 +234,17 @@ builder.Services.AddSingleton<Service_Stream_Manager_MQTT>();
 builder.Services.AddSingleton<Service_Stream_Manager_HTTP>();
 builder.Services.AddSingleton<Service_Stream_Manager_COM>();
 
-// Register WebSocket service
+builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
+builder.Services.AddSingleton<Service_Stream_History_Manager>();
+
+// Register WebSocket services
 builder.Services.AddSingleton<Service_Manager_WebSocket_Devices>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Devices>());
+builder.Services.AddSingleton<Service_Manager_WebSocket_Dashboard>();
+
+// Register SSH services
+builder.Services.AddSingleton<Service_Manager_SSH>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
 
 builder.Services.AddSingleton<Func<Type, Model_Service, IService>>(provider => (serviceType, modelService) =>
 {
@@ -451,15 +330,12 @@ app.Lifetime.ApplicationStarted.Register(async () =>
 });
 
 // Graceful shutdown handler for WebSocket connections
-app.Lifetime.ApplicationStopping.Register(async () =>
+app.Lifetime.ApplicationStopping.Register(() =>
 {
-    Console.WriteLine("Application stopping - closing WebSocket connections...");
-    using var scope = app.Services.CreateScope();
-    var webSocketManager = scope.ServiceProvider.GetService<Service_Manager_WebSocket_Devices>();
-    if (webSocketManager != null)
-    {
-        await webSocketManager.CloseAllConnectionsAsync("Application shutdown");
-    }
+    Console.WriteLine("Application stopping - WebSocket service will shut down automatically...");
+    // Note: Service_Manager_WebSocket_Devices is now a BackgroundService that handles
+    // its own cleanup via the Dispose() method when the application stops.
+    // No manual cleanup needed here.
 });
 
 builder.WebHost.UseUrls("http://0.0.0.0:7180");

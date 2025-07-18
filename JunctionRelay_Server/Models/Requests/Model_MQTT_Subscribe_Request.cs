@@ -21,7 +21,7 @@ namespace JunctionRelayServer.Models.Requests
 {
     public class Model_MQTT_Subscribe_Request
     {
-        public string Topic { get; set; }
+        public required string Topic { get; set; }
         public int QoS { get; set; }
     }
 }

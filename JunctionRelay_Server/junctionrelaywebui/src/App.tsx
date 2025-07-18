@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,8 +19,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
-import { Container, Box, CircularProgress, Typography } from "@mui/material";
+import { Container, Box, CircularProgress, Typography, useTheme, useMediaQuery } from "@mui/material";
 import Navbar from "components/Navbar";
+import BottomActionBar from "components/BottomActionBar";
 import Dashboard from "pages/Dashboard";
 import Junctions from "pages/Junctions";
 import Devices from "pages/Devices";
@@ -39,6 +40,23 @@ import HostCharts from "pages/HostCharts";
 import Settings from "pages/Settings";
 import LoginOnly from "components/LoginOnly";
 import { AuthProvider } from "auth/AuthContext";
+import Streams from "pages/Streams";
+
+// Import statements for icons used in BottomActionBarWrapper
+import AddIcon from '@mui/icons-material/Add';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import TableViewIcon from '@mui/icons-material/TableView';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import SearchIcon from '@mui/icons-material/Search';
+import SaveIcon from '@mui/icons-material/Save';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import SettingsBackupRestoreIcon from '@mui/icons-material/SettingsBackupRestore';
+import ComputerIcon from '@mui/icons-material/Computer';
+import CloudIcon from '@mui/icons-material/Cloud';
+import MemoryIcon from '@mui/icons-material/Memory';
 
 // Enhanced Global Fetch Wrapper - NO FALLBACKS between auth modes
 const originalFetch = window.fetch;
@@ -131,8 +149,367 @@ const LoginPage: React.FC = () => {
     );
 };
 
+// Wrapper component to handle bottom action bar logic
+const BottomActionBarWrapper: React.FC = () => {
+    const location = useLocation();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    // State to track current view modes for different pages
+    const [devicesViewMode, setDevicesViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_devices_view_mode_unified') || 'table';
+    });
+
+    const [dashboardJunctionsViewMode, setDashboardJunctionsViewMode] = useState(() => {
+        return localStorage.getItem('dashboard_junctions_view_mode') || 'table';
+    });
+
+    const [junctionsViewMode, setJunctionsViewMode] = useState(() => {
+        return localStorage.getItem('junctions_view_mode') || 'table';
+    });
+
+    // State for configure device actions (dynamically set by the configure device page)
+    const [configureDeviceActions, setConfigureDeviceActions] = useState<any>(null);
+
+    // Listen for view mode changes from localStorage and sync state
+    useEffect(() => {
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'junctionrelay_devices_view_mode_unified' && e.newValue) {
+                setDevicesViewMode(e.newValue);
+            }
+            if (e.key === 'dashboard_junctions_view_mode' && e.newValue) {
+                setDashboardJunctionsViewMode(e.newValue);
+            }
+            if (e.key === 'junctions_view_mode' && e.newValue) {
+                setJunctionsViewMode(e.newValue);
+            }
+        };
+
+        // Listen for custom events dispatched when view mode changes
+        const handleViewModeChange = (e: CustomEvent) => {
+            if (e.detail.mode) {
+                // Update the appropriate view mode based on current page
+                if (location.pathname === '/devices') {
+                    setDevicesViewMode(e.detail.mode);
+                } else if (location.pathname === '/') {
+                    setDashboardJunctionsViewMode(e.detail.mode);
+                } else if (location.pathname === '/junctions') {
+                    setJunctionsViewMode(e.detail.mode);
+                }
+            }
+        };
+
+        // Listen for configure device bottom actions configuration
+        const handleConfigureDeviceActions = (e: CustomEvent) => {
+            if (e.detail.clear) {
+                setConfigureDeviceActions(null);
+            } else {
+                setConfigureDeviceActions(e.detail);
+            }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
+        window.addEventListener('configure-device-bottom-actions', handleConfigureDeviceActions as EventListener);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
+            window.removeEventListener('configure-device-bottom-actions', handleConfigureDeviceActions as EventListener);
+        };
+    }, [location.pathname]);
+
+    // Don't show on certain pages, but DO show on settings and configure pages
+    const isDetailPage = location.pathname.includes('/testing') ||
+        location.pathname.includes('/hostinfo') ||
+        location.pathname.includes('/hostcharts');
+
+    if (!isMobile || isDetailPage) {
+        return null;
+    }
+
+    // Check if we're on a configure device page
+    const isConfigureDevicePage = location.pathname.includes('/configure-device/');
+
+    // If we're on configure device page and have actions configured, use those
+    if (isConfigureDevicePage && configureDeviceActions) {
+        return (
+            <>
+                <BottomActionBar {...configureDeviceActions} />
+                {/* Status indicator overlay for unsaved changes */}
+                {configureDeviceActions.statusIndicator && (
+                    <Box
+                        sx={{
+                            position: 'fixed',
+                            bottom: 70, // Above the bottom action bar
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: theme.zIndex.snackbar,
+                            px: 2,
+                            py: 0.5,
+                            backgroundColor: (() => {
+                                const color = configureDeviceActions.statusIndicator.color || 'info';
+                                switch (color) {
+                                    case 'warning': return `${theme.palette.warning.main}20`;
+                                    case 'success': return `${theme.palette.success.main}20`;
+                                    case 'error': return `${theme.palette.error.main}20`;
+                                    case 'info':
+                                    default: return `${theme.palette.info.main}20`;
+                                }
+                            })(),
+                            color: (() => {
+                                const color = configureDeviceActions.statusIndicator.color || 'info';
+                                switch (color) {
+                                    case 'warning': return theme.palette.warning.main;
+                                    case 'success': return theme.palette.success.main;
+                                    case 'error': return theme.palette.error.main;
+                                    case 'info':
+                                    default: return theme.palette.info.main;
+                                }
+                            })(),
+                            borderRadius: 2,
+                            border: (() => {
+                                const color = configureDeviceActions.statusIndicator.color || 'info';
+                                switch (color) {
+                                    case 'warning': return `1px solid ${theme.palette.warning.main}40`;
+                                    case 'success': return `1px solid ${theme.palette.success.main}40`;
+                                    case 'error': return `1px solid ${theme.palette.error.main}40`;
+                                    case 'info':
+                                    default: return `1px solid ${theme.palette.info.main}40`;
+                                }
+                            })(),
+                            backdropFilter: 'blur(10px)',
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5
+                        }}
+                    >
+                        {configureDeviceActions.statusIndicator.icon && (
+                            <span style={{ fontSize: '0.8rem' }}>
+                                {configureDeviceActions.statusIndicator.icon}
+                            </span>
+                        )}
+                        {configureDeviceActions.statusIndicator.text}
+                    </Box>
+                )}
+            </>
+        );
+    }
+
+    // Get actions based on current page
+    const getBottomActionConfig = () => {
+        switch (location.pathname) {
+            case '/':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Junction',
+                        onClick: () => {
+                            // This would be passed down from Dashboard component
+                            // For now, you could trigger a custom event or use a context
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-junction'));
+                        }
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                            }
+                        },
+                        {
+                            icon: <FilterListIcon />,
+                            label: 'Filter',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-filter'));
+                            }
+                        }
+                    ],
+                    viewModeActions: {
+                        currentMode: dashboardJunctionsViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('dashboard_junctions_view_mode', mode);
+                            setDashboardJunctionsViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
+                };
+
+            case '/junctions':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Junction',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-junction'));
+                        }
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <CloudUploadIcon />,
+                            label: 'Import',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-import'));
+                            }
+                        },
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                            }
+                        }
+                    ],
+                    viewModeActions: {
+                        currentMode: junctionsViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('junctions_view_mode', mode);
+                            setJunctionsViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
+                };
+
+            case '/devices':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Device',
+                        submenu: [
+                            {
+                                icon: <ComputerIcon />,
+                                label: 'Add Custom Local Device',
+                                description: 'Manually configure a local device',
+                                onClick: () => {
+                                    window.dispatchEvent(new CustomEvent('bottom-action-add-device'));
+                                },
+                                color: 'primary' as const
+                            },
+                            {
+                                icon: <CloudIcon />,
+                                label: 'Add Cloud Device',
+                                description: 'Register a JunctionRelay cloud device',
+                                onClick: () => {
+                                    window.dispatchEvent(new CustomEvent('bottom-action-add-cloud-device'));
+                                },
+                                color: 'info' as const
+                            }
+                        ]
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                            }
+                        },
+                        {
+                            icon: <SearchIcon />,
+                            label: 'Scan',
+                            onClick: () => {
+                                // Trigger the scan modal which will show the submenu
+                                window.dispatchEvent(new CustomEvent('bottom-action-search'));
+                            },
+                            showText: true
+                        }
+                    ],
+                    viewModeActions: {
+                        currentMode: devicesViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('junctionrelay_devices_view_mode_unified', mode);
+                            setDevicesViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
+                };
+
+            case '/collectors':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Collector',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-collector'));
+                        }
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                            }
+                        }
+                    ]
+                };
+
+            case '/settings':
+                return {
+                    secondaryActions: [
+                        {
+                            icon: <SaveIcon />,
+                            label: 'Backup',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-backup'));
+                            },
+                            showText: true
+                        },
+                        {
+                            icon: <DeleteSweepIcon />,
+                            label: 'Cache',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-clear-cache'));
+                            },
+                            showText: true
+                        },
+                        {
+                            icon: <SettingsBackupRestoreIcon />,
+                            label: 'Reset',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-reset-columns'));
+                            },
+                            showText: true
+                        }
+                    ]
+                };
+
+            default:
+                return {};
+        }
+    };
+
+    return <BottomActionBar {...getBottomActionConfig()} />;
+};
+
 // Main app routes component
 const AppRoutes: React.FC = () => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
     return (
         <>
             <Navbar />
@@ -142,12 +519,14 @@ const AppRoutes: React.FC = () => {
                     backgroundColor: "background.default",
                     minHeight: "100vh",
                     paddingTop: { xs: "56px", sm: "64px" },
-                    paddingBottom: 4
+                    // Add bottom padding on mobile to account for bottom action bar
+                    paddingBottom: isMobile ? { xs: '84px', sm: '84px' } : 4
                 }}
             >
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/junctions" element={<Junctions />} />
+                    <Route path="/streams" element={<Streams />} />
                     <Route path="/devices" element={<Devices />} />
                     <Route path="/services" element={<Services />} />
                     <Route path="/collectors" element={<Collectors />} />
@@ -164,6 +543,8 @@ const AppRoutes: React.FC = () => {
                     <Route path="/settings" element={<Settings />} />
                 </Routes>
             </Container>
+            {/* Bottom Action Bar - only shows on mobile */}
+            <BottomActionBarWrapper />
         </>
     );
 };
@@ -309,18 +690,20 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
+        const refreshToken = urlParams.get('refreshToken');
         const authStatus = urlParams.get('auth');
 
         if (token && authStatus === 'success') {
             localStorage.setItem('cloud_proxy_token', token);
+
             // Clear URL parameters
             window.history.replaceState({}, document.title, window.location.pathname);
-            // Trigger auth recheck AND notify other components
+
             checkAuthStatus();
-            // Dispatch auth-changed event so navbar and other components refresh
             window.dispatchEvent(new CustomEvent('auth-changed'));
         }
     }, [checkAuthStatus]);
+
 
     if (loading) {
         return (

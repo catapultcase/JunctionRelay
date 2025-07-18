@@ -35,9 +35,9 @@ namespace JunctionRelayServer.Models
         // Settings
         public string? URL { get; set; }
         public string? AccessToken { get; set; }
+        public string? DecryptedAccessToken { get; set; }
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
         public int? ServiceId { get; set; }
-
     }
 }

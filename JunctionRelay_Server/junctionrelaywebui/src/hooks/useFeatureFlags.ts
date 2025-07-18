@@ -16,31 +16,51 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 export interface FeatureFlags {
     host_charts?: boolean;
     device_actions_alignment?: string;
     junction_actions_alignment?: string;
+    use_mobile_navigation?: string;
+    show_current_version?: string;
     [key: string]: boolean | string | undefined;
 }
 
 export const useFeatureFlags = () => {
     const [flags, setFlags] = useState<FeatureFlags | null>(null);
 
+    const fetchFlags = useCallback(async () => {
+        try {
+            const res = await fetch("/api/settings/flags");
+            const data = await res.json();
+            setFlags(data);
+        } catch {
+            setFlags({});
+        }
+    }, []);
+
     useEffect(() => {
-        const fetchFlags = async () => {
-            try {
-                const res = await fetch("/api/settings/flags");
-                const data = await res.json();
-                setFlags(data);
-            } catch {
-                setFlags({});
-            }
+        // Initial fetch
+        fetchFlags();
+
+        // Listen for flag changes
+        const handleFlagsChanged = () => {
+            fetchFlags();
         };
 
-        fetchFlags();
-    }, []);
+        const handleSettingsChanged = () => {
+            fetchFlags();
+        };
+
+        window.addEventListener('flags-changed', handleFlagsChanged);
+        window.addEventListener('settings-changed', handleSettingsChanged);
+
+        return () => {
+            window.removeEventListener('flags-changed', handleFlagsChanged);
+            window.removeEventListener('settings-changed', handleSettingsChanged);
+        };
+    }, [fetchFlags]);
 
     return flags;
 };

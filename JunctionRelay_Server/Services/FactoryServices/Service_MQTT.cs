@@ -131,7 +131,7 @@ namespace JunctionRelayServer.Services.FactoryServices
         {
             if (!_mqttClient.IsConnected)
             {
-                Console.WriteLine($"[SERVICE_MQTT][{_service.Id}] MQTT client is not connected. Attempting to reconnect.");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] MQTT client is not connected. Attempting to reconnect.");
                 await ConnectAsync();
             }
 
@@ -149,7 +149,7 @@ namespace JunctionRelayServer.Services.FactoryServices
                 .Build());
 
             _subscribedTopics[topic] = qosLevel;  // (Re)set it just in case
-            Console.WriteLine($"[SERVICE_MQTT][{_service.Id}] Subscribed to topic: {topic} with QoS {qosLevel}");
+            Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] Subscribed to topic: {topic} with QoS {qosLevel}");
         }
 
         public int? GetSubscribedQoS(string topic)
@@ -165,7 +165,7 @@ namespace JunctionRelayServer.Services.FactoryServices
         {
             if (!_mqttClient.IsConnected)
             {
-                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id}] MQTT client is not connected. Attempting to reconnect.");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] MQTT client is not connected. Attempting to reconnect.");
                 await ConnectAsync();
             }
 
@@ -173,17 +173,22 @@ namespace JunctionRelayServer.Services.FactoryServices
             {
                 await _mqttClient.UnsubscribeAsync(topic);
                 _subscribedTopics.TryRemove(topic, out _);
-                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id}] Unsubscribed from topic: {topic}");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] Unsubscribed from topic: {topic}");
             }
             else
             {
-                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id}] Topic '{topic}' not found in subscribed topics, skipping unsubscribe.");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] Topic '{topic}' not found in subscribed topics, skipping unsubscribe.");
             }
         }
 
         // Publish a message to an MQTT topic
         public async Task PublishAsync(string topic, string message, int qos = 0)
         {
+            if (_service == null)
+            {
+                throw new InvalidOperationException("Service must be configured before publishing messages.");
+            }
+
             if (!_mqttClient.IsConnected)
             {
                 Console.WriteLine($"[SERVICE_MQTT][{_service.Id}] MQTT client is not connected. Attempting to reconnect.");
@@ -210,11 +215,11 @@ namespace JunctionRelayServer.Services.FactoryServices
             if (_mqttClient.IsConnected)
             {
                 await _mqttClient.DisconnectAsync();
-                Console.WriteLine($"[SERVICE_MQTT][{_service.Id}] MQTT client disconnected.");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] MQTT client disconnected.");
             }
             else
             {
-                Console.WriteLine($"[SERVICE_MQTT][{_service.Id}] MQTT client is not connected.");
+                Console.WriteLine($"[SERVICE_MQTT][{_service?.Id.ToString() ?? "Unknown"}] MQTT client is not connected.");
             }
         }
 

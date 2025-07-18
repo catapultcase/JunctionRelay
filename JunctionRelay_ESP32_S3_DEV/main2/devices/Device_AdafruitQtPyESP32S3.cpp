@@ -180,66 +180,40 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     Wire1.setClock(400000);
     delay(100);  // Stabilization delay
     
-    // Run enhanced scanner with device recognition
+    // Run enhanced scanner with device recognition - this populates the JSON
     Serial.println("[DEBUG][I2C] Running I2C scan with device recognition...");
     String scanResult = I2CScanner::scanAndConfigureDevices(Wire1, doc, "qtpy");
     Serial.printf("[DEBUG][I2C] Scan result: %s\n", scanResult.c_str());
     
-    // Check what was found and initialize accordingly
+    // Get what was found from the scanner results
     bool foundSeesaw = doc["FoundSeesaw"] | false;
+    bool foundQuadDisplay = doc["FoundQuadDisplay"] | false;
+    bool foundCharlieplex = doc["FoundCharlieplex"] | false;
     
-    // Check for Quad Displays at 0x70, 0x71, 0x72
-    bool foundQuadDisplay = false;
-    uint8_t quadAddresses[] = {0x70, 0x71, 0x72};
-    int quadCount = 0;
-    
-    Serial.println("[DEBUG][I2C] Checking for Quad displays at addresses 0x70, 0x71, 0x72...");
-    for (uint8_t addr : quadAddresses) {
-        Wire1.beginTransmission(addr);
-        if (Wire1.endTransmission() == 0) {
-            Serial.printf("[DEBUG][I2C] Found potential Quad display at 0x%02X\n", addr);
-            foundQuadDisplay = true;
-            quadCount++;
-        }
-    }
-    
-    // Check for Charlieplex displays at 0x74, 0x75, 0x76
-    bool foundCharlieplex = false;
-    uint8_t charlieAddresses[] = {0x74, 0x75, 0x76};
-    int charlieCount = 0;
-    
-    Serial.println("[DEBUG][I2C] Checking for Charlieplex displays at addresses 0x74, 0x75, 0x76...");
-    for (uint8_t addr : charlieAddresses) {
-        Wire1.beginTransmission(addr);
-        if (Wire1.endTransmission() == 0) {
-            Serial.printf("[DEBUG][I2C] Found potential Charlieplex display at 0x%02X\n", addr);
-            foundCharlieplex = true;
-            charlieCount++;
-        }
-    }
-    
-    Serial.printf("[DEBUG][I2C] Scan results: Seesaw=%s, QuadDisplay=%s (%d at 0x70-0x72), Charlieplex=%s (%d at 0x74-0x76)\n", 
+    Serial.printf("[DEBUG][I2C] Scanner found: Seesaw=%s, QuadDisplay=%s, Charlieplex=%s\n", 
                   foundSeesaw ? "YES" : "NO", 
-                  foundQuadDisplay ? "YES" : "NO", quadCount,
-                  foundCharlieplex ? "YES" : "NO", charlieCount);
+                  foundQuadDisplay ? "YES" : "NO",
+                  foundCharlieplex ? "YES" : "NO");
     
-    // Initialize Quad Displays using singleton manager (ONLY for 0x70, 0x71, 0x72)
+    // Initialize managers based on scanner results
     if (foundQuadDisplay) {
         Serial.println("[DEBUG][I2C] Setting up Quad Display manager...");
         
         // Get the singleton manager instance
         Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(&Wire1);
         
-        // Add ONLY the detected quad displays (0x70, 0x71, 0x72)
-        for (uint8_t addr : quadAddresses) {
-            Wire1.beginTransmission(addr);
-            if (Wire1.endTransmission() == 0) {
+        // Add all quad displays found by the scanner (0x70-0x73 range)
+        JsonArray screens = doc["Screens"];
+        for (JsonVariant screen : screens) {
+            if (screen["ScreenType"] == "Alpha Quad LCD") {
+                String addressStr = screen["I2CAddress"];
+                uint8_t addr = strtol(addressStr.c_str(), nullptr, 0);
                 Serial.printf("[DEBUG][I2C] Adding Quad Display at address 0x%02X to manager\n", addr);
                 quadManager->addDisplay(addr);
             }
         }
         
-        // Create single task for the quad display manager - NO update() calls needed
+        // Create single task for the quad display manager
         xTaskCreatePinnedToCore(
             [](void* param) {
                 Manager_QuadDisplay* manager = static_cast<Manager_QuadDisplay*>(param);
@@ -272,23 +246,25 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         detectedQuadDisplay = true;
     }
     
-    // Initialize Charlieplex displays using singleton manager (ONLY for 0x74, 0x75, 0x76)
+    // Initialize Charlieplex displays using singleton manager
     if (foundCharlieplex) {
         Serial.println("[DEBUG][I2C] Setting up Charlieplex Display manager...");
         
         // Get the singleton manager instance
         Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(&Wire1);
         
-        // Add ONLY the detected Charlieplex displays (0x74, 0x75, 0x76)
-        for (uint8_t addr : charlieAddresses) {
-            Wire1.beginTransmission(addr);
-            if (Wire1.endTransmission() == 0) {
+        // Add all charlieplex displays found by the scanner (0x74-0x77 range)
+        JsonArray screens = doc["Screens"];
+        for (JsonVariant screen : screens) {
+            if (screen["ScreenType"] == "Charlieplex") {
+                String addressStr = screen["I2CAddress"];
+                uint8_t addr = strtol(addressStr.c_str(), nullptr, 0);
                 Serial.printf("[DEBUG][I2C] Adding Charlieplex Display at address 0x%02X to manager\n", addr);
                 charlieManager->addDisplay(addr);
             }
         }
         
-        // Create single task for the Charlieplex display manager - NO update() calls needed
+        // Create single task for the Charlieplex display manager
         xTaskCreatePinnedToCore(
             [](void* param) {
                 Manager_Charlieplex* manager = static_cast<Manager_Charlieplex*>(param);
@@ -355,9 +331,10 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         }
     }
     
-    // Clean up temporary flags
+    // Clean up temporary flags from the JSON
     doc.remove("FoundSeesaw");
     doc.remove("FoundQuadDisplay");
+    doc.remove("FoundCharlieplex");
     
     return scanResult;
 }

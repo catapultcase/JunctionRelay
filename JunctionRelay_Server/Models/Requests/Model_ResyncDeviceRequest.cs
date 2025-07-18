@@ -21,7 +21,8 @@ namespace JunctionRelayServer.Models.Requests
 {
     public class Model_ResyncDeviceRequest
     {
-        public string MacAddress { get; set; }
-        public string NewIpAddress { get; set; }
+        public required string MacAddress { get; set; }
+        public required string NewIpAddress { get; set; }
     }
+
 }
