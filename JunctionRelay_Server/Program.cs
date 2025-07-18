@@ -267,25 +267,32 @@ builder.Services.AddSingleton<Func<string, Service_Send_Data_COM>>(provider => c
     return new Service_Send_Data_COM(comPortManager, comPort);
 });
 
+builder.Services.AddTransient<DataCollector_Cloudflare>();
+builder.Services.AddTransient<DataCollector_Github>();
 builder.Services.AddTransient<DataCollector_Host>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
 builder.Services.AddTransient<DataCollector_LibreHardwareMonitor>();
 builder.Services.AddTransient<DataCollector_MQTT>();
 builder.Services.AddTransient<DataCollector_NeoPixelColor>();
 builder.Services.AddTransient<DataCollector_RateTester>();
+builder.Services.AddTransient<DataCollector_Render>();
+builder.Services.AddTransient<DataCollector_Stripe>();
 builder.Services.AddTransient<DataCollector_UptimeKuma>();
-builder.Services.AddTransient<Service_MQTT>();
 
 builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 {
     var creatorMap = new Dictionary<string, Func<Model_Collector, IDataCollector>>(StringComparer.OrdinalIgnoreCase)
     {
+        { "Cloudflare", c => { var i = provider.GetRequiredService<DataCollector_Cloudflare>(); i.ApplyConfiguration(c); return i; } },
+        { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },
         { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
-        { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },
         { "Host", c => { var i = provider.GetRequiredService<DataCollector_Host>(); i.ApplyConfiguration(c); return i; } },
+        { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },
         { "MQTT", c => { var i = provider.GetRequiredService<DataCollector_MQTT>(); i.ApplyConfiguration(c); return i; } },
         { "NeoPixelColor", c => { var i = provider.GetRequiredService<DataCollector_NeoPixelColor>(); i.ApplyConfiguration(c); return i; } },
         { "RateTester", c => { var i = provider.GetRequiredService<DataCollector_RateTester>(); i.ApplyConfiguration(c); return i; } },
+        { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
+        { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },  // ADD THIS
         { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
     };
 

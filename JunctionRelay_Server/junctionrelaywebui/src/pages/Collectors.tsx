@@ -48,6 +48,7 @@ import { useNavigate } from "react-router-dom";
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CollectorSetupInstructions from '../components/CollectorSetupInstructions';
 
 // AddCollector Modal Component
 const AddCollectorModal: React.FC<{
@@ -59,14 +60,46 @@ const AddCollectorModal: React.FC<{
     const [loading, setLoading] = useState<boolean>(false);
     const [configureAfterAdd, setConfigureAfterAdd] = useState<boolean>(false);
     const [collector, setCollector] = useState<any>({
-        name: "HomeAssistant",
-        url: "http://10.168.1.17:8123",
+        name: "",
+        url: "",
         accessToken: "",
-        collectorType: "HomeAssistant",
+        collectorType: "",
         serviceId: ""
     });
     const [error, setError] = useState<string>("");
-    const [services, setServices] = useState<any[]>([]); // Store services for picklist
+    const [services, setServices] = useState<any[]>([]);
+
+    // Collector type options for dropdown
+    const collectorTypes = [
+        { value: "", name: "Select Collector Type", desc: "Choose a collector type to begin" },
+        { value: "Cloudflare", name: "Cloudflare", desc: "CDN & DNS analytics" },
+        { value: "Github", name: "GitHub Repository", desc: "Repository statistics" },
+        { value: "HomeAssistant", name: "Home Assistant", desc: "Smart home automation" },
+        { value: "Host", name: "Host Device", desc: "System monitoring" },
+        { value: "LibreHardwareMonitor", name: "Libre Hardware Monitor", desc: "Hardware sensors" },
+        { value: "MQTT", name: "MQTT Service", desc: "Message broker data" },
+        { value: "NeoPixelColor", name: "NeoPixel Color", desc: "LED strip monitoring" },
+        { value: "RateTester", name: "Rate Tester", desc: "Performance testing" },
+        { value: "Render", name: "Render", desc: "Cloud platform metrics" },
+        { value: "Stripe", name: "Stripe", desc: "Payment processing" },
+        { value: "UptimeKuma", name: "Uptime Kuma", desc: "Service monitoring" }
+    ];
+
+    // Reset form when modal opens/closes
+    useEffect(() => {
+        if (open) {
+            // Reset to initial state when modal opens
+            setCollector({
+                name: "",
+                url: "",
+                accessToken: "",
+                collectorType: "",
+                serviceId: ""
+            });
+            setError("");
+            setServices([]);
+        }
+    }, [open]);
 
     // Handle input change
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
@@ -88,7 +121,13 @@ const AddCollectorModal: React.FC<{
         }
 
         if (
-            (collector.collectorType === "HomeAssistant" || collector.collectorType === "LibreHardwareMonitor") &&
+            (collector.collectorType === "Cloudflare" ||
+                collector.collectorType === "Github" ||
+                collector.collectorType === "HomeAssistant" ||
+                collector.collectorType === "LibreHardwareMonitor" ||
+                collector.collectorType === "Render" ||
+                collector.collectorType === "Stripe" ||
+                collector.collectorType === "UptimeKuma") &&
             !collector.url
         ) {
             setError("URL is required for this collector type.");
@@ -96,8 +135,8 @@ const AddCollectorModal: React.FC<{
             return;
         }
 
-        if (collector.collectorType === "HomeAssistant" && !collector.accessToken) {
-            setError("Access Token is required for HomeAssistant.");
+        if ((collector.collectorType === "Cloudflare" || collector.collectorType === "Github" || collector.collectorType === "HomeAssistant" || collector.collectorType === "Render" || collector.collectorType === "Stripe") && !collector.accessToken) {
+            setError("Access Token is required for this collector type.");
             setLoading(false);
             return;
         }
@@ -105,7 +144,13 @@ const AddCollectorModal: React.FC<{
         // URL pattern only applies if a URL is required and present
         const urlPattern = /^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i;
         if (
-            (collector.collectorType === "HomeAssistant" || collector.collectorType === "LibreHardwareMonitor") &&
+            (collector.collectorType === "Cloudflare" ||
+                collector.collectorType === "Github" ||
+                collector.collectorType === "HomeAssistant" ||
+                collector.collectorType === "LibreHardwareMonitor" ||
+                collector.collectorType === "Render" ||
+                collector.collectorType === "Stripe" ||
+                collector.collectorType === "UptimeKuma") &&
             collector.url &&
             !urlPattern.test(collector.url)
         ) {
@@ -227,40 +272,54 @@ const AddCollectorModal: React.FC<{
         if (collector.collectorType === "MQTT") {
             fetchServices(); // Fetch services when MQTT is selected
         }
-        if (collector.collectorType === "LibreHardwareMonitor") {
+
+        if (collector.collectorType === "Cloudflare") {
             setCollector((prev: any) => ({
                 ...prev,
-                name: "LibreHardwareMonitor",
-                url: "http://localhost:8085",
-                accessToken: "" // AccessToken is not needed for LibreHardwareMonitor
+                name: "Cloudflare",
+                url: "https://dash.cloudflare.com/account_id/zone_id",
+                accessToken: "",
+                pollRate: 60000,
+            }));
+        } else if (collector.collectorType === "Github") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "GitHub Repository",
+                url: "https://github.com/owner/repo",
+                accessToken: "",
+                pollRate: 60000,
             }));
         } else if (collector.collectorType === "HomeAssistant") {
             setCollector((prev: any) => ({
                 ...prev,
                 name: "HomeAssistant",
                 url: "http://10.168.1.17:8123",
-                accessToken: ""
+                accessToken: "",
+                pollRate: 5000,
             }));
-        } else if (collector.collectorType === "UptimeKuma") {
-            setCollector((prev: any) => ({
-                ...prev,
-                name: "Uptime Kuma",
-                url: "http://localhost:3001/metrics",
-                accessToken: ""
-            }));       
         } else if (collector.collectorType === "Host") {
             setCollector((prev: any) => ({
                 ...prev,
                 name: "Host Device",
                 url: "localhost",
-                accessToken: ""
+                accessToken: "",
+                pollRate: 1000,
+            }));
+        } else if (collector.collectorType === "LibreHardwareMonitor") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "LibreHardwareMonitor",
+                url: "http://localhost:8085",
+                accessToken: "",
+                pollRate: 1000,
             }));
         } else if (collector.collectorType === "NeoPixelColor") {
             setCollector((prev: any) => ({
                 ...prev,
                 name: "NeoPixel Color",
                 url: "",
-                accessToken: ""
+                accessToken: "",
+                pollRate: 3000,
             }));
         } else if (collector.collectorType === "RateTester") {
             setCollector((prev: any) => ({
@@ -270,6 +329,30 @@ const AddCollectorModal: React.FC<{
                 accessToken: "",
                 pollRate: 1000,
                 sendRate: 1000
+            }));
+        } else if (collector.collectorType === "Render") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "Render Service",
+                url: "https://dashboard.render.com/web/srv-abc123def456",
+                accessToken: "",
+                pollRate: 60000,
+            }));
+        } else if (collector.collectorType === "Stripe") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "Stripe",
+                url: "https://api.stripe.com",
+                accessToken: "",
+                pollRate: 60000,
+            }));
+        } else if (collector.collectorType === "UptimeKuma") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "Uptime Kuma",
+                url: "http://localhost:3001/metrics",
+                accessToken: "",
+                pollRate: 3000,
             }));
         } else {
             setCollector((prev: any) => ({
@@ -284,146 +367,294 @@ const AddCollectorModal: React.FC<{
     return (
         <Modal open={open} onClose={onClose}>
             <Box sx={{
-                position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-                width: '80%', maxWidth: 600, bgcolor: 'background.paper', p: 4, boxShadow: 24, borderRadius: 2
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: { xs: '95%', sm: '90%', md: '80%' },
+                maxWidth: { xs: 'none', md: 900 },
+                height: { xs: '90vh', md: '80vh' },
+                bgcolor: 'background.paper',
+                p: 0,
+                boxShadow: 24,
+                borderRadius: 2,
+                display: 'flex',
+                flexDirection: 'column'
             }}>
-                <Typography variant="h6" gutterBottom>Add Collector</Typography>
+                <Typography variant="h6" sx={{
+                    p: { xs: 2, md: 3 },
+                    pb: 2,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    fontSize: { xs: '1.1rem', md: '1.25rem' }
+                }}>
+                    Add Collector
+                </Typography>
+
                 {loading ? (
-                    <Box sx={{ display: "flex", justifyContent: "center" }}>
-                        <CircularProgress size={24} />
+                    <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1 }}>
+                        <CircularProgress size={40} />
                     </Box>
                 ) : (
-                    <>
-                        {error && (
-                            <Alert
-                                severity="error"
-                                sx={{
-                                    mb: 2,
-                                    '& .MuiAlert-message': {
-                                        fontWeight: 'medium'
-                                    }
-                                }}
-                            >
-                                {error}
-                            </Alert>
-                        )}
-
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            {/* Collector Type Dropdown */}
-                            <FormControl fullWidth size="small">
-                                <InputLabel id="collector-type-label">Collector Type</InputLabel>
-                                <Select
-                                    labelId="collector-type-label"
-                                    name="collectorType"
-                                    value={collector.collectorType}
-                                    onChange={handleChange}
-                                    label="Collector Type"
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        flex: 1,
+                        overflow: 'hidden'
+                    }}>
+                        {/* Left side - Collector types list (Desktop only) */}
+                        <Box sx={{
+                            width: { md: 280 },
+                            borderRight: { md: '1px solid' },
+                            borderColor: 'divider',
+                            overflowY: 'auto',
+                            bgcolor: 'action.hover',
+                            display: { xs: 'none', md: 'block' }
+                        }}>
+                            <Typography variant="subtitle2" sx={{ p: 2, pb: 1, fontWeight: 'bold', color: 'text.secondary' }}>
+                                Select Collector Type
+                            </Typography>
+                            {collectorTypes.slice(1).map((collectorType) => (
+                                <Box
+                                    key={collectorType.value}
+                                    onClick={() => setCollector({ ...collector, collectorType: collectorType.value })}
+                                    sx={{
+                                        p: 2,
+                                        mx: 1,
+                                        mb: 1,
+                                        borderRadius: 1,
+                                        cursor: 'pointer',
+                                        bgcolor: collector.collectorType === collectorType.value ? 'primary.main' : 'transparent',
+                                        color: collector.collectorType === collectorType.value ? 'primary.contrastText' : 'text.primary',
+                                        '&:hover': {
+                                            bgcolor: collector.collectorType === collectorType.value ? 'primary.dark' : 'action.hover'
+                                        },
+                                        transition: 'all 0.2s'
+                                    }}
                                 >
-                                    <MenuItem value="MQTT">Connect To MQTT Service</MenuItem>
-                                    <MenuItem value="Host">Host Device</MenuItem>
-                                    <MenuItem value="HomeAssistant">HomeAssistant</MenuItem>
-                                    <MenuItem value="LibreHardwareMonitor">LibreHardwareMonitor</MenuItem>
-                                    <MenuItem value="NeoPixelColor">NeoPixelColor</MenuItem>
-                                    <MenuItem value="RateTester">Rate Tester</MenuItem>
-                                    <MenuItem value="UptimeKuma">Uptime Kuma</MenuItem>
-                                </Select>
-                            </FormControl>
+                                    <Typography variant="body2" fontWeight={collector.collectorType === collectorType.value ? 'bold' : 'medium'}>
+                                        {collectorType.name}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{
+                                        opacity: collector.collectorType === collectorType.value ? 0.9 : 0.7,
+                                        display: 'block'
+                                    }}>
+                                        {collectorType.desc}
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </Box>
 
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Collector Name"
-                                name="name"
-                                value={collector.name}
-                                onChange={handleChange}
-                                required
-                                error={!!error && error.includes("name")}
-                                helperText={error && error.includes("name") ? "Name must be unique" : ""}
-                            />
+                        {/* Configuration form */}
+                        <Box sx={{
+                            flex: 1,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            order: { xs: 1, md: 2 }
+                        }}>
+                            <Box sx={{
+                                p: { xs: 2, md: 3 },
+                                borderBottom: '1px solid',
+                                borderColor: 'divider'
+                            }}>
+                                {error && (
+                                    <Alert severity="error" sx={{ mb: 2 }}>
+                                        {error}
+                                    </Alert>
+                                )}
 
-                            {/* Only show URL if HomeAssistant or LibreHardwareMonitor */}
-                                {(collector.collectorType === "HomeAssistant" || collector.collectorType === "LibreHardwareMonitor" || collector.collectorType === "UptimeKuma") && (
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                    {/* Collector Type Dropdown - Mobile only */}
+                                    <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="collector-type-label">Collector Type *</InputLabel>
+                                            <Select
+                                                labelId="collector-type-label"
+                                                value={collector.collectorType}
+                                                onChange={handleChange}
+                                                name="collectorType"
+                                                required
+                                                label="Collector Type *"
+                                            >
+                                                {collectorTypes.map((type) => (
+                                                    <MenuItem key={type.value} value={type.value} disabled={type.value === ""}>
+                                                        <Box>
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {type.name}
+                                                            </Typography>
+                                                            {type.value !== "" && (
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {type.desc}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+
                                     <TextField
                                         fullWidth
                                         size="small"
-                                        label="URL"
-                                        name="url"
-                                        value={collector.url}
+                                        label="Collector Name"
+                                        name="name"
+                                        value={collector.name}
                                         onChange={handleChange}
                                         required
+                                        error={!!error && error.includes("name")}
+                                        helperText={error && error.includes("name") ? "Name must be unique" : ""}
                                     />
-                                )}
 
-                            {/* Only show access token if required */}
-                            {collector.collectorType === "HomeAssistant" && (
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Access Token"
-                                    name="accessToken"
-                                    value={collector.accessToken}
-                                    onChange={handleChange}
-                                    required
-                                    type="password"
-                                />
-                            )}
-
-                            {/* MQTT Service Dropdown */}
-                            {collector.collectorType === "MQTT" && (
-                                <FormControl fullWidth size="small">
-                                    <InputLabel id="service-select-label">Select Service</InputLabel>
-                                    <Select
-                                        labelId="service-select-label"
-                                        value={collector.serviceId}
-                                        onChange={handleChange}
-                                        name="serviceId"
-                                        required
-                                        label="Select Service"
-                                    >
-                                        {services.length > 0 ? (
-                                            services.map((service) => (
-                                                <MenuItem key={service.id} value={service.id}>
-                                                    {service.name}
-                                                </MenuItem>
-                                            ))
-                                        ) : (
-                                            <MenuItem disabled>No services available</MenuItem>
+                                    {/* URL field for collectors that need it */}
+                                    {(collector.collectorType === "Cloudflare" ||
+                                        collector.collectorType === "Github" ||
+                                        collector.collectorType === "HomeAssistant" ||
+                                        collector.collectorType === "LibreHardwareMonitor" ||
+                                        collector.collectorType === "Render" ||
+                                        collector.collectorType === "Stripe" ||
+                                        collector.collectorType === "UptimeKuma") && (
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label={
+                                                    collector.collectorType === "Github" ? "GitHub Repository URL" :
+                                                        collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
+                                                            collector.collectorType === "Render" ? "Render Service URL" :
+                                                                collector.collectorType === "Stripe" ? "Stripe API Base URL" :
+                                                                    "URL"
+                                                }
+                                                name="url"
+                                                value={collector.url}
+                                                onChange={handleChange}
+                                                required
+                                                placeholder={
+                                                    collector.collectorType === "Github" ? "https://github.com/owner/repo" :
+                                                        collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
+                                                            collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
+                                                                collector.collectorType === "Stripe" ? "https://api.stripe.com" :
+                                                                    ""
+                                                }
+                                            />
                                         )}
-                                    </Select>
-                                </FormControl>
-                            )}
-                        </Box>
 
-                        <Box sx={{ display: "flex", gap: 2, marginTop: 2 }}>
-                            <Button
-                                variant="contained"
-                                onClick={() => handleAddCollector(false)}
-                                size="small"
-                                startIcon={<AddIcon />}
-                                disabled={loading}
-                            >
-                                {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
-                            </Button>
-                            <Button
-                                variant="contained"
-                                onClick={() => handleAddCollector(true)}
-                                size="small"
-                                color="secondary"
-                                startIcon={<EditIcon />}
-                                disabled={loading}
-                            >
-                                {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                onClick={onClose}
-                                size="small"
-                                disabled={loading}
-                            >
-                                Cancel
-                            </Button>
+                                    {/* Access Token for collectors that need it */}
+                                    {(collector.collectorType === "Cloudflare" ||
+                                        collector.collectorType === "Github" ||
+                                        collector.collectorType === "HomeAssistant" ||
+                                        collector.collectorType === "Render" ||
+                                        collector.collectorType === "Stripe") && (
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label={
+                                                    collector.collectorType === "Github" ? "GitHub Personal Access Token" :
+                                                        collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
+                                                            collector.collectorType === "Render" ? "Render API Key" :
+                                                                collector.collectorType === "Stripe" ? "Stripe Secret Key" :
+                                                                    "Access Token"
+                                                }
+                                                name="accessToken"
+                                                value={collector.accessToken}
+                                                onChange={handleChange}
+                                                required
+                                                type="password"
+                                                placeholder={
+                                                    collector.collectorType === "Github" ? "ghp_..." :
+                                                        collector.collectorType === "Cloudflare" ? "cf_api_token..." :
+                                                            collector.collectorType === "Render" ? "rnd_..." :
+                                                                collector.collectorType === "Stripe" ? "sk_..." :
+                                                                    ""
+                                                }
+                                            />
+                                        )}
+
+                                    {/* MQTT Service Dropdown */}
+                                    {collector.collectorType === "MQTT" && (
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="service-select-label">Select Service</InputLabel>
+                                            <Select
+                                                labelId="service-select-label"
+                                                value={collector.serviceId}
+                                                onChange={handleChange}
+                                                name="serviceId"
+                                                required
+                                                label="Select Service"
+                                            >
+                                                {services.length > 0 ? (
+                                                    services.map((service: any) => (
+                                                        <MenuItem key={service.id} value={service.id}>
+                                                            {service.name}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem disabled>No services available</MenuItem>
+                                                )}
+                                            </Select>
+                                        </FormControl>
+                                    )}
+                                </Box>
+                            </Box>
+
+                            {/* Instructions - responsive height */}
+                            {collector.collectorType && (
+                                <Box sx={{
+                                    flex: 1,
+                                    p: { xs: 2, md: 3 },
+                                    overflowY: 'auto',
+                                    bgcolor: 'background.default',
+                                    minHeight: { xs: '200px', md: 'auto' }
+                                }}>
+                                    <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
+                                        Setup Instructions
+                                    </Typography>
+                                    <CollectorSetupInstructions collectorType={collector.collectorType} />
+                                </Box>
+                            )}
+
+                            {/* Action buttons - responsive layout */}
+                            <Box sx={{
+                                p: { xs: 2, md: 3 },
+                                borderTop: '1px solid',
+                                borderColor: 'divider',
+                                display: "flex",
+                                flexDirection: { xs: 'column', sm: 'row' },
+                                gap: { xs: 1, sm: 2 }
+                            }}>
+                                <Button
+                                    variant="contained"
+                                    onClick={() => handleAddCollector(false)}
+                                    size="small"
+                                    startIcon={<AddIcon />}
+                                    disabled={loading || !collector.collectorType}
+                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                >
+                                    {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    onClick={() => handleAddCollector(true)}
+                                    size="small"
+                                    color="secondary"
+                                    startIcon={<EditIcon />}
+                                    disabled={loading || !collector.collectorType}
+                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                >
+                                    {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    onClick={onClose}
+                                    size="small"
+                                    disabled={loading}
+                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                >
+                                    Cancel
+                                </Button>
+                            </Box>
                         </Box>
-                    </>
+                    </Box>
                 )}
             </Box>
         </Modal>
@@ -465,7 +696,6 @@ const Collectors = () => {
 
     useEffect(() => {
         fetchCollectors();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleAddCollector = () => {
@@ -519,11 +749,14 @@ const Collectors = () => {
         let color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error" = "default";
 
         switch (type) {
-            case "HomeAssistant":
+            case "Cloudflare":
+                color = "primary";
+                break;
+            case "Github":
                 color = "info";
                 break;
-            case "MQTT":
-                color = "error";
+            case "HomeAssistant":
+                color = "info";
                 break;
             case "Host":
                 color = "secondary";
@@ -531,14 +764,23 @@ const Collectors = () => {
             case "LibreHardwareMonitor":
                 color = "primary";
                 break;
+            case "MQTT":
+                color = "error";
+                break;
             case "NeoPixelColor":
                 color = "secondary";
                 break;
             case "RateTester":
                 color = "warning";
                 break;
+            case "Render":
+                color = "success";
+                break;
+            case "Stripe":
+                color = "success";
+                break;
             case "UptimeKuma":
-                color = "success"; 
+                color = "success";
                 break;
             default:
                 color = "default";
@@ -555,10 +797,6 @@ const Collectors = () => {
 
     return (
         <Box sx={{ padding: 2 }}>
-            {/*<Typography variant="h5" gutterBottom>*/}
-            {/*    Collectors*/}
-            {/*</Typography>*/}
-
             <Button
                 variant="contained"
                 color="primary"
