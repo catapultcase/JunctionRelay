@@ -39,7 +39,6 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
-
 export interface BottomActionConfig {
     icon: React.ReactNode;
     label: string;
@@ -202,8 +201,14 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                             disabled={action.disabled}
                                             color={action.color || 'primary'}
                                             size="small"
+                                            onTouchEnd={(e) => {
+                                                // Force release touch state on mobile
+                                                e.currentTarget.blur();
+                                            }}
                                             sx={{
                                                 transition: 'all 0.2s ease',
+                                                touchAction: 'manipulation',
+                                                WebkitTapHighlightColor: 'transparent',
                                                 '&:hover': {
                                                     backgroundColor: action.disabled
                                                         ? 'transparent'
@@ -212,6 +217,9 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 },
                                                 '&:active': {
                                                     transform: action.disabled ? 'none' : 'scale(0.95)'
+                                                },
+                                                '&:focus:not(:focus-visible)': {
+                                                    outline: 'none'
                                                 }
                                             }}
                                         >
@@ -251,6 +259,10 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                         <IconButton
                                             onClick={() => viewModeActions.onModeChange(mode.mode)}
                                             size="small"
+                                            onTouchEnd={(e) => {
+                                                // Force release touch state on mobile
+                                                e.currentTarget.blur();
+                                            }}
                                             sx={{
                                                 backgroundColor: viewModeActions.currentMode === mode.mode
                                                     ? theme.palette.primary.main
@@ -268,7 +280,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                     transform: 'scale(0.95)'
                                                 },
                                                 // Fix for mobile sticky press and color not reverting
-                                                '&:not(:hover):not(:active):not(:focus)': {
+                                                '&:not(:hover):not(:active):not(:focus):not(:focus-visible)': {
                                                     backgroundColor: viewModeActions.currentMode === mode.mode
                                                         ? theme.palette.primary.main
                                                         : 'transparent',
@@ -276,6 +288,13 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 // Ensure touch events release properly on mobile
                                                 touchAction: 'manipulation',
                                                 WebkitTapHighlightColor: 'transparent',
+                                                // Force blur after touch
+                                                '&:focus:not(:focus-visible)': {
+                                                    outline: 'none',
+                                                    backgroundColor: viewModeActions.currentMode === mode.mode
+                                                        ? theme.palette.primary.main
+                                                        : 'transparent',
+                                                },
                                                 transition: 'all 0.2s ease',
                                                 minWidth: 36,
                                                 minHeight: 36
@@ -296,7 +315,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                             justifyContent: 'flex-end',
                             alignItems: 'center'
                         }}>
-                            {/* Secondary actions (max 2) */}
+                            {/* Secondary actions - always positioned to the left of hero button */}
                             {rightSecondaryActions.slice(0, 2).map((action, index) => (
                                 <Tooltip key={index} title={action.label} placement="top">
                                     <span>
@@ -308,6 +327,10 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 size="small"
                                                 startIcon={action.icon || undefined}
                                                 variant={action.variant || 'outlined'}
+                                                onTouchEnd={(e) => {
+                                                    // Force release touch state on mobile
+                                                    e.currentTarget.blur();
+                                                }}
                                                 sx={{
                                                     minWidth: 'auto',
                                                     px: 1.5,
@@ -319,6 +342,8 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
+                                                    touchAction: 'manipulation',
+                                                    WebkitTapHighlightColor: 'transparent',
                                                     '&:hover': {
                                                         backgroundColor: action.disabled
                                                             ? 'transparent'
@@ -327,6 +352,9 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                     },
                                                     '&:active': {
                                                         transform: action.disabled ? 'none' : 'scale(0.95)'
+                                                    },
+                                                    '&:focus:not(:focus-visible)': {
+                                                        outline: 'none'
                                                     }
                                                 }}
                                             >
@@ -338,8 +366,14 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 disabled={action.disabled}
                                                 color={action.color || 'primary'}
                                                 size="small"
+                                                onTouchEnd={(e) => {
+                                                    // Force release touch state on mobile
+                                                    e.currentTarget.blur();
+                                                }}
                                                 sx={{
                                                     transition: 'all 0.2s ease',
+                                                    touchAction: 'manipulation',
+                                                    WebkitTapHighlightColor: 'transparent',
                                                     '&:hover': {
                                                         backgroundColor: action.disabled
                                                             ? 'transparent'
@@ -348,6 +382,9 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                     },
                                                     '&:active': {
                                                         transform: action.disabled ? 'none' : 'scale(0.95)'
+                                                    },
+                                                    '&:focus:not(:focus-visible)': {
+                                                        outline: 'none'
                                                     }
                                                 }}
                                             >
@@ -368,7 +405,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                 </Tooltip>
                             ))}
 
-                            {/* Hero action (Primary FAB) */}
+                            {/* Hero action (Primary FAB) - always at far right */}
                             {heroAction && (
                                 <Tooltip title={heroAction.label} placement="top">
                                     <span>
@@ -377,6 +414,10 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                             onClick={handleHeroActionClick}
                                             disabled={heroAction.disabled}
                                             size="medium"
+                                            onTouchEnd={(e) => {
+                                                // Force release touch state on mobile
+                                                e.currentTarget.blur();
+                                            }}
                                             sx={{
                                                 boxShadow: heroAction.disabled
                                                     ? 'none'
@@ -384,6 +425,8 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 transition: 'all 0.2s ease',
                                                 position: 'relative',
                                                 ml: 0.5, // Small gap from secondary actions
+                                                touchAction: 'manipulation',
+                                                WebkitTapHighlightColor: 'transparent',
                                                 '&:hover': {
                                                     transform: heroAction.disabled ? 'none' : 'scale(1.05)',
                                                     boxShadow: heroAction.disabled
@@ -392,6 +435,9 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 },
                                                 '&:active': {
                                                     transform: heroAction.disabled ? 'none' : 'scale(0.95)'
+                                                },
+                                                '&:focus:not(:focus-visible)': {
+                                                    outline: 'none'
                                                 },
                                                 '&.Mui-disabled': {
                                                     backgroundColor: theme.palette.action.disabledBackground,
