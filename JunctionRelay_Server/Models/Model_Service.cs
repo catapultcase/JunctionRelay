@@ -65,14 +65,17 @@ namespace JunctionRelayServer.Models
         // HomeAssistant Properties
         public string? HomeAssistantAddress { get; set; }
         public string? HomeAssistantAPIKey { get; set; }
+        public bool ExternalHomeAssistantAPIKey { get; set; }
         public string? HomeAssistantUsername { get; set; }
         public string? HomeAssistantPassword { get; set; }
+        public bool ExternalHomeAssistantPassword { get; set; }
 
         // MQTT Properties
         public string? MQTTBrokerAddress { get; set; }
         public string? MQTTBrokerPort { get; set; }
         public string? MQTTUsername { get; set; }
         public string? MQTTPassword { get; set; }
+        public bool ExternalMQTTPassword { get; set; }
 
         // Summary
         // public int SensorCount => Sensors.Count;

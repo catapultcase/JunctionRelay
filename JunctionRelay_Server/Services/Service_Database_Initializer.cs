@@ -124,9 +124,11 @@ namespace JunctionRelayServer.Services
                     -- SSH Configuration
                     SshUsername TEXT,
                     SshPassword TEXT,  -- Should be encrypted/hashed in your service layer
+                    ExternalSshPassword BOOLEAN DEFAULT 0,
                     SshPort INTEGER DEFAULT 22,
                     SshTimeoutMs INTEGER DEFAULT 10000,
                     SshPrivateKey TEXT,  -- Should be encrypted in your service layer
+                    ExternalSshPrivateKey BOOLEAN DEFAULT 0,
                     UseSshKeyAuth BOOLEAN DEFAULT 0,  -- 0 = password auth, 1 = key auth
                     SshConnectionRetries INTEGER DEFAULT 3,
                     SshVerifyHostKey BOOLEAN DEFAULT 1,
@@ -139,6 +141,7 @@ namespace JunctionRelayServer.Services
                     HasExternalI2CDevices BOOLEAN DEFAULT 0,
                     HasButtons BOOLEAN DEFAULT 0,
                     HasBattery BOOLEAN DEFAULT 0,
+                    SupportsEthernet BOOLEAN DEFAULT 0,                    
                     SupportsWiFi BOOLEAN DEFAULT 0,
                     SupportsBLE BOOLEAN DEFAULT 0,
                     SupportsUSB BOOLEAN DEFAULT 0,                        
@@ -148,8 +151,6 @@ namespace JunctionRelayServer.Services
                     SupportsWebSockets BOOLEAN DEFAULT 0,
                     HasSpeaker BOOLEAN DEFAULT 0,
                     HasMicroSD BOOLEAN DEFAULT 0,
-                    -- Add Ethernet support (missing from original)
-                    SupportsEthernet BOOLEAN DEFAULT 0,
                     FOREIGN KEY(GatewayId) REFERENCES Devices(Id)
                 );
             ");
@@ -179,10 +180,17 @@ namespace JunctionRelayServer.Services
                         GatewayId INTEGER,
                         IsJunctionRelayService BOOLEAN DEFAULT 0,
                         LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        HomeAssistantAddress TEXT,
+                        HomeAssistantAPIKey TEXT,
+                        ExternalHomeAssistantAPIKey BOOLEAN DEFAULT 0,
+                        HomeAssistantUsername TEXT,
+                        HomeAssistantPassword TEXT,
+                        ExternalHomeAssistantPassword BOOLEAN DEFAULT 0,
                         MQTTBrokerAddress TEXT,
                         MQTTBrokerPort TEXT,
                         MQTTUsername TEXT,
                         MQTTPassword TEXT,
+                        ExternalMQTTPassword BOOLEAN DEFAULT 0,
                         FOREIGN KEY(GatewayId) REFERENCES Services(Id)
                    );
                 ");
@@ -430,6 +438,7 @@ namespace JunctionRelayServer.Services
                     Status TEXT DEFAULT 'Offline',
                     URL TEXT,
                     AccessToken TEXT,
+                    ExternalAccessToken BOOLEAN DEFAULT 0,
                     PollRate INTEGER DEFAULT 5000,
                     SendRate INTEGER DEFAULT 5000,
                     ServiceId INTEGER

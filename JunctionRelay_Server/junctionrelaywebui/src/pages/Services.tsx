@@ -103,8 +103,8 @@ const defaultVisibleColumns = ["name", "type", "description", "uniqueIdentifier"
 const getServiceTypeInfo = (type: string) => {
     const typeMap: Record<string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
         "MQTT Broker": { color: "error", icon: <RouterIcon fontSize="small" /> },
-        "REST API": { color: "info", icon: <ApiIcon fontSize="small" /> },
-        "Custom": { color: "secondary", icon: <ExtensionIcon fontSize="small" /> },
+        // "REST API": { color: "info", icon: <ApiIcon fontSize="small" /> },
+        // "Custom": { color: "secondary", icon: <ExtensionIcon fontSize="small" /> },
     };
 
     return typeMap[type] || { color: "default" as const, icon: <ApiIcon fontSize="small" /> };
@@ -445,9 +445,9 @@ const AddServiceModal: React.FC<{
     // Service type options for dropdown
     const serviceTypes = [
         { value: "", name: "Select Service Type", desc: "Choose a service type to begin" },
-        { value: "MQTT Broker", name: "MQTT Broker", desc: "Message broker service" },
-        { value: "REST API", name: "REST API", desc: "HTTP REST API service" },
-        { value: "Custom", name: "Custom", desc: "Custom service configuration" }
+        { value: "MQTT Broker", name: "MQTT Broker", desc: "Message broker service" }
+        // { value: "REST API", name: "REST API", desc: "HTTP REST API service" },
+        // { value: "Custom", name: "Custom", desc: "Custom service configuration" }
     ];
 
     // Reset form when modal opens/closes
