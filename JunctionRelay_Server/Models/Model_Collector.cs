@@ -17,6 +17,8 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace JunctionRelayServer.Models
 {
     public class Model_Collector
@@ -36,9 +38,15 @@ namespace JunctionRelayServer.Models
         public string? URL { get; set; }
         public string? AccessToken { get; set; }
         public bool ExternalAccessToken { get; set; }
-        public string? DecryptedAccessToken { get; set; }
+
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
         public int? ServiceId { get; set; }
+
+        // ExternalEncryption
+
+        [NotMapped]
+        public string? EncryptionPassword { get; set; }
+        public string? DecryptedAccessToken { get; set; }
     }
 }

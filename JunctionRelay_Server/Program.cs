@@ -81,7 +81,7 @@ builder.Services.AddDataProtection()
     .SetApplicationName("JunctionRelay");
 
 // Register the secrets service
-builder.Services.AddSingleton<ISecretsService, SecretsService>();
+builder.Services.AddSingleton<ISecretsService, Service_Secrets>();
 builder.Services.AddSingleton<Service_CloudSessionStore>();
 
 // DUAL AUTHENTICATION: Support BOTH Local JWT and Clerk tokens

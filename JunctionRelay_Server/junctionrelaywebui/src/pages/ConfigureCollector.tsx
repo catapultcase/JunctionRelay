@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,11 @@ import {
     CardContent,
     Accordion,
     AccordionSummary,
-    AccordionDetails
+    AccordionDetails,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -68,6 +72,8 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import WebIcon from '@mui/icons-material/Web';
 import PaymentIcon from '@mui/icons-material/Payment';
 import MonitorIcon from '@mui/icons-material/Monitor';
+import LockIcon from '@mui/icons-material/Lock';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 
 const ConfigureCollector = () => {
     const { id } = useParams<{ id: string }>();
@@ -85,6 +91,13 @@ const ConfigureCollector = () => {
     const [activeTab, setActiveTab] = useState<"stored" | "delta">("stored");
     const [editMode, setEditMode] = useState(false);
     const [accessTokenChanged, setAccessTokenChanged] = useState(false);
+
+    // NEW: Unlock/Lock state
+    const [isLocked, setIsLocked] = useState(false);
+    const [requiresPassword, setRequiresPassword] = useState(false);
+    const [unlocking, setUnlocking] = useState(false);
+    const [unlockPassword, setUnlockPassword] = useState("");
+    const [showUnlockDialog, setShowUnlockDialog] = useState(false);
 
     const [snackbarOpen, setSnackbarOpen] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState("");
@@ -146,6 +159,91 @@ const ConfigureCollector = () => {
         }
     };
 
+    // NEW: Check unlock status
+    const checkUnlockStatus = useCallback(async () => {
+        try {
+            const response = await fetch(`/api/collectors/${id}/unlock-status`);
+            if (response.ok) {
+                const data = await response.json();
+                setIsLocked(data.isLocked);
+                setRequiresPassword(data.requiresPassword);
+            }
+        } catch (err) {
+            console.error("Error checking unlock status:", err);
+        }
+    }, [id]);
+
+    // NEW: Unlock collector with password
+    const handleUnlockCollector = async () => {
+        if (!unlockPassword.trim()) {
+            showSnackbar("Please enter the encryption password", "error");
+            return;
+        }
+
+        setUnlocking(true);
+        try {
+            const response = await fetch(`/api/collectors/${id}/unlock`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: unlockPassword }),
+            });
+
+            console.log("Unlock response status:", response.status, response.ok);
+
+            // Parse response first
+            let responseData;
+            try {
+                responseData = await response.json();
+                console.log("Unlock response data:", responseData);
+            } catch (parseError) {
+                console.error("Failed to parse response JSON:", parseError);
+                throw new Error("Invalid response from server");
+            }
+
+            // Only close modal and update state if we got a successful response (200)
+            if (response.status === 200 && response.ok) {
+                console.log("Password correct - unlocking");
+                setIsLocked(false);
+                setShowUnlockDialog(false);
+                setUnlockPassword("");
+                showSnackbar("Collector unlocked successfully", "success");
+                // Refresh data now that it's unlocked
+                await fetchStoredSensors();
+            } else {
+                // Password was wrong or other error - keep modal open
+                console.log("Password incorrect - keeping modal open");
+                const errorMessage = responseData?.status || "Invalid password or error occurred";
+                showSnackbar(errorMessage, "error");
+                // DO NOT close modal, DO NOT clear password, DO NOT change lock state
+            }
+        } catch (err) {
+            console.error("Network or other error during unlock:", err);
+            showSnackbar("Error communicating with server", "error");
+            // Keep modal open on network errors too
+        } finally {
+            setUnlocking(false);
+        }
+    };
+
+    // NEW: Lock collector
+    const handleLockCollector = async () => {
+        try {
+            const response = await fetch(`/api/collectors/${id}/lock`, {
+                method: "POST",
+            });
+
+            if (response.ok) {
+                setIsLocked(true);
+                showSnackbar("Collector locked", "info");
+            } else {
+                showSnackbar("Error locking collector", "error");
+            }
+        } catch (err) {
+            showSnackbar("Error locking collector", "error");
+            console.error("Error locking collector:", err);
+        }
+    };
+
     // Update collector field
     const updateCollectorField = (field: string, value: any) => {
         if (field === 'accessToken') {
@@ -169,7 +267,7 @@ const ConfigureCollector = () => {
     const getAccessTokenDisplay = () => {
         const isExisting = originalCollector?.accessToken;
         if (isExisting && !accessTokenChanged) {
-            return '����������������'; // Show masked value for existing token
+            return '••••••••••••••••'; // Show masked value for existing token
         }
         return collector?.accessToken || ''; // Show actual value for new/changed tokens
     };
@@ -240,7 +338,14 @@ const ConfigureCollector = () => {
     const fetchStoredSensors = useCallback(async () => {
         try {
             const rsp = await fetch(`/api/collectors/${id}/sensors`);
-            if (!rsp.ok) throw new Error();
+            if (!rsp.ok) {
+                // If it's a 500 error and collector might be locked, just set empty sensors
+                if (rsp.status === 500) {
+                    setStoredSensors([]);
+                    return;
+                }
+                throw new Error();
+            }
             const data = await rsp.json();
 
             const transformedSensors = (data.storedSensors || []).map((sensor: any) => ({
@@ -261,7 +366,8 @@ const ConfigureCollector = () => {
 
             setStoredSensors(transformedSensors);
         } catch {
-            setError("Error fetching stored sensors.");
+            // Don't set error state for sensor fetching issues - just set empty sensors
+            setStoredSensors([]);
         }
     }, [id]);
 
@@ -283,6 +389,7 @@ const ConfigureCollector = () => {
                 await fetchCollector();
                 await fetchStoredSensors();
                 await fetchServices();
+                await checkUnlockStatus(); // NEW: Check unlock status
             } catch (err) {
                 console.error("Error during initial load:", err);
             } finally {
@@ -296,10 +403,16 @@ const ConfigureCollector = () => {
             setError("Collector ID not provided.");
             setLoading(false);
         }
-    }, [id, fetchCollector, fetchStoredSensors]);
+    }, [id, fetchCollector, fetchStoredSensors, checkUnlockStatus]);
 
-    // Fetch new sensors from the collector that are not already in the DB
+    // MODIFIED: Fetch new sensors from the collector that are not already in the DB
     const fetchDeltaSensors = async () => {
+        if (isLocked) {
+            showSnackbar("Please unlock the collector first", "warning");
+            setShowUnlockDialog(true);
+            return;
+        }
+
         setFetchingSensors(true);
         try {
             const rsp = await fetch(`/api/collectors/${id}/sensors/delta`);
@@ -499,6 +612,54 @@ const ConfigureCollector = () => {
         }
     };
 
+    // NEW: Listen for bottom action bar events
+    useEffect(() => {
+        const handleBottomActionBack = () => {
+            handleBack();
+        };
+
+        const handleBottomActionRefresh = () => {
+            window.location.reload();
+        };
+
+        const handleBottomActionSave = () => {
+            if (editMode && hasChanges && !isLocked) {
+                handleSaveCollector();
+            }
+        };
+
+        const handleBottomActionTestConnection = () => {
+            if (!isLocked) {
+                // Implement test connection logic
+                showSnackbar("Testing connection...", "info");
+                // You can add actual test connection API call here
+            } else {
+                showSnackbar("Please unlock the collector first", "warning");
+                setShowUnlockDialog(true);
+            }
+        };
+
+        const handleBottomActionDelete = () => {
+            handleDeleteCollector();
+        };
+
+        // Add event listeners
+        window.addEventListener('bottom-action-back', handleBottomActionBack);
+        window.addEventListener('bottom-action-refresh', handleBottomActionRefresh);
+        window.addEventListener('bottom-action-save', handleBottomActionSave);
+        window.addEventListener('bottom-action-test-connection', handleBottomActionTestConnection);
+        window.addEventListener('bottom-action-delete', handleBottomActionDelete);
+
+        // Cleanup
+        return () => {
+            window.removeEventListener('bottom-action-back', handleBottomActionBack);
+            window.removeEventListener('bottom-action-refresh', handleBottomActionRefresh);
+            window.removeEventListener('bottom-action-save', handleBottomActionSave);
+            window.removeEventListener('bottom-action-test-connection', handleBottomActionTestConnection);
+            window.removeEventListener('bottom-action-delete', handleBottomActionDelete);
+        };
+    }, [editMode, hasChanges, isLocked, handleSaveCollector, handleDeleteCollector, handleBack]);
+
     // Mock functions required by EnhancedSensorsTable but not used in this context
     const noopAsync = async () => { /* Do nothing */ };
     const noop = () => { /* Do nothing */ };
@@ -547,7 +708,7 @@ const ConfigureCollector = () => {
                     label="Collector Name"
                     value={collector.name || ''}
                     onChange={(e) => updateCollectorField('name', e.target.value)}
-                    disabled={!editMode}
+                    disabled={!editMode || isLocked}
                     size="small"
                     required
                 />
@@ -563,7 +724,7 @@ const ConfigureCollector = () => {
                         }
                         value={collector.url || ''}
                         onChange={(e) => updateCollectorField('url', e.target.value)}
-                        disabled={!editMode}
+                        disabled={!editMode || isLocked}
                         size="small"
                         required
                         placeholder={
@@ -588,7 +749,7 @@ const ConfigureCollector = () => {
                         type="password"
                         value={getAccessTokenDisplay()}
                         onChange={(e) => updateCollectorField('accessToken', e.target.value)}
-                        disabled={!editMode}
+                        disabled={!editMode || isLocked}
                         size="small"
                         required
                         helperText={editMode ? getAccessTokenHelperText() : ""}
@@ -605,7 +766,7 @@ const ConfigureCollector = () => {
                 )}
 
                 {needsService && (
-                    <FormControl size="small" disabled={!editMode}>
+                    <FormControl size="small" disabled={!editMode || isLocked}>
                         <InputLabel id="service-select-label">Associated Service</InputLabel>
                         <Select
                             labelId="service-select-label"
@@ -628,7 +789,7 @@ const ConfigureCollector = () => {
                     type="number"
                     value={collector.pollRate || 5000}
                     onChange={(e) => updateCollectorField('pollRate', parseInt(e.target.value) || 5000)}
-                    disabled={!editMode}
+                    disabled={!editMode || isLocked}
                     size="small"
                     helperText="How often to poll for new data (milliseconds)"
                 />
@@ -639,7 +800,7 @@ const ConfigureCollector = () => {
                         type="number"
                         value={collector.sendRate || 1000}
                         onChange={(e) => updateCollectorField('sendRate', parseInt(e.target.value) || 1000)}
-                        disabled={!editMode}
+                        disabled={!editMode || isLocked}
                         size="small"
                         helperText="How often to send test data (milliseconds)"
                     />
@@ -697,6 +858,19 @@ const ConfigureCollector = () => {
                         Back to Collectors
                     </Button>
 
+                    {/* NEW: Unlock/Lock Button */}
+                    {requiresPassword && (
+                        <Button
+                            variant={isLocked ? "contained" : "outlined"}
+                            color={isLocked ? "warning" : "secondary"}
+                            startIcon={isLocked ? <LockIcon /> : <LockOpenIcon />}
+                            onClick={isLocked ? () => setShowUnlockDialog(true) : handleLockCollector}
+                            sx={{ width: { xs: '100%', sm: 'auto' } }}
+                        >
+                            {isLocked ? "Unlock Collector" : "Lock Collector"}
+                        </Button>
+                    )}
+
                     <Button
                         variant="outlined"
                         color="error"
@@ -708,6 +882,27 @@ const ConfigureCollector = () => {
                     </Button>
                 </Box>
             </Box>
+
+            {/* NEW: Lock Status Banner */}
+            {isLocked && (
+                <Box sx={{ mb: 3 }}>
+                    <Alert
+                        severity="warning"
+                        action={
+                            <Button
+                                color="inherit"
+                                size="small"
+                                onClick={() => setShowUnlockDialog(true)}
+                                startIcon={<LockOpenIcon />}
+                            >
+                                Unlock
+                            </Button>
+                        }
+                    >
+                        This collector is locked. Unlock it to fetch sensors or modify settings.
+                    </Alert>
+                </Box>
+            )}
 
             {/* Collector Information Card */}
             <Card elevation={2} sx={{ mb: 3 }}>
@@ -730,6 +925,16 @@ const ConfigureCollector = () => {
                                 color={getCollectorColor(collector.collectorType)}
                                 size="small"
                             />
+                            {/* NEW: Lock status indicator */}
+                            {requiresPassword && (
+                                <Chip
+                                    icon={isLocked ? <LockIcon /> : <LockOpenIcon />}
+                                    label={isLocked ? "Locked" : "Unlocked"}
+                                    color={isLocked ? "warning" : "success"}
+                                    size="small"
+                                    variant="outlined"
+                                />
+                            )}
                         </Box>
 
                         <Box sx={{
@@ -743,7 +948,7 @@ const ConfigureCollector = () => {
                                         variant="contained"
                                         startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
                                         onClick={handleSaveCollector}
-                                        disabled={saving || !hasChanges}
+                                        disabled={saving || !hasChanges || isLocked}
                                         sx={{ width: { xs: '100%', sm: 'auto' } }}
                                     >
                                         {saving ? "Saving..." : "Save Changes"}
@@ -762,6 +967,7 @@ const ConfigureCollector = () => {
                                     variant="outlined"
                                     startIcon={<EditIcon />}
                                     onClick={() => setEditMode(true)}
+                                    disabled={isLocked}
                                     sx={{ width: { xs: '100%', sm: 'auto' } }}
                                 >
                                     Edit Settings
@@ -790,11 +996,12 @@ const ConfigureCollector = () => {
                                 <Button
                                     variant="contained"
                                     onClick={fetchDeltaSensors}
-                                    disabled={fetchingSensors}
+                                    disabled={fetchingSensors || isLocked}
                                     startIcon={fetchingSensors ? <CircularProgress size={20} /> : <RefreshIcon />}
                                     fullWidth
                                 >
-                                    {fetchingSensors ? "Fetching Sensors..." : "Fetch New Sensors"}
+                                    {fetchingSensors ? "Fetching Sensors..." :
+                                        isLocked ? "Unlock Collector First" : "Fetch New Sensors"}
                                 </Button>
 
                                 <Box sx={{
@@ -834,7 +1041,7 @@ const ConfigureCollector = () => {
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
                                                 Access tokens are automatically encrypted before being stored.
-                                                Existing credentials are never sent to your browser for security.
+                                                {requiresPassword ? " This collector uses password-based encryption for enhanced security." : " Existing credentials are never sent to your browser for security."}
                                             </Typography>
                                         </Box>
                                     )}
@@ -960,11 +1167,12 @@ const ConfigureCollector = () => {
                         <Button
                             variant="contained"
                             onClick={fetchDeltaSensors}
-                            disabled={fetchingSensors}
+                            disabled={fetchingSensors || isLocked}
                             startIcon={fetchingSensors ? <CircularProgress size={20} /> : <RefreshIcon />}
                             sx={{ mt: 2 }}
                         >
-                            {fetchingSensors ? "Fetching Sensors..." : "Fetch New Sensors"}
+                            {fetchingSensors ? "Fetching Sensors..." :
+                                isLocked ? "Unlock Collector First" : "Fetch New Sensors"}
                         </Button>
                     )}
                 </Paper>
@@ -981,6 +1189,69 @@ const ConfigureCollector = () => {
                     {snackbarMessage}
                 </Alert>
             </Snackbar>
+
+            {/* NEW: Unlock Dialog */}
+            <Dialog
+                open={showUnlockDialog}
+                onClose={() => {
+                    if (!unlocking) {
+                        setShowUnlockDialog(false);
+                        setUnlockPassword("");
+                    }
+                }}
+                maxWidth="sm"
+                fullWidth
+                disableEscapeKeyDown={unlocking}
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LockIcon color="warning" />
+                        Unlock Collector
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        This collector uses password-based encryption. Please enter the encryption password to unlock it.
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        type="password"
+                        label="Encryption Password"
+                        value={unlockPassword}
+                        onChange={(e) => setUnlockPassword(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !unlocking) {
+                                e.preventDefault();
+                                handleUnlockCollector();
+                            }
+                        }}
+                        disabled={unlocking}
+                        autoFocus
+                        margin="normal"
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => {
+                            if (!unlocking) {
+                                setShowUnlockDialog(false);
+                                setUnlockPassword("");
+                            }
+                        }}
+                        disabled={unlocking}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="contained"
+                        onClick={handleUnlockCollector}
+                        disabled={unlocking || !unlockPassword.trim()}
+                        startIcon={unlocking ? <CircularProgress size={20} /> : <LockOpenIcon />}
+                    >
+                        {unlocking ? "Unlocking..." : "Unlock"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

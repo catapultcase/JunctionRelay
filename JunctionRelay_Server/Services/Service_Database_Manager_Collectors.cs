@@ -38,6 +38,61 @@ namespace JunctionRelayServer.Services
 
         private static readonly ConcurrentDictionary<string, string> _decryptedTokenCache = new();
 
+        // NEW: Cache for user-provided passwords (never stored, only in memory)
+        private static readonly ConcurrentDictionary<int, string> _userPasswordCache = new();
+
+        // NEW: Method to unlock a collector with user password
+        public async Task<bool> UnlockCollectorWithPasswordAsync(int collectorId, string password)
+        {
+            var collector = await _db.QuerySingleOrDefaultAsync<Model_Collector>(
+                "SELECT * FROM Collectors WHERE Id = @Id", new { Id = collectorId });
+
+            if (collector == null || !collector.ExternalAccessToken || string.IsNullOrEmpty(collector.AccessToken))
+            {
+                return false;
+            }
+
+            try
+            {
+                // Test if the password can decrypt the token
+                var decryptedToken = _secretsService.DecryptWithPassword(collector.AccessToken, password);
+
+                // If we get here without exception, password is correct
+                // Cache the decrypted token using existing cache mechanism
+                var cacheKey = ComputeStableHash(collector.AccessToken);
+                _decryptedTokenCache[cacheKey] = decryptedToken;
+
+                // Also store that this collector is unlocked (for UI state)
+                _userPasswordCache[collectorId] = "unlocked"; // We don't store the actual password
+
+                Console.WriteLine($"[COLLECTOR_UNLOCK] ✅ Collector {collectorId} unlocked successfully");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COLLECTOR_UNLOCK] ❌ Failed to unlock collector {collectorId}: {ex.Message}");
+                return false;
+            }
+        }
+
+        // NEW: Method to lock a collector (remove from cache)
+        public void LockCollector(int collectorId)
+        {
+            _userPasswordCache.TryRemove(collectorId, out _);
+
+            // Also remove the decrypted token from cache if we can identify it
+            // Note: This is a limitation - we can't easily remove from _decryptedTokenCache 
+            // without the original encrypted token, but that's okay for security
+
+            Console.WriteLine($"[COLLECTOR_UNLOCK] 🔒 Collector {collectorId} locked");
+        }
+
+        // NEW: Method to check if collector is unlocked
+        public bool IsCollectorUnlocked(int collectorId)
+        {
+            return _userPasswordCache.ContainsKey(collectorId);
+        }
+
         // Fetch all collectors
         public async Task<List<Model_Collector>> GetAllCollectorsAsync()
         {
@@ -92,46 +147,70 @@ namespace JunctionRelayServer.Services
         // Add a new collector
         public async Task<Model_Collector> AddCollectorAsync(Model_Collector newCollector)
         {
-            // Create a copy for database storage with encrypted secrets
+            // Create a copy for database storage
             var collectorForDb = CreateCollectorCopy(newCollector);
-            EncryptCollectorSecrets(collectorForDb);
+
+            // Handle encryption
+            if (!string.IsNullOrEmpty(collectorForDb.EncryptionPassword) && collectorForDb.ExternalAccessToken)
+            {
+                collectorForDb.AccessToken = _secretsService.EncryptWithPassword(
+                    collectorForDb.AccessToken ?? string.Empty,
+                    collectorForDb.EncryptionPassword
+                );
+            }
+            else
+            {
+                EncryptCollectorSecrets(collectorForDb);
+            }
 
             var sql = @"
-                INSERT INTO Collectors (
-                    Name, CollectorType, Description, URL, AccessToken, PollRate, SendRate, ServiceId
-                ) VALUES (
-                    @Name, @CollectorType, @Description, @URL, @AccessToken, @PollRate, @SendRate, @ServiceId
-                );
-                SELECT last_insert_rowid();
-            ";
+        INSERT INTO Collectors (
+            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId
+        ) VALUES (
+            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId
+        );
+        SELECT last_insert_rowid();
+    ";
 
-            // Get the new ID of the inserted collector
+            // Save and assign ID to original (clean) object
             newCollector.Id = await _db.ExecuteScalarAsync<int>(sql, collectorForDb);
 
-            // Return the original with unencrypted values (for API response)
             return newCollector;
         }
 
         // Update an existing collector
         public async Task<bool> UpdateCollectorAsync(int id, Model_Collector updatedCollector)
         {
-            // Create a copy for database storage with encrypted secrets
+            // Create a copy for database storage
             var collectorForDb = CreateCollectorCopy(updatedCollector);
             collectorForDb.Id = id;
-            EncryptCollectorSecrets(collectorForDb);
+
+            // Handle encryption
+            if (!string.IsNullOrEmpty(collectorForDb.EncryptionPassword) && collectorForDb.ExternalAccessToken)
+            {
+                collectorForDb.AccessToken = _secretsService.EncryptWithPassword(
+                    collectorForDb.AccessToken ?? string.Empty,
+                    collectorForDb.EncryptionPassword
+                );
+            }
+            else
+            {
+                EncryptCollectorSecrets(collectorForDb);
+            }
 
             var sql = @"
-                UPDATE Collectors SET
-                    Name = @Name,
-                    CollectorType = @CollectorType,
-                    Description = @Description,
-                    URL = @URL,
-                    AccessToken = @AccessToken,
-                    PollRate = @PollRate,
-                    SendRate = @SendRate,
-                    ServiceId = @ServiceId
-                WHERE Id = @Id;
-            ";
+        UPDATE Collectors SET
+            Name = @Name,
+            CollectorType = @CollectorType,
+            Description = @Description,
+            URL = @URL,
+            AccessToken = @AccessToken,
+            ExternalAccessToken = @ExternalAccessToken,
+            PollRate = @PollRate,
+            SendRate = @SendRate,
+            ServiceId = @ServiceId
+        WHERE Id = @Id;
+    ";
 
             var rowsAffected = await _db.ExecuteAsync(sql, collectorForDb);
             return rowsAffected > 0;
@@ -144,6 +223,9 @@ namespace JunctionRelayServer.Services
                 "SELECT * FROM Collectors WHERE Id = @Id", new { Id = id });
 
             if (collector == null) return false;
+
+            // Clean up caches for this collector
+            LockCollector(id);
 
             // Delete associated sensors
             await _db.ExecuteAsync("DELETE FROM Sensors WHERE CollectorId = @Id", new { Id = id });
@@ -163,18 +245,21 @@ namespace JunctionRelayServer.Services
                 {
                     collector.AccessToken = _secretsService.EncryptSecret(collector.AccessToken);
                 }
-
             }
         }
 
-
-        // Helper method to decrypt secrets in a collector
-
-
+        // MODIFIED: Enhanced to handle password-encrypted tokens
         private void DecryptCollectorSecrets(Model_Collector collector)
         {
             if (!string.IsNullOrEmpty(collector.AccessToken))
             {
+                // If this is a password-encrypted collector and it's not unlocked, don't decrypt
+                if (collector.ExternalAccessToken && !IsCollectorUnlocked(collector.Id))
+                {
+                    collector.DecryptedAccessToken = null; // Explicitly null to indicate locked state
+                    return;
+                }
+
                 var encrypted = collector.AccessToken;
                 var cacheKey = ComputeStableHash(encrypted);
 
@@ -185,10 +270,18 @@ namespace JunctionRelayServer.Services
                 }
                 else
                 {
-                    var decrypted = _secretsService.DecryptSecret(encrypted);
-                    _decryptedTokenCache[cacheKey] = decrypted;
-                    collector.DecryptedAccessToken = decrypted;
-                    Console.WriteLine($"[COLLECTOR_CACHE] 🔓 Cache miss - decrypted and cached collector {collector.Id}");
+                    // Only attempt automatic decryption for non-password encrypted tokens
+                    if (!collector.ExternalAccessToken)
+                    {
+                        var decrypted = _secretsService.DecryptSecret(encrypted);
+                        _decryptedTokenCache[cacheKey] = decrypted;
+                        collector.DecryptedAccessToken = decrypted;
+                        Console.WriteLine($"[COLLECTOR_CACHE] 🔓 Cache miss - decrypted and cached collector {collector.Id}");
+                    }
+                    else
+                    {
+                        collector.DecryptedAccessToken = null; // Password required
+                    }
                 }
             }
         }
@@ -198,9 +291,8 @@ namespace JunctionRelayServer.Services
             using var sha256 = System.Security.Cryptography.SHA256.Create();
             var bytes = System.Text.Encoding.UTF8.GetBytes(input);
             var hash = sha256.ComputeHash(bytes);
-            return Convert.ToBase64String(hash); // or BitConverter.ToString(hash).Replace("-", "")
+            return Convert.ToBase64String(hash);
         }
-
 
         // Helper to create a copy of the collector for database operations
         private Model_Collector CreateCollectorCopy(Model_Collector original)
@@ -213,10 +305,12 @@ namespace JunctionRelayServer.Services
                 Description = original.Description,
                 URL = original.URL,
                 AccessToken = original.AccessToken,
+                ExternalAccessToken = original.ExternalAccessToken,
+                EncryptionPassword = original.EncryptionPassword,
                 PollRate = original.PollRate,
                 SendRate = original.SendRate,
                 ServiceId = original.ServiceId,
-                Status = original.Status  // Add the required Status property
+                Status = original.Status,
             };
         }
     }

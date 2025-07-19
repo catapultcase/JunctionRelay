@@ -27,6 +27,8 @@ namespace JunctionRelayServer.Interfaces
         string DecryptSecret(string encryptedText);
         Task<string> EncryptSecretAsync(string plainText);
         Task<string> DecryptSecretAsync(string encryptedText);
+        string EncryptWithPassword(string plainText, string password);
+        string DecryptWithPassword(string encryptedText, string password);
         bool IsEncrypted(string value);
     }
 }
