@@ -267,12 +267,15 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 '&:active': {
                                                     transform: 'scale(0.95)'
                                                 },
-                                                // Fix for color not reverting - ensure inactive state is explicit
-                                                '&:not(:hover):not(:active)': {
+                                                // Fix for mobile sticky press and color not reverting
+                                                '&:not(:hover):not(:active):not(:focus)': {
                                                     backgroundColor: viewModeActions.currentMode === mode.mode
                                                         ? theme.palette.primary.main
                                                         : 'transparent',
                                                 },
+                                                // Ensure touch events release properly on mobile
+                                                touchAction: 'manipulation',
+                                                WebkitTapHighlightColor: 'transparent',
                                                 transition: 'all 0.2s ease',
                                                 minWidth: 36,
                                                 minHeight: 36
@@ -303,7 +306,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                                 disabled={action.disabled}
                                                 color={action.color || 'primary'}
                                                 size="small"
-                                                startIcon={action.icon}
+                                                startIcon={action.icon || undefined}
                                                 variant={action.variant || 'outlined'}
                                                 sx={{
                                                     minWidth: 'auto',

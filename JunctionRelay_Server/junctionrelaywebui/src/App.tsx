@@ -49,7 +49,6 @@ import TableViewIcon from '@mui/icons-material/TableView';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import SearchIcon from '@mui/icons-material/Search';
 import SaveIcon from '@mui/icons-material/Save';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ComputerIcon from '@mui/icons-material/Computer';
@@ -275,8 +274,9 @@ const BottomActionBarWrapper: React.FC = () => {
     // Determine if we're on a configure page
     const isConfigurePage = location.pathname.includes('/configure-');
 
-    // Get feature flag for back button
-    const showBackButton = featureFlags?.mobile_show_back_button === true;
+    // Get feature flag for back button (handle both boolean and string values)
+    const showBackButton = featureFlags?.mobile_show_back_button === true ||
+        featureFlags?.mobile_show_back_button === 'true';
 
     // Helper function to get current view mode
     const getCurrentViewMode = () => {
@@ -556,7 +556,7 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: [
                         {
-                            icon: <SearchIcon />,
+                            icon: null, // No icon, just text
                             label: 'Scan',
                             showText: true,
                             onClick: () => {
@@ -580,8 +580,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: [
                         {
-                            icon: <BugReportIcon />,
-                            label: 'Test All',
+                            icon: null, // No icon, just text
+                            label: 'Test',
                             showText: true,
                             onClick: () => {
                                 window.dispatchEvent(new CustomEvent('bottom-action-test-all'));
@@ -604,8 +604,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: [
                         {
-                            icon: <BugReportIcon />,
-                            label: 'Test All',
+                            icon: null, // No icon, just text
+                            label: 'Test',
                             showText: true,
                             onClick: () => {
                                 window.dispatchEvent(new CustomEvent('bottom-action-test-all'));
@@ -851,7 +851,6 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
-        const refreshToken = urlParams.get('refreshToken');
         const authStatus = urlParams.get('auth');
 
         if (token && authStatus === 'success') {
