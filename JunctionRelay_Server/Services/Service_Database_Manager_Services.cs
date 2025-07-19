@@ -77,14 +77,14 @@ namespace JunctionRelayServer.Services
 
             var sql = @"
                 INSERT INTO Services (
-                    Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayService, SelectedPort,
+                    Name, Description, Type, Status, LastUpdated, URL, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayService, SelectedPort,
                     ServiceModel, ServiceManufacturer, FirmwareVersion, MCU, WirelessConnectivity, UniqueIdentifier, 
-                    IsGateway, IsJunctionRelayService, MQTTBrokerAddress, MQTTBrokerPort, MQTTUsername, MQTTPassword
+                    IsGateway, IsJunctionRelayService, MQTTBrokerAddress, MQTTBrokerPort, MQTTUsername, AccessToken, ExternalAccessToken
                 )
                 VALUES (
-                    @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayService, @SelectedPort,
+                    @Name, @Description, @Type, @Status, @LastUpdated, @URL, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayService, @SelectedPort,
                     @ServiceModel, @ServiceManufacturer, @FirmwareVersion, @MCU, @WirelessConnectivity, @UniqueIdentifier, 
-                    @IsGateway, @IsJunctionRelayService, @MQTTBrokerAddress, @MQTTBrokerPort, @MQTTUsername, @MQTTPassword
+                    @IsGateway, @IsJunctionRelayService, @MQTTBrokerAddress, @MQTTBrokerPort, @MQTTUsername, @AccessToken, @ExternalAccessToken
                 );
                 SELECT last_insert_rowid();";
 
@@ -105,7 +105,7 @@ namespace JunctionRelayServer.Services
             var sql = @"
                 UPDATE Services SET
                     Name = @Name, Description = @Description, Type = @Type, Status = @Status, LastUpdated = @LastUpdated,
-                    IPAddress = @IPAddress, PollRate = @PollRate, SendRate = @SendRate, IsGateway = @IsGateway, GatewayId = @GatewayId,
+                    URL = @URL, PollRate = @PollRate, SendRate = @SendRate, IsGateway = @IsGateway, GatewayId = @GatewayId,
                     IsJunctionRelayService = @IsJunctionRelayService, SelectedPort = @SelectedPort,
                     ServiceModel = @ServiceModel, ServiceManufacturer = @ServiceManufacturer,
                     FirmwareVersion = @FirmwareVersion, MCU = @MCU, WirelessConnectivity = @WirelessConnectivity,

@@ -78,7 +78,7 @@ namespace JunctionRelayServer.Services.FactoryServices
 
             var options = new MqttClientOptionsBuilder()
                 .WithTcpServer(_service.MQTTBrokerAddress, int.Parse(_service.MQTTBrokerPort))
-                .WithCredentials(_service.MQTTUsername, _service.MQTTPassword)
+                .WithCredentials(_service.MQTTUsername, _service.AccessToken)
                 .WithProtocolVersion(MqttProtocolVersion.V311)
                 .Build();
 

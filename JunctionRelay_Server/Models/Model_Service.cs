@@ -39,7 +39,7 @@ namespace JunctionRelayServer.Models
         public string? WirelessConnectivity { get; set; }
 
         // Network info
-        public string? IPAddress { get; set; }
+        public string? URL { get; set; }
 
         // Logical flags
         public bool IsGateway { get; set; }
@@ -62,20 +62,19 @@ namespace JunctionRelayServer.Models
         public int? SendRate { get; set; } = 5000;
         public DateTime? LastPolled { get; set; }
 
+        // Shared Security
+        public string? AccessToken { get; set; }
+        public bool ExternalAccessToken { get; set; }
+
         // HomeAssistant Properties
         public string? HomeAssistantAddress { get; set; }
         public string? HomeAssistantAPIKey { get; set; }
-        public bool ExternalHomeAssistantAPIKey { get; set; }
         public string? HomeAssistantUsername { get; set; }
-        public string? HomeAssistantPassword { get; set; }
-        public bool ExternalHomeAssistantPassword { get; set; }
 
         // MQTT Properties
         public string? MQTTBrokerAddress { get; set; }
         public string? MQTTBrokerPort { get; set; }
         public string? MQTTUsername { get; set; }
-        public string? MQTTPassword { get; set; }
-        public bool ExternalMQTTPassword { get; set; }
 
         // Summary
         // public int SensorCount => Sensors.Count;

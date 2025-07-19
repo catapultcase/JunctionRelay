@@ -255,7 +255,7 @@ builder.Services.AddSingleton<Func<Type, Model_Service, IService>>(provider => (
     }
     else if (serviceType == typeof(Service_HomeAssistant))
     {
-        return new Service_HomeAssistant(modelService.HomeAssistantAddress, modelService.HomeAssistantAPIKey);
+        return new Service_HomeAssistant(modelService.HomeAssistantAddress, modelService.AccessToken);
     }
     throw new Exception($"Service type '{serviceType}' not recognized.");
 });
