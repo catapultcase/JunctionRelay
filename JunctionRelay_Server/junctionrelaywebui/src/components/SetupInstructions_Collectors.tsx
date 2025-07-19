@@ -20,12 +20,12 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 
-interface CollectorSetupInstructionsProps {
+interface SetupInstructions_CollectorsProps {
     collectorType: string;
 }
 
 // Helper function to get setup instructions for each collector type
-export const CollectorSetupInstructions: React.FC<CollectorSetupInstructionsProps> = ({ collectorType }) => {
+export const SetupInstructions_Collectors: React.FC<SetupInstructions_CollectorsProps> = ({ collectorType }) => {
     const getInstructions = () => {
         switch (collectorType) {
             case "Github":
@@ -260,4 +260,4 @@ export const CollectorSetupInstructions: React.FC<CollectorSetupInstructionsProp
     return getInstructions();
 };
 
-export default CollectorSetupInstructions;
+export default SetupInstructions_Collectors;

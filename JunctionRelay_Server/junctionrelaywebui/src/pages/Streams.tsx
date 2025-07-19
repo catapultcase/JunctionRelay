@@ -832,8 +832,8 @@ const Streams: React.FC = () => {
                 mb: 3,
                 gap: 2
             }}>
-                <Typography variant="h4" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <StreamIcon /> Stream Monitor
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Stream Monitor
                 </Typography>
                 <Box display="flex" alignItems="center" gap={2} sx={{ flexWrap: 'wrap' }}>
                     <Chip

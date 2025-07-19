@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 // Import the EnhancedSensorsTable component
 import EnhancedSensorsTable from "../components/EnhancedSensorsTable";
-import CollectorSetupInstructions from "../components/CollectorSetupInstructions";
+import SetupInstructions_Collectors from "../components/SetupInstructions_Collectors";
 
 // Import icons
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -169,7 +169,7 @@ const ConfigureCollector = () => {
     const getAccessTokenDisplay = () => {
         const isExisting = originalCollector?.accessToken;
         if (isExisting && !accessTokenChanged) {
-            return '••••••••••••••••'; // Show masked value for existing token
+            return 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'; // Show masked value for existing token
         }
         return collector?.accessToken || ''; // Show actual value for new/changed tokens
     };
@@ -850,7 +850,7 @@ const ConfigureCollector = () => {
                     <Typography variant="h6">Setup Instructions</Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                    <CollectorSetupInstructions collectorType={collector.collectorType} />
+                    <SetupInstructions_Collectors collectorType={collector.collectorType} />
                 </AccordionDetails>
             </Accordion>
 
