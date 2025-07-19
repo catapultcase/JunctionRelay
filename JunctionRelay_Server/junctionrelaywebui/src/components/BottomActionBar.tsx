@@ -33,10 +33,7 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
-    Typography,
-    Divider
-} from '@mui/material';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+    Typography} from '@mui/material';
 
 export interface BottomActionConfig {
     icon: React.ReactNode;

@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -160,6 +160,18 @@ const BottomActionBarWrapper: React.FC = () => {
         return localStorage.getItem('junctionrelay_devices_view_mode_unified') || 'table';
     });
 
+    const [collectorsViewMode, setCollectorsViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_collectors_view_mode') || 'table';
+    });
+
+    const [servicesViewMode, setServicesViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_services_view_mode') || 'table';
+    });
+
+    const [payloadsViewMode, setPayloadsViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_payloads_view_mode') || 'table';
+    });
+
     const [dashboardJunctionsViewMode, setDashboardJunctionsViewMode] = useState(() => {
         return localStorage.getItem('dashboard_junctions_view_mode') || 'table';
     });
@@ -177,6 +189,15 @@ const BottomActionBarWrapper: React.FC = () => {
             if (e.key === 'junctionrelay_devices_view_mode_unified' && e.newValue) {
                 setDevicesViewMode(e.newValue);
             }
+            if (e.key === 'junctionrelay_collectors_view_mode' && e.newValue) {
+                setCollectorsViewMode(e.newValue);
+            }
+            if (e.key === 'junctionrelay_services_view_mode' && e.newValue) {
+                setServicesViewMode(e.newValue);
+            }
+            if (e.key === 'junctionrelay_payloads_view_mode' && e.newValue) {
+                setPayloadsViewMode(e.newValue);
+            }
             if (e.key === 'dashboard_junctions_view_mode' && e.newValue) {
                 setDashboardJunctionsViewMode(e.newValue);
             }
@@ -191,6 +212,12 @@ const BottomActionBarWrapper: React.FC = () => {
                 // Update the appropriate view mode based on current page
                 if (location.pathname === '/devices') {
                     setDevicesViewMode(e.detail.mode);
+                } else if (location.pathname === '/collectors') {
+                    setCollectorsViewMode(e.detail.mode);
+                } else if (location.pathname === '/services') {
+                    setServicesViewMode(e.detail.mode);
+                } else if (location.pathname === '/payloads') {
+                    setPayloadsViewMode(e.detail.mode);
                 } else if (location.pathname === '/') {
                     setDashboardJunctionsViewMode(e.detail.mode);
                 } else if (location.pathname === '/junctions') {
@@ -464,7 +491,93 @@ const BottomActionBarWrapper: React.FC = () => {
                                 window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
                             }
                         }
-                    ]
+                    ],
+                    viewModeActions: {
+                        currentMode: collectorsViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('junctionrelay_collectors_view_mode', mode);
+                            setCollectorsViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
+                };
+
+            case '/services':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Service',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-service'));
+                        }
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Refresh',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                            }
+                        }
+                    ],
+                    viewModeActions: {
+                        currentMode: servicesViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('junctionrelay_services_view_mode', mode);
+                            setServicesViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
+                };
+
+            case '/payloads':
+                return {
+                    primaryAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Layout',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-payload'));
+                        }
+                    },
+                    secondaryActions: [
+                        {
+                            icon: <RefreshIcon />,
+                            label: 'Reset All',
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-reset-all'));
+                            },
+                            showText: true
+                        }
+                    ],
+                    viewModeActions: {
+                        currentMode: payloadsViewMode,
+                        modes: [
+                            { mode: 'table', icon: <TableViewIcon />, label: 'Table View' },
+                            { mode: 'standard', icon: <DashboardIcon />, label: 'Standard Tiles' },
+                            { mode: 'mini', icon: <ViewModuleIcon />, label: 'Mini Tiles' }
+                        ],
+                        onModeChange: (mode: string) => {
+                            localStorage.setItem('junctionrelay_payloads_view_mode', mode);
+                            setPayloadsViewMode(mode);
+                            window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+                                detail: { mode }
+                            }));
+                        }
+                    }
                 };
 
             case '/settings':
