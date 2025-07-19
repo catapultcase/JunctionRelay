@@ -642,7 +642,7 @@ const AddLayoutModal: React.FC<{
                     borderColor: 'divider',
                     fontSize: { xs: '1.1rem', md: '1.25rem' }
                 }}>
-                    Add Layout
+                    Add Payload Layout
                 </Typography>
 
                 {loading ? (
@@ -831,7 +831,7 @@ const AddLayoutModal: React.FC<{
                                     disabled={loading || !layout.layoutType}
                                     sx={{ width: { xs: '100%', sm: 'auto' } }}
                                 >
-                                    {loading && !configureAfterAdd ? "Adding..." : "Add Layout"}
+                                    {loading && !configureAfterAdd ? "Adding..." : "Add Payload Layout"}
                                 </Button>
                                 <Button
                                     variant="contained"
@@ -975,7 +975,7 @@ const Payloads = () => {
     // Listen for bottom action bar events
     useEffect(() => {
         const handleAddLayout = () => {
-            console.log('Bottom bar: Add layout requested');
+            console.log('Bottom bar: Add payload layout requested');
             setAddLayoutModalOpen(true);
         };
 
@@ -1192,7 +1192,7 @@ const Payloads = () => {
                         size="small"
                         startIcon={<AddIcon />}
                     >
-                        Add Layout
+                        Add Payload Layout
                     </Button>
                     <Button
                         variant="outlined"
@@ -1201,7 +1201,7 @@ const Payloads = () => {
                         startIcon={resetLoading ? <CircularProgress size={16} /> : <RefreshIcon />}
                         disabled={resetLoading}
                     >
-                        Reset/Restore All Payload Templates
+                        Reset/Restore All Payload Layout Templates
                     </Button>
                 </Box>
             )}
@@ -1438,7 +1438,7 @@ const Payloads = () => {
                 </Alert>
             </Snackbar>
 
-            {/* Add Layout Modal */}
+            {/* Add Payload Layout Modal */}
             <AddLayoutModal
                 open={addLayoutModalOpen}
                 onClose={() => setAddLayoutModalOpen(false)}

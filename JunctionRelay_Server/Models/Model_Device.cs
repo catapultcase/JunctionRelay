@@ -112,10 +112,12 @@ namespace JunctionRelayServer.Models
 
         // SSH Configuration
         public string? SshUsername { get; set; }
-        public string? SshPassword { get; set; }  // This should be encrypted/hashed
+        public string? SshPassword { get; set; }
+        public bool ExternalSshPassword { get; set; }
         public int? SshPort { get; set; } = 22;
         public int? SshTimeoutMs { get; set; } = 10000;
         public string? SshPrivateKey { get; set; }  // For key-based auth
+        public bool ExternalSshPrivateKey { get; set; }
         public bool UseSshKeyAuth { get; set; } = false;  // true = key auth, false = password auth
                                                           // Extended SSH heartbeat options
         public int? SshConnectionRetries { get; set; } = 3;
