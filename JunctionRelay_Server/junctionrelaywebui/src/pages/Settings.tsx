@@ -359,7 +359,7 @@ const Settings: React.FC = () => {
                     }
                 }));
 
-                const flagKeys = ['use_mobile_navigation', 'show_current_version'];
+                const flagKeys = ['mobile_navigation_on_desktop', 'top_bar_show_current_version'];
                 if (flagKeys.includes(settingKey)) {
                     window.dispatchEvent(new CustomEvent('flags-changed', {
                         detail: {

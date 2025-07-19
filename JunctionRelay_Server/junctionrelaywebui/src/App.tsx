@@ -57,6 +57,7 @@ import SettingsBackupRestoreIcon from '@mui/icons-material/SettingsBackupRestore
 import ComputerIcon from '@mui/icons-material/Computer';
 import CloudIcon from '@mui/icons-material/Cloud';
 import MemoryIcon from '@mui/icons-material/Memory';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 // Enhanced Global Fetch Wrapper - NO FALLBACKS between auth modes
 const originalFetch = window.fetch;
@@ -180,8 +181,29 @@ const BottomActionBarWrapper: React.FC = () => {
         return localStorage.getItem('junctions_view_mode') || 'table';
     });
 
-    // State for configure device actions (dynamically set by the configure device page)
-    const [configureDeviceActions, setConfigureDeviceActions] = useState<any>(null);
+    // State for configure page actions (dynamically set by configure pages)
+    const [configurePageActions, setConfigurePageActions] = useState<any>(null);
+
+    // State for configure page view modes
+    const [configureDeviceViewMode, setConfigureDeviceViewMode] = useState(() => {
+        return localStorage.getItem('configure_device_view_mode') || 'table';
+    });
+
+    const [configureJunctionViewMode, setConfigureJunctionViewMode] = useState(() => {
+        return localStorage.getItem('configure_junction_view_mode') || 'table';
+    });
+
+    const [configureCollectorViewMode, setConfigureCollectorViewMode] = useState(() => {
+        return localStorage.getItem('configure_collector_view_mode') || 'table';
+    });
+
+    const [configureServiceViewMode, setConfigureServiceViewMode] = useState(() => {
+        return localStorage.getItem('configure_service_view_mode') || 'table';
+    });
+
+    const [configurePayloadViewMode, setConfigurePayloadViewMode] = useState(() => {
+        return localStorage.getItem('configure_payload_view_mode') || 'table';
+    });
 
     // Listen for view mode changes from localStorage and sync state
     useEffect(() => {
@@ -222,27 +244,37 @@ const BottomActionBarWrapper: React.FC = () => {
                     setDashboardJunctionsViewMode(e.detail.mode);
                 } else if (location.pathname === '/junctions') {
                     setJunctionsViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-device/')) {
+                    setConfigureDeviceViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-junction/')) {
+                    setConfigureJunctionViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-collector/')) {
+                    setConfigureCollectorViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-service/')) {
+                    setConfigureServiceViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-payload/')) {
+                    setConfigurePayloadViewMode(e.detail.mode);
                 }
             }
         };
 
-        // Listen for configure device bottom actions configuration
-        const handleConfigureDeviceActions = (e: CustomEvent) => {
+        // Listen for configure page bottom actions configuration
+        const handleConfigurePageActions = (e: CustomEvent) => {
             if (e.detail.clear) {
-                setConfigureDeviceActions(null);
+                setConfigurePageActions(null);
             } else {
-                setConfigureDeviceActions(e.detail);
+                setConfigurePageActions(e.detail);
             }
         };
 
         window.addEventListener('storage', handleStorageChange);
         window.addEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
-        window.addEventListener('configure-device-bottom-actions', handleConfigureDeviceActions as EventListener);
+        window.addEventListener('configure-device-bottom-actions', handleConfigurePageActions as EventListener);
 
         return () => {
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
-            window.removeEventListener('configure-device-bottom-actions', handleConfigureDeviceActions as EventListener);
+            window.removeEventListener('configure-device-bottom-actions', handleConfigurePageActions as EventListener);
         };
     }, [location.pathname]);
 
@@ -255,73 +287,343 @@ const BottomActionBarWrapper: React.FC = () => {
         return null;
     }
 
-    // Check if we're on a configure device page
-    const isConfigureDevicePage = location.pathname.includes('/configure-device/');
+    // Check if we're on any configure page
+    const isConfigurePage = location.pathname.includes('/configure-device/') ||
+        location.pathname.includes('/configure-junction/') ||
+        location.pathname.includes('/configure-collector/') ||
+        location.pathname.includes('/configure-service/') ||
+        location.pathname.includes('/configure-payload/');
 
-    // If we're on configure device page and have actions configured, use those
-    if (isConfigureDevicePage && configureDeviceActions) {
-        return (
-            <>
-                <BottomActionBar {...configureDeviceActions} />
-                {/* Status indicator overlay for unsaved changes */}
-                {configureDeviceActions.statusIndicator && (
-                    <Box
-                        sx={{
-                            position: 'fixed',
-                            bottom: 70, // Above the bottom action bar
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            zIndex: theme.zIndex.snackbar,
-                            px: 2,
-                            py: 0.5,
-                            backgroundColor: (() => {
-                                const color = configureDeviceActions.statusIndicator.color || 'info';
-                                switch (color) {
-                                    case 'warning': return `${theme.palette.warning.main}20`;
-                                    case 'success': return `${theme.palette.success.main}20`;
-                                    case 'error': return `${theme.palette.error.main}20`;
-                                    case 'info':
-                                    default: return `${theme.palette.info.main}20`;
-                                }
-                            })(),
-                            color: (() => {
-                                const color = configureDeviceActions.statusIndicator.color || 'info';
-                                switch (color) {
-                                    case 'warning': return theme.palette.warning.main;
-                                    case 'success': return theme.palette.success.main;
-                                    case 'error': return theme.palette.error.main;
-                                    case 'info':
-                                    default: return theme.palette.info.main;
-                                }
-                            })(),
-                            borderRadius: 2,
-                            border: (() => {
-                                const color = configureDeviceActions.statusIndicator.color || 'info';
-                                switch (color) {
-                                    case 'warning': return `1px solid ${theme.palette.warning.main}40`;
-                                    case 'success': return `1px solid ${theme.palette.success.main}40`;
-                                    case 'error': return `1px solid ${theme.palette.error.main}40`;
-                                    case 'info':
-                                    default: return `1px solid ${theme.palette.info.main}40`;
-                                }
-                            })(),
-                            backdropFilter: 'blur(10px)',
-                            fontSize: '0.75rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.5
-                        }}
-                    >
-                        {configureDeviceActions.statusIndicator.icon && (
-                            <span style={{ fontSize: '0.8rem' }}>
-                                {configureDeviceActions.statusIndicator.icon}
-                            </span>
+    // Helper function to get current view mode for configure pages
+    const getCurrentConfigureViewMode = () => {
+        if (location.pathname.includes('/configure-device/')) {
+            return configureDeviceViewMode;
+        } else if (location.pathname.includes('/configure-junction/')) {
+            return configureJunctionViewMode;
+        } else if (location.pathname.includes('/configure-collector/')) {
+            return configureCollectorViewMode;
+        } else if (location.pathname.includes('/configure-service/')) {
+            return configureServiceViewMode;
+        } else if (location.pathname.includes('/configure-payload/')) {
+            return configurePayloadViewMode;
+        }
+        return 'table';
+    };
+
+    // Helper function to set view mode for configure pages
+    const setConfigureViewMode = (mode: string) => {
+        if (location.pathname.includes('/configure-device/')) {
+            localStorage.setItem('configure_device_view_mode', mode);
+            setConfigureDeviceViewMode(mode);
+        } else if (location.pathname.includes('/configure-junction/')) {
+            localStorage.setItem('configure_junction_view_mode', mode);
+            setConfigureJunctionViewMode(mode);
+        } else if (location.pathname.includes('/configure-collector/')) {
+            localStorage.setItem('configure_collector_view_mode', mode);
+            setConfigureCollectorViewMode(mode);
+        } else if (location.pathname.includes('/configure-service/')) {
+            localStorage.setItem('configure_service_view_mode', mode);
+            setConfigureServiceViewMode(mode);
+        } else if (location.pathname.includes('/configure-payload/')) {
+            localStorage.setItem('configure_payload_view_mode', mode);
+            setConfigurePayloadViewMode(mode);
+        }
+
+        // Dispatch event for the component to pick up
+        window.dispatchEvent(new CustomEvent('bottom-action-view-mode-change', {
+            detail: { mode }
+        }));
+    };
+
+    // Get the configure page type from current path
+    const getConfigurePageType = () => {
+        if (location.pathname.includes('/configure-device/')) return 'device';
+        if (location.pathname.includes('/configure-junction/')) return 'junction';
+        if (location.pathname.includes('/configure-collector/')) return 'collector';
+        if (location.pathname.includes('/configure-service/')) return 'service';
+        if (location.pathname.includes('/configure-payload/')) return 'payload';
+        return null;
+    };
+
+    // Get the back route for configure pages
+    const getConfigureBackRoute = () => {
+        const pageType = getConfigurePageType();
+        switch (pageType) {
+            case 'device': return '/devices';
+            case 'junction': return '/junctions';
+            case 'collector': return '/collectors';
+            case 'service': return '/services';
+            case 'payload': return '/payloads';
+            default: return '/';
+        }
+    };
+
+    // Generate unified configure page actions with proper layout
+    const getUnifiedConfigurePageActions = () => {
+        const pageType = getConfigurePageType();
+        if (!pageType) return null;
+
+        // Left actions: BACK, REFRESH, SAVE (in that order, aligned far left)
+        const leftActions = [
+            //{
+            //    icon: React.createElement(ArrowBackIcon),
+            //    label: 'Back',
+            //    onClick: () => {
+            //        window.dispatchEvent(new CustomEvent('bottom-action-back'));
+            //    }
+            //},
+            {
+                icon: React.createElement(RefreshIcon),
+                label: 'Refresh',
+                onClick: () => {
+                    window.dispatchEvent(new CustomEvent('bottom-action-refresh'));
+                }
+            },
+            {
+                icon: React.createElement(SaveIcon),
+                label: `Save ${pageType.charAt(0).toUpperCase() + pageType.slice(1)}`,
+                onClick: () => {
+                    window.dispatchEvent(new CustomEvent('bottom-action-save'));
+                }
+            }
+        ];
+
+        // Right actions: Custom actions for each page (aligned far right)
+        const rightActions = [];
+
+        // Page-specific customizations (custom actions on the right, from right to left)
+        switch (pageType) {
+            case 'device':
+                rightActions.push(
+                    {
+                        icon: React.createElement(DeleteSweepIcon),
+                        label: 'Delete',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-delete'));
+                        },
+                        color: 'error' as const
+                    },
+                    {
+                        icon: React.createElement(SearchIcon),
+                        label: 'Test Connection',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-test-connection'));
+                        }
+                    }
+                );
+                break;
+
+            case 'junction':
+                rightActions.push(
+                    {
+                        icon: React.createElement(DeleteSweepIcon),
+                        label: 'Delete',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-delete'));
+                        },
+                        color: 'error' as const
+                    },
+                    {
+                        icon: React.createElement(CloudUploadIcon),
+                        label: 'Export',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-export'));
+                        }
+                    }
+                );
+                break;
+
+            case 'collector':
+                rightActions.push(
+                    {
+                        icon: React.createElement(DeleteSweepIcon),
+                        label: 'Delete',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-delete'));
+                        },
+                        color: 'error' as const
+                    },
+                    {
+                        icon: React.createElement(RefreshIcon),
+                        label: 'Test Connection',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-test-connection'));
+                        }
+                    }
+                );
+                break;
+
+            case 'service':
+                rightActions.push(
+                    {
+                        icon: React.createElement(DeleteSweepIcon),
+                        label: 'Delete',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-delete'));
+                        },
+                        color: 'error' as const
+                    },
+                    {
+                        icon: React.createElement(SearchIcon),
+                        label: 'Test Service',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-test-service'));
+                        }
+                    }
+                );
+                break;
+
+            case 'payload':
+                // Payload-specific actions - no delete for payloads
+                rightActions.push(
+                    {
+                        icon: React.createElement(CloudUploadIcon),
+                        label: 'Export',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-export'));
+                        }
+                    }
+                );
+                break;
+        }
+
+        // Return the new structure: left actions, centered view mode, right actions
+        return {
+            leftActions: leftActions,
+            centerActions: {
+                currentMode: getCurrentConfigureViewMode(),
+                modes: [
+                    { mode: 'table', icon: React.createElement(TableViewIcon), label: 'Table View' },
+                    { mode: 'standard', icon: React.createElement(DashboardIcon), label: 'Standard Tiles' },
+                    { mode: 'mini', icon: React.createElement(ViewModuleIcon), label: 'Mini Tiles' }
+                ],
+                onModeChange: setConfigureViewMode
+            },
+            rightActions: rightActions
+        };
+    };
+
+    // If we're on any configure page, always use unified actions (enhanced with any custom ones)
+    if (isConfigurePage) {
+        // Get the base unified actions for this page type
+        const unifiedActions = getUnifiedConfigurePageActions();
+
+        if (unifiedActions) {
+            // If custom actions are provided by the page, merge them with unified actions
+            if (configurePageActions) {
+                // Convert the new structure to the old BottomActionBar format for compatibility
+                const mergedActions = {
+                    // Left actions become secondary actions
+                    secondaryActions: unifiedActions.leftActions,
+                    // Center becomes view mode actions
+                    viewModeActions: unifiedActions.centerActions,
+                    // Right actions become primary + additional secondary
+                    primaryAction: unifiedActions.rightActions[0] || unifiedActions.leftActions[0], // First right action or fallback to first left
+                    // Add remaining right actions to secondary
+                    ...(unifiedActions.rightActions.length > 1 && {
+                        secondaryActions: [
+                            ...unifiedActions.leftActions,
+                            ...unifiedActions.rightActions.slice(1)
+                        ]
+                    }),
+                    // Preserve any status indicator from custom actions
+                    statusIndicator: configurePageActions.statusIndicator
+                };
+
+                // If the page provided custom actions, enhance the structure
+                if (configurePageActions.primaryAction || configurePageActions.secondaryActions) {
+                    // Use custom primary action if provided, otherwise use the first right action
+                    mergedActions.primaryAction = configurePageActions.primaryAction || mergedActions.primaryAction;
+
+                    // Merge secondary actions: left (standard) + custom secondary + right (page-specific)
+                    mergedActions.secondaryActions = [
+                        ...unifiedActions.leftActions, // Standard actions on left
+                        ...(configurePageActions.secondaryActions || []), // Custom actions
+                        ...unifiedActions.rightActions // Page-specific actions on right
+                    ];
+                }
+
+                return (
+                    <>
+                        <BottomActionBar {...mergedActions} />
+                        {/* Status indicator overlay for unsaved changes */}
+                        {configurePageActions.statusIndicator && (
+                            <Box
+                                sx={{
+                                    position: 'fixed',
+                                    bottom: 70, // Above the bottom action bar
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    zIndex: theme.zIndex.snackbar,
+                                    px: 2,
+                                    py: 0.5,
+                                    backgroundColor: (() => {
+                                        const color = configurePageActions.statusIndicator.color || 'info';
+                                        switch (color) {
+                                            case 'warning': return `${theme.palette.warning.main}20`;
+                                            case 'success': return `${theme.palette.success.main}20`;
+                                            case 'error': return `${theme.palette.error.main}20`;
+                                            case 'info':
+                                            default: return `${theme.palette.info.main}20`;
+                                        }
+                                    })(),
+                                    color: (() => {
+                                        const color = configurePageActions.statusIndicator.color || 'info';
+                                        switch (color) {
+                                            case 'warning': return theme.palette.warning.main;
+                                            case 'success': return theme.palette.success.main;
+                                            case 'error': return theme.palette.error.main;
+                                            case 'info':
+                                            default: return theme.palette.info.main;
+                                        }
+                                    })(),
+                                    borderRadius: 2,
+                                    border: (() => {
+                                        const color = configurePageActions.statusIndicator.color || 'info';
+                                        switch (color) {
+                                            case 'warning': return `1px solid ${theme.palette.warning.main}40`;
+                                            case 'success': return `1px solid ${theme.palette.success.main}40`;
+                                            case 'error': return `1px solid ${theme.palette.error.main}40`;
+                                            case 'info':
+                                            default: return `1px solid ${theme.palette.info.main}40`;
+                                        }
+                                    })(),
+                                    backdropFilter: 'blur(10px)',
+                                    fontSize: '0.75rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.5
+                                }}
+                            >
+                                {configurePageActions.statusIndicator.icon && (
+                                    <span style={{ fontSize: '0.8rem' }}>
+                                        {configurePageActions.statusIndicator.icon}
+                                    </span>
+                                )}
+                                {configurePageActions.statusIndicator.text}
+                            </Box>
                         )}
-                        {configureDeviceActions.statusIndicator.text}
-                    </Box>
-                )}
-            </>
-        );
+                    </>
+                );
+            } else {
+                // No custom actions provided, use pure unified actions
+                const actionBarProps = {
+                    secondaryActions: unifiedActions.leftActions,
+                    viewModeActions: unifiedActions.centerActions,
+                    primaryAction: unifiedActions.rightActions[0] || unifiedActions.leftActions[0]
+                };
+
+                // Add remaining right actions to secondary if there are multiple
+                if (unifiedActions.rightActions.length > 1) {
+                    actionBarProps.secondaryActions = [
+                        ...unifiedActions.leftActions,
+                        ...unifiedActions.rightActions.slice(1)
+                    ];
+                }
+
+                return <BottomActionBar {...actionBarProps} />;
+            }
+        }
     }
 
     // Get actions based on current page

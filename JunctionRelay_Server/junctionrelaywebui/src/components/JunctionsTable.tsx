@@ -688,7 +688,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
 }) => {
     const navigate = useNavigate();
     const flags = useFeatureFlags();
-    const hyperlinkRowsEnabled = flags?.hyperlink_rows !== false;
+    const hyperlinkRowsEnabled = flags?.junction_hyperlink_rows !== false;
     const junctionImportExportEnabled = flags?.junction_import_export !== false;
     const isInitialRender = useRef(true);
     const theme = useTheme();

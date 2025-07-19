@@ -17,12 +17,15 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, MouseEvent } from "react";
+import React, { useState, useEffect, useMemo, useCallback, MouseEvent, memo } from "react";
 import {
     Typography, Box, Paper, Table, TableHead, TableRow, TableCell,
     TableBody, Checkbox, TextField, InputLabel, Select, MenuItem,
     FormControl, FormControlLabel, Chip, Pagination, Button,
-    SelectChangeEvent, Popover, List, ListItem, ListItemText, IconButton
+    SelectChangeEvent, Popover, List, ListItem, ListItemText, IconButton,
+    Modal, Dialog, DialogTitle, DialogContent, DialogActions,
+    ToggleButtonGroup, ToggleButton, Card, CardContent, Divider,
+    useTheme, useMediaQuery, Tooltip, Switch
 } from "@mui/material";
 
 // Icon imports
@@ -31,6 +34,12 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import SensorsIcon from '@mui/icons-material/Sensors';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Cancel';
+import TableViewIcon from '@mui/icons-material/TableView';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import DashboardIcon from '@mui/icons-material/Dashboard';
 
 // Define the header styles to match your existing styling
 const headerStyle = {
@@ -43,6 +52,9 @@ const headerStyle = {
 const cellStyle = {
     padding: '6px 16px'
 };
+
+// Types
+type ViewMode = 'table' | 'standard' | 'mini';
 
 // Define interface for sensor object
 interface Sensor {
@@ -134,13 +146,19 @@ interface EnhancedSensorsTableProps {
     setSensorTargets: React.Dispatch<React.SetStateAction<SensorTargets>>;
     showSelectedOnly?: boolean;
     setShowSelectedOnly?: (checked: boolean) => void;
-    junctionId: number; // Add junctionId parameter
+    junctionId: number;
 
+    // New props for junction-level settings
+    allTargetsAllData?: boolean;
+    allTargetsAllScreens?: boolean;
+    onAllTargetsAllDataChange?: (enabled: boolean) => Promise<void>;
+    onAllTargetsAllScreensChange?: (enabled: boolean) => Promise<void>;
 
     // Props for customization
     hideTargetsColumn?: boolean;
     hideSelectionColumn?: boolean;
     hideSourceColumn?: boolean;
+    hideEditColumn?: boolean; // New prop to hide edit column for ConfigureCollector
     customTitle?: string;
     customIcon?: React.ReactNode;
     customActions?: (sensor: Sensor) => React.ReactNode;
@@ -149,6 +167,7 @@ interface EnhancedSensorsTableProps {
     sensorsPerPageOverride?: number;
     hidePagination?: boolean;
     hideFilters?: boolean;
+    hideJunctionSettings?: boolean; // New prop to hide junction settings for ConfigureCollector
     additionalColumns?: {
         header: string;
         field: string;
@@ -159,8 +178,263 @@ interface EnhancedSensorsTableProps {
     defaultVisibleColumns?: string[]; // Default visible columns for the table
 }
 
-// Default storage key for columns
+// Storage keys
 const STORAGE_KEY_DEFAULT = "sensors_table_visible_columns";
+const STORAGE_KEY_VIEW_MODE = "sensors_table_view_mode";
+
+// Edit Modal Component
+const SensorEditModal: React.FC<{
+    open: boolean;
+    onClose: () => void;
+    sensor: Sensor | null;
+    onSave: (updatedSensor: Sensor) => Promise<void>;
+}> = ({ open, onClose, sensor, onSave }) => {
+    const [editedSensor, setEditedSensor] = useState<Sensor | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (sensor) {
+            setEditedSensor({ ...sensor });
+        }
+    }, [sensor]);
+
+    const handleSave = async () => {
+        if (!editedSensor) return;
+
+        setSaving(true);
+        try {
+            await onSave(editedSensor);
+            onClose();
+        } catch (error) {
+            console.error('Error saving sensor:', error);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleFieldChange = (field: string, value: any) => {
+        if (!editedSensor) return;
+        setEditedSensor({ ...editedSensor, [field]: value });
+    };
+
+    if (!editedSensor) return null;
+
+    // Define editable fields (exclude Id, ExternalId, Value)
+    const editableFields = [
+        { field: 'name', label: 'Name', type: 'text' },
+        { field: 'sensorTag', label: 'Sensor Tag', type: 'text' },
+        { field: 'componentName', label: 'Component Name', type: 'text' },
+        { field: 'sensorType', label: 'Sensor Type', type: 'text' },
+        { field: 'category', label: 'Category', type: 'text' },
+        { field: 'unit', label: 'Unit', type: 'text' },
+        { field: 'formula', label: 'Formula', type: 'text' },
+        { field: 'mqttTopic', label: 'MQTT Topic', type: 'text' },
+        { field: 'mqttQoS', label: 'MQTT QoS', type: 'number' },
+        { field: 'customAttribute1', label: 'Custom Attribute 1', type: 'text' },
+        { field: 'customAttribute2', label: 'Custom Attribute 2', type: 'text' },
+        { field: 'customAttribute3', label: 'Custom Attribute 3', type: 'text' },
+        { field: 'customAttribute4', label: 'Custom Attribute 4', type: 'text' },
+        { field: 'customAttribute5', label: 'Custom Attribute 5', type: 'text' },
+        { field: 'customAttribute6', label: 'Custom Attribute 6', type: 'text' },
+        { field: 'customAttribute7', label: 'Custom Attribute 7', type: 'text' },
+        { field: 'customAttribute8', label: 'Custom Attribute 8', type: 'text' },
+        { field: 'customAttribute9', label: 'Custom Attribute 9', type: 'text' },
+        { field: 'customAttribute10', label: 'Custom Attribute 10', type: 'text' },
+    ];
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+            <DialogTitle>Edit Sensor: {editedSensor.name}</DialogTitle>
+            <DialogContent>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                    {editableFields.map(({ field, label, type }) => (
+                        <TextField
+                            key={field}
+                            label={label}
+                            type={type}
+                            value={editedSensor[field] || ''}
+                            onChange={(e) => handleFieldChange(field, type === 'number' ? Number(e.target.value) || 0 : e.target.value)}
+                            size="small"
+                            fullWidth
+                        />
+                    ))}
+                </Box>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button
+                    onClick={handleSave}
+                    variant="contained"
+                    disabled={saving}
+                    startIcon={saving ? <SensorsIcon /> : <SaveIcon />}
+                >
+                    {saving ? 'Saving...' : 'Save'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
+// Sensor Card Component for mobile/tile views
+const SensorCard = memo(({
+    sensor,
+    viewMode,
+    onEdit,
+    onSelect,
+    getSensorOrder,
+    getSensorTag,
+    hideEditColumn,
+    hideSelectionColumn,
+}: {
+    sensor: Sensor;
+    viewMode: 'standard' | 'mini';
+    onEdit: (sensor: Sensor) => void;
+    onSelect: (sensorId: number) => void;
+    getSensorOrder: (sensor: Sensor) => number;
+    getSensorTag: (sensor: Sensor) => string;
+    hideEditColumn: boolean;
+    hideSelectionColumn: boolean;
+}) => {
+    const getCardHeight = () => {
+        return viewMode === 'mini' ? 120 : 200;
+    };
+
+    const statusColor = sensor.IsSelected ? 'success' : 'default';
+
+    return (
+        <Card
+            variant="outlined"
+            sx={{
+                position: 'relative',
+                minHeight: getCardHeight(),
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.2s ease-in-out',
+                border: '1px solid',
+                borderColor: statusColor === 'success' ? 'success.main' : 'divider',
+                '&:hover': {
+                    boxShadow: 4,
+                    transform: 'translateY(-1px)',
+                },
+            }}
+        >
+            {/* Selection Badge */}
+            {!hideSelectionColumn && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: viewMode === 'mini' ? 4 : 8,
+                        right: viewMode === 'mini' ? 4 : 8,
+                        zIndex: 1
+                    }}
+                >
+                    <Checkbox
+                        checked={sensor.IsSelected}
+                        onChange={() => onSelect(sensor.Id)}
+                        size="small"
+                        sx={{
+                            backgroundColor: 'background.paper',
+                            borderRadius: 1,
+                            '&:hover': { backgroundColor: 'action.hover' }
+                        }}
+                    />
+                </Box>
+            )}
+
+            <CardContent sx={{
+                flex: 1,
+                pt: viewMode === 'mini' ? 2.5 : 3,
+                p: viewMode === 'mini' ? 1 : 2
+            }}>
+                {/* Sensor Name */}
+                <Typography
+                    variant={viewMode === 'mini' ? 'body2' : 'h6'}
+                    sx={{
+                        fontSize: viewMode === 'mini' ? '0.75rem' : { xs: '1rem', sm: '1.1rem' },
+                        fontWeight: 600,
+                        lineHeight: viewMode === 'mini' ? 1.2 : 1.5,
+                        mb: viewMode === 'mini' ? 0.5 : 1,
+                    }}
+                    noWrap
+                >
+                    {sensor.name}
+                </Typography>
+
+                {/* Sensor Details */}
+                {viewMode === 'standard' && (
+                    <>
+                        <Divider sx={{ mb: 1 }} />
+                        <Box sx={{ mb: 1 }}>
+                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                <strong>Tag:</strong> {getSensorTag(sensor) || '—'}
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                <strong>Component:</strong> {sensor.componentName || '—'}
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                <strong>Value:</strong> {sensor.value !== undefined ? sensor.value : '—'}
+                            </Typography>
+                        </Box>
+                    </>
+                )}
+
+                {/* Unit and Value Chips */}
+                <Box sx={{
+                    display: 'flex',
+                    gap: 0.5,
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    mt: 'auto'
+                }}>
+                    <Chip
+                        label={`${sensor.value !== undefined ? sensor.value : '—'} ${sensor.unit || ''}`}
+                        size="small"
+                        sx={{
+                            fontSize: viewMode === 'mini' ? '0.6rem' : '0.7rem',
+                            height: viewMode === 'mini' ? 18 : 22
+                        }}
+                    />
+                    {viewMode === 'mini' && sensor.unit && (
+                        <Chip
+                            label={sensor.unit}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                fontSize: '0.6rem',
+                                height: 18
+                            }}
+                        />
+                    )}
+                </Box>
+
+                {/* Edit Button for standard view */}
+                {viewMode === 'standard' && !hideEditColumn && (
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        alignItems: 'center',
+                        mt: 1,
+                        gap: 1
+                    }}>
+                        <Tooltip title="Edit Sensor">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit(sensor);
+                                }}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                )}
+            </CardContent>
+        </Card>
+    );
+});
 
 // Utility to move an item up/down in the visible list
 const moveCol = (
@@ -198,11 +472,16 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     setSensorTargets,
     showSelectedOnly = false,
     setShowSelectedOnly,
-    junctionId, // Add junctionId parameter here
+    junctionId,
+    allTargetsAllData = false,
+    allTargetsAllScreens = false,
+    onAllTargetsAllDataChange,
+    onAllTargetsAllScreensChange,
     // Props with defaults
     hideTargetsColumn = false,
     hideSelectionColumn = false,
     hideSourceColumn = false,
+    hideEditColumn = false,
     customTitle,
     customIcon,
     customActions,
@@ -211,10 +490,14 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     sensorsPerPageOverride,
     hidePagination = false,
     hideFilters = false,
+    hideJunctionSettings = false,
     additionalColumns = [],
     localStorageKey = STORAGE_KEY_DEFAULT,
     defaultVisibleColumns
 }) => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
     // State for search and filters
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [selectedUnit, setSelectedUnit] = useState<string>('');
@@ -223,16 +506,32 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     const [page, setPage] = useState<number>(1);
     const [sensorsPerPage] = useState<number>(sensorsPerPageOverride || 20);
 
+    // View mode state
+    const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        try {
+            const stored = localStorage.getItem(`${localStorageKey}_view_mode`);
+            return (stored as ViewMode) || 'table';
+        } catch (error) {
+            console.error("Error accessing localStorage for view mode:", error);
+            return 'table';
+        }
+    });
+
     // Derived state for filtering and pagination
     const [sensorsLoaded, setSensorsLoaded] = useState(false);
     const [filteredSensors, setFilteredSensors] = useState<Sensor[]>([]);
+
+    // Edit modal state
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [currentEditSensor, setCurrentEditSensor] = useState<Sensor | null>(null);
 
     // Define all possible columns
     const allColumns: SensorColumn[] = useMemo(() => {
         const standardColumns: SensorColumn[] = [
             // Core display columns
             { field: "selection", label: "Select", width: "80px", required: true },
-            { field: "order", label: "Order", width: "80px", required: false },
+            { field: "edit", label: "Edit", width: "80px", required: false },
+            { field: "order", label: "Order", width: "100px", required: false },
             { field: "source", label: "Source", required: false },
             { field: "name", label: "Sensor Name", required: true },
             { field: "sensorTag", label: "Sensor Tag", required: false },
@@ -283,6 +582,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     const availableColumns = useMemo(() => {
         return allColumns.filter(col => {
             if (col.field === "selection" && hideSelectionColumn) return false;
+            if (col.field === "edit" && hideEditColumn) return false;
             if (col.field === "order" && readOnly) return false;
             if (col.field === "source" && hideSourceColumn) return false;
             if (col.field === "lastUpdated" && !showLastUpdated) return false;
@@ -290,7 +590,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
             if (col.field === "actions" && !customActions) return false;
             return true;
         });
-    }, [allColumns, hideSelectionColumn, readOnly, hideSourceColumn, showLastUpdated, hideTargetsColumn, customActions]);
+    }, [allColumns, hideSelectionColumn, hideEditColumn, readOnly, hideSourceColumn, showLastUpdated, hideTargetsColumn, customActions]);
 
     // State for visible columns (ordered)
     const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
@@ -323,8 +623,8 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 
         // Fallback to standard defaults if no defaultVisibleColumns provided
         const standardDefaults = [
-            "id", "externalId", "name", "componentName",
-            "value", "unit", "lastUpdated", "actions"
+            "selection", "edit", "order", "name", "sensorTag", "componentName",
+            "value", "unit", "targets", "actions"
         ];
 
         // Return standard defaults filtered to available columns
@@ -335,6 +635,15 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 
     // Popover state for column selector
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+
+    // Persist view mode
+    useEffect(() => {
+        try {
+            localStorage.setItem(`${localStorageKey}_view_mode`, viewMode);
+        } catch (error) {
+            console.error("Error saving view mode to localStorage:", error);
+        }
+    }, [viewMode, localStorageKey]);
 
     // Save visible columns to localStorage when they change
     useEffect(() => {
@@ -416,6 +725,13 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
         moveCol(field, visibleColumns, setVisibleColumns, direction);
     }, [visibleColumns]);
 
+    // View mode change handler
+    const handleViewModeChange = useCallback((event: React.MouseEvent<HTMLElement>, newViewMode: ViewMode) => {
+        if (newViewMode !== null) {
+            setViewMode(newViewMode);
+        }
+    }, []);
+
     // Column selector popover handlers
     const openColumnSelector = (event: MouseEvent<HTMLElement>) => {
         setAnchorEl(event.currentTarget);
@@ -423,6 +739,78 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 
     const closeColumnSelector = () => {
         setAnchorEl(null);
+    };
+
+    // Edit sensor handlers
+    const handleEditSensor = (sensor: Sensor) => {
+        setCurrentEditSensor(sensor);
+        setEditModalOpen(true);
+    };
+
+    const handleSaveEditedSensor = async (updatedSensor: Sensor) => {
+        // Here you would typically call an API to update the sensor
+        // For now, we'll just show a success message
+        showSnackbar("Sensor updated successfully", "success");
+
+        // You can add API call here to save the sensor changes
+        console.log("Saving sensor:", updatedSensor);
+    };
+
+    // Handle AllTargets toggles with confirmation
+    const handleAllTargetsAllDataToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = e.target.checked;
+
+        if (newValue && selectedSensorsCount > 0) {
+            const confirmed = window.confirm(
+                `This will automatically assign all ${selectedSensorsCount} selected sensors to all targets. Continue?`
+            );
+            if (!confirmed) {
+                e.preventDefault();
+                return;
+            }
+        }
+
+        if (onAllTargetsAllDataChange) {
+            try {
+                await onAllTargetsAllDataChange(newValue);
+                showSnackbar(
+                    newValue
+                        ? "All Targets All Data enabled - selected sensors will be automatically assigned"
+                        : "All Targets All Data disabled",
+                    "success"
+                );
+            } catch (error) {
+                showSnackbar("Failed to update All Targets All Data setting", "error");
+            }
+        }
+    };
+
+    const handleAllTargetsAllScreensToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = e.target.checked;
+
+        if (newValue && selectedSensorsCount > 0) {
+            const confirmed = window.confirm(
+                `This will automatically assign all ${selectedSensorsCount} selected sensors to all screens on all targets. Continue?`
+            );
+            if (!confirmed) {
+                e.preventDefault();
+                return;
+            }
+        }
+
+        if (onAllTargetsAllScreensChange) {
+            try {
+                await onAllTargetsAllScreensChange(newValue);
+                showSnackbar(
+                    newValue
+                        ? "All Targets All Screens enabled - selected sensors will be assigned to all screens"
+                        : "All Targets All Screens disabled",
+                    "success"
+                );
+            } catch (error) {
+                showSnackbar("Failed to update All Targets All Screens setting", "error");
+            }
+        }
     };
 
     // Filter sensors based on search query, unit filter, and selection status
@@ -511,6 +899,26 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
         return value ? 'Yes' : 'No';
     };
 
+    // Calculate grid columns based on view mode
+    const getGridColumns = () => {
+        if (viewMode === 'mini') {
+            return {
+                xs: 'repeat(2, 1fr)',
+                sm: 'repeat(3, 1fr)',
+                md: 'repeat(4, 1fr)',
+                lg: 'repeat(6, 1fr)'
+            };
+        } else if (viewMode === 'standard') {
+            return {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                md: 'repeat(3, 1fr)',
+                lg: 'repeat(4, 1fr)'
+            };
+        }
+        return {};
+    };
+
     // Render cell content based on column field
     const renderCellContent = (sensor: Sensor, field: string) => {
         // Check if there's a custom renderer for additional columns
@@ -529,18 +937,43 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                         size="small"
                     />
                 );
+            case "edit":
+                return (
+                    <Tooltip title="Edit Sensor">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditSensor(sensor);
+                            }}
+                        >
+                            <EditIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                );
             case "order":
                 return (
                     <TextField
                         size="small"
-                        value={getSensorOrder(sensor)}
-                        onChange={(e) => handleSensorOrderChange(sensor, parseInt(e.target.value, 10))}
-                        type="number"
-                        slotProps={{
-                            htmlInput: { min: 0 }
+                        value={getSensorOrder(sensor) || ''}
+                        onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '') {
+                                handleSensorOrderChange(sensor, 0);
+                            } else {
+                                const numValue = parseInt(value, 10);
+                                if (!isNaN(numValue)) {
+                                    handleSensorOrderChange(sensor, numValue);
+                                }
+                            }
                         }}
-                        sx={{ width: "60px" }}
+                        type="number"
+                        placeholder="Order"
+                        sx={{ width: "80px" }}
                         variant="outlined"
+                        InputProps={{
+                            inputProps: { min: 0 }
+                        }}
                     />
                 );
             case "source":
@@ -717,27 +1150,60 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     return (
         <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
             {/* Table Header with Title and Controls */}
-            <Box display="flex" alignItems="center" mb={2}>
+            <Box display="flex" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
                     {customIcon || <SensorsIcon sx={{ mr: 1 }} />}
                     {customTitle || "Sensors Configuration"}
                 </Typography>
 
-                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Button
-                        onClick={openColumnSelector}
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                            minWidth: 'auto',
-                            textTransform: 'none',
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
-                            padding: '4px 10px',
-                        }}
-                    >
-                        Columns
-                    </Button>
+                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    {/* View Mode Toggle - Hide on mobile */}
+                    {!isMobile && (
+                        <ToggleButtonGroup
+                            value={viewMode}
+                            exclusive
+                            onChange={handleViewModeChange}
+                            aria-label="view mode"
+                            size="small"
+                        >
+                            <ToggleButton value="table" aria-label="table view">
+                                <TableViewIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Table
+                                </Typography>
+                            </ToggleButton>
+                            <ToggleButton value="standard" aria-label="standard tiles">
+                                <DashboardIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Standard
+                                </Typography>
+                            </ToggleButton>
+                            <ToggleButton value="mini" aria-label="mini tiles">
+                                <ViewModuleIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Mini
+                                </Typography>
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+                    )}
+
+                    {/* Columns Button - Only show in table view */}
+                    {viewMode === 'table' && (
+                        <Button
+                            onClick={openColumnSelector}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                minWidth: 'auto',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.875rem',
+                                padding: '4px 10px',
+                            }}
+                        >
+                            Columns
+                        </Button>
+                    )}
 
                     {/* Column Selector Popover */}
                     <Popover
@@ -823,88 +1289,131 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                 </Box>
             </Box>
 
-            {/* Enhanced Filter Section - Only show if not hidden */}
+            {/* Enhanced Filter Section and Junction Settings - Only show if not hidden */}
             {!hideFilters && (
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    {/* Left side: Search and Unit Filter */}
-                    <Box display="flex" alignItems="center" gap={2}>
-                        <TextField
-                            placeholder="Search sensors..."
-                            size="small"
-                            value={searchQuery}
-                            onChange={handleSearchChange}
-                            slotProps={{
-                                input: {
-                                    startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />,
-                                }
-                            }}
-                            sx={{ width: 300 }}
-                        />
-
-                        <FormControl size="small" sx={{ minWidth: 250 }}>
-                            <InputLabel
-                                id="unit-filter-label"
-                                sx={{ display: 'flex', alignItems: 'center' }}
-                            >
-                                <FilterListIcon fontSize="small" sx={{ mr: 0.5 }} />
-                                Filter by Unit
-                            </InputLabel>
-                            <Select
-                                labelId="unit-filter-label"
-                                value={selectedUnit}
-                                onChange={handleUnitFilterChange}
-                                label="Filter by Unit"
-                            >
-                                <MenuItem value="">
-                                    <em>All Units</em>
-                                </MenuItem>
-                                {availableUnits.map((unit) => (
-                                    <MenuItem key={unit} value={unit}>
-                                        {unit}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-
-                        {/* Clear filters button - only show when filters are active */}
-                        {(searchQuery || selectedUnit || showSelectedOnly) && (
-                            <Button
+                <Box display="flex" flexDirection="column" gap={2} mb={2}>
+                    {/* Filters Row */}
+                    <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
+                        {/* Left side: Search and Unit Filter */}
+                        <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                            <TextField
+                                placeholder="Search sensors..."
                                 size="small"
-                                variant="outlined"
-                                onClick={clearFilters}
-                            >
-                                Clear Filters
-                            </Button>
-                        )}
+                                value={searchQuery}
+                                onChange={handleSearchChange}
+                                slotProps={{
+                                    input: {
+                                        startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />,
+                                    }
+                                }}
+                                sx={{ width: { xs: '100%', sm: 300 } }}
+                            />
+
+                            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 250 } }}>
+                                <InputLabel
+                                    id="unit-filter-label"
+                                    sx={{ display: 'flex', alignItems: 'center' }}
+                                >
+                                    <FilterListIcon fontSize="small" sx={{ mr: 0.5 }} />
+                                    Filter by Unit
+                                </InputLabel>
+                                <Select
+                                    labelId="unit-filter-label"
+                                    value={selectedUnit}
+                                    onChange={handleUnitFilterChange}
+                                    label="Filter by Unit"
+                                >
+                                    <MenuItem value="">
+                                        <em>All Units</em>
+                                    </MenuItem>
+                                    {availableUnits.map((unit) => (
+                                        <MenuItem key={unit} value={unit}>
+                                            {unit}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            {/* Clear filters button - only show when filters are active */}
+                            {(searchQuery || selectedUnit || showSelectedOnly) && (
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={clearFilters}
+                                >
+                                    Clear Filters
+                                </Button>
+                            )}
+                        </Box>
+
+                        {/* Right side: Selection and Junction Settings */}
+                        <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                            {/* Show Selected Only Checkbox - Only if setShowSelectedOnly is provided */}
+                            {setShowSelectedOnly && !hideSelectionColumn && (
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={showSelectedOnly || false}
+                                            onChange={handleShowSelectedOnlyChange}
+                                            size="small"
+                                            disabled={selectedSensorsCount === 0} // Disable when no sensors are selected
+                                        />
+                                    }
+                                    label={
+                                        <Typography
+                                            variant="body2"
+                                            color={selectedSensorsCount === 0 ? "text.disabled" : "text.primary"}
+                                        >
+                                            Show Selected Only
+                                            {selectedSensorsCount === 0 && " (No sensors selected)"}
+                                        </Typography>
+                                    }
+                                />
+                            )}
+                        </Box>
                     </Box>
 
-                    {/* Right side: Show Selected Only Checkbox - Only if setShowSelectedOnly is provided */}
-                    {setShowSelectedOnly && !hideSelectionColumn && (
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={showSelectedOnly || false}
-                                    onChange={handleShowSelectedOnlyChange}
-                                    size="small"
-                                    disabled={selectedSensorsCount === 0} // Disable when no sensors are selected
-                                />
-                            }
-                            label={
-                                <Typography
-                                    variant="body2"
-                                    color={selectedSensorsCount === 0 ? "text.disabled" : "text.primary"}
-                                >
-                                    Show Selected Only
-                                    {selectedSensorsCount === 0 && " (No sensors selected)"}
-                                </Typography>
-                            }
-                        />
+                    {/* Junction Settings Row - Only show if not hidden and not on ConfigureCollector */}
+                    {!hideJunctionSettings && (
+                        <Box display="flex" alignItems="center" gap={3} flexWrap="wrap" sx={{
+                            p: 2,
+                            bgcolor: 'action.hover',
+                            borderRadius: 1,
+                            border: '1px solid',
+                            borderColor: 'divider'
+                        }}>
+                            <Typography variant="subtitle2" fontWeight="medium">
+                                Junction Settings:
+                            </Typography>
+
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={allTargetsAllData}
+                                        onChange={handleAllTargetsAllDataToggle}
+                                        size="small"
+                                    />
+                                }
+                                label="All Targets All Data"
+                            />
+
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={allTargetsAllScreens}
+                                        onChange={handleAllTargetsAllScreensToggle}
+                                        size="small"
+                                    />
+                                }
+                                label="All Targets All Screens"
+                            />
+                        </Box>
                     )}
                 </Box>
             )}
 
             {/* Stats summary */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                 <Typography variant="body2" color="text.secondary">
                     Showing {paginatedSensors.length} of {filteredSensors.length} sensors
                     {filteredSensors.length !== availableSensors.length && (
@@ -918,62 +1427,97 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                 )}
             </Box>
 
-            {/* Sensors Table */}
-            <Paper variant="outlined" sx={{ mb: 2 }}>
-                <Table size="small" stickyHeader>
-                    <TableHead>
-                        <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
-                            {visibleColumns.map((field) => {
-                                const column = availableColumns.find(col => col.field === field);
-                                if (!column) return null;
-                                return (
-                                    <TableCell
-                                        key={field}
-                                        sx={headerStyle}
-                                        width={column.width}
-                                        align={column.align || "left"}
-                                    >
-                                        {column.label}
-                                    </TableCell>
-                                );
-                            })}
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {paginatedSensors.length === 0 ? (
-                            <TableRow>
-                                <TableCell
-                                    colSpan={visibleColumns.length}
-                                    align="center"
-                                    sx={{ py: 3 }}
-                                >
-                                    <Typography variant="body2" color="text.secondary">
-                                        No sensors found matching your criteria.
-                                    </Typography>
-                                </TableCell>
-                            </TableRow>
-                        ) : (
-                            paginatedSensors.map((sensor) => (
-                                <TableRow key={sensor.Id} hover>
+            {/* Render content based on view mode */}
+            {viewMode === 'table' ? (
+                /* Table View */
+                <>
+                    <Paper variant="outlined" sx={{ mb: 2 }}>
+                        <Table size="small" stickyHeader>
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
                                     {visibleColumns.map((field) => {
                                         const column = availableColumns.find(col => col.field === field);
                                         if (!column) return null;
                                         return (
                                             <TableCell
-                                                key={`${sensor.Id}-${field}`}
-                                                sx={cellStyle}
+                                                key={field}
+                                                sx={headerStyle}
+                                                width={column.width}
                                                 align={column.align || "left"}
                                             >
-                                                {renderCellContent(sensor, field)}
+                                                {column.label}
                                             </TableCell>
                                         );
                                     })}
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
-            </Paper>
+                            </TableHead>
+                            <TableBody>
+                                {paginatedSensors.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell
+                                            colSpan={visibleColumns.length}
+                                            align="center"
+                                            sx={{ py: 3 }}
+                                        >
+                                            <Typography variant="body2" color="text.secondary">
+                                                No sensors found matching your criteria.
+                                            </Typography>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    paginatedSensors.map((sensor) => (
+                                        <TableRow key={sensor.Id} hover>
+                                            {visibleColumns.map((field) => {
+                                                const column = availableColumns.find(col => col.field === field);
+                                                if (!column) return null;
+                                                return (
+                                                    <TableCell
+                                                        key={`${sensor.Id}-${field}`}
+                                                        sx={cellStyle}
+                                                        align={column.align || "left"}
+                                                    >
+                                                        {renderCellContent(sensor, field)}
+                                                    </TableCell>
+                                                );
+                                            })}
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </Paper>
+                </>
+            ) : (
+                /* Tile Views */
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: getGridColumns(),
+                    gap: viewMode === 'mini' ? 1 : 2,
+                    mb: 2
+                }}>
+                    {paginatedSensors.length === 0 ? (
+                        <Paper sx={{ p: 3, textAlign: 'center', gridColumn: '1 / -1' }}>
+                            <Typography variant="body2" color="text.secondary">
+                                No sensors found matching your criteria.
+                            </Typography>
+                        </Paper>
+                    ) : (
+                        paginatedSensors.map((sensor) => (
+                            <SensorCard
+                                key={sensor.Id}
+                                sensor={sensor}
+                                viewMode={viewMode as 'standard' | 'mini'}
+                                onEdit={handleEditSensor}
+                                onSelect={handleSensorSelect}
+                                getSensorOrder={getSensorOrder}
+                                getSensorTag={getSensorTag}
+                                hideEditColumn={hideEditColumn}
+                                hideSelectionColumn={hideSelectionColumn}
+                            />
+                        ))
+                    )}
+                </Box>
+            )}
 
             {/* Pagination Controls - Only show if pagination is not hidden and there are multiple pages */}
             {!hidePagination && totalPages > 1 && (
@@ -985,9 +1529,18 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                         color="primary"
                         showFirstButton
                         showLastButton
+                        size={isMobile ? "small" : "medium"}
                     />
                 </Box>
             )}
+
+            {/* Edit Sensor Modal */}
+            <SensorEditModal
+                open={editModalOpen}
+                onClose={() => setEditModalOpen(false)}
+                sensor={currentEditSensor}
+                onSave={handleSaveEditedSensor}
+            />
         </Paper>
     );
 };

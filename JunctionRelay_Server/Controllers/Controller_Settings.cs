@@ -269,9 +269,9 @@ public class Controller_Settings : ControllerBase
         foreach (var setting in settings)
         {
             // Handle boolean flags
-            if (setting.Key == "host_charts" ||
-                setting.Key == "custom_firmware_flashing" ||
-                setting.Key == "hyperlink_rows" ||
+            if (setting.Key == "top_bar_show_host_charts" ||
+                setting.Key == "device_custom_firmware_flashing" ||
+                setting.Key == "junction_hyperlink_rows" ||
                 setting.Key == "junction_import_export")
             {
                 flags[setting.Key] = string.Equals(setting.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
