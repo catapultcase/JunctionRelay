@@ -17,6 +17,8 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace JunctionRelayServer.Models
 {
     public class Model_Service
@@ -76,8 +78,10 @@ namespace JunctionRelayServer.Models
         public string? MQTTBrokerPort { get; set; }
         public string? MQTTUsername { get; set; }
 
-        // Summary
-        // public int SensorCount => Sensors.Count;
+        // ExternalEncryption
 
+        [NotMapped]
+        public string? EncryptionPassword { get; set; }
+        public string? DecryptedAccessToken { get; set; }
     }
 }

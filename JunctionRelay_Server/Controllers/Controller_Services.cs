@@ -43,6 +43,74 @@ public class Controller_Services : ControllerBase
         _mqttManager = mqttManager;
     }
 
+    // NEW: POST: /api/services/{id}/unlock
+    [HttpPost("{id}/unlock")]
+    public async Task<IActionResult> UnlockService(int id, [FromBody] UnlockServiceRequest request)
+    {
+        if (string.IsNullOrEmpty(request.Password))
+        {
+            return BadRequest(new { status = "Password is required" });
+        }
+
+        try
+        {
+            var success = await _serviceDb.UnlockServiceWithPasswordAsync(id, request.Password);
+
+            if (success)
+            {
+                return Ok(new { status = "Service unlocked successfully" });
+            }
+            else
+            {
+                return BadRequest(new { status = "Invalid password or service not found" });
+            }
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { status = $"Error unlocking service: {ex.Message}" });
+        }
+    }
+
+    // NEW: POST: /api/services/{id}/lock
+    [HttpPost("{id}/lock")]
+    public IActionResult LockService(int id)
+    {
+        try
+        {
+            _serviceDb.LockService(id);
+            return Ok(new { status = "Service locked successfully" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { status = $"Error locking service: {ex.Message}" });
+        }
+    }
+
+    // NEW: GET: /api/services/{id}/unlock-status
+    [HttpGet("{id}/unlock-status")]
+    public async Task<IActionResult> GetUnlockStatus(int id)
+    {
+        try
+        {
+            var service = await _serviceDb.GetServiceByIdAsync(id);
+            if (service == null) return NotFound();
+
+            var isUnlocked = _serviceDb.IsServiceUnlocked(id);
+            var requiresPassword = service.ExternalAccessToken;
+
+            return Ok(new
+            {
+                isUnlocked = isUnlocked,
+                requiresPassword = requiresPassword,
+                isLocked = requiresPassword && !isUnlocked
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { status = $"Error checking unlock status: {ex.Message}" });
+        }
+    }
+
     [HttpPost("set-mqtt-service/{id}")]
     public IActionResult SetMqttService(int id)
         => StatusCode(410, "SetMqttService is deprecated. Use broker-specific calls directly.");
@@ -71,16 +139,22 @@ public class Controller_Services : ControllerBase
         var service = await _serviceDb.GetServiceByIdAsync(id);
         if (service == null) return NotFound($"Service with ID {id} not found.");
 
-        var subscriptions = await _mqttManager.GetSubscribedTopics(service);
+        try
+        {
+            var subscriptions = await _mqttManager.GetSubscribedTopics(service);
 
-        var cleanSubscriptions = subscriptions.Select(s => new {
-            topic = s.Topic,
-            qos = s.QoS 
-        }).ToList();
+            var cleanSubscriptions = subscriptions.Select(s => new {
+                topic = s.Topic,
+                qos = s.QoS
+            }).ToList();
 
-        return Ok(new { subscriptions = cleanSubscriptions });
+            return Ok(new { subscriptions = cleanSubscriptions });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error fetching subscriptions: {ex.Message}");
+        }
     }
-
 
     [HttpPost("subscribe/{id}")]
     public async Task<IActionResult> SubscribeToTopic(int id, [FromBody] Model_MQTT_Subscribe_Request request)
@@ -88,19 +162,32 @@ public class Controller_Services : ControllerBase
         var service = await _serviceDb.GetServiceByIdAsync(id);
         if (service == null) return NotFound($"Service with ID {id} not found.");
 
-        await _mqttManager.SubscribeAsync(service, request.Topic, request.QoS);  // ✅ now pass QoS too
-
-        return Ok(new { message = $"Subscribed to topic: {request.Topic} with QoS {request.QoS}" });
+        try
+        {
+            await _mqttManager.SubscribeAsync(service, request.Topic, request.QoS);
+            return Ok(new { message = $"Subscribed to topic: {request.Topic} with QoS {request.QoS}" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error subscribing to topic: {ex.Message}");
+        }
     }
-
 
     [HttpGet("payloads/{id}")]
     public async Task<IActionResult> GetAllPayloads(int id)
     {
         var service = await _serviceDb.GetServiceByIdAsync(id);
         if (service == null) return NotFound($"Service with ID {id} not found.");
-        var payloads = _mqttManager.GetAllLatestPayloads(service);
-        return Ok(payloads);
+
+        try
+        {
+            var payloads = _mqttManager.GetAllLatestPayloads(service);
+            return Ok(payloads);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error fetching payloads: {ex.Message}");
+        }
     }
 
     [HttpPost("publish/{id}")]
@@ -108,8 +195,16 @@ public class Controller_Services : ControllerBase
     {
         var service = await _serviceDb.GetServiceByIdAsync(id);
         if (service == null) return NotFound($"Service with ID {id} not found.");
-        await _mqttManager.PublishAsync(service, request.Topic, request.Message);
-        return Ok(new { message = $"Published message to topic: {request.Topic}" });
+
+        try
+        {
+            await _mqttManager.PublishAsync(service, request.Topic, request.Message);
+            return Ok(new { message = $"Published message to topic: {request.Topic}" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error publishing message: {ex.Message}");
+        }
     }
 
     [HttpGet]
@@ -150,9 +245,20 @@ public class Controller_Services : ControllerBase
         var service = await _serviceDb.GetServiceByIdAsync(id);
         if (service == null) return NotFound($"Service with ID {id} not found.");
 
-        await _mqttManager.UnsubscribeAsync(service, request.Topic);
-
-        return Ok(new { message = $"Unsubscribed from topic: {request.Topic}" });
+        try
+        {
+            await _mqttManager.UnsubscribeAsync(service, request.Topic);
+            return Ok(new { message = $"Unsubscribed from topic: {request.Topic}" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error unsubscribing from topic: {ex.Message}");
+        }
     }
+}
 
+// NEW: Request model for unlock endpoint
+public class UnlockServiceRequest
+{
+    public string Password { get; set; } = string.Empty;
 }
