@@ -52,7 +52,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
     const [passwordLoading, setPasswordLoading] = useState<boolean>(false);
 
     // Environment variable for Stripe billing portal
-    const stripeBillingPortalUrl = process.env.REACT_APP_STRIPE_BILLING_PORTAL_URL || 'https://billing.stripe.com/p/login/test_00w7sN7ZS6RE7q87rwcjS00';
+    const stripeBillingPortalUrl = 'https://billing.stripe.com/p/login/00w7sN7ZS6RE7q87rwcjS00';
 
     // Fetch subscription details when user has a valid license
     useEffect(() => {

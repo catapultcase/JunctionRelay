@@ -27,7 +27,8 @@ Collect, route, and transform data from your ecosystem of sensors and services.
   * Home Assistant
   * LibreHardwareMonitor
   * Uptime Kuma
-  * Custom scripts
+  * And more!
+
 * **Flexible forwarding and transformation pipelines** to route data to:
   * Local displays
   * Web dashboards
@@ -115,12 +116,15 @@ This allows you to consolidate data from your smart home, PC hardware, servers, 
 
 JunctionRelay includes out-of-the-box collectors for:
 
-* Host Device (collect data from the system running JunctionRelay)
-* Home Assistant (pull real-time sensor values from your smart home setup)
-* LibreHardwareMonitor (monitor PC internals: CPU temperatures, fan speeds, voltages, etc.)
-* Uptime Kuma (ingest service and uptime metrics from your existing Uptime Kuma instance)
-* MQTT Broker (ingest data from any MQTT-compatible sensor or service)
-* Cloud Devices (monitor and collect data from cloud-registered ESP32 devices)
+- **Cloud Devices** – Monitor and collect data from cloud-registered ESP32 devices  
+- **Cloudflare** – Track traffic and analytics from your Cloudflare-protected domains  
+- **GitHub** – Monitor repository stats, activity, issues, and more  
+- **Home Assistant** – Pull real-time sensor values from your smart home setup  
+- **Host Device** – Collect data from the system running JunctionRelay  
+- **LibreHardwareMonitor** – Monitor PC internals: CPU temperatures, fan speeds, voltages, etc.  
+- **Render.com** – Fetch deployment and service status from your Render projects  
+- **Stripe** – Pull live subscription, payment, and revenue metrics from your Stripe account  
+- **Uptime Kuma** – Ingest service and uptime metrics from your existing Uptime Kuma instance  
 
 Want more integrations? [Request additional collectors in Discussions](https://github.com/catapultcase/JunctionRelay/discussions)
 
