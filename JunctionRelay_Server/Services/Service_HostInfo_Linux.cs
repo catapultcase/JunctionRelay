@@ -250,7 +250,7 @@ namespace JunctionRelayServer.Services
                 {
                     totalMem = ParseMeminfoLine(line);
                 }
-                else if (line.StartsWith("MemFree:"))
+                else if (line.StartsWith("MemAvailable:"))
                 {
                     freeMem = ParseMeminfoLine(line);
                 }
