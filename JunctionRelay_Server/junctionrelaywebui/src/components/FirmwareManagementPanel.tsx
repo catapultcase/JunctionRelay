@@ -96,7 +96,7 @@ const FirmwareManagementPanel: React.FC<FirmwareManagementPanelProps> = ({
 
     // Feature flags
     const flags = useFeatureFlags();
-    const customFirmwareEnabled = flags?.custom_firmware_flashing === true;
+    const customFirmwareEnabled = flags?.device_custom_firmware_flashing === true;
 
     // State hooks
     const [loading, setLoading] = useState(false);

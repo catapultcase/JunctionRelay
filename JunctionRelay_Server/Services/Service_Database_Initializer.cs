@@ -729,15 +729,17 @@ namespace JunctionRelayServer.Services
             // Define the default settings
             var defaultSettings = new List<(string Key, string Value, string Description)>
             {
-                ("combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
-                ("custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
-                ("host_charts", "false", "If true, show the tab for host charts"),
-                ("hyperlink_rows", "true", "If true, The Junction list views will embed hyperlinks for navigating to collector/devices"),
+                ("device_combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
+                ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
                 ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
+                ("junction_hyperlink_rows", "true", "If true, The Junction list views will embed hyperlinks for navigating to collector/devices"),
                 ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: This feature only works if all other references have the same ID - useful for development only"),
-                ("show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
-                ("use_mobile_navigation", "false", "If true, use the mobile navbar even on the desktop experience")
+                ("mobile_navigation_on_desktop", "false", "If true, use the mobile navbar even on the desktop experience"),
+                ("mobile_show_back_button", "false", "If true, the first action on the mobile action bar will be a 'back' navigation button"),
+                ("mobile_show_navigation_row", "false", "If true, add a navigation bar to the bottom of the mobile experience"),
+                ("top_bar_show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
+                ("top_bar_show_host_charts", "false", "If true, show the tab for host charts"),
             };
 
             int addedCount = 0;

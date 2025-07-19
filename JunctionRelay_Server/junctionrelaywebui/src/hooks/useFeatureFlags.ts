@@ -19,11 +19,11 @@
 import { useEffect, useState, useCallback } from "react";
 
 export interface FeatureFlags {
-    host_charts?: boolean;
+    top_bar_show_host_charts?: boolean;
     device_actions_alignment?: string;
     junction_actions_alignment?: string;
-    use_mobile_navigation?: string;
-    show_current_version?: string;
+    mobile_navigation_on_desktop?: string;
+    top_bar_show_current_version?: string;
     [key: string]: boolean | string | undefined;
 }
 

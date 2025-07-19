@@ -33,7 +33,8 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
-    Typography} from '@mui/material';
+    Typography
+} from '@mui/material';
 
 export interface BottomActionConfig {
     icon: React.ReactNode;
@@ -73,13 +74,20 @@ export interface BottomActionBarProps {
         onModeChange: (mode: string) => void;
     };
     show?: boolean;
+    // New props for configure layout
+    layout?: 'standard' | 'configure';
+    leftActions?: BottomActionConfig[];
+    rightActions?: BottomActionConfig[];
 }
 
 const BottomActionBar: React.FC<BottomActionBarProps> = ({
     primaryAction,
     secondaryActions = [],
     viewModeActions,
-    show = true
+    show = true,
+    layout = 'standard',
+    leftActions = [],
+    rightActions = []
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -92,9 +100,6 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
     const backgroundColor = theme.palette.mode === 'dark'
         ? 'rgba(18, 18, 18, 0.95)'
         : 'rgba(255, 255, 255, 0.95)';
-
-    // Limit secondary actions to 4 for better mobile layout
-    const visibleSecondaryActions = secondaryActions.slice(0, 4);
 
     const handlePrimaryActionClick = (event: React.MouseEvent<HTMLElement>) => {
         if (primaryAction?.submenu && primaryAction.submenu.length > 0) {
@@ -112,6 +117,189 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
         submenuItem.onClick();
         handleSubmenuClose();
     };
+
+    // Render configure layout
+    if (layout === 'configure') {
+        return (
+            <>
+                <Slide direction="up" in={show} mountOnEnter unmountOnExit>
+                    <Paper
+                        elevation={8}
+                        sx={{
+                            position: 'fixed',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            zIndex: theme.zIndex.appBar,
+                            backgroundColor,
+                            backdropFilter: 'blur(10px)',
+                            borderTop: `1px solid ${theme.palette.divider}`,
+                            borderRadius: '16px 16px 0 0',
+                            pb: 'env(safe-area-inset-bottom)',
+                            boxShadow: theme.palette.mode === 'dark'
+                                ? '0 -4px 20px rgba(0, 0, 0, 0.5)'
+                                : '0 -4px 20px rgba(0, 0, 0, 0.1)',
+                        }}
+                    >
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                px: 2,
+                                py: 1,
+                                minHeight: 64,
+                                gap: 1,
+                                position: 'relative'
+                            }}
+                        >
+                            {/* Left side - Standard actions (BACK, REFRESH, SAVE) */}
+                            <Box sx={{
+                                display: 'flex',
+                                gap: 0.5,
+                                flex: 1,
+                                justifyContent: 'flex-start',
+                                alignItems: 'center'
+                            }}>
+                                {leftActions.map((action, index) => (
+                                    <Tooltip key={index} title={action.label} placement="top">
+                                        <span>
+                                            <IconButton
+                                                onClick={action.onClick}
+                                                disabled={action.disabled}
+                                                color={action.color || 'primary'}
+                                                size="small"
+                                                sx={{
+                                                    transition: 'all 0.2s ease',
+                                                    '&:hover': {
+                                                        backgroundColor: action.disabled
+                                                            ? 'transparent'
+                                                            : `${theme.palette[action.color || 'primary'].main}15`,
+                                                        transform: action.disabled ? 'none' : 'scale(1.05)'
+                                                    },
+                                                    '&:active': {
+                                                        transform: action.disabled ? 'none' : 'scale(0.95)'
+                                                    }
+                                                }}
+                                            >
+                                                {action.badge ? (
+                                                    <Badge
+                                                        badgeContent={action.badge}
+                                                        color="error"
+                                                        variant={typeof action.badge === 'number' ? 'standard' : 'dot'}
+                                                    >
+                                                        {action.icon}
+                                                    </Badge>
+                                                ) : (
+                                                    action.icon
+                                                )}
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
+                                ))}
+                            </Box>
+
+                            {/* Center - View mode toggles (perfectly centered) */}
+                            {viewModeActions && (
+                                <Box sx={{
+                                    display: 'flex',
+                                    gap: 0.5,
+                                    backgroundColor: theme.palette.action.hover,
+                                    borderRadius: 2,
+                                    p: 0.5,
+                                    border: `1px solid ${theme.palette.divider}`,
+                                    flexShrink: 0,
+                                    position: 'absolute',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)'
+                                }}>
+                                    {viewModeActions.modes.map((mode) => (
+                                        <Tooltip key={mode.mode} title={mode.label} placement="top">
+                                            <IconButton
+                                                onClick={() => viewModeActions.onModeChange(mode.mode)}
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: viewModeActions.currentMode === mode.mode
+                                                        ? theme.palette.primary.main
+                                                        : 'transparent',
+                                                    color: viewModeActions.currentMode === mode.mode
+                                                        ? theme.palette.primary.contrastText
+                                                        : theme.palette.text.primary,
+                                                    '&:hover': {
+                                                        backgroundColor: viewModeActions.currentMode === mode.mode
+                                                            ? theme.palette.primary.dark
+                                                            : theme.palette.action.hover,
+                                                        transform: 'scale(1.05)'
+                                                    },
+                                                    '&:active': {
+                                                        transform: 'scale(0.95)'
+                                                    },
+                                                    transition: 'all 0.2s ease',
+                                                    minWidth: 36,
+                                                    minHeight: 36
+                                                }}
+                                            >
+                                                {mode.icon}
+                                            </IconButton>
+                                        </Tooltip>
+                                    ))}
+                                </Box>
+                            )}
+
+                            {/* Right side - Custom actions (Export, Delete, etc.) */}
+                            <Box sx={{
+                                display: 'flex',
+                                gap: 0.5,
+                                flex: 1,
+                                justifyContent: 'flex-end',
+                                alignItems: 'center'
+                            }}>
+                                {rightActions.map((action, index) => (
+                                    <Tooltip key={index} title={action.label} placement="top">
+                                        <span>
+                                            <IconButton
+                                                onClick={action.onClick}
+                                                disabled={action.disabled}
+                                                color={action.color || 'primary'}
+                                                size="small"
+                                                sx={{
+                                                    transition: 'all 0.2s ease',
+                                                    '&:hover': {
+                                                        backgroundColor: action.disabled
+                                                            ? 'transparent'
+                                                            : `${theme.palette[action.color || 'primary'].main}15`,
+                                                        transform: action.disabled ? 'none' : 'scale(1.05)'
+                                                    },
+                                                    '&:active': {
+                                                        transform: action.disabled ? 'none' : 'scale(0.95)'
+                                                    }
+                                                }}
+                                            >
+                                                {action.badge ? (
+                                                    <Badge
+                                                        badgeContent={action.badge}
+                                                        color="error"
+                                                        variant={typeof action.badge === 'number' ? 'standard' : 'dot'}
+                                                    >
+                                                        {action.icon}
+                                                    </Badge>
+                                                ) : (
+                                                    action.icon
+                                                )}
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
+                                ))}
+                            </Box>
+                        </Box>
+                    </Paper>
+                </Slide>
+            </>
+        );
+    }
+
+    // Render standard layout (existing behavior)
+    const visibleSecondaryActions = secondaryActions.slice(0, 4);
 
     return (
         <>

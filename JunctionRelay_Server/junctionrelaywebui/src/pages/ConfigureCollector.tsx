@@ -927,6 +927,8 @@ const ConfigureCollector = () => {
                         junctionId={0}
 
                         // Custom props for this specific usage
+                        hideEditColumn={true}
+                        hideJunctionSettings={true}
                         hideTargetsColumn={true}
                         hideSelectionColumn={true}
                         hideSourceColumn={true}

@@ -151,7 +151,7 @@ const Devices: React.FC = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     // Check if we're in unified mode
-    const isUnifiedMode = String(flags?.combine_cloud_devices).toLowerCase() === 'true';
+    const isUnifiedMode = String(flags?.device_combine_cloud_devices).toLowerCase() === 'true';
 
     // Save refresh interval to localStorage when it changes
     useEffect(() => {

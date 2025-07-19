@@ -279,17 +279,25 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                 )}
             </Paper>
 
-            <Box display="flex" gap={3} mb={3}>
+            <Box
+                sx={{
+                    display: 'flex',
+                      flexDirection: {xs: 'column', md: 'row' }, 
+                      gap: 3,
+                      mb: 3
+                    }}
+                  >
                 {/* Sources */}
                 <Paper
                     elevation={2}
-                    sx={{
-                        p: 3,
-                        flex: 1,
-                        borderRadius: 2,
-                        height: "fit-content"
-                    }}
-                >
+                        sx={{
+                          p: 3,
+                          flex: 1,
+                          width: '100%',
+                          borderRadius: 2,
+                          height: 'fit-content'
+                        }}
+                    >
                     <Typography variant="h6" gutterBottom sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -391,9 +399,10 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                     sx={{
                         p: 3,
                         flex: 1,
+                        width: '100%',
                         borderRadius: 2,
-                        height: "fit-content"
-                    }}
+                        height: 'fit-content'
+                    }}                
                 >
                     <Typography variant="h6" gutterBottom sx={{
                         display: 'flex',

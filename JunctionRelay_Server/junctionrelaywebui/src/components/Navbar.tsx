@@ -105,7 +105,7 @@ const Navbar = () => {
                 const flagsResponse = await fetch('/api/settings/flags');
                 if (flagsResponse.ok) {
                     const flagsData = await flagsResponse.json();
-                    setUseMobileNav(flagsData.use_mobile_navigation === 'true');
+                    setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
                 }
             } catch (error) {
                 console.warn('Could not fetch updated mobile navigation flag:', error);
@@ -140,7 +140,7 @@ const Navbar = () => {
                     const flagsResponse = await fetch('/api/settings/flags');
                     if (flagsResponse.ok) {
                         const flagsData = await flagsResponse.json();
-                        setUseMobileNav(flagsData.use_mobile_navigation === 'true');
+                        setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
                     }
                 } catch (error) {
                     console.warn('Could not fetch mobile navigation flag:', error);
@@ -346,7 +346,7 @@ const Navbar = () => {
         { text: "Payloads", path: "/payloads", icon: <PayloadIcon /> },
     ];
 
-    if (flags?.host_charts) {
+    if (flags?.top_bar_show_host_charts) {
         navItems.push({ text: "Host Charts", path: "/hostcharts", icon: <ChartIcon /> });
     }
 
@@ -549,7 +549,7 @@ const Navbar = () => {
 
                     <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         {/* Version display - always on the far left when enabled */}
-                        {flags?.show_current_version === 'true' && version && (
+                        {flags?.top_bar_show_current_version === 'true' && version && (
                             <Tooltip title={`Current Version: ${version}`}>
                                 <Box
                                     sx={{
@@ -1247,8 +1247,8 @@ const Navbar = () => {
                 <Box sx={{ mt: 'auto', p: 2 }}>
                     <Divider sx={{ borderColor: '#3a3f45', mb: 2 }} />
 
-                    {/* Show version for ALL users when show_current_version is true */}
-                    {flags?.show_current_version === 'true' && version && (
+                    {/* Show version for ALL users when top_bar_show_current_version is true */}
+                    {flags?.top_bar_show_current_version === 'true' && version && (
                         <Typography variant="caption" sx={{ color: '#9e9e9e !important', display: 'block', mb: 1 }}>
                             Version: {version}
                         </Typography>

@@ -25,7 +25,7 @@ import {
     FormControlLabel, Switch, Accordion, AccordionSummary,
     AccordionDetails, useTheme, useMediaQuery
 } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // Import the useFeatureFlags hook
@@ -39,7 +39,7 @@ import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
 import ScreenSelectionModal from '../components/ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/AvailableSourcesTargetsTable';
 import DeviceScreenLayoutsCard from '../components/DeviceScreenLayoutsCard';
-import Junction_Setup_COM from '../components/Junction_Setup_COM'; // Import the new component
+import Junction_Setup_COM from '../components/Junction_Setup_COM';
 
 // Icon imports
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -49,6 +49,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import LinkIcon from '@mui/icons-material/Link';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 interface SourceOrTarget {
     linkId?: number;
@@ -66,6 +67,7 @@ interface SourceOrTarget {
 const getDefaultJunctionColumns = () => {
     return [
         "selection",
+        "edit",
         "order",
         "source",
         "name",
@@ -98,6 +100,7 @@ const shouldShowCOMSetup = (junctionType: string) => {
 const ConfigureJunction: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const junctionId = parseInt(id || "0", 10);
+    const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -167,6 +170,59 @@ const ConfigureJunction: React.FC = () => {
             return false;
         }
     });
+
+    // Handle Show Selected Only
+    const handleShowSelectedOnlyChange = (checked: boolean) => {
+        setShowSelectedOnly(checked);
+        try {
+            localStorage.setItem(`junction${junctionId}ShowSelectedOnly`, checked.toString());
+        } catch (error) {
+            console.error("Error saving filter state to localStorage:", error);
+        }
+    };
+
+    // Listen for bottom action bar events
+    useEffect(() => {
+        const handleRefresh = () => {
+            fetchData();
+        };
+
+        const handleSave = () => {
+            saveJunction();
+        };
+
+        const handleBack = () => {
+            navigate('/junctions');
+        };
+
+        const handleExport = () => {
+            handleExportJunction();
+        };
+
+        const handleDelete = () => {
+            // Show confirmation dialog before deleting
+            if (window.confirm(`Are you sure you want to delete this junction "${junctionData.name}"? This action cannot be undone.`)) {
+                // Handle junction deletion logic here
+                // You would typically call an API to delete the junction
+                console.log('Delete junction:', junctionId);
+                showSnackbar("Delete functionality not yet implemented", "info");
+            }
+        };
+
+        window.addEventListener('bottom-action-refresh', handleRefresh);
+        window.addEventListener('bottom-action-save', handleSave);
+        window.addEventListener('bottom-action-back', handleBack);
+        window.addEventListener('bottom-action-export', handleExport);
+        window.addEventListener('bottom-action-delete', handleDelete);
+
+        return () => {
+            window.removeEventListener('bottom-action-refresh', handleRefresh);
+            window.removeEventListener('bottom-action-save', handleSave);
+            window.removeEventListener('bottom-action-back', handleBack);
+            window.removeEventListener('bottom-action-export', handleExport);
+            window.removeEventListener('bottom-action-delete', handleDelete);
+        };
+    }, [navigate, junctionId, junctionData.name]);
 
     // Show snackbar notification
     const showSnackbar = (message: string, severity: "success" | "info" | "warning" | "error" = "success") => {
@@ -263,16 +319,6 @@ const ConfigureJunction: React.FC = () => {
         setSelectedMqttBrokerId(event.target.value);
     };
 
-    // Handle Show Selected Only
-    const handleShowSelectedOnlyChange = (checked: boolean) => {
-        setShowSelectedOnly(checked);
-        try {
-            localStorage.setItem(`junction${junctionId}ShowSelectedOnly`, checked.toString());
-        } catch (error) {
-            console.error("Error saving filter state to localStorage:", error);
-        }
-    };
-
     // Handle settings accordion expansion
     const handleSettingsExpandedChange = (isExpanded: boolean) => {
         setSettingsExpanded(isExpanded);
@@ -280,6 +326,39 @@ const ConfigureJunction: React.FC = () => {
             localStorage.setItem('junctionSettingsExpanded', isExpanded.toString());
         } catch (error) {
             console.error("Error saving settings expansion state to localStorage:", error);
+        }
+    };
+
+    // Handle AllTargets settings changes
+    const handleAllTargetsAllDataChange = async (enabled: boolean): Promise<void> => {
+        try {
+            setLoading(true);
+            await junctionService.updateJunction(junctionId, {
+                ...junctionData,
+                AllTargetsAllData: enabled
+            });
+            setJunctionData((prev: any) => ({ ...prev, allTargetsAllData: enabled }));
+        } catch (error) {
+            console.error("Error updating AllTargetsAllData:", error);
+            throw error;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAllTargetsAllScreensChange = async (enabled: boolean): Promise<void> => {
+        try {
+            setLoading(true);
+            await junctionService.updateJunction(junctionId, {
+                ...junctionData,
+                AllTargetsAllScreens: enabled
+            });
+            setJunctionData((prev: any) => ({ ...prev, allTargetsAllScreens: enabled }));
+        } catch (error) {
+            console.error("Error updating AllTargetsAllScreens:", error);
+            throw error;
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -311,6 +390,8 @@ const ConfigureJunction: React.FC = () => {
                 GatewayDestination: junctionData.gatewayDestination,
                 DestinationOverride: junctionData.destinationOverride,
                 BaudRate: junctionData.baudRate,
+                AllTargetsAllData: junctionData.allTargetsAllData,
+                AllTargetsAllScreens: junctionData.allTargetsAllScreens,
             };
 
             await junctionService.updateJunction(parseInt(id), updatePayload);
@@ -860,6 +941,11 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
+    // Navigate back to junctions
+    const handleBackToJunctions = () => {
+        navigate('/junctions');
+    };
+
     return (
         <Box sx={{ padding: { xs: 1, sm: 2 } }}>
             {/* Header */}
@@ -884,7 +970,8 @@ const ConfigureJunction: React.FC = () => {
                     <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => console.log("Back to Junctions")}
+                        onClick={handleBackToJunctions}
+                        startIcon={<ArrowBackIcon />}
                         sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
                         Back
@@ -1103,7 +1190,7 @@ const ConfigureJunction: React.FC = () => {
                                         onChange={(e) => setJunctionData({ ...junctionData, gatewayDestination: e.target.value })}
                                         placeholder=""
                                         size="small"
-                                        helperText="(For internet protocols, this will be the IP Address of the Gateway. For COM/USB/Serial, this should be a port e.g. COM3 or /dev/ttyUSB0)"
+                                        helperText="For internet protocols, this will be the IP Address of the Gateway. For COM/USB/Serial, this should be a port e.g. COM3 or /dev/ttyUSB0"
                                     />
                                     <TextField
                                         label="Baud Rate"
@@ -1163,7 +1250,6 @@ const ConfigureJunction: React.FC = () => {
                             </CardContent>
                         </Card>
 
-
                         {/* Save Button aligned right */}
                         <Box display="flex" justifyContent="flex-end">
                             <Button
@@ -1178,7 +1264,6 @@ const ConfigureJunction: React.FC = () => {
                         </Box>
                     </Box>
                 </AccordionDetails>
-
             </Accordion>
 
             {/* COM Setup Advice - Only show for COM and Gateway COM junctions */}
@@ -1250,6 +1335,12 @@ const ConfigureJunction: React.FC = () => {
                         defaultVisibleColumns={getDefaultJunctionColumns()}
                         localStorageKey="junction_sensors_columns"
                         junctionId={junctionId}
+                        allTargetsAllData={junctionData.allTargetsAllData}
+                        allTargetsAllScreens={junctionData.allTargetsAllScreens}
+                        onAllTargetsAllDataChange={handleAllTargetsAllDataChange}
+                        onAllTargetsAllScreensChange={handleAllTargetsAllScreensChange}
+                        hideEditColumn={false}
+                        hideJunctionSettings={false}
                     />
                 </Box>
             )}
