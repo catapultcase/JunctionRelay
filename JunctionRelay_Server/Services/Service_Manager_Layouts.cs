@@ -44,6 +44,7 @@ namespace JunctionRelayServer.Services
         "Template: Astro",
         "Template: Matrix Display",
         "Template: NeoPixel Color Cycle",
+        "Template: Charlie Matrix Display",
         "Template: QUAD Static Display",
         "Template (Offset): 2x2 Grid",
         "Template (Offset): 2x4 Grid",
@@ -91,6 +92,7 @@ namespace JunctionRelayServer.Services
                 "Template: Astro" => BuildAstroTemplate(templateName),
                 "Template: Matrix Display" => BuildMatrixTemplate(templateName),
                 "Template: NeoPixel Color Cycle" => BuildNeoPixelTemplate(templateName),
+                "Template: Charlie Matrix Display" => BuildCharlieTemplate(templateName),
                 "Template: QUAD Static Display" => BuildQuadTemplate(templateName),
                 "Template (Offset): 2x2 Grid" => BuildGridOffsetTemplate(templateName, 2, 2),
                 "Template (Offset): 2x4 Grid" => BuildGridOffsetTemplate(templateName, 2, 4),
@@ -333,7 +335,7 @@ namespace JunctionRelayServer.Services
             {
                 DisplayName = name,
                 IsTemplate = true,
-                Description = "4-row, 4 sensor matrix layout.",
+                Description = "4-row, 4 sensor matrix layout",
                 LayoutType = "MATRIX",
                 TextColor = "#FFFFFF",
                 BackgroundColor = "#000000",
@@ -364,8 +366,22 @@ namespace JunctionRelayServer.Services
             {
                 DisplayName = name,
                 IsTemplate = true,
-                Description = "4-char QUAD display layout, right-aligned static mode showing first 3 digits + unit.",
+                Description = "4-char QUAD display layout, right-aligned static mode showing first 3 digits + unit",
                 LayoutType = "QUAD",
+                PreviewWidth = 560,
+                PreviewHeight = 280,
+                PreviewSensors = 1
+            };
+        }
+
+        private Model_Screen_Layout BuildCharlieTemplate(string name)
+        {
+            return new Model_Screen_Layout
+            {
+                DisplayName = name,
+                IsTemplate = true,
+                Description = "16x9 Charlieplexed Matrix",
+                LayoutType = "CHARLIE",
                 PreviewWidth = 560,
                 PreviewHeight = 280,
                 PreviewSensors = 1

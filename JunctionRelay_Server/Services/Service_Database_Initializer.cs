@@ -472,6 +472,7 @@ namespace JunctionRelayServer.Services
                     Name TEXT NOT NULL UNIQUE,
                     CollectorType TEXT NOT NULL,
                     Description TEXT,
+                    Status TEXT DEFAULT 'Offline',
                     URL TEXT,
                     AccessToken TEXT,
                     PollRate INTEGER DEFAULT 5000,
