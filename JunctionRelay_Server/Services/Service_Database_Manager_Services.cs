@@ -41,15 +41,10 @@ namespace JunctionRelayServer.Services
 
             foreach (var service in services)
             {
-                var protocols = await _db.QueryAsync<Model_Protocol>(
-                    "SELECT p.Id, p.Name, sp.Selected FROM Protocols p JOIN ServiceProtocols sp ON p.Id = sp.ProtocolId WHERE sp.ServiceId = @ServiceId",
-                    new { ServiceId = service.Id });
-
                 var sensors = await _db.QueryAsync<Model_Sensor>(
                     "SELECT * FROM Sensors WHERE ServiceId = @ServiceId",
                     new { ServiceId = service.Id });
 
-                service.SupportedProtocols = protocols.ToList();
                 service.Sensors = sensors.ToList();
             }
 
@@ -65,20 +60,11 @@ namespace JunctionRelayServer.Services
             if (service == null)
                 return null;
 
-            var protocols = await _db.QueryAsync<Model_Protocol>(
-                @"SELECT p.Id, p.Name, sp.Selected
-          FROM Protocols p
-          JOIN ServiceProtocols sp ON p.Id = sp.ProtocolId
-          WHERE sp.ServiceId = @ServiceId",
-                new { ServiceId = service.Id }
-            );
-
             var sensors = await _db.QueryAsync<Model_Sensor>(
                 "SELECT * FROM Sensors WHERE ServiceId = @ServiceId",
                 new { ServiceId = id }
             );
 
-            service.SupportedProtocols = protocols.ToList();
             service.Sensors = sensors.ToList();
             return service;
         }
@@ -129,22 +115,7 @@ namespace JunctionRelayServer.Services
                 WHERE Id = @Id;";
 
             await _db.ExecuteAsync(sql, updatedService);
-
-            // Update protocols
-            if (updatedService.SupportedProtocols != null)
-            {
-                foreach (var protocol in updatedService.SupportedProtocols)
-                {
-                    var protocolId = await _db.ExecuteScalarAsync<int>(
-                        "SELECT Id FROM Protocols WHERE Name = @ProtocolName",
-                        new { ProtocolName = protocol.Name });
-
-                    await _db.ExecuteAsync(
-                        "UPDATE ServiceProtocols SET Selected = @Selected WHERE ServiceId = @ServiceId AND ProtocolId = @ProtocolId",
-                        new { Selected = protocol.Selected, ServiceId = id, ProtocolId = protocolId });
-                }
-            }            
-
+     
             return true;
         }
 

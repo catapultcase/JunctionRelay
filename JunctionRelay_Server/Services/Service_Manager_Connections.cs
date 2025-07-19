@@ -230,7 +230,6 @@ namespace JunctionRelayServer.Services
             var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
             var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
             var collectorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Collectors>();
-            var protocolDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Protocols>();
             var pollingManager = scope.ServiceProvider.GetRequiredService<Service_Manager_Polling>();
             var sensorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Sensors>();
 
@@ -297,8 +296,6 @@ namespace JunctionRelayServer.Services
                     );
                 }
             }
-
-            await protocolDb.GetProtocolsForJunction(junction, deviceDb, collectorDb);
 
             // Special handling for Gateway junctions - add peers before streaming
             if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))

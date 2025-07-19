@@ -420,51 +420,6 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-
-            // Create Protocols table
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS Protocols (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL UNIQUE
-                );
-            ");
-
-            // Create DeviceProtocols table
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS DeviceProtocols (
-                    DeviceId INTEGER,
-                    ProtocolId INTEGER,
-                    Selected BOOLEAN DEFAULT 0,
-                    FOREIGN KEY(DeviceId) REFERENCES Devices(Id),
-                    FOREIGN KEY(ProtocolId) REFERENCES Protocols(Id),
-                    PRIMARY KEY(DeviceId, ProtocolId)
-                );
-            ");
-
-            // Create ServiceProtocols table
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS ServiceProtocols (
-                    ServiceId INTEGER,
-                    ProtocolId INTEGER,
-                    Selected BOOLEAN DEFAULT 0,
-                    FOREIGN KEY(ServiceId) REFERENCES Services(Id),
-                    FOREIGN KEY(ProtocolId) REFERENCES Protocols(Id),
-                    PRIMARY KEY(ServiceId, ProtocolId)
-                );
-            ");
-
-            // Create CollectorProtocols table
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS CollectorProtocols (
-                    CollectorId INTEGER,
-                    ProtocolId INTEGER,
-                    Selected BOOLEAN DEFAULT 0,
-                    FOREIGN KEY(CollectorId) REFERENCES Collectors(Id),
-                    FOREIGN KEY(ProtocolId) REFERENCES Protocols(Id),
-                    PRIMARY KEY(CollectorId, ProtocolId)
-                );
-            ");
-
             // Create Collectors table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS Collectors (
@@ -703,18 +658,6 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-
-            // Insert protocols if table is empty
-            var protocolCount = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM Protocols");
-            if (protocolCount == 0)
-            {
-                _db.Execute(@"
-                    INSERT INTO Protocols (Name) VALUES ('USB');
-                    INSERT INTO Protocols (Name) VALUES ('HTTP');
-                    INSERT INTO Protocols (Name) VALUES ('ESP-NOW');
-                ");
-                Console.WriteLine("✅ Added 'USB', 'HTTP', and 'ESP-NOW' protocols to the database.");
-            }
 
             // Seed templates
             await layoutTemplates.InitializeLayoutTemplatesAsync();

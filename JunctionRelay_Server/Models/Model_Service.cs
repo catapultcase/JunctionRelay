@@ -49,10 +49,6 @@ namespace JunctionRelayServer.Models
         // Timestamps
         public DateTime LastUpdated { get; set; }
 
-        // Protocols and relationships
-        // public List<Model_Collector> Collectors { get; set; } = new();  // Updated to reflect that devices have multiple collectors
-        public List<Model_Protocol> SupportedProtocols { get; set; } = new();
-
         // Sensors can now be linked to either devices or collectors
         public List<Model_Sensor> Sensors { get; set; } = new();
         public List<Model_Device> Peers { get; set; } = new();

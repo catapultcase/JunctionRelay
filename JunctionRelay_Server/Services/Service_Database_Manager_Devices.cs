@@ -51,19 +51,11 @@ namespace JunctionRelayServer.Services
 
             foreach (var device in devices)
             {
-                var protocols = await _db.QueryAsync<Model_Protocol>(
-                    "SELECT p.Id, p.Name, dp.Selected FROM Protocols p JOIN DeviceProtocols dp ON p.Id = dp.ProtocolId WHERE dp.DeviceId = @DeviceId",
-                    new { DeviceId = device.Id });
-
-
                 var sensors = await _db.QueryAsync<Model_Sensor>(
                     "SELECT * FROM Sensors WHERE DeviceId = @DeviceId",
                     new { DeviceId = device.Id });
 
-                // Removed collectors related query
-                device.SupportedProtocols = protocols.ToList();
                 device.Sensors = sensors.ToList();
-                // Removed device.Collectors
             }
 
             return devices;
@@ -78,18 +70,9 @@ namespace JunctionRelayServer.Services
             if (device == null)
                 return null;
 
-            var protocols = await _db.QueryAsync<Model_Protocol>(
-                @"SELECT p.Id, p.Name, dp.Selected
-          FROM Protocols p
-          JOIN DeviceProtocols dp ON p.Id = dp.ProtocolId
-          WHERE dp.DeviceId = @DeviceId",
-                new { DeviceId = id });
-
             var sensors = await _db.QueryAsync<Model_Sensor>(
                 "SELECT * FROM Sensors WHERE DeviceId = @DeviceId",
                 new { DeviceId = id });
-
-            device.SupportedProtocols = protocols.ToList();
             device.Sensors = sensors.ToList();
             return device;
         }
@@ -189,50 +172,6 @@ SELECT last_insert_rowid();";
 
             int newId = await _db.ExecuteScalarAsync<int>(sql, newDevice);
             newDevice.Id = newId;
-
-            // Handle protocols
-            if (newDevice.SupportedProtocols != null)
-            {
-                foreach (var protocol in newDevice.SupportedProtocols)
-                {
-                    var protocolId = await _db.ExecuteScalarAsync<int>(
-                        "SELECT Id FROM Protocols WHERE Name = @ProtocolName",
-                        new { ProtocolName = protocol.Name });
-
-                    await _db.ExecuteAsync(
-                        "INSERT INTO DeviceProtocols (DeviceId, ProtocolId, Selected) VALUES (@DeviceId, @ProtocolId, @Selected)",
-                        new { DeviceId = newId, ProtocolId = protocolId, Selected = protocol.Selected });
-                }
-            }
-
-            // If no protocols were supplied, infer from capabilities
-            if (newDevice.SupportedProtocols == null || newDevice.SupportedProtocols.Count == 0)
-            {
-                var allProtocols = (await _db.QueryAsync<Model_Protocol>("SELECT * FROM Protocols")).ToList();
-
-                var inferred = new List<(string Name, bool IsSupported)>
-        {
-            ("USB", newDevice.SupportsUSB),
-            ("HTTP", newDevice.SupportsHTTP),
-            ("ESP-NOW", newDevice.SupportsESPNow),
-        };
-
-                foreach (var (name, supported) in inferred)
-                {
-                    if (!supported) continue;
-
-                    var protocol = allProtocols.FirstOrDefault(p => p.Name == name);
-                    if (protocol != null)
-                    {
-                        // Optional: set default selected protocol
-                        bool isDefault = name == "USB";
-
-                        await _db.ExecuteAsync(
-                            "INSERT INTO DeviceProtocols (DeviceId, ProtocolId, Selected) VALUES (@DeviceId, @ProtocolId, @Selected)",
-                            new { DeviceId = newId, ProtocolId = protocol.Id, Selected = isDefault });
-                    }
-                }
-            }
 
             // Add I2C devices if provided
             if (newDevice.I2cDevices != null && newDevice.I2cDevices.Count > 0)
@@ -522,21 +461,6 @@ PushNotifications = @PushNotifications,
 SyncMode = @SyncMode
 WHERE Id = @Id;";
 
-            // Update Supported Protocols if provided
-            if (updatedDevice.SupportedProtocols != null)
-            {
-                foreach (var protocol in updatedDevice.SupportedProtocols)
-                {
-                    var protocolId = await _db.ExecuteScalarAsync<int>(
-                        "SELECT Id FROM Protocols WHERE Name = @ProtocolName",
-                        new { ProtocolName = protocol.Name });
-
-                    await _db.ExecuteAsync(
-                        "UPDATE DeviceProtocols SET Selected = @Selected WHERE DeviceId = @DeviceId AND ProtocolId = @ProtocolId",
-                        new { Selected = protocol.Selected, DeviceId = id, ProtocolId = protocolId });
-                }
-            }
-
             // Only update Screens if they are provided (optional)
             if (updatedDevice.Screens != null)
             {
@@ -586,7 +510,6 @@ WHERE DeviceId = @DeviceId AND Id = @Id;";
             await _db.ExecuteAsync("DELETE FROM JunctionSensorTargets WHERE DeviceId = @Id", new { Id = id });
             await _db.ExecuteAsync("DELETE FROM JunctionDeviceLinks WHERE DeviceId = @Id", new { Id = id });
             await _db.ExecuteAsync("DELETE FROM JunctionSensors WHERE DeviceId = @Id", new { Id = id });
-            await _db.ExecuteAsync("DELETE FROM DeviceProtocols WHERE DeviceId = @Id", new { Id = id });
             await _db.ExecuteAsync("DELETE FROM DeviceI2CDevices WHERE DeviceId = @Id", new { Id = id });
             await _db.ExecuteAsync("DELETE FROM DeviceScreens WHERE DeviceId = @Id", new { Id = id });
             await _db.ExecuteAsync("DELETE FROM Sensors WHERE DeviceId = @Id", new { Id = id });
