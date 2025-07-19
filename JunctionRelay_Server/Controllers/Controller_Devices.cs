@@ -536,23 +536,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // Sample API endpoint to fetch supported protocols
-        [HttpGet("api/devices/{id}/supported-protocols")]
-        public async Task<IActionResult> GetSupportedProtocols(int id)
-        {
-            // Fetch the device from the database
-            var device = await _deviceService.GetDeviceByIdAsync(id);
-            if (device == null)
-            {
-                return NotFound();
-            }
-
-            // Return the supported protocols for the device
-            return Ok(device.SupportedProtocols); // Make sure this is set correctly
-        }
-
-
-
         // Fetch device sensors from the external device
         [HttpGet("sensors")]
         public async Task<IActionResult> GetDeviceSensors([FromQuery] string ip)

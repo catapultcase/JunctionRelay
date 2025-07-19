@@ -103,7 +103,6 @@ namespace JunctionRelayServer.Models
         }
 
         // Protocols and relationships
-        public List<Model_Protocol> SupportedProtocols { get; set; } = new();
         public List<Model_Sensor> Sensors { get; set; } = new();
         public List<Model_Device> Peers { get; set; } = new();
 

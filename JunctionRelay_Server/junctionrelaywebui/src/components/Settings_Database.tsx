@@ -41,6 +41,13 @@ interface BackendIdentity {
     friendlyName: string;
 }
 
+interface CloudUserInfo {
+    email?: string;
+    userId?: string;
+    hasValidLicense: boolean;
+    message?: string;
+}
+
 interface SettingsDatabaseProps {
     showSnackbar: (message: string, severity?: AlertColor) => void;
     isMobile?: boolean;
@@ -57,6 +64,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
+    const [cloudUserInfo, setCloudUserInfo] = useState<CloudUserInfo | null>(null);
 
     const fetchBackupInfo = async () => {
         try {
@@ -163,6 +171,38 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
             showSnackbar(error.message || "Error scheduling database deletion", "error");
         } finally {
             setDeleteLoading(false);
+        }
+
+        // Logout
+
+        console.log("[CLOUD_AUTH] Logging out from cloud...");
+        try {
+            const cloudToken = localStorage.getItem('cloud_proxy_token');
+
+            const response = await fetch("/api/cloud-auth/logout", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${cloudToken}`
+                },
+            });
+
+            if (response.ok) {
+                console.log("[CLOUD_AUTH] Successfully logged out from cloud");
+                localStorage.removeItem('cloud_proxy_token');
+                localStorage.removeItem('junctionrelay_cloud_user');
+                setCloudUserInfo(null);
+                // showSnackbar("Logged out from JunctionRelay Cloud", "success");
+            } else {
+                throw new Error("Failed to logout from cloud");
+            }
+        } catch (error: any) {
+            console.error("[CLOUD_AUTH] Error during cloud logout:", error);
+            // Still clear local state even if server logout fails
+            localStorage.removeItem('cloud_proxy_token');
+            localStorage.removeItem('junctionrelay_cloud_user');
+            setCloudUserInfo(null);
+            // showSnackbar("Logged out locally from JunctionRelay Cloud", "warning");
         }
     };
 

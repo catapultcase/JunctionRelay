@@ -80,27 +80,6 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Fetch supported protocols for a service
-        public async Task<List<Model_Protocol>> GetSupportedProtocols(int serviceId)
-        {
-            try
-            {
-                var service = await _serviceDb.GetServiceByIdAsync(serviceId);
-                if (service == null)
-                {
-                    throw new Exception($"Service with ID {serviceId} not found.");
-                }
-
-                // Return supported protocols
-                return service.SupportedProtocols;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error fetching protocols for service: {ex.Message}");
-                return new List<Model_Protocol>();  // Return empty list in case of error
-            }
-        }
-
         // Add service to the database
         public async Task<Model_Service> AddServiceAsync(Model_Service newService)
         {
