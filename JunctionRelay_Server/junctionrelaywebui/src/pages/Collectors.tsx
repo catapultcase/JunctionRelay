@@ -74,6 +74,8 @@ import ColorLensIcon from '@mui/icons-material/ColorLens';
 import SpeedIcon from '@mui/icons-material/Speed';
 import PaymentIcon from '@mui/icons-material/Payment';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import MinimizeIcon from '@mui/icons-material/Minimize';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SetupInstructions_Collectors from '../components/SetupInstructions_Collectors';
 import { useTheme, useMediaQuery } from "@mui/material";
 
@@ -104,7 +106,7 @@ const defaultCollectorColumns: CollectorColumn[] = [
 ];
 
 // Default visible columns
-const defaultVisibleColumns = ["name", "type", "url", "accessToken", "status","actions"];
+const defaultVisibleColumns = ["name", "type", "url", "accessToken", "status", "actions"];
 
 // Helper function to get collector type info with colors and icons
 const getCollectorTypeInfo = (type: string) => {
@@ -144,8 +146,8 @@ const CollectorCard = memo(({
         return viewMode === 'mini' ? 120 : 220;
     };
 
-    const statusColor = collector.status === 'Active' ? 'success' : 
-                       collector.status === 'Inactive' ? 'error' : 'default';
+    const statusColor = collector.status === 'Active' ? 'success' :
+        collector.status === 'Inactive' ? 'error' : 'default';
 
     return (
         <Card
@@ -349,8 +351,8 @@ const CollectorTableRow = memo(({
             case "accessToken":
                 return collector.accessToken ? "********" : "Not set";
             case "status":
-                const statusColor = collector.status === 'Active' ? 'success' : 
-                                   collector.status === 'Inactive' ? 'error' : 'default';
+                const statusColor = collector.status === 'Active' ? 'success' :
+                    collector.status === 'Inactive' ? 'error' : 'default';
                 return (
                     <Chip
                         label={collector.status || 'Unknown'}
@@ -392,7 +394,7 @@ const CollectorTableRow = memo(({
         >
             {visibleCols.map((field) => {
                 const colDef = allColumns.find((c) => c.field === field)!;
-                
+
                 const getColumnWidth = (field: string) => {
                     switch (field) {
                         case "name":
@@ -443,13 +445,16 @@ const AddCollectorModal: React.FC<{
 }> = ({ open, onClose, onCollectorAdded, onCollectorAddedAndConfigure }) => {
     const [loading, setLoading] = useState<boolean>(false);
     const [configureAfterAdd, setConfigureAfterAdd] = useState<boolean>(false);
+    const [setupInstructionsMinimized, setSetupInstructionsMinimized] = useState<boolean>(false);
     const [collector, setCollector] = useState<any>({
         name: "",
         url: "",
         accessToken: "",
         collectorType: "",
-        serviceId: ""
+        serviceId: "",
+        externalAccessToken: false
     });
+    const [encryptionPassword, setEncryptionPassword] = useState<string>("");
     const [error, setError] = useState<string>("");
     const [services, setServices] = useState<any[]>([]);
 
@@ -478,8 +483,10 @@ const AddCollectorModal: React.FC<{
                 url: "",
                 accessToken: "",
                 collectorType: "",
-                serviceId: ""
+                serviceId: "",
+                externalAccessToken: false
             });
+            setEncryptionPassword("");
             setError("");
             setServices([]);
         }
@@ -543,9 +550,15 @@ const AddCollectorModal: React.FC<{
             return;
         }
 
-        // If the collector type is MQTT, ensure serviceId is provided
         if (collector.collectorType === "MQTT" && !collector.serviceId) {
             setError("Service ID is required for MQTT collectors.");
+            setLoading(false);
+            return;
+        }
+
+        // Validate encryption password if external encryption is selected
+        if (collector.externalAccessToken && !encryptionPassword.trim()) {
+            setError("Encryption password is required when using external password encryption.");
             setLoading(false);
             return;
         }
@@ -557,13 +570,22 @@ const AddCollectorModal: React.FC<{
 
         // Send the request
         try {
+            const requestBody = {
+                ...collector,
+                status: "Active"
+            };
+
+            // If using external encryption, include the encryption password in a way the backend expects
+            // (You may need to adjust this based on your backend implementation)
+            if (collector.externalAccessToken && encryptionPassword) {
+                // The backend will need to handle this appropriately
+                requestBody.encryptionPassword = encryptionPassword;
+            }
+
             const response = await fetch("/api/collectors", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ...collector,
-                    status: "Active"
-                }),
+                body: JSON.stringify(requestBody),
             });
 
             // First check if the response is ok
@@ -663,6 +685,7 @@ const AddCollectorModal: React.FC<{
                 name: "Cloudflare",
                 url: "https://dash.cloudflare.com/account_id/zone_id",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 60000,
             }));
         } else if (collector.collectorType === "Github") {
@@ -671,6 +694,7 @@ const AddCollectorModal: React.FC<{
                 name: "GitHub Repository",
                 url: "https://github.com/owner/repo",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 60000,
             }));
         } else if (collector.collectorType === "HomeAssistant") {
@@ -679,6 +703,7 @@ const AddCollectorModal: React.FC<{
                 name: "HomeAssistant",
                 url: "http://10.168.1.17:8123",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 5000,
             }));
         } else if (collector.collectorType === "Host") {
@@ -687,6 +712,7 @@ const AddCollectorModal: React.FC<{
                 name: "Host Device",
                 url: "localhost",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 1000,
             }));
         } else if (collector.collectorType === "LibreHardwareMonitor") {
@@ -695,6 +721,7 @@ const AddCollectorModal: React.FC<{
                 name: "LibreHardwareMonitor",
                 url: "http://localhost:8085",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 1000,
             }));
         } else if (collector.collectorType === "NeoPixelColor") {
@@ -703,6 +730,7 @@ const AddCollectorModal: React.FC<{
                 name: "NeoPixel Color",
                 url: "",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 3000,
             }));
         } else if (collector.collectorType === "RateTester") {
@@ -711,6 +739,7 @@ const AddCollectorModal: React.FC<{
                 name: "Rate Tester",
                 url: "",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 1000,
                 sendRate: 1000
             }));
@@ -720,6 +749,7 @@ const AddCollectorModal: React.FC<{
                 name: "Render Service",
                 url: "https://dashboard.render.com/web/srv-abc123def456",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 60000,
             }));
         } else if (collector.collectorType === "Stripe") {
@@ -728,6 +758,7 @@ const AddCollectorModal: React.FC<{
                 name: "Stripe",
                 url: "https://api.stripe.com",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 60000,
             }));
         } else if (collector.collectorType === "UptimeKuma") {
@@ -736,6 +767,7 @@ const AddCollectorModal: React.FC<{
                 name: "Uptime Kuma",
                 url: "http://localhost:3001/metrics",
                 accessToken: "",
+                externalAccessToken: false,
                 pollRate: 3000,
             }));
         } else {
@@ -743,9 +775,13 @@ const AddCollectorModal: React.FC<{
                 ...prev,
                 name: "",
                 url: "",
-                accessToken: ""
+                accessToken: "",
+                externalAccessToken: false
             }));
         }
+
+        // Reset encryption password when collector type changes
+        setEncryptionPassword("");
     }, [collector.collectorType]);
 
     return (
@@ -755,15 +791,18 @@ const AddCollectorModal: React.FC<{
                 top: "50%",
                 left: "50%",
                 transform: "translate(-50%, -50%)",
-                width: { xs: '95%', sm: '90%', md: '80%' },
-                maxWidth: { xs: 'none', md: 900 },
-                height: { xs: '90vh', md: '80vh' },
+                width: { xs: 'auto', sm: '90%', md: '80%' },
+                maxWidth: { xs: '95vw', md: 900 },
+                minWidth: { xs: 320, sm: 400 },
+                height: 'auto',
+                maxHeight: { xs: '90vh', md: '80vh' },
                 bgcolor: 'background.paper',
                 p: 0,
                 boxShadow: 24,
                 borderRadius: 2,
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                overflow: 'hidden'
             }}>
                 <Typography variant="h6" sx={{
                     p: { xs: 2, md: 3 },
@@ -784,7 +823,8 @@ const AddCollectorModal: React.FC<{
                         display: 'flex',
                         flexDirection: { xs: 'column', md: 'row' },
                         flex: 1,
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        minHeight: 0
                     }}>
                         {/* Left side - Collector types list (Desktop only) */}
                         <Box sx={{
@@ -839,8 +879,8 @@ const AddCollectorModal: React.FC<{
                         }}>
                             <Box sx={{
                                 p: { xs: 2, md: 3 },
-                                borderBottom: '1px solid',
-                                borderColor: 'divider'
+                                overflowY: 'auto',
+                                flex: 1
                             }}>
                                 {error && (
                                     <Alert severity="error" sx={{ mb: 2 }}>
@@ -984,21 +1024,137 @@ const AddCollectorModal: React.FC<{
                                         </>
                                     )}
                                 </Box>
+
+                                {/* Security Options Section - Only show for collectors that require access tokens */}
+                                {collector.collectorType && (
+                                    collector.collectorType === "Cloudflare" ||
+                                    collector.collectorType === "Github" ||
+                                    collector.collectorType === "HomeAssistant" ||
+                                    collector.collectorType === "Render" ||
+                                    collector.collectorType === "Stripe"
+                                ) && (
+                                        <Box sx={{ mt: 3 }}>
+                                            <Divider sx={{ mb: 2 }} />
+                                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                                Access Token Security
+                                            </Typography>
+
+                                            <FormControl component="fieldset">
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                        <input
+                                                            type="radio"
+                                                            id="local-encryption"
+                                                            name="encryption-method"
+                                                            checked={!collector.externalAccessToken}
+                                                            onChange={() => setCollector({ ...collector, externalAccessToken: false })}
+                                                            style={{ marginRight: '8px' }}
+                                                        />
+                                                        <label htmlFor="local-encryption" style={{ cursor: 'pointer' }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                Save to local DB (Default)
+                                                            </Typography>
+                                                        </label>
+                                                    </Box>
+
+                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                        <input
+                                                            type="radio"
+                                                            id="external-encryption"
+                                                            name="encryption-method"
+                                                            checked={collector.externalAccessToken}
+                                                            onChange={() => setCollector({ ...collector, externalAccessToken: true })}
+                                                            style={{ marginRight: '8px' }}
+                                                        />
+                                                        <label htmlFor="external-encryption" style={{ cursor: 'pointer' }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                Encrypt with external password
+                                                            </Typography>
+                                                        </label>
+                                                    </Box>
+                                                </Box>
+                                            </FormControl>
+
+                                            {/* Encryption Password field - only show if external encryption is selected */}
+                                            {collector.externalAccessToken && (
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Encryption Password"
+                                                    type="password"
+                                                    value={encryptionPassword}
+                                                    onChange={(e) => setEncryptionPassword(e.target.value)}
+                                                    required
+                                                    sx={{ mt: 2 }}
+                                                    placeholder="Enter a strong password for encryption"
+                                                    helperText="This password will be required each time the application starts"
+                                                />
+                                            )}
+
+                                            {/* Help text - Hide on mobile */}
+                                            <Box sx={{
+                                                mt: 2,
+                                                p: 2,
+                                                bgcolor: 'action.hover',
+                                                borderRadius: 1,
+                                                display: { xs: 'none', md: 'block' }
+                                            }}>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                    <strong>Local DB:</strong> AccessToken will be encrypted but the encryption keys exist in the application directory.
+                                                    This is usually sufficient if you have secured your local network/docker environment and if the AccessToken is not high value.
+                                                    The application will decrypt automatically on app start so you do not need to re-enter the token.
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    <strong>External Password:</strong> AccessToken will be encrypted using a password that is not saved in the DB -
+                                                    this provides maximum security for your AccessToken, but means you must enter the password on application start
+                                                    for each collector that is encrypted via this method before it can be used. If you lose your password,
+                                                    you will not be able to recover the collector and you will need to recreate it.
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    )}
                             </Box>
 
-                            {/* Instructions - responsive height */}
+                            {/* Instructions - responsive height - Hide on mobile */}
                             {collector.collectorType && (
                                 <Box sx={{
-                                    flex: 1,
-                                    p: { xs: 2, md: 3 },
-                                    overflowY: 'auto',
-                                    bgcolor: 'background.default',
-                                    minHeight: { xs: '200px', md: 'auto' }
+                                    display: { xs: 'none', md: 'block' },
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider'
                                 }}>
-                                    <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
-                                        Setup Instructions
-                                    </Typography>
-                                    <SetupInstructions_Collectors collectorType={collector.collectorType} />
+                                    {/* Always Visible Header */}
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        p: 2,
+                                        bgcolor: 'action.hover',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            bgcolor: 'action.selected'
+                                        }
+                                    }}
+                                        onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
+                                    >
+                                        <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                                            Setup Instructions
+                                        </Typography>
+                                        <IconButton size="small" sx={{ p: 0 }}>
+                                            {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
+                                        </IconButton>
+                                    </Box>
+
+                                    {/* Collapsible Content */}
+                                    {!setupInstructionsMinimized && (
+                                        <Box sx={{
+                                            maxHeight: '300px',
+                                            p: 3,
+                                            overflowY: 'auto',
+                                            bgcolor: 'background.default'
+                                        }}>
+                                            <SetupInstructions_Collectors collectorType={collector.collectorType} />
+                                        </Box>
+                                    )}
                                 </Box>
                             )}
 
@@ -1009,7 +1165,8 @@ const AddCollectorModal: React.FC<{
                                 borderColor: 'divider',
                                 display: "flex",
                                 flexDirection: { xs: 'column', sm: 'row' },
-                                gap: { xs: 1, sm: 2 }
+                                gap: { xs: 1, sm: 2 },
+                                flexShrink: 0
                             }}>
                                 <Button
                                     variant="contained"
@@ -1063,7 +1220,7 @@ const Collectors = () => {
         const stored = localStorage.getItem(STORAGE_KEY_COLLECTORS_VIEW_MODE);
         return (stored as ViewMode) || 'table';
     });
-    
+
     const [visibleCols, setVisibleCols] = useState<string[]>(() => {
         const stored = localStorage.getItem(STORAGE_KEY_COLLECTORS_COLUMNS);
         return stored ? JSON.parse(stored) : defaultVisibleColumns;

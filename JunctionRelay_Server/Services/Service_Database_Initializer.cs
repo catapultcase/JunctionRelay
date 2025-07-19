@@ -172,7 +172,7 @@ namespace JunctionRelayServer.Services
                         IgnoreUpdates BOOLEAN DEFAULT 0,
                         MCU TEXT,
                         WirelessConnectivity TEXT,
-                        IPAddress TEXT,
+                        URL TEXT,
                         PollRate INTEGER DEFAULT 5000,
                         SendRate INTEGER DEFAULT 5000,
                         LastPolled DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -180,17 +180,13 @@ namespace JunctionRelayServer.Services
                         GatewayId INTEGER,
                         IsJunctionRelayService BOOLEAN DEFAULT 0,
                         LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        AccessToken TEXT,
+                        ExternalAccessToken BOOLEAN DEFAULT 0,
                         HomeAssistantAddress TEXT,
-                        HomeAssistantAPIKey TEXT,
-                        ExternalHomeAssistantAPIKey BOOLEAN DEFAULT 0,
                         HomeAssistantUsername TEXT,
-                        HomeAssistantPassword TEXT,
-                        ExternalHomeAssistantPassword BOOLEAN DEFAULT 0,
                         MQTTBrokerAddress TEXT,
                         MQTTBrokerPort TEXT,
                         MQTTUsername TEXT,
-                        MQTTPassword TEXT,
-                        ExternalMQTTPassword BOOLEAN DEFAULT 0,
                         FOREIGN KEY(GatewayId) REFERENCES Services(Id)
                    );
                 ");

@@ -67,6 +67,8 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import RouterIcon from '@mui/icons-material/Router';
 import ApiIcon from '@mui/icons-material/Api';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import MinimizeIcon from '@mui/icons-material/Minimize';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SetupInstructions_Services from '../components/SetupInstructions_Services';
 import { useTheme, useMediaQuery } from "@mui/material";
 
@@ -97,7 +99,7 @@ const defaultServiceColumns: ServiceColumn[] = [
 ];
 
 // Default visible columns
-const defaultVisibleColumns = ["name", "type", "description", "uniqueIdentifier", "status","actions"];
+const defaultVisibleColumns = ["name", "type", "description", "uniqueIdentifier", "status", "actions"];
 
 // Helper function to get service type info with colors and icons
 const getServiceTypeInfo = (type: string) => {
@@ -129,8 +131,8 @@ const ServiceCard = memo(({
         return viewMode === 'mini' ? 120 : 220;
     };
 
-    const statusColor = service.status === 'Active' ? 'success' : 
-                       service.status === 'Inactive' ? 'error' : 'default';
+    const statusColor = service.status === 'Active' ? 'success' :
+        service.status === 'Inactive' ? 'error' : 'default';
 
     return (
         <Card
@@ -334,8 +336,8 @@ const ServiceTableRow = memo(({
             case "uniqueIdentifier":
                 return service.uniqueIdentifier || "-";
             case "status":
-                const statusColor = service.status === 'Active' ? 'success' : 
-                                   service.status === 'Inactive' ? 'error' : 'default';
+                const statusColor = service.status === 'Active' ? 'success' :
+                    service.status === 'Inactive' ? 'error' : 'default';
                 return (
                     <Chip
                         label={service.status || 'Unknown'}
@@ -377,7 +379,7 @@ const ServiceTableRow = memo(({
         >
             {visibleCols.map((field) => {
                 const colDef = allColumns.find((c) => c.field === field)!;
-                
+
                 const getColumnWidth = (field: string) => {
                     switch (field) {
                         case "name":
@@ -428,18 +430,19 @@ const AddServiceModal: React.FC<{
 }> = ({ open, onClose, onServiceAdded, onServiceAddedAndConfigure }) => {
     const [loading, setLoading] = useState<boolean>(false);
     const [configureAfterAdd, setConfigureAfterAdd] = useState<boolean>(false);
+    const [setupInstructionsMinimized, setSetupInstructionsMinimized] = useState<boolean>(false);
     const [service, setService] = useState<any>({
         name: "",
         description: "",
         type: "",
-        ipAddress: "",
         url: "",
         accessToken: "",
+        externalAccessToken: false,
         mqttBrokerAddress: "",
         mqttBrokerPort: "",
-        mqttUsername: "",
-        mqttPassword: ""
+        mqttUsername: ""
     });
+    const [encryptionPassword, setEncryptionPassword] = useState<string>("");
     const [error, setError] = useState<string>("");
 
     // Service type options for dropdown
@@ -458,14 +461,14 @@ const AddServiceModal: React.FC<{
                 name: "",
                 description: "",
                 type: "",
-                ipAddress: "",
                 url: "",
                 accessToken: "",
+                externalAccessToken: false,
                 mqttBrokerAddress: "",
                 mqttBrokerPort: "",
-                mqttUsername: "",
-                mqttPassword: ""
+                mqttUsername: ""
             });
+            setEncryptionPassword("");
             setError("");
         }
     }, [open]);
@@ -512,29 +515,42 @@ const AddServiceModal: React.FC<{
             return;
         }
 
+        // Validate encryption password if external encryption is selected
+        if (service.externalAccessToken && !encryptionPassword.trim()) {
+            setError("Encryption password is required when using external password encryption.");
+            setLoading(false);
+            return;
+        }
+
         // Send the request
         try {
             const uniqueIdentifier = generateUniqueIdentifier();
 
-            const newService = {
+            const requestBody: any = {
                 name: service.name,
                 description: service.description,
                 type: service.type,
                 status: "Active",
                 uniqueIdentifier: uniqueIdentifier,
-                ipAddress: service.ipAddress,
                 url: service.url,
                 accessToken: service.accessToken,
+                externalAccessToken: service.externalAccessToken,
                 mqttBrokerAddress: service.mqttBrokerAddress,
                 mqttBrokerPort: service.mqttBrokerPort,
                 mqttUsername: service.mqttUsername,
-                mqttPassword: service.mqttPassword
+                pollRate: 5000,
+                sendRate: 5000
             };
+
+            // If using external encryption, include the encryption password in a way the backend expects
+            if (service.externalAccessToken && encryptionPassword) {
+                requestBody.encryptionPassword = encryptionPassword;
+            }
 
             const response = await fetch("/api/services", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newService),
+                body: JSON.stringify(requestBody),
             });
 
             if (response.ok) {
@@ -588,27 +604,34 @@ const AddServiceModal: React.FC<{
                 ...prev,
                 name: "MQTT Broker",
                 description: "MQTT message broker service",
+                externalAccessToken: false,
                 mqttBrokerPort: "1883"
             }));
         } else if (service.type === "REST API") {
             setService((prev: any) => ({
                 ...prev,
                 name: "REST API Service",
-                description: "HTTP REST API service"
+                description: "HTTP REST API service",
+                externalAccessToken: false
             }));
         } else if (service.type === "Custom") {
             setService((prev: any) => ({
                 ...prev,
                 name: "Custom Service",
-                description: "Custom service configuration"
+                description: "Custom service configuration",
+                externalAccessToken: false
             }));
         } else {
             setService((prev: any) => ({
                 ...prev,
                 name: "",
-                description: ""
+                description: "",
+                externalAccessToken: false
             }));
         }
+
+        // Reset encryption password when service type changes
+        setEncryptionPassword("");
     }, [service.type]);
 
     return (
@@ -618,15 +641,18 @@ const AddServiceModal: React.FC<{
                 top: "50%",
                 left: "50%",
                 transform: "translate(-50%, -50%)",
-                width: { xs: '95%', sm: '90%', md: '80%' },
-                maxWidth: { xs: 'none', md: 900 },
-                height: { xs: '90vh', md: '80vh' },
+                width: { xs: 'auto', sm: '90%', md: '80%' },
+                maxWidth: { xs: '95vw', md: 900 },
+                minWidth: { xs: 320, sm: 400 },
+                height: 'auto',
+                maxHeight: { xs: '90vh', md: '80vh' },
                 bgcolor: 'background.paper',
                 p: 0,
                 boxShadow: 24,
                 borderRadius: 2,
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                overflow: 'hidden'
             }}>
                 <Typography variant="h6" sx={{
                     p: { xs: 2, md: 3 },
@@ -647,7 +673,8 @@ const AddServiceModal: React.FC<{
                         display: 'flex',
                         flexDirection: { xs: 'column', md: 'row' },
                         flex: 1,
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        minHeight: 0
                     }}>
                         {/* Left side - Service types list (Desktop only) */}
                         <Box sx={{
@@ -702,8 +729,8 @@ const AddServiceModal: React.FC<{
                         }}>
                             <Box sx={{
                                 p: { xs: 2, md: 3 },
-                                borderBottom: '1px solid',
-                                borderColor: 'divider'
+                                overflowY: 'auto',
+                                flex: 1
                             }}>
                                 {error && (
                                     <Alert severity="error" sx={{ mb: 2 }}>
@@ -768,18 +795,6 @@ const AddServiceModal: React.FC<{
                                                 rows={2}
                                             />
 
-                                            {/* Common Fields across service types (except MQTT) */}
-                                            {service.type !== "MQTT Broker" && (
-                                                <TextField
-                                                    fullWidth
-                                                    label="IP Address (optional)"
-                                                    name="ipAddress"
-                                                    value={service.ipAddress}
-                                                    onChange={handleChange}
-                                                    size="small"
-                                                />
-                                            )}
-
                                             {/* REST API specific fields */}
                                             {service.type === "REST API" && (
                                                 <>
@@ -842,31 +857,142 @@ const AddServiceModal: React.FC<{
                                                         fullWidth
                                                         size="small"
                                                         label="MQTT Password"
-                                                        name="mqttPassword"
-                                                        value={service.mqttPassword}
+                                                        name="accessToken"
+                                                        value={service.accessToken}
                                                         onChange={handleChange}
                                                         type="password"
+                                                        helperText="Stored in AccessToken field for security consistency"
                                                     />
                                                 </>
                                             )}
                                         </>
                                     )}
                                 </Box>
+
+                                {/* Security Options Section - Show for services that use AccessToken field */}
+                                {service.type && (service.type === "REST API" || service.type === "MQTT Broker") && (
+                                    <Box sx={{ mt: 3 }}>
+                                        <Divider sx={{ mb: 2 }} />
+                                        <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                            {service.type === "REST API" ? "Access Token Security" : "MQTT Password Security"}
+                                        </Typography>
+
+                                        <FormControl component="fieldset">
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                    <input
+                                                        type="radio"
+                                                        id="local-encryption-service"
+                                                        name="encryption-method-service"
+                                                        checked={!service.externalAccessToken}
+                                                        onChange={() => setService({ ...service, externalAccessToken: false })}
+                                                        style={{ marginRight: '8px' }}
+                                                    />
+                                                    <label htmlFor="local-encryption-service" style={{ cursor: 'pointer' }}>
+                                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                            Save to local DB (Default)
+                                                        </Typography>
+                                                    </label>
+                                                </Box>
+
+                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                    <input
+                                                        type="radio"
+                                                        id="external-encryption-service"
+                                                        name="encryption-method-service"
+                                                        checked={service.externalAccessToken}
+                                                        onChange={() => setService({ ...service, externalAccessToken: true })}
+                                                        style={{ marginRight: '8px' }}
+                                                    />
+                                                    <label htmlFor="external-encryption-service" style={{ cursor: 'pointer' }}>
+                                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                            Encrypt with external password
+                                                        </Typography>
+                                                    </label>
+                                                </Box>
+                                            </Box>
+                                        </FormControl>
+
+                                        {/* Encryption Password field - only show if external encryption is selected */}
+                                        {service.externalAccessToken && (
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Encryption Password"
+                                                type="password"
+                                                value={encryptionPassword}
+                                                onChange={(e) => setEncryptionPassword(e.target.value)}
+                                                required
+                                                sx={{ mt: 2 }}
+                                                placeholder="Enter a strong password for encryption"
+                                                helperText="This password will be required each time the application starts"
+                                            />
+                                        )}
+
+                                        {/* Help text - Hide on mobile */}
+                                        <Box sx={{
+                                            mt: 2,
+                                            p: 2,
+                                            bgcolor: 'action.hover',
+                                            borderRadius: 1,
+                                            display: { xs: 'none', md: 'block' }
+                                        }}>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                <strong>Local DB:</strong> {service.type === "REST API" ? "AccessToken" : "MQTT Password"} will be encrypted but the encryption keys exist in the application directory.
+                                                This is usually sufficient if you have secured your local network/docker environment and if the {service.type === "REST API" ? "AccessToken" : "password"} is not high value.
+                                                The application will decrypt automatically on app start so you do not need to re-enter the {service.type === "REST API" ? "token" : "password"}.
+                                            </Typography>
+                                            <Typography variant="body2" color="text.secondary">
+                                                <strong>External Password:</strong> {service.type === "REST API" ? "AccessToken" : "MQTT Password"} will be encrypted using a password that is not saved in the DB -
+                                                this provides maximum security for your {service.type === "REST API" ? "AccessToken" : "MQTT password"}, but means you must enter the password on application start
+                                                for each service that is encrypted via this method before it can be used. If you lose your password,
+                                                you will not be able to recover the service and you will need to recreate it.
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                )}
                             </Box>
 
-                            {/* Instructions - responsive height */}
+                            {/* Instructions - responsive height - Hide on mobile */}
                             {service.type && (
                                 <Box sx={{
-                                    flex: 1,
-                                    p: { xs: 2, md: 3 },
-                                    overflowY: 'auto',
-                                    bgcolor: 'background.default',
-                                    minHeight: { xs: '200px', md: 'auto' }
+                                    display: { xs: 'none', md: 'block' },
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider'
                                 }}>
-                                    <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
-                                        Setup Instructions
-                                    </Typography>
-                                    <SetupInstructions_Services serviceType={service.type} />
+                                    {/* Always Visible Header */}
+                                    <Box sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        p: 2,
+                                        bgcolor: 'action.hover',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            bgcolor: 'action.selected'
+                                        }
+                                    }}
+                                        onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
+                                    >
+                                        <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                                            Setup Instructions
+                                        </Typography>
+                                        <IconButton size="small" sx={{ p: 0 }}>
+                                            {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
+                                        </IconButton>
+                                    </Box>
+
+                                    {/* Collapsible Content */}
+                                    {!setupInstructionsMinimized && (
+                                        <Box sx={{
+                                            maxHeight: '300px',
+                                            p: 3,
+                                            overflowY: 'auto',
+                                            bgcolor: 'background.default'
+                                        }}>
+                                            <SetupInstructions_Services serviceType={service.type} />
+                                        </Box>
+                                    )}
                                 </Box>
                             )}
 
@@ -877,7 +1003,8 @@ const AddServiceModal: React.FC<{
                                 borderColor: 'divider',
                                 display: "flex",
                                 flexDirection: { xs: 'column', sm: 'row' },
-                                gap: { xs: 1, sm: 2 }
+                                gap: { xs: 1, sm: 2 },
+                                flexShrink: 0
                             }}>
                                 <Button
                                     variant="contained"
@@ -931,7 +1058,7 @@ const Services = () => {
         const stored = localStorage.getItem(STORAGE_KEY_SERVICES_VIEW_MODE);
         return (stored as ViewMode) || 'table';
     });
-    
+
     const [visibleCols, setVisibleCols] = useState<string[]>(() => {
         const stored = localStorage.getItem(STORAGE_KEY_SERVICES_COLUMNS);
         return stored ? JSON.parse(stored) : defaultVisibleColumns;
