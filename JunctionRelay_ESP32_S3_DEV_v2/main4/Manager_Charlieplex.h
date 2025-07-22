@@ -17,7 +17,9 @@ public:
     // Static cleanup method
     static void cleanup();
     
-    void begin();
+    void begin(); // Initialize displays but don't start task
+    void startUpdateTask(); // Start the background task (called by StartupScheduler)
+    void stop(); // Stop the update task
     void addDisplay(uint8_t i2cAddress);
     void showReadyScreen();
 
@@ -27,7 +29,6 @@ public:
 
     void setScrollingText(const char* text, uint8_t address = 0);  // 0 = all displays
     void setScrollingActive(bool active, uint8_t address = 0);  // 0 = all displays
-    void updateScrollingText();
     void setStaticText(const char* text, uint8_t address = 0);  // 0 = all displays
 
     // Get list of all detected display addresses
@@ -40,7 +41,7 @@ public:
     void updateSensorData(const JsonDocument& sensorDoc) override;
     bool matchesScreenId(const String& screenId, const JsonDocument& doc) const override;
     const char* getConfigKey() const override;
-    void update() override;  // For scrolling text updates only
+    void update() override;  // Now just a stub - real updates handled by task
 
 private:
     // Private constructor for singleton pattern
@@ -70,6 +71,15 @@ private:
     TwoWire* wireInterface;
     const unsigned long scrollDelay = 350;  // Increased to reduce flicker
     
+    // Task management
+    TaskHandle_t charliplexTaskHandle;
+    bool taskRunning;
+    bool taskStarted;
+    static void charliplexTaskFunction(void* parameter);
+    void internalUpdate(); // The actual update logic, called by task
+    
+    // Scrolling methods (now called by task)
+    void updateScrollingText();
     void updateScrollingText(uint8_t address);
     
     // Helper methods for address handling

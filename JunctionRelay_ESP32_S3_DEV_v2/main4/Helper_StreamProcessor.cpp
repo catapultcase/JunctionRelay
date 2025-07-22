@@ -9,10 +9,6 @@ QueueHandle_t Helper_StreamProcessor::sensorQueue = NULL;
 QueueHandle_t Helper_StreamProcessor::configQueue = NULL;
 TaskHandle_t Helper_StreamProcessor::sensorProcessingTaskHandle = NULL;
 TaskHandle_t Helper_StreamProcessor::configProcessingTaskHandle = NULL;
-bool Helper_StreamProcessor::quadManagerRegistered     = false;
-bool Helper_StreamProcessor::charlieManagerRegistered = false;
-bool Helper_StreamProcessor::neopixelManagerRegistered = false;
-bool Helper_StreamProcessor::matrixManagerRegistered   = false;
 
 Helper_StreamProcessor::Helper_StreamProcessor(ScreenRouter* router,
                                                std::function<void(const JsonDocument&)> protocolCallback,
@@ -51,7 +47,7 @@ Helper_StreamProcessor::Helper_StreamProcessor(ScreenRouter* router,
     debugScreenPtr = new Helper_DebugScreen();
     debugScreenPtr->begin();
 
-    Serial.println("[StreamProcessor] Initialized with debug screen capability");
+    // Serial.println("[StreamProcessor] Initialized with debug screen capability");    
 }
 
 Helper_StreamProcessor::~Helper_StreamProcessor() {
@@ -326,7 +322,6 @@ void Helper_StreamProcessor::resetStreamState() {
     }
 }
 
-
 // DEBUG HELPER
 void Helper_StreamProcessor::logFirstNChars(uint8_t* data, size_t length, int n) {
     Serial.print("[StreamProcessor] First ");
@@ -383,7 +378,6 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
             Serial.println("[StreamProcessor] Config data queued for background processing");
         } else {
             Serial.println("[StreamProcessor] WARNING: Config queue full, processing immediately");
-            handleScreenSetup(*doc);
             screenRouter->routeConfig(*doc);
             delete doc;
         }
@@ -400,6 +394,7 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
     } else if (strcmp(type, "preferences") == 0 ||
                strcmp(type, "stats") == 0 ||
                strcmp(type, "device_info") == 0 ||
+               strcmp(type, "device_capabilities") == 0 ||
                strcmp(type, "system_command") == 0) {
         Serial.printf("[StreamProcessor] System payload '%s', routing to system callback\n", type);
         if (systemCallback) {
@@ -415,100 +410,6 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
     }
 }
 
-void Helper_StreamProcessor::handleScreenSetup(const JsonDocument& doc) {
-    const char* screenId = doc["screenId"];
-    if (!screenId) return;
-    
-    if (!devicePtr) {
-        Serial.println("[StreamProcessor] ERROR: No device interface available for screen setup");
-        return;
-    }
-    
-    // Get the Wire interface once
-    TwoWire* wireInterface = devicePtr->getI2CInterface();
-    
-    // Debug: Log the current screenId being processed
-    Serial.printf("[StreamProcessor] Processing screenId: '%s'\n", screenId);
-
-    // Handle Quad display initialization
-    if (doc.containsKey("quad")) {
-        Serial.println("[StreamProcessor] Handling Quad display...");
-        
-        // Register the QuadDisplay manager singleton ONCE as a ScreenDestination
-        if (!quadManagerRegistered) {
-            Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(wireInterface);
-            screenRouter->registerScreen(quadManager);
-            quadManagerRegistered = true;
-            Serial.printf("[StreamProcessor] 🔧 Registered QuadDisplay manager singleton with ScreenRouter using %s\n", 
-                         (wireInterface == &Wire1) ? "Wire1" : "Wire");
-        }
-        
-        // ALWAYS add the specific display to the singleton manager
-        uint8_t i2cAddress = strtol(screenId, nullptr, 0);
-        Manager_QuadDisplay::getInstance(wireInterface)->addDisplay(i2cAddress);
-        Serial.printf("[StreamProcessor] ✅ Added Quad display at %s (I2C 0x%02X) to singleton manager\n", 
-                     screenId, i2cAddress);
-    }
-
-    // Handle Charlie display initialization
-    else if (doc.containsKey("charlie")) {
-        Serial.println("[StreamProcessor] Handling Charlie display...");
-        
-        // Register the Charlieplex manager singleton ONCE as a ScreenDestination
-        if (!charlieManagerRegistered) {
-            Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(wireInterface);
-            screenRouter->registerScreen(charlieManager);
-            charlieManagerRegistered = true;
-            Serial.printf("[StreamProcessor] 🔧 Registered Charlieplex manager singleton with ScreenRouter using %s\n", 
-                         (wireInterface == &Wire1) ? "Wire1" : "Wire");
-        }
-        
-        // ALWAYS add the specific display to the singleton manager
-        uint8_t i2cAddress = strtol(screenId, nullptr, 0);
-        Manager_Charlieplex::getInstance(wireInterface)->addDisplay(i2cAddress);
-        Serial.printf("[StreamProcessor] ✅ Added Charlie display at %s (I2C 0x%02X) to singleton manager\n", 
-                     screenId, i2cAddress);
-    }
-
-    // Handle NeoPixel display
-    else if (doc.containsKey("neopixel")) {
-        Serial.println("[StreamProcessor] Handling NeoPixel display...");
-
-        if (devicePtr->hasExternalNeopixels()) {
-            // Register the NeoPixel manager singleton ONCE as a ScreenDestination
-            if (!neopixelManagerRegistered) {
-                Manager_NeoPixels* neopixelManager = Manager_NeoPixels::getInstance();
-                screenRouter->registerScreen(neopixelManager);
-                neopixelManagerRegistered = true;
-                Serial.printf("[StreamProcessor] 🔧 Registered NeoPixel manager singleton with ScreenRouter\n");
-            }
-            
-            Serial.printf("[StreamProcessor] ✅ NeoPixel display for screenId '%s' handled by singleton manager\n", screenId);
-        } else {
-            Serial.printf("[ERROR] NeoPixel display not supported for screenId '%s'. Skipping.\n", screenId);
-        }
-    }
-    
-    // Handle MATRIX display
-    else if (doc.containsKey("matrix")) {
-        Serial.println("[StreamProcessor] Handling Matrix display...");
-
-        if (devicePtr->hasExternalMatrix()) {
-            // Register the Matrix manager singleton ONCE as a ScreenDestination
-            if (!matrixManagerRegistered) {
-                Manager_Matrix* matrixManager = Manager_Matrix::getInstance();
-                screenRouter->registerScreen(matrixManager);
-                matrixManagerRegistered = true;
-                Serial.printf("[StreamProcessor] 🔧 Registered Matrix manager singleton with ScreenRouter\n");
-            }
-            
-            Serial.printf("[StreamProcessor] ✅ Matrix display for screenId '%s' handled by singleton manager\n", screenId);
-        } else {
-            Serial.printf("[ERROR] Matrix display not supported for screenId '%s'. Skipping.\n", screenId);
-        }
-    }
-}
-
 void Helper_StreamProcessor::printDebugInfo() {
     Serial.println("=== StreamProcessor Debug Info ===");
     Serial.printf("Messages Processed: %d\n", messagesProcessed);
@@ -519,19 +420,13 @@ void Helper_StreamProcessor::printDebugInfo() {
     Serial.printf("Buffer Size: %d bytes\n", MAX_PAYLOAD_SIZE);
     Serial.printf("Device Interface: %s\n", devicePtr ? "Available" : "Not Set");
     
-    // Registration status
-    Serial.printf("ScreenDestination Registration Status:\n");
-    Serial.printf("  - QuadDisplay: %s\n", quadManagerRegistered ? "Registered" : "Not Registered");
-    Serial.printf("  - Charlieplex: %s\n", charlieManagerRegistered ? "Registered" : "Not Registered");
-    Serial.printf("  - NeoPixels: %s\n", neopixelManagerRegistered ? "Registered" : "Not Registered");
-    Serial.printf("  - Matrix: %s\n", matrixManagerRegistered ? "Registered" : "Not Registered");
-    
     // Queue status
     QueueStatus status = getQueueStatus();
     Serial.printf("Sensor Queue: %d/%d items\n", status.sensorQueueSize, SENSOR_QUEUE_SIZE);
     Serial.printf("Config Queue: %d/%d items\n", status.configQueueSize, CONFIG_QUEUE_SIZE);
     Serial.printf("Sensor Task Running: %s\n", status.sensorTaskRunning ? "Yes" : "No");
     Serial.printf("Config Task Running: %s\n", status.configTaskRunning ? "Yes" : "No");
+    Serial.println("NOTE: Manager registration handled by Helper_StartupScheduler");
     Serial.println("================================");
 }
 
@@ -561,12 +456,12 @@ void Helper_StreamProcessor::initializeQueues() {
         if (sensorQueue == NULL) {
             Serial.println("[StreamProcessor] ERROR: Failed to create sensor queue");
         } else {
-            Serial.printf("[StreamProcessor] Created sensor queue (size %d)\n", SENSOR_QUEUE_SIZE);
+            // Serial.printf("[StreamProcessor] Created sensor queue (size %d)\n", SENSOR_QUEUE_SIZE);
             
             xTaskCreatePinnedToCore(
                 [](void* param) {
                     Helper_StreamProcessor* processor = static_cast<Helper_StreamProcessor*>(param);
-                    Serial.printf("[SensorTask] Started on core %d\n", xPortGetCoreID());
+                    // Serial.printf("[SensorTask] Started on core %d\n", xPortGetCoreID());
                     
                     for (;;) {
                         JsonDocument* doc = NULL;
@@ -595,12 +490,12 @@ void Helper_StreamProcessor::initializeQueues() {
         if (configQueue == NULL) {
             Serial.println("[StreamProcessor] ERROR: Failed to create config queue");
         } else {
-            Serial.printf("[StreamProcessor] Created config queue (size %d)\n", CONFIG_QUEUE_SIZE);
+            // Serial.printf("[StreamProcessor] Created config queue (size %d)\n", CONFIG_QUEUE_SIZE);
             
             xTaskCreatePinnedToCore(
                 [](void* param) {
                     Helper_StreamProcessor* processor = static_cast<Helper_StreamProcessor*>(param);
-                    Serial.printf("[ConfigTask] Started on core %d\n", xPortGetCoreID());
+                    // Serial.printf("[ConfigTask] Started on core %d\n", xPortGetCoreID());
                     
                     for (;;) {
                         JsonDocument* doc = NULL;
@@ -609,9 +504,7 @@ void Helper_StreamProcessor::initializeQueues() {
                             if (doc != NULL && processor->screenRouter) {
                                 Serial.println("[ConfigTask] Processing config data");
                                 
-                                // Handle screen setup before routing config (like old handleScreenId)
-                                processor->handleScreenSetup(*doc);
-                                
+                                // NOTE: No screen setup needed - managers already initialized by Helper_StartupScheduler
                                 processor->screenRouter->routeConfig(*doc);
                                 delete doc;
                             }

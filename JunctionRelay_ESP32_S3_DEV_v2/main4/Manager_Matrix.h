@@ -7,8 +7,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-// Forward declaration to avoid circular includes
-class ConnectionManager;
+// Forward declaration - FIXED to use Manager_Connections
+class Manager_Connections;
 
 // Matrix dimensions
 #define MATRIX_WIDTH 64
@@ -32,13 +32,15 @@ public:
     
     // Matrix initialization and control methods
     void begin(uint8_t* rgbPins, uint8_t* addrPins, uint8_t clockPin, uint8_t latchPin, uint8_t oePin);
+    void startUpdateTask(); // Start the background task (called by StartupScheduler)
+    void stop(); // Stop the update task
     void clearDisplay();
     void displayText(const char* text, int x, int y);
     void displayMultiText(const char* text, int x, int y);
     void showReadyScreen();
     
-    // Method to set connection manager reference
-    void setConnectionManager(ConnectionManager* cm);
+    // Method to set connection manager reference - FIXED to use Manager_Connections
+    void setConnectionManager(Manager_Connections* cm);
     
     // Method to refresh the ready screen (for IP updates)
     void refreshReadyScreen();
@@ -71,12 +73,15 @@ private:
     // Flag to check if the matrix is initialized
     bool initialized;
     
-    // Connection manager reference for status display
-    ConnectionManager* connMgr;
+    // Connection manager reference for status display - FIXED to use Manager_Connections
+    Manager_Connections* connMgr;
     
-    // Timer for periodic IP address updates
-    static void refreshTimerCallback(void* parameter);
-    static TaskHandle_t refreshTaskHandle;
+    // Task management (following QuadDisplay pattern)
+    TaskHandle_t matrixTaskHandle;
+    bool taskRunning;
+    bool taskStarted;
+    static void matrixTaskFunction(void* parameter);
+    void internalUpdate(); // The actual update logic, called by task
     
     // Display state management
     enum DisplayMode {

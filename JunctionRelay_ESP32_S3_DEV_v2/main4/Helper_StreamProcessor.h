@@ -4,20 +4,11 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <functional>
-#include <Wire.h>
 
 // Forward declarations
 class ScreenRouter;
 class Helper_Decompression;
 class Helper_DebugScreen;
-
-// Display manager includes
-#include "Manager_QuadDisplay.h"
-#include "Manager_Charlieplex.h"
-#include "Manager_NeoPixels.h"
-#include "Manager_Matrix.h"
-
-// Device interface
 class DeviceConfig;
 
 class Helper_StreamProcessor {
@@ -65,9 +56,6 @@ private:
     // Utility methods
     void logFirstNChars(uint8_t* data, size_t length, int n = 50);
     void forwardToScreenRouter(uint8_t* data, size_t length);
-    
-    // Screen setup handler
-    void handleScreenSetup(const JsonDocument& doc);
 
     // Dependencies
     ScreenRouter* screenRouter;
@@ -93,12 +81,6 @@ private:
     // Statistics
     uint32_t messagesProcessed;
     uint32_t errorCount;
-    
-    // Static flags to ensure each manager type is registered only once
-    static bool quadManagerRegistered;
-    static bool charlieManagerRegistered;
-    static bool neopixelManagerRegistered;
-    static bool matrixManagerRegistered;
     
     // FreeRTOS queues for background processing
     static QueueHandle_t sensorQueue;

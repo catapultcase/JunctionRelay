@@ -10,7 +10,7 @@ Manager_QuadDisplay* Manager_QuadDisplay::instance = nullptr;
 Manager_QuadDisplay* Manager_QuadDisplay::getInstance(TwoWire* wireInterface) {
     if (instance == nullptr) {
         instance = new Manager_QuadDisplay(wireInterface);
-        Serial.printf("[DEBUG][QuadDisplay] Created singleton instance with interface: %s\n", 
+        Serial.printf("[QUAD] Created singleton instance with interface: %s\n", 
                      (wireInterface == &Wire1) ? "Wire1" : "Wire");
     }
     return instance;
@@ -19,7 +19,7 @@ Manager_QuadDisplay* Manager_QuadDisplay::getInstance(TwoWire* wireInterface) {
 // Static cleanup method
 void Manager_QuadDisplay::cleanup() {
     if (instance != nullptr) {
-        Serial.printf("[DEBUG][QuadDisplay] Cleaning up singleton with %d displays\n", instance->displays.size());
+        Serial.printf("[QUAD] Cleaning up singleton with %d displays\n", instance->displays.size());
         delete instance;
         instance = nullptr;
     }
@@ -27,23 +27,38 @@ void Manager_QuadDisplay::cleanup() {
 
 // Private constructor for singleton pattern
 Manager_QuadDisplay::Manager_QuadDisplay(TwoWire* wireInterface)
-    : wireInterface(wireInterface) {
-    Serial.println("[DEBUG][QuadDisplay] Singleton constructor called");
+    : wireInterface(wireInterface), quadDisplayTaskHandle(nullptr), taskRunning(false), taskStarted(false) {
+    // Serial.println("[QUAD] Singleton constructor called");
+}
+
+// Static task function
+void Manager_QuadDisplay::quadDisplayTaskFunction(void* parameter) {
+    Manager_QuadDisplay* manager = static_cast<Manager_QuadDisplay*>(parameter);
+    
+    Serial.println("[QUAD] Update task started on Core 1");
+    
+    while (manager->taskRunning) {
+        manager->internalUpdate();
+        vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz update rate for smooth scrolling
+    }
+    
+    Serial.println("[QUAD] Update task stopping");
+    vTaskDelete(nullptr);
 }
 
 void Manager_QuadDisplay::begin() {
-    Serial.printf("[DEBUG][QuadDisplay] Beginning initialization for %d displays\n", displays.size());
+    Serial.printf("[QUAD] Beginning initialization for %d displays\n", displays.size());
     
     for (auto& pair : displays) {
         uint8_t address = pair.first;
         DisplayInfo& info = pair.second;
         
         if (info.initialized) {
-            Serial.printf("[DEBUG][QuadDisplay] Display 0x%02X already initialized\n", address);
+            Serial.printf("[QUAD] Display 0x%02X already initialized\n", address);
             continue;
         }
         
-        Serial.printf("[DEBUG][QuadDisplay] Initializing display at 0x%02X\n", address);
+        Serial.printf("[QUAD] Initializing display at 0x%02X\n", address);
         
         // Test I2C communication
         wireInterface->beginTransmission(address);
@@ -66,18 +81,66 @@ void Manager_QuadDisplay::begin() {
         info.display.writeDisplay();
         info.initialized = true;
         
-        Serial.printf("[DEBUG][QuadDisplay] Successfully initialized display at 0x%02X\n", address);
+        Serial.printf("[QUAD] Successfully initialized display at 0x%02X\n", address);
     }
     
     showReadyScreen();
+    
+    Serial.println("[QUAD] ✅ QuadDisplay initialization complete. Call startUpdateTask() when ready.");
+}
+
+// Start the update task when it's safe
+void Manager_QuadDisplay::startUpdateTask() {
+    if (taskStarted) {
+        Serial.println("[QUAD] Task already started, ignoring request.");
+        return;
+    }
+    
+    // Start the update task on Core 1 (same as NeoPixels for consistency)
+    taskRunning = true;
+    xTaskCreatePinnedToCore(
+        quadDisplayTaskFunction,  // Task function
+        "QuadDisplay",            // Task name
+        2048,                     // Stack size (smaller than NeoPixels)
+        this,                     // Parameter (this instance)
+        1,                        // Priority
+        &quadDisplayTaskHandle,   // Task handle
+        1                         // Core 1
+    );
+    
+    taskStarted = true;
+    Serial.println("[QUAD] ✅ Update task created on Core 1");
+}
+
+// Stop method
+void Manager_QuadDisplay::stop() {
+    if (taskRunning) {
+        taskRunning = false;
+        
+        // Wait for task to finish
+        if (quadDisplayTaskHandle) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            quadDisplayTaskHandle = nullptr;
+        }
+        
+        // Clear all displays
+        clearDisplay(0);
+        
+        Serial.println("[QUAD] Update task stopped");
+    }
+}
+
+// Internal update method (called by task)
+void Manager_QuadDisplay::internalUpdate() {
+    updateScrollingText();
 }
 
 void Manager_QuadDisplay::addDisplay(uint8_t i2cAddress) {
     if (displays.find(i2cAddress) == displays.end()) {
         displays[i2cAddress] = DisplayInfo();
-        Serial.printf("[DEBUG][QuadDisplay] Added display at address 0x%02X\n", i2cAddress);
+        Serial.printf("[QUAD] Added display at address 0x%02X\n", i2cAddress);
     } else {
-        Serial.printf("[DEBUG][QuadDisplay] Display 0x%02X already exists\n", i2cAddress);
+        Serial.printf("[QUAD] Display 0x%02X already exists\n", i2cAddress);
     }
 }
 
@@ -186,7 +249,7 @@ void Manager_QuadDisplay::setScrollingText(const char* text, uint8_t address) {
         info.scrollText = String(text);
         info.scrollIndex = 0;
         info.scrollingActive = true;
-        Serial.printf("[DEBUG][QuadDisplay] Set scrolling text for 0x%02X: %s\n", addr, text);
+        Serial.printf("[QUAD] Set scrolling text for 0x%02X: %s\n", addr, text);
     });
 }
 
@@ -239,11 +302,10 @@ void Manager_QuadDisplay::updateScrollingText(uint8_t address) {
     info.scrollIndex = (info.scrollIndex + 1) % info.scrollText.length();
 }
 
-// ScreenDestination Implementation
 // ScreenDestination interface implementation
 void Manager_QuadDisplay::update() {
-    // ONLY handle scrolling text updates - no frame queue processing
-    updateScrollingText();
+    // Called by ScreenRouter but actual updates are handled by the dedicated task
+    // This maintains interface compatibility while using task-based updates
 }
 
 String Manager_QuadDisplay::getScreenId() const {
@@ -298,7 +360,7 @@ void Manager_QuadDisplay::updateSensorData(const JsonDocument& sensorDoc) {
         const char* sid = sensorDoc["screenId"].as<const char*>();
         if (sid && strlen(sid) > 2 && sid[0] == '0' && sid[1] == 'x') {
             targetAddress = static_cast<uint8_t>(strtol(sid, nullptr, 16));
-            // Serial.printf("[DEBUG][QuadDisplay] Payload targeted for 0x%02X via screenId\n", targetAddress);
+            // Serial.printf("[QUAD] Payload targeted for 0x%02X via screenId\n", targetAddress);
         }
     }
 
@@ -314,7 +376,7 @@ void Manager_QuadDisplay::updateSensorData(const JsonDocument& sensorDoc) {
             const char* screenStr = dataItem["Screen"].as<const char*>();
             if (screenStr && strlen(screenStr) > 2 && screenStr[0] == '0' && screenStr[1] == 'x') {
                 targetAddress = static_cast<uint8_t>(strtol(screenStr, nullptr, 16));
-                // Serial.printf("[DEBUG][QuadDisplay] Payload targeted for 0x%02X via dataItem\n", targetAddress);
+                // Serial.printf("[QUAD] Payload targeted for 0x%02X via dataItem\n", targetAddress);
             }
         }
 

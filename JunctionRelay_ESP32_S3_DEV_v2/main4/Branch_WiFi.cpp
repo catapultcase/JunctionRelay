@@ -2,6 +2,8 @@
 #include "Helper_StreamProcessor.h"
 #include "Helper_HTTPEndpoints.h"
 #include "Helper_Preferences.h"
+#include "Helper_DeviceInfo.h"
+#include "Helper_DeviceCapabilities.h"
 #include "ScreenRouter.h"
 #include "DeviceConfig.h"
 
@@ -10,11 +12,13 @@ Branch_Wifi::Branch_Wifi()
       screenRouter(nullptr),
       preferences(nullptr),
       devicePtr(nullptr),
+      deviceInfo(nullptr),
+      deviceCapabilities(nullptr),
       streamProcessor(nullptr),
       httpEndpoints(nullptr),
       lastWiFiCheck(0)
 {
-    Serial.println("[Branch_Wifi] Constructor called");
+    // Serial.println("[Branch_Wifi] Constructor called");
 }
 
 Branch_Wifi::~Branch_Wifi() {
@@ -31,15 +35,21 @@ Branch_Wifi::~Branch_Wifi() {
     Serial.println("[Branch_Wifi] Destructor called");
 }
 
-void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceConfig* device) {
-    if (!router || !prefs || !device) {
-        Serial.println("[Branch_Wifi] ERROR: ScreenRouter, Preferences, or Device is null");
+// UPDATE: Only the relevant section showing the constructor call change
+// In Branch_Wifi::init() method:
+
+void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceConfig* device,
+                       Helper_DeviceInfo* devInfo, Helper_DeviceCapabilities* devCaps) {
+    if (!router || !prefs || !device || !devInfo || !devCaps) {
+        Serial.println("[Branch_Wifi] ERROR: Required parameters are null");
         return;
     }
 
     screenRouter = router;
     preferences = prefs;
     devicePtr = device;
+    deviceInfo = devInfo;
+    deviceCapabilities = devCaps;
     
     Serial.println("[Branch_Wifi] Initializing WiFi mode...");
     
@@ -59,8 +69,8 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
         devicePtr
     );
     
-    // Create HTTP endpoints helper
-    httpEndpoints = new Helper_HTTPEndpoints(screenRouter, streamProcessor);
+    // Create HTTP endpoints helper WITH device helpers injected
+    httpEndpoints = new Helper_HTTPEndpoints(screenRouter, streamProcessor, deviceInfo, deviceCapabilities);
     
     // Set up bidirectional callbacks
     httpEndpoints->setProtocolCallback([this](const JsonDocument& doc) { 
@@ -92,7 +102,14 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
     initialized = true;
     emitStatus();
     
-    Serial.println("[Branch_Wifi] ✅ WiFi mode ready");
+    Serial.println("[Branch_Wifi] WiFi mode ready");
+    Serial.println("[Branch_Wifi] HTTP endpoints available:");
+    Serial.println("[Branch_Wifi] GET  /api/device/info");
+    Serial.println("[Branch_Wifi] GET  /api/device/capabilities");
+    Serial.println("[Branch_Wifi] GET  /api/device/capabilities?detailed=true");
+    Serial.println("[Branch_Wifi] GET  /api/system/stats");
+    Serial.println("[Branch_Wifi] GET  /api/connection/status");
+    Serial.println("[Branch_Wifi] GET  /api/health/heartbeat");
 }
 
 void Branch_Wifi::loop() {
@@ -227,14 +244,17 @@ void Branch_Wifi::handleSystemPayload(const JsonDocument& doc) {
     
     if (!type) return;
     
-    if (strcmp(type, "stats") == 0) {
+    if (strcmp(type, "device_info") == 0) {
+        handleDeviceInfoRequest(doc);
+    }
+    else if (strcmp(type, "device_capabilities") == 0) {
+        handleDeviceCapabilitiesRequest(doc);
+    }
+    else if (strcmp(type, "stats") == 0) {
         handleStatsRequest(doc);
     }
     else if (strcmp(type, "preferences") == 0) {
         handlePreferencesRequest(doc);
-    }
-    else if (strcmp(type, "device_info") == 0) {
-        handleDeviceInfoRequest(doc);
     }
     else if (strcmp(type, "system_command") == 0) {
         handleSystemCommand(doc);
@@ -263,8 +283,70 @@ void Branch_Wifi::handleHTTPRequest(const JsonDocument& doc) {
 }
 
 // ==========================================
-// SYSTEM HANDLERS
+// SYSTEM HANDLERS USING INJECTED HELPERS
 // ==========================================
+
+void Branch_Wifi::handleDeviceInfoRequest(const JsonDocument& doc) {
+    Serial.println("[Branch_Wifi] 📱 Device info request received");
+    
+    if (!deviceInfo) {
+        Serial.println("[Branch_Wifi] ERROR: deviceInfo helper not available");
+        return;
+    }
+    
+    // Use injected helper to get device info - simple direct approach
+    String deviceInfoJSON = deviceInfo->getDeviceInfoJSON();
+    String systemStatsJSON = deviceInfo->getSystemStatsJSON();
+    String firmwareInfoJSON = deviceInfo->getFirmwareInfoJSON();
+    
+    // Just print the responses (for StreamProcessor callback usage)
+    Serial.println("=== DEVICE INFO ===");
+    Serial.println(deviceInfoJSON);
+    Serial.println("=== SYSTEM STATS ===");
+    Serial.println(systemStatsJSON);
+    Serial.println("=== FIRMWARE INFO ===");
+    Serial.println(firmwareInfoJSON);
+    Serial.println("=== END DEVICE INFO ===");
+}
+
+void Branch_Wifi::handleDeviceCapabilitiesRequest(const JsonDocument& doc) {
+    Serial.println("[Branch_Wifi] 🔧 Device capabilities request received");
+    
+    if (!deviceCapabilities) {
+        Serial.println("[Branch_Wifi] ERROR: deviceCapabilities helper not available");
+        return;
+    }
+    
+    // Use injected helper to get device capabilities - simple direct approach
+    String capabilitiesJSON = deviceCapabilities->getDeviceCapabilitiesJSON();
+    
+    // Show additional details if requested
+    if (doc.containsKey("detailed") && doc["detailed"].as<bool>()) {
+        Serial.println("=== DETAILED DEVICE CAPABILITIES ===");
+        Serial.printf("Screen Count: %d\n", deviceCapabilities->getScreenCount());
+        Serial.printf("I2C Device Count: %d\n", deviceCapabilities->getI2CDeviceCount());
+        Serial.printf("NeoPixel Strip Count: %d\n", deviceCapabilities->getNeoPixelStripCount());
+        Serial.printf("Has NeoPixel Strips: %s\n", deviceCapabilities->hasNeoPixelStrips() ? "Yes" : "No");
+        
+        // Show individual capability checks
+        const char* capabilities[] = {
+            "onboard_screen", "onboard_led", "onboard_rgb_led", "external_matrix",
+            "external_neopixels", "external_i2c_devices", "buttons", "battery",
+            "ethernet", "wifi", "ble", "usb", "espnow", "http", "mqtt",
+            "websockets", "speaker", "microsd", "gateway"
+        };
+        
+        Serial.println("Individual Capabilities:");
+        for (const char* cap : capabilities) {
+            Serial.printf("  - %s: %s\n", cap, deviceCapabilities->hasCapability(cap) ? "Yes" : "No");
+        }
+    }
+    
+    // Just print the response (for StreamProcessor callback usage)
+    Serial.println("=== DEVICE CAPABILITIES ===");
+    Serial.println(capabilitiesJSON);
+    Serial.println("=== END DEVICE CAPABILITIES ===");
+}
 
 void Branch_Wifi::handleStatsRequest(const JsonDocument& doc) {
     Serial.println("[Branch_Wifi] 📊 Stats request received");
@@ -276,6 +358,7 @@ void Branch_Wifi::handleStatsRequest(const JsonDocument& doc) {
         Serial.printf("  - IP: %s\n", getIPAddress().c_str());
         Serial.printf("  - RSSI: %d dBm\n", getSignalStrength());
         Serial.printf("  - Channel: %d\n", WiFi.channel());
+        Serial.printf("  - SSID: %s\n", WiFi.SSID().c_str());
     }
     
     // Show queue status from StreamProcessor
@@ -288,11 +371,15 @@ void Branch_Wifi::handleStatsRequest(const JsonDocument& doc) {
         Serial.printf("  - Config Task: %s\n", queueStatus.configTaskRunning ? "Running" : "Stopped");
     }
     
-    // Show memory stats
-    Serial.printf("[Branch_Wifi] Memory Stats:\n");
-    Serial.printf("  - Free Heap: %d bytes\n", ESP.getFreeHeap());
-    Serial.printf("  - Min Free Heap: %d bytes\n", ESP.getMinFreeHeap());
-    Serial.printf("  - Heap Size: %d bytes\n", ESP.getHeapSize());
+    // Use helper for lightweight system stats
+    if (deviceInfo) {
+        String lightweightStats = deviceInfo->getSystemStatsLightweightJSON();
+        Serial.println("=== SYSTEM STATS ===");
+        Serial.println(lightweightStats);
+        Serial.println("=== END SYSTEM STATS ===");
+    } else {
+        Serial.println("[Branch_Wifi] ERROR: deviceInfo helper not available for stats");
+    }
 }
 
 void Branch_Wifi::handlePreferencesRequest(const JsonDocument& doc) {
@@ -305,13 +392,16 @@ void Branch_Wifi::handlePreferencesRequest(const JsonDocument& doc) {
         if (action == "get") {
             // Return current preferences
             String currentPrefs = preferences->getWiFiSettingsJSON();
-            Serial.printf("[Branch_Wifi] Current WiFi preferences: %s\n", currentPrefs.c_str());
+            Serial.println("=== CURRENT WIFI PREFERENCES ===");
+            Serial.println(currentPrefs);
+            Serial.println("=== END PREFERENCES ===");
         }
         else if (action == "set" && doc.containsKey("data")) {
             // Update preferences using centralized system
             JsonObjectConst data = doc["data"];
             
             bool needReconnect = false;
+            bool success = true;
             
             if (data.containsKey("ssid")) {
                 String newSSID = data["ssid"].as<String>();
@@ -319,6 +409,7 @@ void Branch_Wifi::handlePreferencesRequest(const JsonDocument& doc) {
                     preferences->setWiFiSSID(newSSID);
                     ssid = newSSID;
                     needReconnect = true;
+                    Serial.printf("[Branch_Wifi] SSID updated to: %s\n", ssid.c_str());
                 }
             }
             
@@ -327,19 +418,24 @@ void Branch_Wifi::handlePreferencesRequest(const JsonDocument& doc) {
                 preferences->setWiFiPassword(newPassword);
                 password = newPassword;
                 needReconnect = true;
+                Serial.println("[Branch_Wifi] Password updated");
             }
             
             if (data.containsKey("deviceName")) {
                 String newName = data["deviceName"].as<String>();
                 preferences->setDeviceName(newName);
                 deviceName = newName;
+                Serial.printf("[Branch_Wifi] Device name updated to: %s\n", deviceName.c_str());
             }
             
             if (data.containsKey("autoReconnect")) {
-                preferences->setWiFiAutoReconnect(data["autoReconnect"].as<bool>());
+                bool autoReconnect = data["autoReconnect"].as<bool>();
+                preferences->setWiFiAutoReconnect(autoReconnect);
+                Serial.printf("[Branch_Wifi] Auto reconnect set to: %s\n", autoReconnect ? "true" : "false");
             }
             
-            Serial.println("[Branch_Wifi] Preferences updated via centralized system");
+            Serial.printf("[Branch_Wifi] Preferences update - Success: %s, Needs Reconnect: %s\n", 
+                         success ? "Yes" : "No", needReconnect ? "Yes" : "No");
             
             if (needReconnect && !ssid.isEmpty()) {
                 Serial.println("[Branch_Wifi] WiFi credentials changed, reconnecting...");
@@ -347,17 +443,6 @@ void Branch_Wifi::handlePreferencesRequest(const JsonDocument& doc) {
             }
         }
     }
-}
-
-void Branch_Wifi::handleDeviceInfoRequest(const JsonDocument& doc) {
-    Serial.println("[Branch_Wifi] 📱 Device info request received");
-    
-    Serial.printf("[Branch_Wifi] Device: %s, Connection Mode: WiFi\n", devicePtr->getName());
-    Serial.printf("[Branch_Wifi] MAC Address: %s\n", getMacAddress().c_str());
-    if (isWiFiConnected()) {
-        Serial.printf("[Branch_Wifi] IP Address: %s\n", getIPAddress().c_str());
-    }
-    Serial.printf("[Branch_Wifi] Hostname: %s\n", WiFi.getHostname());
 }
 
 void Branch_Wifi::handleSystemCommand(const JsonDocument& doc) {
@@ -382,6 +467,13 @@ void Branch_Wifi::handleSystemCommand(const JsonDocument& doc) {
         else if (cmd == "wifi_reconnect") {
             Serial.println("[Branch_Wifi] WiFi reconnect requested");
             reconnectWiFi();
+        }
+        else if (cmd == "wifi_status") {
+            Serial.println("[Branch_Wifi] WiFi status requested");
+            printWiFiStatus();
+        }
+        else {
+            Serial.printf("[Branch_Wifi] Unknown command: %s\n", cmd.c_str());
         }
     }
 }

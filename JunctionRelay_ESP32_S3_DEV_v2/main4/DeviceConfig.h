@@ -13,8 +13,9 @@
 
 class DeviceConfig {
 public:
-    // Device-specific initialization (e.g., display setup)
-    virtual bool begin() = 0;
+    // REMOVED: Legacy begin() method - devices should use detectHardware() instead
+    // If you need this for compatibility, make it non-pure virtual with default implementation:
+    // virtual bool begin() { return true; }
 
     // Return the display width/height
     virtual int width() = 0;
@@ -53,6 +54,17 @@ public:
         // Default implementation does nothing for devices without NeoPixels
     }
 
+    // Get NeoPixel count by index 
+    virtual int getNeoPixelCount(int index = 0) {
+        // Default implementation returns 0 for devices without NeoPixels
+        return 0;
+    }
+    
+    // Set NeoPixel count by index 
+    virtual void setNeoPixelCount(int count, int index = 0) {
+        // Default implementation does nothing for devices without NeoPixels
+    }
+
     // --- Ethernet Methods (for devices that support it) ---
     virtual bool initializeEthernet() {
         // Default implementation does nothing for devices without Ethernet
@@ -83,7 +95,7 @@ public:
     virtual const char* getDeviceModel() const { return "Unknown Model"; }
     virtual const char* getDeviceManufacturer() const { return "Unknown Manufacturer"; }
     virtual const char* getFirmwareVersion() const { return "Unknown Firmware Version"; }
-    virtual bool getCustomFirmware() const { return false; }  // Fixed return type
+    virtual bool getCustomFirmware() const { return false; }
     virtual const char* getMCU() const { return "Unknown MCU"; }
     virtual const char* getWirelessConnectivity() const { return "Unknown Connectivity"; }
     virtual const char* getFlash() const { return "Unknown Flash Size"; }

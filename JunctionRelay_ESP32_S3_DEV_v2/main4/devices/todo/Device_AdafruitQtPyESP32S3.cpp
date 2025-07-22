@@ -33,7 +33,7 @@ Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(Manager_Connections* conn
 
 // Device-specific setup method called by main.ino
 void Device_AdafruitQtPyESP32S3::setupDeviceSpecific() {
-    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
+    Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 #if DEVICE_HAS_EXTERNAL_NEOPIXELS
@@ -46,7 +46,7 @@ void Device_AdafruitQtPyESP32S3::loadNeoPixelPreferences() {
     
     prefs.end();
     
-    Serial.printf("[DEBUG][DEVICE] Loaded NeoPixel preferences: Pin1=%d, Pin2=%d\n", 
+    Serial.printf("[DEVICE] Loaded NeoPixel preferences: Pin1=%d, Pin2=%d\n", 
                   externalNeoPixelPin1, externalNeoPixelPin2);
 }
 
@@ -59,7 +59,7 @@ void Device_AdafruitQtPyESP32S3::saveNeoPixelPreferences() {
     
     prefs.end();
     
-    Serial.printf("[DEBUG][DEVICE] Saved NeoPixel preferences: Pin1=%d, Pin2=%d\n", 
+    Serial.printf("[DEVICE] Saved NeoPixel preferences: Pin1=%d, Pin2=%d\n", 
                   externalNeoPixelPin1, externalNeoPixelPin2);
 }
 
@@ -80,13 +80,13 @@ void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
         case 0:
             if (externalNeoPixelPin1 != pin) {
                 externalNeoPixelPin1 = pin;
-                Serial.printf("[DEBUG][DEVICE] NeoPixel Pin 1 updated to: %d\n", pin);
+                Serial.printf("[DEVICE] NeoPixel Pin 1 updated to: %d\n", pin);
             }
             break;
         case 1:
             if (externalNeoPixelPin2 != pin) {
                 externalNeoPixelPin2 = pin;
-                Serial.printf("[DEBUG][DEVICE] NeoPixel Pin 2 updated to: %d\n", pin);
+                Serial.printf("[DEVICE] NeoPixel Pin 2 updated to: %d\n", pin);
             }
             break;
         default:
@@ -97,7 +97,7 @@ void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
 #endif
 
 bool Device_AdafruitQtPyESP32S3::begin() {
-    Serial.println("[DEBUG][DEVICE] Initializing Adafruit QtPy ESP32-S3...");
+    Serial.println("[DEVICE] Initializing Adafruit QtPy ESP32-S3...");
 
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     // Load NeoPixel pin configuration from preferences
@@ -107,41 +107,41 @@ bool Device_AdafruitQtPyESP32S3::begin() {
     #if defined(NEOPIXEL_POWER)
     pinMode(NEOPIXEL_POWER, OUTPUT);
     digitalWrite(NEOPIXEL_POWER, HIGH);
-    Serial.println("[DEBUG][DEVICE] NeoPixel power pin enabled");
+    Serial.println("[DEVICE] NeoPixel power pin enabled");
     #endif
 
     #if DEVICE_HAS_ONBOARD_RGB_LED
-    Serial.println("[DEBUG][DEVICE] Initializing onboard NeoPixel...");
+    Serial.println("[DEVICE] Initializing onboard NeoPixel...");
     onboardPixel.begin();
     onboardPixel.setBrightness(20);
     onboardPixel.clear(); 
     onboardPixel.show();
-    Serial.println("[DEBUG][DEVICE] Onboard NeoPixel initialized.");
+    Serial.println("[DEVICE] Onboard NeoPixel initialized.");
     #endif
 
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    Serial.println("[DEBUG][DEVICE] Initializing external NeoPixels manager...");
-    Serial.printf("[DEBUG][DEVICE] Creating NeoPixel manager with pin %d, count %d\n", 
+    Serial.println("[DEVICE] Initializing external NeoPixels manager...");
+    Serial.printf("[DEVICE] Creating NeoPixel manager with pin %d, count %d\n", 
                   externalNeoPixelPin1, EXTERNAL_NUMPIXELS);
     
     Manager_NeoPixels* neoManager = Manager_NeoPixels::getInstance(externalNeoPixelPin1, EXTERNAL_NUMPIXELS);
     neoManager->begin(externalNeoPixelPin1, EXTERNAL_NUMPIXELS);
     
-    Serial.println("[DEBUG][DEVICE] External NeoPixels manager initialized.");
+    Serial.println("[DEVICE] External NeoPixels manager initialized.");
     
-    neoManager->setCM5EffectActive(true);
-    neoManager->setCM5Color(0x0000FF);
-    Serial.println("[DEBUG][DEVICE] NeoPixel test pattern activated.");
+    neoManager->setEffectActive(true);
+    neoManager->setEffectColor(0x0000FF);
+    Serial.println("[DEVICE] NeoPixel test pattern activated.");
     #endif
 
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     StaticJsonDocument<2048> doc;
     String scanResult = performI2CScan(doc);
-    Serial.print("[DEBUG] I2C scan result at boot: ");
+    Serial.print("[DEVICE] I2C scan result at boot: ");
     Serial.println(scanResult);
     #endif
 
-    Serial.println("[DEBUG][DEVICE] Adafruit QtPy ESP32-S3 initialization complete.");
+    Serial.println("[DEVICE] Adafruit QtPy ESP32-S3 initialization complete.");
     return true;
 }
 
@@ -150,7 +150,7 @@ const char* Device_AdafruitQtPyESP32S3::getName() {
 }
 
 void Device_AdafruitQtPyESP32S3::setRotation(uint8_t r) {
-    Serial.print("[DEBUG][DEVICE] Rotation set to: ");
+    Serial.print("[DEVICE] Rotation set to: ");
     Serial.println(r);
 }
 
@@ -172,32 +172,32 @@ TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
 }
 
 String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc) {
-    Serial.println("[DEBUG][I2C] Starting I2C scan...");
+    Serial.println("[DEVICE] Starting I2C scan...");
     
     // Ensure Wire1 is properly initialized first
-    Serial.println("[DEBUG][I2C] Initializing Wire1 interface...");
+    Serial.println("[DEVICE] Initializing Wire1 interface...");
     Wire1.begin(41, 40);  // QtPy STEMMA QT pins
     Wire1.setClock(400000);
     delay(100);  // Stabilization delay
     
     // Run enhanced scanner with device recognition - this populates the JSON
-    Serial.println("[DEBUG][I2C] Running I2C scan with device recognition...");
+    Serial.println("[DEVICE] Running I2C scan with device recognition...");
     String scanResult = I2CScanner::scanAndConfigureDevices(Wire1, doc, "qtpy");
-    Serial.printf("[DEBUG][I2C] Scan result: %s\n", scanResult.c_str());
+    Serial.printf("[DEVICE] Scan result: %s\n", scanResult.c_str());
     
     // Get what was found from the scanner results
     bool foundSeesaw = doc["FoundSeesaw"] | false;
     bool foundQuadDisplay = doc["FoundQuadDisplay"] | false;
     bool foundCharlieplex = doc["FoundCharlieplex"] | false;
     
-    Serial.printf("[DEBUG][I2C] Scanner found: Seesaw=%s, QuadDisplay=%s, Charlieplex=%s\n", 
+    Serial.printf("[DEVICE] Scanner found: Seesaw=%s, QuadDisplay=%s, Charlieplex=%s\n", 
                   foundSeesaw ? "YES" : "NO", 
                   foundQuadDisplay ? "YES" : "NO",
                   foundCharlieplex ? "YES" : "NO");
     
     // Initialize managers based on scanner results
     if (foundQuadDisplay) {
-        Serial.println("[DEBUG][I2C] Setting up Quad Display manager...");
+        Serial.println("[DEVICE] Setting up Quad Display manager...");
         
         // Get the singleton manager instance
         Manager_QuadDisplay* quadManager = Manager_QuadDisplay::getInstance(&Wire1);
@@ -208,7 +208,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
             if (screen["ScreenType"] == "Alpha Quad LCD") {
                 String addressStr = screen["I2CAddress"];
                 uint8_t addr = strtol(addressStr.c_str(), nullptr, 0);
-                Serial.printf("[DEBUG][I2C] Adding Quad Display at address 0x%02X to manager\n", addr);
+                Serial.printf("[DEVICE] Adding Quad Display at address 0x%02X to manager\n", addr);
                 quadManager->addDisplay(addr);
             }
         }
@@ -239,7 +239,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         if (quadDisplayTaskHandle == NULL) {
             Serial.println("[ERROR] Failed to create QuadDisplay manager task");
         } else {
-            Serial.printf("[DEBUG][I2C] Created QuadDisplay manager task for %d displays\n", 
+            Serial.printf("[DEVICE] Created QuadDisplay manager task for %d displays\n", 
                          quadManager->getDisplayAddresses().size());
         }
         
@@ -248,7 +248,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     
     // Initialize Charlieplex displays using singleton manager
     if (foundCharlieplex) {
-        Serial.println("[DEBUG][I2C] Setting up Charlieplex Display manager...");
+        Serial.println("[DEVICE] Setting up Charlieplex Display manager...");
         
         // Get the singleton manager instance
         Manager_Charlieplex* charlieManager = Manager_Charlieplex::getInstance(&Wire1);
@@ -259,7 +259,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
             if (screen["ScreenType"] == "Charlieplex") {
                 String addressStr = screen["I2CAddress"];
                 uint8_t addr = strtol(addressStr.c_str(), nullptr, 0);
-                Serial.printf("[DEBUG][I2C] Adding Charlieplex Display at address 0x%02X to manager\n", addr);
+                Serial.printf("[DEVICE] Adding Charlieplex Display at address 0x%02X to manager\n", addr);
                 charlieManager->addDisplay(addr);
             }
         }
@@ -290,7 +290,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         if (charlieDisplayTaskHandle == NULL) {
             Serial.println("[ERROR] Failed to create Charlieplex manager task");
         } else {
-            Serial.printf("[DEBUG][I2C] Created Charlieplex manager task for %d displays\n", 
+            Serial.printf("[DEVICE] Created Charlieplex manager task for %d displays\n", 
                          charlieManager->getDisplayAddresses().size());
         }
         
@@ -299,7 +299,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
     
     // Seesaw initialization (unchanged)
     if (foundSeesaw) {
-        Serial.println("[DEBUG][I2C] Seesaw found, initializing shared I2C manager...");
+        Serial.println("[DEVICE] Seesaw found, initializing shared I2C manager...");
         
         xTaskCreatePinnedToCore(
             [](void* param) {
@@ -327,7 +327,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         if (i2cInitTaskHandle == NULL) {
             Serial.println("[ERROR] Failed to create I2C Init task on core 1");
         } else {
-            Serial.println("[DEBUG][I2C] Shared I2C Manager initialization queued on Core 1");
+            Serial.println("[DEVICE] Shared I2C Manager initialization queued on Core 1");
         }
     }
     

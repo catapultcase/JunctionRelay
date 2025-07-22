@@ -6,9 +6,12 @@
 // Forward declarations
 class ScreenRouter;
 class Helper_Preferences;
+class Helper_DeviceInfo;
+class Helper_DeviceCapabilities;
 class Branch_UsbDirect;
 class Branch_Wifi;
 class DeviceConfig;
+struct HardwareInventory;
 
 struct ConnectionStatus {
     bool usbActive = false;
@@ -35,6 +38,7 @@ public:
     void setScreenRouter(ScreenRouter* router) { screenRouter = router; }
     void setPreferences(Helper_Preferences* prefs) { preferences = prefs; }
     void setDevice(DeviceConfig* device) { devicePtr = device; }
+    void setInventory(HardwareInventory* inv) { inventory = inv; }
 
     // Initialize based on connection mode
     void init();
@@ -49,7 +53,12 @@ private:
     String connMode;
     ScreenRouter* screenRouter;
     Helper_Preferences* preferences;
-    DeviceConfig* devicePtr;  // ADDED
+    DeviceConfig* devicePtr;
+    HardwareInventory* inventory;
+
+    // Helper instances (created once, injected into branches)
+    Helper_DeviceInfo* deviceInfo;
+    Helper_DeviceCapabilities* deviceCapabilities;
 
     // Connection branches
     Branch_UsbDirect* usbDirectBranch;
@@ -63,6 +72,10 @@ private:
     void branchGatewayWifi();
     void branchGatewayEthernet();
     void branchGatewayUsb();
+
+    // Helper management
+    void initializeHelpers();
+    void cleanupHelpers();
 };
 
 #endif // MANAGER_CONNECTIONS_H

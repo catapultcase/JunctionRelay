@@ -250,7 +250,7 @@ void ConnectionManager::init() {
     minHeap = initialHeap;
     
     // Native USB CDC setup EARLY
-    Serial.begin();  // Native USB auto-negotiates speed
+    Serial.begin(115200);  // Native USB auto-negotiates speed
     while (!Serial && millis() < 5000) {
         delay(10);  // Wait for native USB connection, but don't block forever
     }

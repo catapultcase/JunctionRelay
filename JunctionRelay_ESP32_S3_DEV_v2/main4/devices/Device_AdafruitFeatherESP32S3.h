@@ -5,16 +5,11 @@
 #define DEVICE_ADAFRUIT_FEATHER_ESP32S3
 
 #include "DeviceConfig.h"
+#include "Manager_Connections.h"
+#include "Helper_Preferences.h"
 #include "Utils.h"
 #include <Adafruit_NeoPixel.h>
-#include "Manager_I2C.h"
-#include "I2CScanner.h"
 #include <vector>
-
-#if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    #include "Manager_QuadDisplay.h"
-    #include "Manager_Charlieplex.h"
-#endif
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
 #define DEVICE_MODEL                    "Feather ESP32-S3"
@@ -34,6 +29,7 @@
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
+#define DEVICE_SUPPORTS_ETHERNET        0
 #define DEVICE_SUPPORTS_WIFI            1
 #define DEVICE_SUPPORTS_BLE             0
 #define DEVICE_SUPPORTS_USB             1
@@ -50,11 +46,54 @@
     #define NUMPIXELS 1
 #endif
 
+// Hardware inventory structures
+struct NeoPixelInfo {
+    int pin;
+    int pixelCount;
+    
+    NeoPixelInfo(int p, int count) : pin(p), pixelCount(count) {}
+};
+
+struct I2CDeviceInfo {
+    uint8_t address;
+    String deviceType;
+    
+    I2CDeviceInfo(uint8_t addr, const String& type) : address(addr), deviceType(type) {}
+};
+
+struct HardwareInventory {
+    std::vector<NeoPixelInfo> neopixelPins;
+    std::vector<I2CDeviceInfo> i2cDevices;
+    
+    // Basic capabilities (from compile-time defines)
+    bool hasOnboardScreen = DEVICE_HAS_ONBOARD_SCREEN;
+    bool hasOnboardLED = DEVICE_HAS_ONBOARD_LED;
+    bool hasOnboardRGBLED = DEVICE_HAS_ONBOARD_RGB_LED;
+    bool hasExternalMatrix = DEVICE_HAS_EXTERNAL_MATRIX;
+    bool hasExternalNeopixels = DEVICE_HAS_EXTERNAL_NEOPIXELS;
+    bool hasExternalI2CDevices = DEVICE_HAS_EXTERNAL_I2C_DEVICES;
+    bool hasButtons = DEVICE_HAS_BUTTONS;
+    bool hasBattery = DEVICE_HAS_BATTERY;
+    bool supportsEthernet = DEVICE_SUPPORTS_ETHERNET;
+    bool supportsWiFi = DEVICE_SUPPORTS_WIFI;
+    bool supportsBLE = DEVICE_SUPPORTS_BLE;
+    bool supportsUSB = DEVICE_SUPPORTS_USB;
+    bool supportsESPNow = DEVICE_SUPPORTS_ESPNOW;
+    bool supportsHTTP = DEVICE_SUPPORTS_HTTP;
+    bool supportsMQTT = DEVICE_SUPPORTS_MQTT;
+    bool supportsWebSockets = DEVICE_SUPPORTS_WEBSOCKETS;
+    bool hasSpeaker = DEVICE_HAS_SPEAKER;
+    bool hasMicroSD = DEVICE_HAS_MICROSD;
+    bool isGateway = DEVICE_IS_GATEWAY;
+};
+
 class Device_AdafruitFeatherESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitFeatherESP32S3(Manager_Connections* connMgr);
 
-    bool begin();  
+    // NEW: Returns hardware inventory instead of bool
+    HardwareInventory detectHardware();
+    
     const char* getName();
 
     void setRotation(uint8_t rotation);
@@ -65,9 +104,9 @@ public:
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // I2C methods - Feather uses Wire (primary I2C)
-    String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() override;  // Implement base class method
+    // I2C methods
+    std::vector<I2CDeviceInfo> scanI2CDevices();
+    TwoWire* getI2CInterface() override;
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -78,6 +117,7 @@ public:
     virtual bool hasExternalI2CDevices() const override { return DEVICE_HAS_EXTERNAL_I2C_DEVICES; }
     virtual bool hasButtons() const override { return DEVICE_HAS_BUTTONS; }
     virtual bool hasBattery() const override { return DEVICE_HAS_BATTERY; }
+    virtual bool supportsEthernet() const override { return DEVICE_SUPPORTS_ETHERNET; }
     virtual bool supportsWiFi() const override { return DEVICE_SUPPORTS_WIFI; }
     virtual bool supportsBLE() const override { return DEVICE_SUPPORTS_BLE; }
     virtual bool supportsUSB() const override { return DEVICE_SUPPORTS_USB; }
@@ -104,17 +144,11 @@ public:
         return macStr.c_str();
     }
 
+
+
 private:
     #if DEVICE_HAS_ONBOARD_RGB_LED
     Adafruit_NeoPixel onboardPixel;
-    #endif
-
-    #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    TaskHandle_t i2cInitTaskHandle;
-    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
-    TaskHandle_t charlieDisplayTaskHandle;  // Task for Charlieplex manager
-    bool detectedQuadDisplay;
-    bool detectedCharlieDisplay;
     #endif
 
     Manager_Connections* connMgr;

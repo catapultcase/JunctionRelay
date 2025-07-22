@@ -72,10 +72,8 @@ namespace JunctionRelayServer.Services
             Console.WriteLine("✅ Successfully initialized built-in layout templates");
         }
 
-
-        /// <summary>
         /// Create a new template or PUT it back to its defaults
-        /// </summary>
+
         public async Task<bool> CreateOrRestoreTemplateAsync(string templateName)
         {
             // Console.WriteLine($"Restoring defaults for '{templateName}'");
@@ -163,7 +161,9 @@ namespace JunctionRelayServer.Services
                 BorderRadiusSize = 15,
                 PreviewWidth = 800,
                 PreviewHeight = 480,
-                PreviewSensors = sensorCount
+                PreviewSensors = sensorCount,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
 
@@ -195,7 +195,9 @@ namespace JunctionRelayServer.Services
                 ShowUnits = true,
                 PreviewWidth = 800,
                 PreviewHeight = 480,
-                PreviewSensors = 4
+                PreviewSensors = 4,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
 
@@ -243,7 +245,9 @@ namespace JunctionRelayServer.Services
                 ShowUnits = false,
                 PreviewWidth = 800,
                 PreviewHeight = 480,
-                PreviewSensors = 1
+                PreviewSensors = 1,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
 
             return template;
@@ -291,7 +295,9 @@ namespace JunctionRelayServer.Services
                 ShowUnits = true,
                 PreviewWidth = 800,
                 PreviewHeight = 480,
-                PreviewSensors = 1
+                PreviewSensors = 1,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
             // Add the terminal color for Astro layout and animation settings
             var jsonConfig = new Dictionary<string, object>
@@ -342,7 +348,9 @@ namespace JunctionRelayServer.Services
                 ShowUnits = true,
                 PreviewWidth = 800,
                 PreviewHeight = 480,
-                PreviewSensors = 4
+                PreviewSensors = 4,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
 
@@ -357,6 +365,8 @@ namespace JunctionRelayServer.Services
                 PreviewWidth = 800,
                 PreviewHeight = 480,
                 PreviewSensors = 1,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
 
@@ -370,7 +380,9 @@ namespace JunctionRelayServer.Services
                 LayoutType = "QUAD",
                 PreviewWidth = 560,
                 PreviewHeight = 280,
-                PreviewSensors = 1
+                PreviewSensors = 1,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
 
@@ -384,7 +396,9 @@ namespace JunctionRelayServer.Services
                 LayoutType = "CHARLIE",
                 PreviewWidth = 560,
                 PreviewHeight = 280,
-                PreviewSensors = 1
+                PreviewSensors = 1,
+                IncludePrefixConfig = true,
+                IncludePrefixSensor = true
             };
         }
     }

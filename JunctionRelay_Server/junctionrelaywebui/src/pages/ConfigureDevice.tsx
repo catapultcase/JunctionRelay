@@ -32,6 +32,7 @@ import UpdateIcon from '@mui/icons-material/Update';
 import SensorsIcon from '@mui/icons-material/Sensors';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SyncIcon from '@mui/icons-material/Sync';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -47,6 +48,8 @@ import { useAutoSave, useAutoSaveWithChangeDetection } from '../hooks/useAutoSav
 
 // Import sub-components
 import DeviceInfoPanel from '../components/DeviceInfoPanel';
+import DeviceSyncModal from '../components/Device_SyncModal';
+import EditModeModal from '../components/Device_EditModeModal';
 import DeviceHeartbeatPanel from '../components/DeviceHeartbeatPanel';
 import DeviceHeartbeatHistoryPanel from '../components/DeviceHeartbeatHistoryPanel';
 import DeviceScreensPanel from '../components/DeviceScreensPanel';
@@ -106,6 +109,10 @@ const ConfigureDevice: React.FC = () => {
     const [comPorts, setComPorts] = useState<string[]>([]);
     const [selectedComPort, setSelectedComPort] = useState<string>("");
     const [initialFirmwareInfo, setInitialFirmwareInfo] = useState<FirmwareInfo | null>(null);
+
+    // Sync/Edit modals
+    const [syncModalOpen, setSyncModalOpen] = useState(false);
+    const [editModeModalOpen, setEditModeModalOpen] = useState(false);
 
     // Snackbar state
     const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
@@ -291,7 +298,7 @@ const ConfigureDevice: React.FC = () => {
             setStatus("Fetching device data...");
             const [deviceRes, portsRes, i2cRes, layoutsRes] = await Promise.all([
                 fetch(`/api/devices/${id}`),
-                fetch("/api/Controller_Com_Ports/com-ports"),
+                fetch("/api/com/ports"),
                 fetch(`/api/devices/${id}/i2c-devices`),
                 fetch("/api/layouts")
             ]);
@@ -374,7 +381,7 @@ const ConfigureDevice: React.FC = () => {
     }, [id, showSnackbar, navigate]);
 
     // Handle resync
-    const handleResync = useCallback(async () => {
+    const handleResyncIP = useCallback(async () => {
         if (!deviceData?.ipAddress) return showSnackbar("Device IP not available for resync", "error");
         try {
             setLoading(true);
@@ -385,7 +392,7 @@ const ConfigureDevice: React.FC = () => {
                 fetch(`/api/devices/capabilities?ip=${encodeURIComponent(deviceData.ipAddress)}`)
             ]);
 
-            if (!infoRes.ok || !capRes.ok) throw new Error("Resync failed.");
+            if (!infoRes.ok || !capRes.ok) throw new Error("IP Resync failed.");
 
             const infoJson = await infoRes.json();
             const capJson = await capRes.json();
@@ -444,14 +451,32 @@ const ConfigureDevice: React.FC = () => {
                 }
             }
 
-            showSnackbar("Resync successful! Device information updated.", "success");
+            showSnackbar("IP Resync successful! Device information updated.", "success");
         } catch (err: any) {
-            console.error("Resync error:", err);
-            showSnackbar(`Resync failed: ${err.message}`, "error");
+            console.error("IP Resync error:", err);
+            showSnackbar(`IP Resync failed: ${err.message}`, "error");
         } finally {
             setLoading(false);
         }
     }, [deviceData, showSnackbar, deviceAutoSave, id, fetchDeviceData]);
+
+    const handleDeviceSync = useCallback(() => {
+        setSyncModalOpen(true);
+    }, []);
+
+    const handleSyncSuccess = useCallback(() => {
+        // Refresh device data after successful sync
+        fetchDeviceData();
+    }, [fetchDeviceData]);
+
+    const handleEnableEditMode = useCallback(() => {
+        setEditModeModalOpen(true);
+    }, []);
+
+    const handleEditModeSuccess = useCallback(() => {
+        // Refresh device data to reflect the type change
+        fetchDeviceData();
+    }, [fetchDeviceData]);
 
     // Handle refreshing sensors
     const handleRefreshSensors = useCallback(async () => {
@@ -485,7 +510,7 @@ const ConfigureDevice: React.FC = () => {
     useEffect(() => {
         if (!isMobile) return;
 
-        const handleBottomActionResync = () => handleResync();
+        const handleBottomActionResync = () => handleResyncIP();
         const handleBottomActionRefreshSensors = () => handleRefreshSensors();
         const handleBottomActionDelete = () => {
             if (window.confirm('Are you sure you want to delete this device?')) {
@@ -502,7 +527,7 @@ const ConfigureDevice: React.FC = () => {
             window.removeEventListener('bottom-action-refresh-sensors', handleBottomActionRefreshSensors);
             window.removeEventListener('bottom-action-delete-device', handleBottomActionDelete);
         };
-    }, [isMobile, handleDeleteDevice, handleRefreshSensors, handleResync]);
+    }, [isMobile, handleDeleteDevice, handleRefreshSensors, handleResyncIP]);
 
     // Dispatch bottom action bar configuration for mobile
     useEffect(() => {
@@ -783,15 +808,42 @@ const ConfigureDevice: React.FC = () => {
                     </Box>
 
                     <Box display="flex" gap={2} alignItems="center">
-                        {deviceData.type !== "Host Device" && (
+                        {/* NEW: Edit Mode Button - Only for non-Custom devices */}
+                        {!isCustom && (
                             <Button
                                 variant="outlined"
-                                startIcon={<SyncIcon />}
+                                startIcon={<EditIcon />}
                                 size="small"
-                                onClick={handleResync}
+                                onClick={handleEnableEditMode}
+                                color="warning"
                             >
-                                Resync Device
+                                Edit
                             </Button>
+                        )}
+
+                        {deviceData.type !== "Host Device" && (
+                            <>
+                                {/* RENAMED: Old Resync Device button becomes Resync IP */}
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<SyncIcon />}
+                                    size="small"
+                                    onClick={handleResyncIP}
+                                >
+                                    Resync IP
+                                </Button>
+
+                                {/* NEW: Full Device Sync button */}
+                                <Button
+                                    variant="contained"
+                                    startIcon={<SyncIcon />}
+                                    size="small"
+                                    onClick={handleDeviceSync}
+                                    color="primary"
+                                >
+                                    Resync Device
+                                </Button>
+                            </>
                         )}
 
                         <Button
@@ -842,7 +894,7 @@ const ConfigureDevice: React.FC = () => {
                 </Paper>
             )}
 
-            {/* Mobile Status Bar - Compact version for mobile */}
+            {/* Mobile Status Bar - Enhanced version with action buttons */}
             {isMobile && (
                 <Paper
                     elevation={2}
@@ -851,73 +903,143 @@ const ConfigureDevice: React.FC = () => {
                         mb: 2,
                         borderRadius: 2,
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
+                        flexDirection: 'column',
+                        gap: 2
                     }}
                 >
-                    <Box display="flex" alignItems="center" flex={1}>
-                        <Box
-                            component="span"
-                            sx={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: "50%",
-                                bgcolor: deviceData.status === "Online" ? "green" :
-                                    deviceData.status === "Offline" ? "red" : "#f0ad4e",
-                                mr: 1,
-                                display: "inline-block"
-                            }}
-                        />
-                        <Typography variant="body2" fontWeight="medium">
-                            {deviceData.status || "Unknown"}
-                        </Typography>
-                        {deviceData.firmwareVersion && (
-                            <Chip
-                                label={`v${deviceData.firmwareVersion}`}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                                sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                    {/* Status Row */}
+                    <Box display="flex" alignItems="center" justifyContent="space-between">
+                        <Box display="flex" alignItems="center" flex={1}>
+                            <Box
+                                component="span"
+                                sx={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: "50%",
+                                    bgcolor: deviceData.status === "Online" ? "green" :
+                                        deviceData.status === "Offline" ? "red" : "#f0ad4e",
+                                    mr: 1,
+                                    display: "inline-block"
+                                }}
                             />
-                        )}
+                            <Typography variant="body2" fontWeight="medium">
+                                {deviceData.status || "Unknown"}
+                            </Typography>
+                            {deviceData.firmwareVersion && (
+                                <Chip
+                                    label={`v${deviceData.firmwareVersion}`}
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                    sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                                />
+                            )}
+                        </Box>
+
+                        <Box display="flex" alignItems="center" gap={0.5}>
+                            {isJunctionRelayDevice && (
+                                <Chip
+                                    icon={deviceData.hasCustomFirmware ? <ErrorIcon fontSize="small" /> : <VerifiedIcon fontSize="small" />}
+                                    label={deviceData.hasCustomFirmware ? "Custom" : "Authentic"}
+                                    size="small"
+                                    color={deviceData.hasCustomFirmware ? "warning" : "success"}
+                                    variant="outlined"
+                                    sx={{ fontSize: '0.7rem', height: 20 }}
+                                />
+                            )}
+                            {initialFirmwareInfo?.is_outdated && (
+                                <Chip
+                                    label="Update"
+                                    size="small"
+                                    color="warning"
+                                    variant="outlined"
+                                    sx={{ fontSize: '0.7rem', height: 20 }}
+                                />
+                            )}
+
+                            {/* Mobile auto-save status */}
+                            {deviceAutoSave.status !== 'idle' && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
+                                    {deviceAutoSave.status === 'saving' && <CircularProgress size={8} />}
+                                    {deviceAutoSave.status === 'saved' && (
+                                        <Typography variant="body2" color="success.main" sx={{ fontSize: '0.6rem' }}>
+                                            OK
+                                        </Typography>
+                                    )}
+                                    {deviceAutoSave.status === 'error' && (
+                                        <Typography variant="body2" color="error.main" sx={{ fontSize: '0.6rem' }}>
+                                            ERR
+                                        </Typography>
+                                    )}
+                                </Box>
+                            )}
+                        </Box>
                     </Box>
 
-                    <Box display="flex" alignItems="center" gap={0.5}>
-                        {isJunctionRelayDevice && (
-                            <Chip
-                                icon={deviceData.hasCustomFirmware ? <ErrorIcon fontSize="small" /> : <VerifiedIcon fontSize="small" />}
-                                label={deviceData.hasCustomFirmware ? "Custom" : "Authentic"}
-                                size="small"
-                                color={deviceData.hasCustomFirmware ? "warning" : "success"}
+                    {/* Action Buttons Row */}
+                    <Box display="flex" gap={1} flexWrap="wrap">
+                        {/* Edit Mode Button - Only for non-Custom devices */}
+                        {!isCustom && (
+                            <Button
                                 variant="outlined"
-                                sx={{ fontSize: '0.7rem', height: 20 }}
-                            />
-                        )}
-                        {initialFirmwareInfo?.is_outdated && (
-                            <Chip
-                                label="Update"
+                                startIcon={<EditIcon />}
                                 size="small"
+                                onClick={handleEnableEditMode}
                                 color="warning"
-                                variant="outlined"
-                                sx={{ fontSize: '0.7rem', height: 20 }}
-                            />
+                                sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                            >
+                                Edit
+                            </Button>
                         )}
 
-                        {/* Mobile auto-save status */}
-                        {deviceAutoSave.status !== 'idle' && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
-                                {deviceAutoSave.status === 'saving' && <CircularProgress size={8} />}
-                                {deviceAutoSave.status === 'saved' && (
-                                    <Typography variant="body2" color="success.main" sx={{ fontSize: '0.6rem' }}>
-                                        OK
-                                    </Typography>
-                                )}
-                                {deviceAutoSave.status === 'error' && (
-                                    <Typography variant="body2" color="error.main" sx={{ fontSize: '0.6rem' }}>
-                                        ERR
-                                    </Typography>
-                                )}
-                            </Box>
+                        {deviceData.type !== "Host Device" && (
+                            <>
+                                {/* Resync IP button */}
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<SyncIcon />}
+                                    size="small"
+                                    onClick={handleResyncIP}
+                                    sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                >
+                                    Resync IP
+                                </Button>
+
+                                {/* Full Device Sync button */}
+                                <Button
+                                    variant="contained"
+                                    startIcon={<SyncIcon />}
+                                    size="small"
+                                    onClick={handleDeviceSync}
+                                    color="primary"
+                                    sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                >
+                                    Resync Device
+                                </Button>
+                            </>
+                        )}
+
+                        <Button
+                            variant="outlined"
+                            startIcon={<RefreshIcon />}
+                            size="small"
+                            onClick={handleRefreshSensors}
+                            sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                        >
+                            Refresh Sensors
+                        </Button>
+
+                        {deviceData.type !== "Host Device" && (
+                            <Button
+                                variant="outlined"
+                                color="error"
+                                startIcon={<DeleteIcon />}
+                                size="small"
+                                onClick={handleDeleteDevice}
+                                sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                            >
+                                Delete
+                            </Button>
                         )}
                     </Box>
                 </Paper>
@@ -1157,6 +1279,26 @@ const ConfigureDevice: React.FC = () => {
                     </TabPanel>
                 </Paper>
             )}
+
+            {/* Device Sync Modal */}
+            <DeviceSyncModal
+                open={syncModalOpen}
+                onClose={() => setSyncModalOpen(false)}
+                deviceId={id || ""}
+                deviceName={deviceData?.name || ""}
+                onSuccess={handleSyncSuccess}
+                showSnackbar={showSnackbar}
+            />
+
+            {/* Edit Mode Modal */}
+            <EditModeModal
+                open={editModeModalOpen}
+                onClose={() => setEditModeModalOpen(false)}
+                deviceId={id || ""}
+                deviceName={deviceData?.name || ""}
+                onSuccess={handleEditModeSuccess}
+                showSnackbar={showSnackbar}
+            />
 
             {/* Snackbar for notifications */}
             <Snackbar

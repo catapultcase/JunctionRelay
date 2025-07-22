@@ -24,6 +24,8 @@ using Newtonsoft.Json;
 using JunctionRelayServer.Models.Requests;
 using JunctionRelay_Server.Models.Requests;
 using System.Diagnostics;
+using JunctionRelayServer.Models.DeviceSync;
+using System.IO.Ports;
 
 namespace JunctionRelayServer.Controllers
 {
@@ -38,6 +40,8 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Database_Manager_Sensors _sensorDb;
         private readonly Service_HostInfo _hostInfoService;
         private readonly Service_Manager_CloudDevices _cloudDeviceService;
+        private readonly Service_Manager_Device_Sync _deviceSyncManager;
+        private readonly Service_Manager_COM_Ports _comPortManager;
 
         public Controller_Devices(Service_Database_Manager_Devices deviceDb,
             Service_Manager_Devices deviceService,
@@ -45,7 +49,9 @@ namespace JunctionRelayServer.Controllers
             Service_Database_Manager_Sensors sensorDb,
             Service_HostInfo hostInfoService,
             Service_Database_Manager_Device_I2CDevices i2cDeviceDb,
-            Service_Manager_CloudDevices cloudDeviceService)
+            Service_Manager_CloudDevices cloudDeviceService,
+            Service_Manager_Device_Sync deviceSyncManager,
+            Service_Manager_COM_Ports comPortManager)
         {
             _deviceDb = deviceDb;
             _deviceService = deviceService;
@@ -54,6 +60,8 @@ namespace JunctionRelayServer.Controllers
             _hostInfoService = hostInfoService;
             _i2cDeviceDb = i2cDeviceDb;
             _cloudDeviceService = cloudDeviceService;
+            _deviceSyncManager = deviceSyncManager;
+            _comPortManager = comPortManager;
         }
 
         // Update the GetAllDevices method in Controller_Devices.cs
@@ -481,6 +489,245 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        // POST: api/devices/{id}/analyze-sync
+        [HttpPost("{id:int}/analyze-sync")]
+        public async Task<IActionResult> AnalyzeDeviceSync(int id, [FromBody] Model_Device_Sync_Request? request = null)
+        {
+            try
+            {
+                // Create default request if none provided
+                request ??= new Model_Device_Sync_Request { DeviceId = id };
+                request.DeviceId = id; // Ensure ID matches route parameter
+
+                var analysis = await _deviceSyncManager.AnalyzeDeviceSyncAsync(request);
+
+                return Ok(new
+                {
+                    success = true,
+                    analysis = analysis,
+                    summary = new
+                    {
+                        canProceedAutomatically = analysis.CanProceedAutomatically,
+                        totalChanges = GetTotalChangesCount(analysis),
+                        blockingIssuesCount = analysis.BlockingIssues.Count,
+                        warningsCount = analysis.Warnings.Count,
+                        hasDeviceInfoChanges = analysis.DeviceInfo.HasChanges,
+                        hasScreenChanges = analysis.Screens.HasChanges,
+                        hasI2CChanges = analysis.I2CDevices.HasChanges,
+                        hasSensorChanges = analysis.Sensors.HasChanges
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = "Failed to analyze device sync",
+                    message = ex.Message
+                });
+            }
+        }
+
+        // POST: api/devices/{id}/execute-full-sync
+        [HttpPost("{id:int}/execute-full-sync")]
+        public async Task<IActionResult> ExecuteFullDeviceSync(int id, [FromBody] Model_Device_Full_Sync_Request request)
+        {
+            try
+            {
+                if (request == null)
+                {
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = "Request body is required"
+                    });
+                }
+
+                request.DeviceId = id; // Ensure ID matches route parameter
+
+                var result = await _deviceSyncManager.ExecuteFullDeviceSyncAsync(request);
+
+                if (result.Success)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        result = result,
+                        summary = new
+                        {
+                            totalItemsProcessed = GetTotalItemsProcessed(result),
+                            deviceInfoUpdated = result.DeviceInfoUpdates > 0,
+                            screensModified = result.ScreensAdded + result.ScreensUpdated + result.ScreensDeleted,
+                            i2cDevicesModified = result.I2CDevicesAdded + result.I2CDevicesUpdated + result.I2CDevicesDeleted,
+                            sensorsModified = result.SensorsAdded + result.SensorsUpdated + result.SensorsDeleted
+                        }
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        result = result,
+                        error = result.ErrorMessage ?? "Unknown error occurred during sync"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = "Failed to execute device sync",
+                    message = ex.Message
+                });
+            }
+        }
+
+        // GET: api/devices/{id}/sync-status
+        [HttpGet("{id:int}/sync-status")]
+        public async Task<IActionResult> GetDeviceSyncStatus(int id)
+        {
+            try
+            {
+                var device = await _deviceDb.GetDeviceByIdAsync(id);
+                if (device == null)
+                {
+                    return NotFound($"Device with ID {id} not found.");
+                }
+
+                // Check if device is eligible for sync
+                var isEligible = device.IsJunctionRelayDevice && !string.IsNullOrWhiteSpace(device.IPAddress);
+
+                // Test connectivity if eligible
+                bool isReachable = false;
+                if (isEligible)
+                {
+                    try
+                    {
+                        using var client = new HttpClient();
+                        client.Timeout = TimeSpan.FromSeconds(3);
+                        var response = await client.GetAsync($"http://{device.IPAddress}/api/device/info");
+                        isReachable = response.IsSuccessStatusCode;
+                    }
+                    catch
+                    {
+                        isReachable = false;
+                    }
+                }
+
+                return Ok(new
+                {
+                    deviceId = id,
+                    deviceName = device.Name,
+                    isEligibleForSync = isEligible,
+                    isReachable = isReachable,
+                    ipAddress = device.IPAddress,
+                    lastUpdated = device.LastUpdated,
+                    syncEligibilityReasons = GetSyncEligibilityReasons(device)
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    error = "Failed to get sync status",
+                    message = ex.Message
+                });
+            }
+        }
+
+        // GET: api/devices/bulk-sync-status
+        [HttpPost("bulk-sync-status")]
+        public async Task<IActionResult> GetBulkSyncStatus([FromBody] List<int> deviceIds)
+        {
+            try
+            {
+                if (deviceIds == null || !deviceIds.Any())
+                {
+                    return BadRequest("Device IDs are required");
+                }
+
+                var devices = await _deviceDb.GetAllDevicesAsync();
+                var requestedDevices = devices.Where(d => deviceIds.Contains(d.Id)).ToList();
+
+                var syncStatuses = new Dictionary<int, object>();
+
+                foreach (var device in requestedDevices)
+                {
+                    var isEligible = device.IsJunctionRelayDevice && !string.IsNullOrWhiteSpace(device.IPAddress);
+
+                    syncStatuses[device.Id] = new
+                    {
+                        deviceName = device.Name,
+                        isEligibleForSync = isEligible,
+                        ipAddress = device.IPAddress,
+                        lastUpdated = device.LastUpdated,
+                        reasons = GetSyncEligibilityReasons(device)
+                    };
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    syncStatuses = syncStatuses
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = "Failed to get bulk sync status",
+                    message = ex.Message
+                });
+            }
+        }
+
+        // Helper methods
+        private int GetTotalChangesCount(Model_Device_Sync_Analysis analysis)
+        {
+            return (analysis.DeviceInfo.HasChanges ? 1 : 0) +
+                   analysis.Screens.ToAdd.Count + analysis.Screens.ToUpdate.Count + analysis.Screens.ToDelete.Count +
+                   analysis.I2CDevices.ToAdd.Count + analysis.I2CDevices.ToUpdate.Count + analysis.I2CDevices.ToDelete.Count +
+                   analysis.Sensors.ToAdd.Count + analysis.Sensors.ToUpdate.Count + analysis.Sensors.ToDelete.Count;
+        }
+
+        private int GetTotalItemsProcessed(Model_Device_Sync_Result result)
+        {
+            return result.DeviceInfoUpdates +
+                   result.ScreensAdded + result.ScreensUpdated + result.ScreensDeleted +
+                   result.I2CDevicesAdded + result.I2CDevicesUpdated + result.I2CDevicesDeleted +
+                   result.SensorsAdded + result.SensorsUpdated + result.SensorsDeleted;
+        }
+
+        private List<string> GetSyncEligibilityReasons(Model_Device device)
+        {
+            var reasons = new List<string>();
+
+            if (!device.IsJunctionRelayDevice)
+            {
+                reasons.Add("Device is not a JunctionRelay device");
+            }
+
+            if (string.IsNullOrWhiteSpace(device.IPAddress))
+            {
+                reasons.Add("Device has no IP address");
+            }
+
+            if (device.Status != "Active")
+            {
+                reasons.Add($"Device status is '{device.Status}' (should be 'Active')");
+            }
+
+            if (reasons.Count == 0)
+            {
+                reasons.Add("Device is eligible for sync");
+            }
+
+            return reasons;
+        }
 
 
         [HttpGet("info")]
@@ -1590,6 +1837,410 @@ namespace JunctionRelayServer.Controllers
                     error = ex.Message
                 });
             }
+        }
+
+        // POST: api/devices/{id}/switch-connection-method
+        [HttpPost("{id:int}/switch-connection-method")]
+        public async Task<IActionResult> SwitchConnectionMethod(int id, [FromBody] SwitchConnectionMethodRequest request)
+        {
+            try
+            {
+                if (request == null)
+                {
+                    return BadRequest("Request body is required.");
+                }
+
+                // Get the device from database
+                var device = await _deviceDb.GetDeviceByIdAsync(id);
+                if (device == null)
+                {
+                    return NotFound($"Device with ID {id} not found.");
+                }
+
+                // Validate target method
+                if (request.TargetMethod != "COM" && request.TargetMethod != "Network")
+                {
+                    return BadRequest("TargetMethod must be either 'COM' or 'Network'.");
+                }
+
+                // Prevent switching to the same method
+                var currentMethod = device.Type == "COM Device" ? "COM" : "Network";
+                if (currentMethod == request.TargetMethod)
+                {
+                    return BadRequest($"Device is already configured as {request.TargetMethod} device.");
+                }
+
+                // Handle the switch based on target method
+                if (request.TargetMethod == "Network")
+                {
+                    return await SwitchComToNetwork(device, request);
+                }
+                else
+                {
+                    return await SwitchNetworkToCom(device, request);
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error switching connection method",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Helper method: Switch from COM to Network
+        private async Task<IActionResult> SwitchComToNetwork(Model_Device device, SwitchConnectionMethodRequest request)
+        {
+            try
+            {
+                // Validate network configuration
+                if (request.NetworkConfig == null)
+                {
+                    return BadRequest("NetworkConfig is required when switching to Network mode.");
+                }
+
+                if (string.IsNullOrWhiteSpace(request.NetworkConfig.WifiSSID))
+                {
+                    return BadRequest("WiFi SSID is required for network connection.");
+                }
+
+                // Ensure we have the COM port info from dedicated COM port field
+                var comPort = device.SelectedPort; // Use dedicated COM port column
+                if (string.IsNullOrWhiteSpace(comPort))
+                {
+                    return BadRequest("Device COM port information is missing.");
+                }
+
+                // Validate it's a proper COM port format
+                if (!comPort.StartsWith("COM", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest($"Invalid COM port format: '{comPort}'. Expected format like 'COM3' or 'COM5'.");
+                }
+
+                Console.WriteLine($"[SWITCH] Converting {device.Name} from COM ({comPort}) to Network");
+
+                // Create preferences payload for the device
+                var networkPreferences = new
+                {
+                    connMode = request.NetworkConfig.ConnectionMode ?? "wifi", // default to wifi
+                    wifiSSID = request.NetworkConfig.WifiSSID,
+                    wifiPassword = request.NetworkConfig.WifiPassword ?? "",
+                    mqttBroker = request.NetworkConfig.MqttBroker ?? "",
+                    mqttUsername = request.NetworkConfig.MqttUsername ?? "",
+                    mqttPassword = request.NetworkConfig.MqttPassword ?? "",
+                    rotation = request.NetworkConfig.Rotation ?? 0,
+                    swapBlueGreen = request.NetworkConfig.SwapBlueGreen ?? false,
+                    externalNeoPixelsData1 = request.NetworkConfig.ExternalNeoPixelsData1 ?? "0",
+                    externalNeoPixelsData2 = request.NetworkConfig.ExternalNeoPixelsData2 ?? "0",
+                    restart = true // Force restart to apply network settings
+                };
+
+                // Send network configuration via COM port using simple SerialPort approach
+                try
+                {
+                    var baudRate = request.ComSettings?.BaudRate ?? 115200;
+                    var timeoutMs = request.TimeoutMs ?? 10000;
+
+                    // Use simple SerialPort approach like the controller methods
+                    using var serialPort = new SerialPort(comPort, baudRate, Parity.None, 8, StopBits.One)
+                    {
+                        ReadTimeout = timeoutMs,
+                        WriteTimeout = 1000,
+                        NewLine = "\n"
+                    };
+
+                    Console.WriteLine($"[SWITCH] Opening {comPort} at {baudRate} baud...");
+                    serialPort.Open();
+
+                    Console.WriteLine($"[SWITCH] Waiting for ESP32 to stabilize...");
+                    await Task.Delay(2000);
+
+                    Console.WriteLine($"[SWITCH] Clearing buffers...");
+                    serialPort.DiscardInBuffer();
+                    serialPort.DiscardOutBuffer();
+
+                    // Send network configuration as JSON command
+                    var configCommand = new
+                    {
+                        type = "set_preferences",
+                        preferences = networkPreferences
+                    };
+
+                    var requestJson = JsonConvert.SerializeObject(configCommand);
+                    Console.WriteLine($"[SWITCH] Sending network config: {requestJson}");
+                    serialPort.WriteLine(requestJson);
+
+                    // Simple read - just like the controller methods
+                    Console.WriteLine($"[SWITCH] Reading response...");
+                    var response = serialPort.ReadExisting();
+
+                    // If no immediate response, wait and try again
+                    if (string.IsNullOrEmpty(response))
+                    {
+                        await Task.Delay(1000);
+                        response = serialPort.ReadExisting();
+                    }
+
+                    Console.WriteLine($"[SWITCH] Sent network config to {comPort}, response: {response}");
+
+                    // SerialPort is automatically disposed here due to 'using' statement
+
+                    // Wait for device to restart and connect to network
+                    await Task.Delay(request.RestartDelayMs ?? 5000);
+
+                    // Device will get IP via DHCP, no need to discover immediately
+                    Console.WriteLine($"[SWITCH] Network configuration sent. Device will obtain IP via DHCP.");
+
+                    // Update device record - clear the COM port info since it's now a network device
+                    device.Type = "Network Device";
+                    device.IPAddress = null; // Will be updated when device is discovered on network
+                    device.ConnMode = networkPreferences.connMode;
+                    device.LastUpdated = DateTime.UtcNow;
+
+                    var success = await _deviceDb.UpdateDeviceAsync(device.Id, device);
+
+                    if (success)
+                    {
+                        return Ok(new
+                        {
+                            success = true,
+                            message = $"Device '{device.Name}' network configuration sent successfully. Device will obtain IP address automatically.",
+                            deviceId = device.Id,
+                            oldComPort = comPort,
+                            newType = device.Type,
+                            note = "Device IP will be available once it connects to the network. Use device discovery to find it."
+                        });
+                    }
+                    else
+                    {
+                        return StatusCode(500, "Failed to update device record in database.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        message = $"Failed to send network configuration via COM port: {ex.Message}"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error during COM to Network switch",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Helper method: Switch from Network to COM
+        private async Task<IActionResult> SwitchNetworkToCom(Model_Device device, SwitchConnectionMethodRequest request)
+        {
+            try
+            {
+                // Validate COM configuration
+                if (request.ComSettings == null || string.IsNullOrWhiteSpace(request.ComSettings.ComPort))
+                {
+                    return BadRequest("ComSettings with ComPort is required when switching to COM mode.");
+                }
+
+                var targetComPort = request.ComSettings.ComPort;
+                var currentIpAddress = device.IPAddress;
+
+                Console.WriteLine($"[SWITCH] Converting {device.Name} from Network ({currentIpAddress}) to COM ({targetComPort})");
+
+                // Send command to device via HTTP to switch to COM mode
+                try
+                {
+                    using var client = new HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(request.TimeoutMs / 1000 ?? 10);
+
+                    // Create preferences to switch to COM mode
+                    var comPreferences = new
+                    {
+                        connMode = "usb", // or "serial" depending on your device's terminology
+                        restart = true
+                    };
+
+                    // Send preferences to device
+                    var preferencesPayload = new
+                    {
+                        connMode = comPreferences.connMode,
+                        restart = comPreferences.restart
+                    };
+
+                    var jsonPayload = JsonConvert.SerializeObject(preferencesPayload);
+                    var content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+                    var response = await client.PostAsync($"http://{currentIpAddress}/api/device/set-preferences", content);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return StatusCode(500, $"Failed to send COM mode command to device: {response.ReasonPhrase}");
+                    }
+
+                    Console.WriteLine($"[SWITCH] Sent COM mode command to {currentIpAddress}");
+
+                    // Wait for device to restart
+                    await Task.Delay(request.RestartDelayMs ?? 3000);
+
+                    // Update device record
+                    device.Type = "COM Device";
+                    device.IPAddress = targetComPort; // Store COM port in IPAddress field
+                    device.ConnMode = "usb";
+                    device.LastUpdated = DateTime.UtcNow;
+
+                    var success = await _deviceDb.UpdateDeviceAsync(device.Id, device);
+
+                    if (success)
+                    {
+                        return Ok(new
+                        {
+                            success = true,
+                            message = $"Device '{device.Name}' successfully switched from Network to COM mode",
+                            deviceId = device.Id,
+                            oldIpAddress = currentIpAddress,
+                            newComPort = targetComPort,
+                            newType = device.Type,
+                            note = "Device should now be accessible via COM port. You may need to reconnect."
+                        });
+                    }
+                    else
+                    {
+                        return StatusCode(500, "Failed to update device record in database.");
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    return StatusCode(503, new
+                    {
+                        success = false,
+                        message = $"Could not reach device at {currentIpAddress}: {ex.Message}",
+                        suggestion = "Device may already be in COM mode. Try updating the device record manually."
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error during Network to COM switch",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Helper endpoint to finalize network switch when IP is discovered later
+        // PUT: api/devices/{id}/finalize-network-switch
+        [HttpPut("{id:int}/finalize-network-switch")]
+        public async Task<IActionResult> FinalizeNetworkSwitch(int id, [FromBody] FinalizeNetworkSwitchRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.IpAddress))
+                {
+                    return BadRequest("IP address is required.");
+                }
+
+                var device = await _deviceDb.GetDeviceByIdAsync(id);
+                if (device == null)
+                {
+                    return NotFound($"Device with ID {id} not found.");
+                }
+
+                // Verify device is reachable at the new IP
+                try
+                {
+                    using var client = new HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(5);
+                    var response = await client.GetAsync($"http://{request.IpAddress}/api/device/info");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return BadRequest($"Device is not reachable at {request.IpAddress}");
+                    }
+                }
+                catch (Exception)
+                {
+                    return BadRequest($"Device is not reachable at {request.IpAddress}");
+                }
+
+                // Update device record
+                var oldComPort = device.IPAddress; // Should be COM port if switching from COM
+                device.Type = "Network Device";
+                device.IPAddress = request.IpAddress;
+                device.LastUpdated = DateTime.UtcNow;
+
+                var success = await _deviceDb.UpdateDeviceAsync(device.Id, device);
+
+                if (success)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = $"Device '{device.Name}' network switch finalized",
+                        deviceId = device.Id,
+                        oldComPort = oldComPort,
+                        newIpAddress = request.IpAddress,
+                        newType = device.Type
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, "Failed to update device record.");
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error finalizing network switch",
+                    error = ex.Message
+                });
+            }
+        }
+
+        public class SwitchConnectionMethodRequest
+        {
+            public string TargetMethod { get; set; } = string.Empty; // "COM" or "Network"
+            public NetworkConfigSettings? NetworkConfig { get; set; }
+            public ComConfigSettings? ComSettings { get; set; }
+            public string? ExpectedIpAddress { get; set; } // For COM->Network switch
+            public int? TimeoutMs { get; set; } = 10000;
+            public int? RestartDelayMs { get; set; } = 5000;
+        }
+
+        public class NetworkConfigSettings
+        {
+            public string WifiSSID { get; set; } = string.Empty;
+            public string? WifiPassword { get; set; }
+            public string? ConnectionMode { get; set; } = "wifi"; // "wifi" or "ethernet"
+            public string? MqttBroker { get; set; }
+            public string? MqttUsername { get; set; }
+            public string? MqttPassword { get; set; }
+            public int? Rotation { get; set; } = 0;
+            public bool? SwapBlueGreen { get; set; } = false;
+            public string? ExternalNeoPixelsData1 { get; set; } = "0";
+            public string? ExternalNeoPixelsData2 { get; set; } = "0";
+        }
+
+        public class ComConfigSettings
+        {
+            public string ComPort { get; set; } = string.Empty; // e.g., "COM3"
+            public int? BaudRate { get; set; } = 115200;
+        }
+
+        public class FinalizeNetworkSwitchRequest
+        {
+            public string IpAddress { get; set; } = string.Empty;
         }
 
         public class UpdateSyncModeRequest

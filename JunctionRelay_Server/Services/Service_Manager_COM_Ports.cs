@@ -17,9 +17,12 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Newtonsoft.Json;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Ports;
 using System.Text;
+using System.Text.Json;
 
 namespace JunctionRelayServer.Services
 {
@@ -81,12 +84,13 @@ namespace JunctionRelayServer.Services
                 _serialPorts[portName] = serialPort;
                 _portStatuses[portName] = "OPEN";
 
-                Console.WriteLine($"[SUCCESS] Port {portName} opened with standard SerialPort.");
+                Console.WriteLine($"[SUCCESS] Port {portName} opened successfully.");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] Error opening connection on {portName}: {ex.Message}");
                 _portStatuses[portName] = "ERROR";
+                throw;
             }
         }
 
@@ -120,6 +124,7 @@ namespace JunctionRelayServer.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] Error sending data on {portName}: {ex.Message}");
+                throw;
             }
         }
 
@@ -143,15 +148,11 @@ namespace JunctionRelayServer.Services
 
                 // Force immediate transmission
                 serialPort.BaseStream.Flush();
-
-                // Print the binary payload as hex for consistency with UI display
-                //Console.Write("[COM] Raw payload (hex): ");
-                //Console.Write(BytesToHex(data));
-                //Console.WriteLine();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR] Error sending binary data on {portName}: {ex.Message}");
+                throw;
             }
         }
 
@@ -164,22 +165,6 @@ namespace JunctionRelayServer.Services
                 // Flush both the SerialPort buffer and the underlying stream
                 port.BaseStream.Flush();
             }
-        }
-
-        // Helper method to convert bytes to hex string with spaces for readability
-        private string BytesToHex(byte[] bytes)
-        {
-            if (bytes == null || bytes.Length == 0)
-                return "";
-
-            var sb = new StringBuilder(bytes.Length * 3);
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append(' ');
-                sb.Append(bytes[i].ToString("x2"));
-            }
-            return sb.ToString();
         }
 
         public bool IsPortOpen(string portName)
@@ -278,5 +263,252 @@ namespace JunctionRelayServer.Services
         {
             CloseAllConnections();
         }
+
+        // Get COM port info (for UI display)
+        public object GetPortInfo(string portName)
+        {
+            try
+            {
+                var status = GetPortStatus(portName);
+                var isOpen = IsPortOpen(portName);
+
+                return new
+                {
+                    portName = portName,
+                    status = status,
+                    isOpen = isOpen,
+                    isAvailable = !isOpen && status != "ERROR"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new
+                {
+                    portName = portName,
+                    status = "ERROR",
+                    isOpen = false,
+                    isAvailable = false,
+                    error = ex.Message
+                };
+            }
+        }
+
+        // DEVICE INFO
+
+
+        public async Task<Dictionary<string, object>?> GetDeviceInfoViaSerial(string portName, int baudRate, int timeoutMs)
+        {
+            try
+            {
+                Console.WriteLine($"[COM] Getting device info from {portName} at {baudRate} baud");
+
+                using var serialPort = new SerialPort(portName, baudRate)
+                {
+                    DataBits = 8,
+                    Parity = Parity.None,
+                    StopBits = StopBits.One,
+                    Handshake = Handshake.None,
+                    ReadTimeout = 1000,
+                    WriteTimeout = 1000,
+                    ReadBufferSize = 4096,
+                    WriteBufferSize = 4096,
+                    Encoding = Encoding.UTF8,
+                    NewLine = "\n",
+                    DtrEnable = true,
+                    RtsEnable = false
+                };
+
+                serialPort.Open();
+                await Task.Delay(2000); // Allow ESP32 to boot
+
+                serialPort.DiscardInBuffer();
+                serialPort.DiscardOutBuffer();
+
+                var requestJson = "{\"type\":\"device_info\"}\n";
+                serialPort.Write(requestJson);
+                serialPort.BaseStream.Flush();
+                await Task.Delay(50); // Allow ESP32 to respond
+
+                Console.WriteLine($"📤 Sending: {requestJson.Trim()}");
+                Console.WriteLine("⏳ Waiting for response...");
+
+                var buffer = new StringBuilder();
+                var startTime = DateTime.UtcNow;
+                string? extractedJson = null;
+
+                while ((DateTime.UtcNow - startTime).TotalMilliseconds < timeoutMs)
+                {
+                    try
+                    {
+                        if (serialPort.BytesToRead > 0)
+                        {
+                            string incoming = serialPort.ReadExisting();
+                            if (!string.IsNullOrWhiteSpace(incoming))
+                            {
+                                buffer.Append(incoming);
+
+                                var lines = incoming.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                                foreach (var line in lines)
+                                {
+                                    Console.WriteLine($"📋 Read: {line}");
+
+                                    if (extractedJson == null && line.Trim().StartsWith("{") && line.Trim().EndsWith("}"))
+                                    {
+                                        try
+                                        {
+                                            var parsed = JsonDocument.Parse(line.Trim());
+                                            extractedJson = line.Trim();
+                                        }
+                                        catch { }
+                                    }
+                                }
+
+                                if (extractedJson != null)
+                                {
+                                    Console.WriteLine("✅ Complete JSON response found!");
+                                    Console.WriteLine($"📄 Response: {extractedJson}");
+
+                                    var parsed = JsonConvert.DeserializeObject<Dictionary<string, object>>(extractedJson);
+                                    return parsed;
+                                }
+                            }
+                        }
+                    }
+                    catch (TimeoutException)
+                    {
+                        // harmless, just retry
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[COM] Read error: {ex.Message}");
+                    }
+
+                    await Task.Delay(50);
+                }
+
+                Console.WriteLine("⏰ Timeout after waiting for valid JSON.");
+                Console.WriteLine($"📝 Final buffer contents: {buffer.Length} chars");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COM] Error getting device info from {portName}: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<Dictionary<string, object>?> GetDeviceCapabilitiesViaSerial(string portName, int baudRate, int timeoutMs)
+        {
+            try
+            {
+                Console.WriteLine($"[COM] Getting device capabilities from {portName} at {baudRate} baud");
+
+                using var serialPort = new SerialPort(portName, baudRate, Parity.None, 8, StopBits.One)
+                {
+                    ReadTimeout = 1000,
+                    WriteTimeout = 1000,
+                    NewLine = "\n",
+                    DtrEnable = true,
+                    RtsEnable = true
+                };
+
+                Console.WriteLine($"[COM] Opening {portName}...");
+                serialPort.Open();
+
+                Console.WriteLine("[COM] Waiting for ESP32...");
+                await Task.Delay(2000);
+
+                serialPort.DiscardInBuffer();
+                serialPort.DiscardOutBuffer();
+
+                var request = new { type = "device_capabilities" };
+                var requestJson = JsonConvert.SerializeObject(request);
+                Console.WriteLine($"[COM] Sending: {requestJson}");
+                serialPort.WriteLine(requestJson);
+
+                var start = DateTime.Now;
+                var builder = new StringBuilder();
+
+                while ((DateTime.Now - start).TotalMilliseconds < timeoutMs)
+                {
+                    try
+                    {
+                        await Task.Delay(200); // Small wait
+                        string chunk = serialPort.ReadExisting();
+
+                        if (!string.IsNullOrWhiteSpace(chunk))
+                        {
+                            builder.Append(chunk);
+                            Console.WriteLine($"[COM] 📥 Chunk received ({chunk.Length} chars)");
+                        }
+
+                        // Try extracting JSON if we have any accumulated data
+                        var jsonRaw = ExtractJsonFromResponse(builder.ToString());
+                        if (!string.IsNullOrEmpty(jsonRaw))
+                        {
+                            Console.WriteLine($"[COM] ✅ JSON found: {jsonRaw}");
+                            var parsed = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonRaw);
+                            return parsed;
+                        }
+                    }
+                    catch (TimeoutException)
+                    {
+                        // Ignore read timeouts
+                    }
+                }
+
+                Console.WriteLine("[COM] ❌ Timeout: No valid JSON found.");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COM] ❌ Error getting capabilities: {ex.Message}");
+                return null;
+            }
+        }
+
+
+        private string? ExtractJsonFromResponse(string response)
+        {
+            if (string.IsNullOrWhiteSpace(response))
+                return null;
+
+            int braceDepth = 0;
+            int jsonStart = -1;
+
+            for (int i = 0; i < response.Length; i++)
+            {
+                if (response[i] == '{')
+                {
+                    if (braceDepth == 0)
+                        jsonStart = i;
+                    braceDepth++;
+                }
+                else if (response[i] == '}')
+                {
+                    braceDepth--;
+                    if (braceDepth == 0 && jsonStart != -1)
+                    {
+                        int jsonEnd = i;
+                        string jsonCandidate = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
+
+                        try
+                        {
+                            JsonConvert.DeserializeObject<object>(jsonCandidate);
+                            return jsonCandidate;
+                        }
+                        catch
+                        {
+                            jsonStart = -1;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+
+
     }
 }
