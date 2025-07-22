@@ -1,5 +1,7 @@
 #include "Helper_HTTPEndpoints.h"
 #include "Helper_StreamProcessor.h"
+#include "Helper_DeviceInfo.h"
+#include "Helper_DeviceCapabilities.h"
 #include "ScreenRouter.h"
 #include "Manager_MQTT.h"
 #include "Helper_WebSocket.h"
@@ -11,16 +13,34 @@
 char Helper_HTTPEndpoints::tempPostBodyBuffer[2048];
 size_t Helper_HTTPEndpoints::tempPostBodyLen = 0;
 
-Helper_HTTPEndpoints::Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamProcessor* processor)
+Helper_HTTPEndpoints::Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamProcessor* processor,
+                                         Helper_DeviceInfo* devInfo, Helper_DeviceCapabilities* devCaps)
     : screenRouter(router),
       streamProcessor(processor),
-      httpChunkProcessor(nullptr),  // Add this line
+      httpChunkProcessor(nullptr),
+      deviceInfo(devInfo),
+      deviceCapabilities(devCaps),
       server(80),
       serverRunning(false),
       webSocketHelper(nullptr),
       mqttManager(nullptr)
 {
-    Serial.println("[Helper_HTTPEndpoints] Constructor called");
+    // Serial.printf("[Helper_HTTPEndpoints] Constructor: deviceInfo=%p, deviceCapabilities=%p\n", devInfo, devCaps);
+    
+    // Test the helpers immediately
+    // if (devInfo) {
+    //     Serial.println("[Helper_HTTPEndpoints] Testing deviceInfo helper...");
+    //     String test = devInfo->getDeviceInfoJSON();
+    //     Serial.printf("[Helper_HTTPEndpoints] DeviceInfo test result length: %d\n", test.length());
+    // } else {
+    //     Serial.println("[Helper_HTTPEndpoints] ERROR: deviceInfo is NULL in constructor!");
+    // }
+    
+    // if (devCaps) {
+    //     Serial.println("[Helper_HTTPEndpoints] deviceCapabilities helper looks good");
+    // } else {
+    //     Serial.println("[Helper_HTTPEndpoints] ERROR: deviceCapabilities is NULL in constructor!");
+    // }
 }
 
 Helper_HTTPEndpoints::~Helper_HTTPEndpoints() {
@@ -34,8 +54,14 @@ Helper_HTTPEndpoints::~Helper_HTTPEndpoints() {
     Serial.println("[Helper_HTTPEndpoints] Destructor called");
 }
 
+void Helper_HTTPEndpoints::setDeviceHelpers(Helper_DeviceInfo* devInfo, Helper_DeviceCapabilities* devCaps) {
+    deviceInfo = devInfo;
+    deviceCapabilities = devCaps;
+    Serial.println("[Helper_HTTPEndpoints] Device helpers set");
+}
+
 void Helper_HTTPEndpoints::init() {
-    Serial.println("[Helper_HTTPEndpoints] Initializing HTTP endpoints...");
+    // Serial.println("[Helper_HTTPEndpoints] Initializing HTTP endpoints...");
     
     if (!screenRouter || !streamProcessor) {
         Serial.println("[Helper_HTTPEndpoints] ERROR: Missing required dependencies");
@@ -108,6 +134,20 @@ void Helper_HTTPEndpoints::setupStatusEndpoints() {
 }
 
 void Helper_HTTPEndpoints::setupDeviceEndpoints() {
+    // Device info endpoint - NEW
+    server.on("/api/device/info", HTTP_GET,
+        [this](AsyncWebServerRequest* req) {
+            this->handleDeviceInfo(req);
+        }
+    );
+
+    // Device capabilities endpoint - NEW
+    server.on("/api/device/capabilities", HTTP_GET,
+        [this](AsyncWebServerRequest* req) {
+            this->handleDeviceCapabilities(req);
+        }
+    );
+
     // Device preferences
     server.on("/api/device/set-preferences", HTTP_POST,
         [this](AsyncWebServerRequest* req) {
@@ -217,19 +257,57 @@ void Helper_HTTPEndpoints::handleDataPost(AsyncWebServerRequest* req, uint8_t* d
     }
 }
 
+void Helper_HTTPEndpoints::handleDeviceInfo(AsyncWebServerRequest* req) {
+    if (!deviceInfo) {
+        req->send(500, "application/json", "{\"error\":\"Device info helper not available\"}");
+        return;
+    }
+
+    Serial.println("[Helper_HTTPEndpoints] Device info request received");
+    
+    String deviceInfoJSON = deviceInfo->getDeviceInfoJSON();
+    req->send(200, "application/json", deviceInfoJSON);
+}
+
+void Helper_HTTPEndpoints::handleDeviceCapabilities(AsyncWebServerRequest* req) {
+    if (!deviceCapabilities) {
+        req->send(500, "application/json", "{\"error\":\"Device capabilities helper not available\"}");
+        return;
+    }
+
+    Serial.println("[Helper_HTTPEndpoints] Device capabilities request received");
+    
+    String capabilitiesJSON = deviceCapabilities->getDeviceCapabilitiesJSON();
+    req->send(200, "application/json", capabilitiesJSON);
+}
+
 void Helper_HTTPEndpoints::handleConnectionStatus(AsyncWebServerRequest* req) {
     String response = getConnectionStatusJson();
     req->send(200, "application/json", response);
 }
 
 void Helper_HTTPEndpoints::handleSystemStats(AsyncWebServerRequest* req) {
-    String response = getSystemStatsJson();
-    req->send(200, "application/json", response);
+    if (!deviceInfo) {
+        req->send(500, "application/json", "{\"error\":\"Device info helper not available\"}");
+        return;
+    }
+
+    Serial.println("[Helper_HTTPEndpoints] System stats request received");
+    
+    String systemStatsJSON = deviceInfo->getSystemStatsJSON();
+    req->send(200, "application/json", systemStatsJSON);
 }
 
 void Helper_HTTPEndpoints::handleSystemStatsLite(AsyncWebServerRequest* req) {
-    String response = getSystemStatsLiteJson();
-    req->send(200, "application/json", response);
+    if (!deviceInfo) {
+        req->send(500, "application/json", "{\"error\":\"Device info helper not available\"}");
+        return;
+    }
+
+    Serial.println("[Helper_HTTPEndpoints] Lightweight system stats request received");
+    
+    String lightweightStatsJSON = deviceInfo->getSystemStatsLightweightJSON();
+    req->send(200, "application/json", lightweightStatsJSON);
 }
 
 void Helper_HTTPEndpoints::handleGatewayStatus(AsyncWebServerRequest* req) {
@@ -348,61 +426,19 @@ String Helper_HTTPEndpoints::getConnectionStatusJson() const {
 }
 
 String Helper_HTTPEndpoints::getSystemStatsJson() const {
-    StaticJsonDocument<1024> doc;
-    
-    // Memory information
-    JsonObject memory = doc.createNestedObject("memory");
-    memory["freeHeap"] = ESP.getFreeHeap();
-    memory["minFreeHeap"] = ESP.getMinFreeHeap();
-    memory["heapSize"] = ESP.getHeapSize();
-    memory["maxAllocHeap"] = ESP.getMaxAllocHeap();
-    
-    #ifdef BOARD_HAS_PSRAM
-    if (psramFound()) {
-        memory["psramSize"] = ESP.getPsramSize();
-        memory["freePsram"] = ESP.getFreePsram();
-        memory["minFreePsram"] = ESP.getMinFreePsram();
-        memory["maxAllocPsram"] = ESP.getMaxAllocPsram();
-    }
-    #endif
-    
-    // System information
-    JsonObject system = doc.createNestedObject("system");
-    system["uptime"] = millis();
-    system["cpuFreqMHz"] = getCpuFrequencyMhz();
-    system["flashSize"] = ESP.getFlashChipSize();
-    system["sketchSize"] = ESP.getSketchSize();
-    system["freeSketchSpace"] = ESP.getFreeSketchSpace();
-    
-    // Queue status from StreamProcessor
-    if (streamProcessor) {
-        auto queueStatus = streamProcessor->getQueueStatus();
-        JsonObject queues = doc.createNestedObject("queues");
-        queues["sensorQueue"] = queueStatus.sensorQueueSize;
-        queues["sensorQueueFree"] = queueStatus.sensorQueueFree;
-        queues["configQueue"] = queueStatus.configQueueSize;
-        queues["configQueueFree"] = queueStatus.configQueueFree;
-        queues["sensorTaskRunning"] = queueStatus.sensorTaskRunning;
-        queues["configTaskRunning"] = queueStatus.configTaskRunning;
+    if (!deviceInfo) {
+        return "{\"error\":\"Device info helper not available\"}";
     }
     
-    String response;
-    serializeJson(doc, response);
-    return response;
+    return deviceInfo->getSystemStatsJSON();
 }
 
 String Helper_HTTPEndpoints::getSystemStatsLiteJson() const {
-    StaticJsonDocument<256> doc;
+    if (!deviceInfo) {
+        return "{\"error\":\"Device info helper not available\"}";
+    }
     
-    doc["freeHeap"] = ESP.getFreeHeap();
-    doc["uptime"] = millis();
-    doc["wifiConnected"] = (WiFi.status() == WL_CONNECTED);
-    doc["mqttConnected"] = mqttManager ? mqttManager->connected() : false;
-    doc["webSocketConnected"] = webSocketHelper ? webSocketHelper->hasConnectedClients() : false;
-    
-    String response;
-    serializeJson(doc, response);
-    return response;
+    return deviceInfo->getSystemStatsLightweightJSON();
 }
 
 String Helper_HTTPEndpoints::getGatewayStatusJson() const {

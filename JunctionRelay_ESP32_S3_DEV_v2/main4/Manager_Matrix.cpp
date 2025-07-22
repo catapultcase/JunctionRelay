@@ -1,10 +1,9 @@
 #include "Manager_Matrix.h"
 #include "Utils.h"
-#include "ConnectionManager.h"
+#include "Manager_Connections.h"  // FIXED: Updated include
 
 // Initialize static members
 Manager_Matrix* Manager_Matrix::instance = nullptr;
-TaskHandle_t Manager_Matrix::refreshTaskHandle = NULL;
 
 // Static method to get the singleton instance
 Manager_Matrix* Manager_Matrix::getInstance() {
@@ -20,6 +19,9 @@ Manager_Matrix::Manager_Matrix()
     , matrix(nullptr)
     , matrixMutex(nullptr)
     , connMgr(nullptr)
+    , matrixTaskHandle(nullptr)
+    , taskRunning(false)
+    , taskStarted(false)
     , currentMode(MODE_READY_SCREEN)
     , lastModeChange(0)
     , useDoubleBuffering(false)
@@ -42,6 +44,7 @@ Manager_Matrix::Manager_Matrix()
 
 // Destructor
 Manager_Matrix::~Manager_Matrix() {
+    stop();
     cleanupBuffers();
     
     if (matrixMutex != nullptr) {
@@ -51,6 +54,21 @@ Manager_Matrix::~Manager_Matrix() {
     if (matrix != nullptr) {
         delete matrix;
     }
+}
+
+// Static task function (following QuadDisplay pattern)
+void Manager_Matrix::matrixTaskFunction(void* parameter) {
+    Manager_Matrix* manager = static_cast<Manager_Matrix*>(parameter);
+    
+    Serial.printf("[MATRIX] Update task started on core %d\n", xPortGetCoreID());
+    
+    while (manager->taskRunning) {
+        manager->internalUpdate();
+        vTaskDelay(pdMS_TO_TICKS(200)); // 5Hz update rate for matrix updates
+    }
+    
+    Serial.println("[MATRIX] Update task stopping");
+    vTaskDelete(nullptr);
 }
 
 // Thread-safe matrix access
@@ -92,32 +110,13 @@ bool Manager_Matrix::validateCoordinates(int x, int y) {
     return (x >= 0 && x < MATRIX_WIDTH && y >= 0 && y < MATRIX_HEIGHT);
 }
 
-// Method to set the connection manager reference
-void Manager_Matrix::setConnectionManager(ConnectionManager* cm) {
+// Method to set the connection manager reference - FIXED to use Manager_Connections
+void Manager_Matrix::setConnectionManager(Manager_Connections* cm) {
     connMgr = cm;
-    
-    // Start the refresh timer task with larger stack
-    if (connMgr && refreshTaskHandle == NULL) {
-        BaseType_t result = xTaskCreatePinnedToCore(
-            refreshTimerCallback,
-            "MatrixRefresh",
-            6144,  // Increased from 2048 to 6KB
-            this,
-            1,     // Priority
-            &refreshTaskHandle,
-            1      // Core 1
-        );
-        
-        if (result != pdPASS) {
-            Serial.println("[Manager_Matrix] ERROR: Failed to create refresh task");
-            refreshTaskHandle = NULL;
-        } else {
-            Serial.println("[Manager_Matrix] Refresh task created successfully");
-        }
-    }
+    Serial.println("[Manager_Matrix] ✅ Connection manager reference set");
 }
 
-// begin() method to initialize the matrix with the provided pins
+// begin() method to initialize the matrix with the provided pins (but don't start task)
 void Manager_Matrix::begin(uint8_t* rgbPins, uint8_t* addrPins, uint8_t clockPin, uint8_t latchPin, uint8_t oePin) {
     if (initialized) {
         Serial.println("[Manager_Matrix] Matrix already initialized.");
@@ -168,10 +167,64 @@ void Manager_Matrix::begin(uint8_t* rgbPins, uint8_t* addrPins, uint8_t clockPin
     
     releaseMatrix();
     
-    Serial.println("[Manager_Matrix] Initialization complete.");
+    Serial.println("[Manager_Matrix] ✅ Matrix initialization complete. Call startUpdateTask() when ready.");
+}
+
+// Start the update task when it's safe (following QuadDisplay pattern)
+void Manager_Matrix::startUpdateTask() {
+    if (taskStarted) {
+        Serial.println("[MATRIX] Task already started, ignoring request.");
+        return;
+    }
     
-    // Display ready screen
-    showReadyScreen();
+    // Start the update task on Core 1 (same as other managers for consistency)
+    taskRunning = true;
+    xTaskCreatePinnedToCore(
+        matrixTaskFunction,       // Task function
+        "Matrix",                 // Task name
+        6144,                     // Stack size (larger for matrix operations)
+        this,                     // Parameter (this instance)
+        1,                        // Priority
+        &matrixTaskHandle,        // Task handle
+        1                         // Core 1
+    );
+    
+    taskStarted = true;
+    Serial.println("[MATRIX] ✅ Update task created on Core 1");
+}
+
+// Stop method (following QuadDisplay pattern)
+void Manager_Matrix::stop() {
+    if (taskRunning) {
+        taskRunning = false;
+        
+        // Wait for task to finish
+        if (matrixTaskHandle) {
+            vTaskDelay(pdMS_TO_TICKS(250)); // Longer delay for matrix cleanup
+            matrixTaskHandle = nullptr;
+        }
+        
+        // Clear display
+        clearDisplay();
+        
+        Serial.println("[MATRIX] Update task stopped");
+    }
+}
+
+// Internal update method (called by task)
+void Manager_Matrix::internalUpdate() {
+    // Only update if we're in ready screen mode and initialized
+    if (initialized && connMgr && currentMode == MODE_READY_SCREEN) {
+        refreshReadyScreen();
+    }
+    
+    // Monitor stack usage periodically
+    static uint32_t lastStackCheck = 0;
+    uint32_t now = millis();
+    if (now - lastStackCheck > 10000) { // Every 10 seconds
+        checkStackUsage();
+        lastStackCheck = now;
+    }
 }
 
 void Manager_Matrix::initializeBuffers() {
@@ -226,7 +279,7 @@ void Manager_Matrix::showReadyScreen() {
     bool forceUpdate = scrollState.needsUpdate;
     bool ipChanged = false;
     
-    // Get current IP and check if it changed
+    // Get current IP and check if it changed - FIXED to use Manager_Connections
     char currentIP[20] = "No Network";
     if (connMgr) {
         ConnectionStatus status = connMgr->getConnectionStatus();
@@ -346,41 +399,6 @@ void Manager_Matrix::renderScrollingText(const char* text, int x, int y, int max
         // Display scrolling text
         matrix->setCursor(x - scrollState.offset, y);
         matrix->print(text);
-    }
-}
-
-// Static timer callback function with better error handling
-void Manager_Matrix::refreshTimerCallback(void* parameter) {
-    Manager_Matrix* instance = static_cast<Manager_Matrix*>(parameter);
-    
-    if (!instance) {
-        Serial.println("[Manager_Matrix] ERROR: Null instance in refresh callback");
-        vTaskDelete(NULL);
-        return;
-    }
-    
-    Serial.printf("[Manager_Matrix] Refresh task started on core %d\n", xPortGetCoreID());
-    
-    TickType_t lastWakeTime = xTaskGetTickCount();
-    const TickType_t frequency = pdMS_TO_TICKS(200); // 200ms refresh rate
-    
-    while (true) {
-        // Monitor stack usage periodically
-        static uint32_t lastStackCheck = 0;
-        uint32_t now = millis();
-        if (now - lastStackCheck > 10000) { // Every 10 seconds
-            instance->checkStackUsage();
-            lastStackCheck = now;
-        }
-        
-        // Only update if we're in ready screen mode and initialized
-        if (instance->initialized && instance->connMgr && 
-            instance->currentMode == MODE_READY_SCREEN) {
-            instance->refreshReadyScreen();
-        }
-        
-        // Use vTaskDelayUntil for consistent timing
-        vTaskDelayUntil(&lastWakeTime, frequency);
     }
 }
 
@@ -605,10 +623,10 @@ void Manager_Matrix::logMemoryUsage() {
 
 // Stack usage monitoring
 void Manager_Matrix::checkStackUsage() {
-    if (refreshTaskHandle != NULL) {
-        UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(refreshTaskHandle);
+    if (matrixTaskHandle != NULL) {
+        UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(matrixTaskHandle);
         if (stackHighWaterMark < 1000) {
-            Serial.printf("[Manager_Matrix] WARNING: Refresh task stack low: %d bytes remaining\n", 
+            Serial.printf("[Manager_Matrix] WARNING: Matrix task stack low: %d bytes remaining\n", 
                          stackHighWaterMark * sizeof(StackType_t));
         }
     }
@@ -628,6 +646,6 @@ const char* Manager_Matrix::getConfigKey() const {
 }
 
 void Manager_Matrix::update() {
-    // No animation logic needed - timer handles updates
+    // No animation logic needed - task handles updates
     checkStackUsage();
 }

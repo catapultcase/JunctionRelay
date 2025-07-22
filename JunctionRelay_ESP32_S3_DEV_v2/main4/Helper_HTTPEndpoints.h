@@ -9,13 +9,18 @@
 
 // Forward declarations
 class Helper_StreamProcessor;
+class Helper_DeviceInfo;
+class Helper_DeviceCapabilities;
 class ScreenRouter;
 class Manager_MQTT;
 class Helper_WebSocket;
 
 class Helper_HTTPEndpoints {
 public:
-    Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamProcessor* processor);
+    // UPDATED CONSTRUCTOR - This is what was missing!
+    Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamProcessor* processor,
+                        Helper_DeviceInfo* deviceInfo = nullptr, 
+                        Helper_DeviceCapabilities* deviceCapabilities = nullptr);
     ~Helper_HTTPEndpoints();
 
     // Initialize HTTP server and endpoints
@@ -27,6 +32,9 @@ public:
 
     // Server status
     bool isServerRunning() const { return serverRunning; }
+
+    // Set helpers after construction (if not provided in constructor)
+    void setDeviceHelpers(Helper_DeviceInfo* deviceInfo, Helper_DeviceCapabilities* deviceCapabilities);
 
     // WebSocket and MQTT management
     void setWebSocketHelper(Helper_WebSocket* wsHelper) { webSocketHelper = wsHelper; }
@@ -50,6 +58,11 @@ private:
     ScreenRouter* screenRouter;
     Helper_StreamProcessor* streamProcessor;
     Helper_HTTPChunkProcessor* httpChunkProcessor;
+    
+    // Device helpers (injected)
+    Helper_DeviceInfo* deviceInfo;
+    Helper_DeviceCapabilities* deviceCapabilities;
+    
     AsyncWebServer server;
     bool serverRunning;
 
@@ -79,6 +92,10 @@ private:
     void handleFirmwareHash(AsyncWebServerRequest* req);
     void handleSetPreferences(AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total);
     void handleDeviceWipe(AsyncWebServerRequest* req);
+    
+    // NEW: Direct device info/capabilities handlers - These were missing!
+    void handleDeviceInfo(AsyncWebServerRequest* req);
+    void handleDeviceCapabilities(AsyncWebServerRequest* req);
 
     // Helper methods
     String getConnectionStatusJson() const;

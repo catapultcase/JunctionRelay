@@ -7,7 +7,7 @@ Helper_Decompression::Helper_Decompression()
       totalBytesIn(0),
       totalBytesOut(0)
 {
-    Serial.println("[Decompression] Helper initialized");
+    // Serial.println("[Decompression] Helper initialized");
 }
 
 Helper_Decompression::~Helper_Decompression() {

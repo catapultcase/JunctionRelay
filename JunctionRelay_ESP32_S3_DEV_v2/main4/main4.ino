@@ -7,6 +7,8 @@
 #include "Device.h"                    // swapped per‑board at build time
 #include "DisplayManager.h"
 #include "ScreenRouter.h"
+#include "Helper_StartupScheduler.h"   // NEW: Centralized startup management
+#include "Manager_NeoPixels.h"         // This manager is an exception
 
 #if defined(DEVICE_CROWPANEL5) || defined(DEVICE_CROWPANEL7)
 #include "touch.h"
@@ -18,6 +20,7 @@ Manager_Connections    connManager;
 Device                 device(&connManager);
 DisplayManager         displayManager(&device, connManager);
 ScreenRouter           screenRouter;
+HardwareInventory      globalInventory;
 
 #if DEVICE_HAS_ONBOARD_SCREEN
 volatile bool lvglInitialized = false;
@@ -212,32 +215,21 @@ void setup() {
     }
   }
 
-  #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    if (auto* bus = device.getI2CInterface()) {
-      bus->begin();
-      bus->setClock(400000);
-      Serial.printf("[DEBUG] I2C initialized for %s\n", device.getName());
-    }
-  #endif
-
   Serial.println("===========================");
   Serial.print  ("Starting JunctionRelay, Compiled for: ");
   Serial.println(device.getName());
   Serial.println("===========================");
 
-  #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    device.initNeoPixels();
-  #endif
-
   #if defined(DEVICE_CROWPANEL5) || defined(DEVICE_CROWPANEL7)
     touch_init();
   #endif
 
-  if (!device.begin()) {
-    Serial.println("[ERROR] Device initialization failed!");
-    while (true) delay(1000);
-  }
-
+  // ===============================================
+  // NEW: Hardware Detection Phase
+  // ===============================================
+  Serial.println("[MAIN] Starting hardware detection...");
+  globalInventory = device.detectHardware();
+  
   #if DEVICE_HAS_ONBOARD_SCREEN
     xTaskCreatePinnedToCore(
       lvglTaskFunction, "LVGL", 4096, nullptr, 2, &lvglTaskHandle, 1
@@ -257,26 +249,47 @@ void setup() {
     screenRouter.registerScreen(&displayManager);
   #endif
 
-  // Configure and initialize connections
+  // ===============================================
+  // UPDATED: Configure connection manager FIRST
+  // ===============================================
+  Serial.println("[MAIN] Configuring connection manager...");
   connManager.setConnMode(mode);
   connManager.setScreenRouter(&screenRouter);
   connManager.setPreferences(&prefsHelper);
-  connManager.setDevice(&device); 
+  connManager.setDevice(&device);
+  connManager.setInventory(&globalInventory);
   connManager.init();
 
-  Serial.println("[DEBUG] Setup complete!");
+  // ===============================================
+  // UPDATED: Centralized Manager Initialization WITH connection manager
+  // ===============================================
+  Serial.println("[MAIN] Starting centralized manager initialization...");
+  Helper_StartupScheduler* startupScheduler = Helper_StartupScheduler::getInstance();
+  startupScheduler->setConnectionManager(&connManager);  // SET BEFORE initializeFromInventory!
+  startupScheduler->initializeFromInventory(globalInventory, &screenRouter, &device);
+
+  Serial.println("[MAIN] Setup complete!");
 }
 
 void loop() {
+  
+  // Heap monitoring
+  // static unsigned long lastHeapCheck = 0;
+  //   if (millis() - lastHeapCheck > 10000) { // Every 10 seconds
+  //       Serial.printf("[HEAP] Free: %d, Min: %d\n", 
+  //                    ESP.getFreeHeap(), ESP.getMinFreeHeap());
+  //       lastHeapCheck = millis();
+  //   }
+
   // Delegate background tasks to connections manager
   connManager.loop();
 
-  // NeoPixel animations
-  #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    if (auto* neo = Manager_NeoPixels::getInstance()) {
-      neo->update();
-    }
-  #endif
+  // All managers now run via their own tasks - no manual updates needed
 
-  delay(1);
+  // Exception for Manager_NeoPixels - doesn't like being in a FreeRTOS Task :(
+
+  Manager_NeoPixels::getInstance()->update();
+  delay(10); // ~100Hz update rate
+
+  //delay(1);
 }

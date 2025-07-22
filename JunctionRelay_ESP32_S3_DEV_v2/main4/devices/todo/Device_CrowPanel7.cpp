@@ -79,7 +79,7 @@ Device_CrowPanel7::Device_CrowPanel7(Manager_Connections* connMgr) : rotation(0)
 
 // Device-specific setup method called by main.ino
 void Device_CrowPanel7::setupDeviceSpecific() {
-    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
+    Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 bool Device_CrowPanel7::begin() {

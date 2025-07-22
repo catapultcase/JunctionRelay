@@ -7,7 +7,7 @@ Device_LilyGoT4::Device_LilyGoT4(Manager_Connections* connMgr) : rotation(1), co
 
 // Device-specific setup method called by main.ino
 void Device_LilyGoT4::setupDeviceSpecific() {
-    Serial.println("[DEBUG][DEVICE] Device-specific setup complete (no additional setup required)");
+    Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 bool Device_LilyGoT4::begin() {

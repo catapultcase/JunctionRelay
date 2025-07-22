@@ -4,7 +4,12 @@
 // Device identification define
 #define DEVICE_ADAFRUIT_MATRIX_ESP32S3
 
-// Define device info
+#include "DeviceConfig.h"
+#include "Manager_Connections.h"
+#include "Helper_Preferences.h"
+#include "Utils.h"
+#include <vector>
+
 #define DEVICE_CLASS                    "JunctionRelay Display"
 #define DEVICE_MODEL                    "Matrix ESP32-S3"
 #define DEVICE_MANUFACTURER             "Adafruit"
@@ -23,6 +28,7 @@
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
+#define DEVICE_SUPPORTS_ETHERNET        0
 #define DEVICE_SUPPORTS_WIFI            1
 #define DEVICE_SUPPORTS_BLE             0
 #define DEVICE_SUPPORTS_USB             1
@@ -34,37 +40,71 @@
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
 
-// Define device matrix settings
+// Matrix configuration
 #define MATRIX_WIDTH 64
 #define MATRIX_HEIGHT 32
 
-#include "DeviceConfig.h"
-#include "Utils.h"
-#include <Adafruit_GFX.h>
-#include <Adafruit_Protomatter.h>
-#include "Manager_Matrix.h"
-
-// Forward declaration
-class ConnectionManager;
-
-// RGB Matrix Pin assignments (defined in the cpp file)
+// Matrix pin definitions (defined in the cpp file)
 extern uint8_t rgbPins[];
 extern uint8_t addrPins[];
 extern uint8_t clockPin;
 extern uint8_t latchPin;
 extern uint8_t oePin;
 
+// Hardware inventory structures
+struct NeoPixelInfo {
+    int pin;
+    int pixelCount;
+    
+    NeoPixelInfo(int p, int count) : pin(p), pixelCount(count) {}
+};
+
+struct I2CDeviceInfo {
+    uint8_t address;
+    String deviceType;
+    
+    I2CDeviceInfo(uint8_t addr, const String& type) : address(addr), deviceType(type) {}
+};
+
+struct HardwareInventory {
+    std::vector<NeoPixelInfo> neopixelPins;
+    std::vector<I2CDeviceInfo> i2cDevices;
+    
+    // Basic capabilities (from compile-time defines)
+    bool hasOnboardScreen = DEVICE_HAS_ONBOARD_SCREEN;
+    bool hasOnboardLED = DEVICE_HAS_ONBOARD_LED;
+    bool hasOnboardRGBLED = DEVICE_HAS_ONBOARD_RGB_LED;
+    bool hasExternalMatrix = DEVICE_HAS_EXTERNAL_MATRIX;
+    bool hasExternalNeopixels = DEVICE_HAS_EXTERNAL_NEOPIXELS;
+    bool hasExternalI2CDevices = DEVICE_HAS_EXTERNAL_I2C_DEVICES;
+    bool hasButtons = DEVICE_HAS_BUTTONS;
+    bool hasBattery = DEVICE_HAS_BATTERY;
+    bool supportsEthernet = DEVICE_SUPPORTS_ETHERNET;
+    bool supportsWiFi = DEVICE_SUPPORTS_WIFI;
+    bool supportsBLE = DEVICE_SUPPORTS_BLE;
+    bool supportsUSB = DEVICE_SUPPORTS_USB;
+    bool supportsESPNow = DEVICE_SUPPORTS_ESPNOW;
+    bool supportsHTTP = DEVICE_SUPPORTS_HTTP;
+    bool supportsMQTT = DEVICE_SUPPORTS_MQTT;
+    bool supportsWebSockets = DEVICE_SUPPORTS_WEBSOCKETS;
+    bool hasSpeaker = DEVICE_HAS_SPEAKER;
+    bool hasMicroSD = DEVICE_HAS_MICROSD;
+    bool isGateway = DEVICE_IS_GATEWAY;
+};
+
 class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitMatrixESP32S3(Manager_Connections* connMgr);
 
-    bool begin() override;
-    const char* getName() override;
+    // NEW: Returns hardware inventory instead of bool
+    HardwareInventory detectHardware();
+    
+    const char* getName();
 
-    void setRotation(uint8_t rotation) override;
-    uint8_t getRotation() override;
-    int width() override;
-    int height() override;
+    void setRotation(uint8_t rotation);
+    uint8_t getRotation();
+    int width();
+    int height();
 
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
@@ -72,7 +112,14 @@ public:
     // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
 
-    // Test method to display text on the matrix
+    // Matrix pin access methods for Manager_Matrix
+    uint8_t* getRGBPins() const;
+    uint8_t* getAddrPins() const;
+    uint8_t getClockPin() const;
+    uint8_t getLatchPin() const;
+    uint8_t getOEPin() const;
+
+    // Legacy test method - can be removed later
     void testText(const char* text);
 
     // Override runtime getters for device capabilities
@@ -84,6 +131,7 @@ public:
     virtual bool hasExternalI2CDevices() const override { return DEVICE_HAS_EXTERNAL_I2C_DEVICES; }
     virtual bool hasButtons() const override { return DEVICE_HAS_BUTTONS; }
     virtual bool hasBattery() const override { return DEVICE_HAS_BATTERY; }
+    virtual bool supportsEthernet() const override { return DEVICE_SUPPORTS_ETHERNET; }
     virtual bool supportsWiFi() const override { return DEVICE_SUPPORTS_WIFI; }
     virtual bool supportsBLE() const override { return DEVICE_SUPPORTS_BLE; }
     virtual bool supportsUSB() const override { return DEVICE_SUPPORTS_USB; }
@@ -104,19 +152,13 @@ public:
     virtual const char* getWirelessConnectivity() const override { return DEVICE_WIRELESS_CONNECTIVITY; }
     virtual const char* getFlash() const override { return DEVICE_FLASH; }
     virtual const char* getPSRAM() const override { return DEVICE_PSRAM; }
+
     virtual const char* getUniqueIdentifier() const override {
         static String macStr = getFormattedMacAddress();
         return macStr.c_str();
     }
 
 private:
-    // Task handle for the matrix manager task that runs on core 1
-    static TaskHandle_t matrixTaskHandle;
-    
-    // Static task function that will run on core 1
-    static void matrixTask(void* parameter);
-    
-    // Store the connection manager reference
     Manager_Connections* connMgr;
 };
 

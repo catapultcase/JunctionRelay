@@ -3,10 +3,10 @@
 Helper_DebugScreen::Helper_DebugScreen() {}
 
 void Helper_DebugScreen::begin() {
-    Serial.println("[DebugScreen] Starting I2C...");
+    // Serial.println("[DebugScreen] Starting I2C...");
     Wire.begin();
 
-    Serial.println("[DebugScreen] Attempting to initialize OLED...");
+    // Serial.println("[DebugScreen] Attempting to initialize OLED...");
 
     if (narrowOLED.begin()) {
         oledType = OLEDType::Narrow;

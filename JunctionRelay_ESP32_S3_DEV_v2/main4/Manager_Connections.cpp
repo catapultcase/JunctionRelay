@@ -2,18 +2,24 @@
 #include "Branch_UsbDirect.h"
 #include "Branch_Wifi.h"
 #include "Helper_Preferences.h"
+#include "Helper_DeviceInfo.h"
+#include "Helper_DeviceCapabilities.h"
 #include "ScreenRouter.h"
 #include "DeviceConfig.h"
+#include "Device.h"
 
 Manager_Connections::Manager_Connections() 
     : connMode(""),
       screenRouter(nullptr),
       preferences(nullptr),
       devicePtr(nullptr),
+      inventory(nullptr),
+      deviceInfo(nullptr),
+      deviceCapabilities(nullptr),
       usbDirectBranch(nullptr),
       wifiBranch(nullptr)
 {
-    Serial.println("[Manager_Connections] Constructor called");
+    // Serial.println("[Manager_Connections] Constructor called");
 }
 
 Manager_Connections::~Manager_Connections() {
@@ -25,6 +31,9 @@ Manager_Connections::~Manager_Connections() {
         delete wifiBranch;
         wifiBranch = nullptr;
     }
+    
+    cleanupHelpers();
+    
     Serial.println("[Manager_Connections] Destructor called");
 }
 
@@ -63,7 +72,7 @@ void Manager_Connections::setConnMode(const String& mode) {
 }
 
 void Manager_Connections::init() {
-    Serial.println("[Manager_Connections] Initializing connection mode...");
+    // Serial.println("[Manager_Connections] Initializing connection mode...");
     
     if (!screenRouter) {
         Serial.println("[Manager_Connections] ERROR: ScreenRouter not set! Call setScreenRouter() first.");
@@ -79,6 +88,14 @@ void Manager_Connections::init() {
         Serial.println("[Manager_Connections] ERROR: Device not set! Call setDevice() first.");
         return;
     }
+    
+    if (!inventory) {
+        Serial.println("[Manager_Connections] ERROR: Inventory not set! Call setInventory() first.");
+        return;
+    }
+    
+    // Initialize helper instances once
+    initializeHelpers();
     
     if (connMode == "wifi") {
         branchWifi();
@@ -120,15 +137,47 @@ void Manager_Connections::loop() {
 }
 
 // ==========================================
+// HELPER MANAGEMENT
+// ==========================================
+
+void Manager_Connections::initializeHelpers() {
+    // Serial.println("[Manager_Connections] Initializing helper instances...");
+    
+    // Create device info helper with inventory
+    deviceInfo = new Helper_DeviceInfo();
+    deviceInfo->init(devicePtr, inventory);
+    
+    // Create device capabilities helper with inventory
+    deviceCapabilities = new Helper_DeviceCapabilities();
+    deviceCapabilities->init(devicePtr, inventory);
+    
+    Serial.println("[Manager_Connections] ✅ Helper instances created and initialized with inventory");
+}
+
+void Manager_Connections::cleanupHelpers() {
+    if (deviceInfo) {
+        delete deviceInfo;
+        deviceInfo = nullptr;
+    }
+    
+    if (deviceCapabilities) {
+        delete deviceCapabilities;
+        deviceCapabilities = nullptr;
+    }
+    
+    Serial.println("[Manager_Connections] Helper instances cleaned up");
+}
+
+// ==========================================
 // IMPLEMENTED BRANCHES
 // ==========================================
 
 void Manager_Connections::branchUsbDirect() {
     Serial.println("[Manager_Connections] Initializing USB Direct branch...");
     
-    // Create and initialize USB Direct branch with device pointer
+    // Create and initialize USB Direct branch with device pointer and helpers
     usbDirectBranch = new Branch_UsbDirect();
-    usbDirectBranch->init(screenRouter, devicePtr);  // PASS DEVICE POINTER
+    usbDirectBranch->init(screenRouter, devicePtr, deviceInfo, deviceCapabilities);
     
     Serial.println("[Manager_Connections] ✅ USB Direct branch initialized");
 }
@@ -136,9 +185,9 @@ void Manager_Connections::branchUsbDirect() {
 void Manager_Connections::branchWifi() {
     Serial.println("[Manager_Connections] Initializing WiFi branch...");
     
-    // Create and initialize WiFi branch with preferences and device pointer
+    // Create and initialize WiFi branch with preferences, device pointer, and helpers
     wifiBranch = new Branch_Wifi();
-    wifiBranch->init(screenRouter, preferences, devicePtr);  // PASS DEVICE POINTER
+    wifiBranch->init(screenRouter, preferences, devicePtr, deviceInfo, deviceCapabilities);
     
     Serial.println("[Manager_Connections] ✅ WiFi branch initialized");
 }

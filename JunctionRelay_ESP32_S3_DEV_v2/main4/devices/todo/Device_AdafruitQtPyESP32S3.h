@@ -9,7 +9,6 @@
 #include <Adafruit_NeoPixel.h>
 #include "Manager_NeoPixels.h" 
 #include "Manager_I2C.h"
-#include "I2CScanner.h"
 #include <Preferences.h>
 
 #if DEVICE_HAS_EXTERNAL_I2C_DEVICES

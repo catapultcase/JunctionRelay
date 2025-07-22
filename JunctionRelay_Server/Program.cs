@@ -216,6 +216,7 @@ builder.Services.AddScoped<Service_Database_Manager_Collectors>();
 builder.Services.AddScoped<Service_Database_Manager_Junctions>();
 builder.Services.AddScoped<Service_Database_Manager_JunctionLinks>();
 builder.Services.AddScoped<Service_Database_Manager_Layouts>();
+builder.Services.AddScoped<Service_Manager_Device_Sync>();
 builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();

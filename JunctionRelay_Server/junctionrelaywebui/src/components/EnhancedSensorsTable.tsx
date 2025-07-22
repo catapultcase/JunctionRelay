@@ -748,13 +748,27 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     };
 
     const handleSaveEditedSensor = async (updatedSensor: Sensor) => {
-        // Here you would typically call an API to update the sensor
-        // For now, we'll just show a success message
-        showSnackbar("Sensor updated successfully", "success");
+        try {
+            const response = await fetch(`/api/sensors/junction-sensors/update`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updatedSensor),
+            });
 
-        // You can add API call here to save the sensor changes
-        console.log("Saving sensor:", updatedSensor);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to update sensor: ${response.status} ${errorText}`);
+            }
+
+            showSnackbar("Sensor updated successfully", "success");
+        } catch (error) {
+            console.error("Error saving sensor:", error);
+            showSnackbar("Failed to save sensor", "error");
+        }
     };
+
 
     // Handle AllTargets toggles with confirmation
     const handleAllTargetsAllDataToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -12,7 +12,7 @@ Manager_Charlieplex* Manager_Charlieplex::instance = nullptr;
 Manager_Charlieplex* Manager_Charlieplex::getInstance(TwoWire* wireInterface) {
     if (instance == nullptr) {
         instance = new Manager_Charlieplex(wireInterface);
-        Serial.printf("[DEBUG][Charlieplex] Created singleton instance with interface: %s\n", 
+        Serial.printf("[CHARLIEPLEX] Created singleton instance with interface: %s\n", 
                      (wireInterface == &Wire1) ? "Wire1" : "Wire");
     }
     return instance;
@@ -20,30 +20,45 @@ Manager_Charlieplex* Manager_Charlieplex::getInstance(TwoWire* wireInterface) {
 
 void Manager_Charlieplex::cleanup() {
     if (instance != nullptr) {
-        Serial.printf("[DEBUG][Charlieplex] Cleaning up singleton with %d displays\n", instance->displays.size());
+        Serial.printf("[CHARLIEPLEX] Cleaning up singleton with %d displays\n", instance->displays.size());
         delete instance;
         instance = nullptr;
     }
 }
 
 Manager_Charlieplex::Manager_Charlieplex(TwoWire* wireInterface)
-    : wireInterface(wireInterface) {
-    Serial.println("[DEBUG][Charlieplex] Singleton constructor called");
+    : wireInterface(wireInterface), charliplexTaskHandle(nullptr), taskRunning(false), taskStarted(false) {
+    // Serial.println("[CHARLIEPLEX] Singleton constructor called");
+}
+
+// Static task function
+void Manager_Charlieplex::charliplexTaskFunction(void* parameter) {
+    Manager_Charlieplex* manager = static_cast<Manager_Charlieplex*>(parameter);
+    
+    Serial.println("[CHARLIEPLEX] Update task started on Core 1");
+    
+    while (manager->taskRunning) {
+        manager->internalUpdate();
+        vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz update rate for smooth scrolling
+    }
+    
+    Serial.println("[CHARLIEPLEX] Update task stopping");
+    vTaskDelete(nullptr);
 }
 
 void Manager_Charlieplex::begin() {
-    Serial.printf("[DEBUG][Charlieplex] Beginning initialization for %d displays\n", displays.size());
+    Serial.printf("[CHARLIEPLEX] Beginning initialization for %d displays\n", displays.size());
     
     for (auto& pair : displays) {
         uint8_t address = pair.first;
         DisplayInfo& info = pair.second;
         
         if (info.initialized) {
-            Serial.printf("[DEBUG][Charlieplex] Display 0x%02X already initialized\n", address);
+            Serial.printf("[CHARLIEPLEX] Display 0x%02X already initialized\n", address);
             continue;
         }
         
-        Serial.printf("[DEBUG][Charlieplex] Initializing display at 0x%02X\n", address);
+        Serial.printf("[CHARLIEPLEX] Initializing display at 0x%02X\n", address);
         
         // Test I2C communication
         wireInterface->beginTransmission(address);
@@ -69,18 +84,66 @@ void Manager_Charlieplex::begin() {
         
         info.initialized = true;
         
-        Serial.printf("[DEBUG][Charlieplex] Successfully initialized display at 0x%02X with TomThumb font\n", address);
+        Serial.printf("[CHARLIEPLEX] Successfully initialized display at 0x%02X with TomThumb font\n", address);
     }
     
     showReadyScreen();
+    
+    Serial.println("[CHARLIEPLEX] ✅ Charlieplex initialization complete. Call startUpdateTask() when ready.");
+}
+
+// Start the update task when it's safe
+void Manager_Charlieplex::startUpdateTask() {
+    if (taskStarted) {
+        Serial.println("[CHARLIEPLEX] Task already started, ignoring request.");
+        return;
+    }
+    
+    // Start the update task on Core 1 (same as other display managers for consistency)
+    taskRunning = true;
+    xTaskCreatePinnedToCore(
+        charliplexTaskFunction,   // Task function
+        "Charlieplex",           // Task name
+        2048,                    // Stack size (smaller for text displays)
+        this,                    // Parameter (this instance)
+        1,                       // Priority
+        &charliplexTaskHandle,   // Task handle
+        1                        // Core 1
+    );
+    
+    taskStarted = true;
+    Serial.println("[CHARLIEPLEX] ✅ Update task created on Core 1");
+}
+
+// Stop method
+void Manager_Charlieplex::stop() {
+    if (taskRunning) {
+        taskRunning = false;
+        
+        // Wait for task to finish
+        if (charliplexTaskHandle) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            charliplexTaskHandle = nullptr;
+        }
+        
+        // Clear all displays
+        clearDisplay(0);
+        
+        Serial.println("[CHARLIEPLEX] Update task stopped");
+    }
+}
+
+// Internal update method (called by task)
+void Manager_Charlieplex::internalUpdate() {
+    updateScrollingText();
 }
 
 void Manager_Charlieplex::addDisplay(uint8_t i2cAddress) {
     if (displays.find(i2cAddress) == displays.end()) {
         displays[i2cAddress] = DisplayInfo();
-        Serial.printf("[DEBUG][Charlieplex] Added display at address 0x%02X\n", i2cAddress);
+        Serial.printf("[CHARLIEPLEX] Added display at address 0x%02X\n", i2cAddress);
     } else {
-        Serial.printf("[DEBUG][Charlieplex] Display 0x%02X already exists\n", i2cAddress);
+        Serial.printf("[CHARLIEPLEX] Display 0x%02X already exists\n", i2cAddress);
     }
 }
 
@@ -197,7 +260,7 @@ void Manager_Charlieplex::setScrollingText(const char* text, uint8_t address) {
         info.scrollText = String(text);
         info.scrollIndex = 0;
         info.scrollingActive = true;
-        Serial.printf("[DEBUG][Charlieplex] Set scrolling text for 0x%02X: %s\n", addr, text);
+        Serial.printf("[CHARLIEPLEX] Set scrolling text for 0x%02X: %s\n", addr, text);
     });
 }
 
@@ -258,8 +321,8 @@ void Manager_Charlieplex::updateScrollingText(uint8_t address) {
 // ScreenDestination Implementation
 // ScreenDestination interface implementation
 void Manager_Charlieplex::update() {
-    // ONLY handle scrolling text updates - no frame queue processing
-    updateScrollingText();
+    // Called by ScreenRouter but actual updates are handled by the dedicated task
+    // This maintains interface compatibility while using task-based updates
 }
 
 String Manager_Charlieplex::getScreenId() const {
