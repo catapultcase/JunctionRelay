@@ -40,6 +40,7 @@ namespace JunctionRelayServer.Models
         public required string Category { get; set; }
         public required string Unit { get; set; }
         public required string Value { get; set; }
+        public required int DecimalPlaces { get; set; } 
         public required string SensorTag { get; set; }
 
         // Optional properties (nullable types)
@@ -102,6 +103,7 @@ namespace JunctionRelayServer.Models
                 Category = this.Category,
                 Unit = this.Unit,
                 Value = this.Value,
+                DecimalPlaces = this.DecimalPlaces,
                 SensorTag = this.SensorTag,
                 Formula = this.Formula,
                 LastUpdated = this.LastUpdated,
@@ -146,6 +148,7 @@ namespace JunctionRelayServer.Models
                 Category = this.Category,
                 Unit = this.Unit,
                 Value = this.Value,
+                DecimalPlaces = this.DecimalPlaces,
                 SensorTag = this.SensorTag,
                 Formula = this.Formula,
                 LastUpdated = this.LastUpdated,

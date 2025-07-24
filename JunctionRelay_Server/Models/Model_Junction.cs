@@ -45,6 +45,7 @@ namespace JunctionRelayServer.Models
         public int? GatewayDeviceId { get; set; }
         public string? GatewayDestination { get; set; }
         public string? DestinationOverride { get; set; }
+        public int? TargetPollRate { get; set; }
 
         // COM configuration
 

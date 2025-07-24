@@ -65,15 +65,17 @@ namespace JunctionRelayServer.Services
             string statPath = "/proc/stat";
             if (!File.Exists(statPath))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "CPU Usage",
                         SensorType = "Load",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "CPU",
                         Unit = "%",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "cpu_usage_linux_missing",
                         SensorTag = "CPU Usage",  // Set SensorTag equal to Name
@@ -128,14 +130,16 @@ namespace JunctionRelayServer.Services
 
                 // Update the dictionary with new values
                 _prevCpuData[cpuName] = (user, nice, system, idle);
+                string loadValue = loadPercent.ToString();
 
                 newSensors.Add(new Model_Sensor
                 {
                     Name = $"CPU {cpuName} Load",
                     SensorType = "Load",
-                    Value = loadPercent.ToString(),
+                    Value = loadValue,
                     ComponentName = "CPU",
                     Unit = "%",
+                    DecimalPlaces = GetDecimalPlaces(loadValue),
                     DeviceId = 1,
                     ExternalId = $"{cpuName}_load",
                     SensorTag = $"CPU {cpuName} Load",  // Set SensorTag equal to Name
@@ -156,15 +160,17 @@ namespace JunctionRelayServer.Services
             string tempFile = "/sys/class/thermal/thermal_zone0/temp";
             if (!File.Exists(tempFile))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "CPU Temperature",
                         SensorType = "Temperature",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "CPU",
                         Unit = "C",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "cpu_temp_missing",
                         SensorTag = "CPU Temperature",  // Set SensorTag equal to Name
@@ -178,15 +184,17 @@ namespace JunctionRelayServer.Services
             var content = File.ReadAllText(tempFile).Trim();
             if (!double.TryParse(content, out double tempMillideg))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "CPU Temperature",
                         SensorType = "Temperature",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "CPU",
                         Unit = "C",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "cpu_temp_parse_fail",
                         SensorTag = "CPU Temperature",  // Set SensorTag equal to Name
@@ -198,15 +206,18 @@ namespace JunctionRelayServer.Services
             }
 
             double tempC = tempMillideg / 1000.0;
+            string tempValue = tempC.ToString();
+
             return new List<Model_Sensor>
             {
                 new Model_Sensor
                 {
                     Name = "CPU Temperature",
                     SensorType = "Temperature",
-                    Value = tempC.ToString(),
+                    Value = tempValue,
                     ComponentName = "CPU",
                     Unit = "C",
+                    DecimalPlaces = GetDecimalPlaces(tempValue),
                     DeviceId = 1,
                     ExternalId = "cpu_temperature",
                     SensorTag = "CPU Temperature",  // Set SensorTag equal to Name
@@ -223,15 +234,17 @@ namespace JunctionRelayServer.Services
             string meminfoPath = "/proc/meminfo";
             if (!File.Exists(meminfoPath))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "Memory Usage",
                         SensorType = "Memory",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "Memory",
                         Unit = "%",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "memory_usage_missing",
                         SensorTag = "Memory Usage",  // Set SensorTag equal to Name
@@ -257,15 +270,17 @@ namespace JunctionRelayServer.Services
             }
             if (totalMem <= 0)
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "Memory Usage",
                         SensorType = "Memory",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "Memory",
                         Unit = "%",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "memory_usage_fail",
                         SensorTag = "Memory Usage",  // Set SensorTag equal to Name
@@ -277,15 +292,18 @@ namespace JunctionRelayServer.Services
             }
 
             double usedPercent = Math.Round((double)(totalMem - freeMem) / totalMem * 100.0, 2);
+            string usedValue = usedPercent.ToString();
+
             return new List<Model_Sensor>
             {
                 new Model_Sensor
                 {
                     Name = "Memory Usage",
                     SensorType = "Memory",
-                    Value = usedPercent.ToString(),
+                    Value = usedValue,
                     ComponentName = "Memory",
                     Unit = "%",
+                    DecimalPlaces = GetDecimalPlaces(usedValue),
                     DeviceId = 1,
                     ExternalId = "memory_usage",
                     SensorTag = "Memory Usage",  // Set SensorTag equal to Name
@@ -313,14 +331,16 @@ namespace JunctionRelayServer.Services
             {
                 if (!drive.IsReady) continue;
                 double usage = Math.Round((double)(drive.TotalSize - drive.AvailableFreeSpace) / drive.TotalSize * 100.0, 2);
+                string usageValue = usage.ToString();
 
                 diskList.Add(new Model_Sensor
                 {
                     Name = $"Disk {drive.Name} Usage",
                     SensorType = "Disk",
-                    Value = usage.ToString(),
+                    Value = usageValue,
                     ComponentName = "Disk",
                     Unit = "%",
+                    DecimalPlaces = GetDecimalPlaces(usageValue),
                     DeviceId = 1,
                     ExternalId = $"disk_{drive.Name.Replace(":", "")}_usage",
                     SensorTag = $"Disk {drive.Name} Usage",  // Set SensorTag equal to Name
@@ -331,13 +351,15 @@ namespace JunctionRelayServer.Services
             }
             if (!diskList.Any())
             {
+                string naValue = "N/A";
                 diskList.Add(new Model_Sensor
                 {
                     Name = "Disk Usage",
                     SensorType = "Disk",
-                    Value = "N/A",
+                    Value = naValue,
                     ComponentName = "Disk",
                     Unit = "%",
+                    DecimalPlaces = GetDecimalPlaces(naValue),
                     DeviceId = 1,
                     ExternalId = "disk_usage_none",
                     SensorTag = "Disk Usage",  // Set SensorTag equal to Name
@@ -366,13 +388,15 @@ namespace JunctionRelayServer.Services
 
             if (!File.Exists(diskstatsPath))
             {
+                string naValue = "N/A";
                 newSensors.Add(new Model_Sensor
                 {
                     Name = "Disk I/O",
                     SensorType = "DiskIO",
-                    Value = "N/A",
+                    Value = naValue,
                     ComponentName = "Disk",
                     Unit = "ops",
+                    DecimalPlaces = GetDecimalPlaces(naValue),
                     DeviceId = 1,
                     ExternalId = "disk_io_missing",
                     SensorTag = "Disk I/O",  // Set SensorTag equal to Name
@@ -423,13 +447,19 @@ namespace JunctionRelayServer.Services
                     writeMBs = Math.Round((deltaWrSect * 512.0 / 1024.0 / 1024.0) / secondsElapsed, 2);
                 }
 
+                string readOpsValue = deltaReads.ToString();
+                string writeOpsValue = deltaWrites.ToString();
+                string readSpeedValue = readMBs.ToString();
+                string writeSpeedValue = writeMBs.ToString();
+
                 newSensors.Add(new Model_Sensor
                 {
                     Name = $"Disk {diskName} Read Ops",
                     SensorType = "DiskIO",
-                    Value = deltaReads.ToString(),
+                    Value = readOpsValue,
                     ComponentName = "Disk",
                     Unit = "ops",
+                    DecimalPlaces = GetDecimalPlaces(readOpsValue),
                     DeviceId = 1,
                     ExternalId = $"disk_{diskName}_read_ops",
                     SensorTag = $"Disk {diskName} Read Ops",  // Set SensorTag equal to Name
@@ -441,9 +471,10 @@ namespace JunctionRelayServer.Services
                 {
                     Name = $"Disk {diskName} Write Ops",
                     SensorType = "DiskIO",
-                    Value = deltaWrites.ToString(),
+                    Value = writeOpsValue,
                     ComponentName = "Disk",
                     Unit = "ops",
+                    DecimalPlaces = GetDecimalPlaces(writeOpsValue),
                     DeviceId = 1,
                     ExternalId = $"disk_{diskName}_write_ops",
                     SensorTag = $"Disk {diskName} Write Ops",  // Set SensorTag equal to Name
@@ -455,9 +486,10 @@ namespace JunctionRelayServer.Services
                 {
                     Name = $"Disk {diskName} Read Speed",
                     SensorType = "DiskIO",
-                    Value = readMBs.ToString(),
+                    Value = readSpeedValue,
                     ComponentName = "Disk",
                     Unit = "MB/s",
+                    DecimalPlaces = GetDecimalPlaces(readSpeedValue),
                     DeviceId = 1,
                     ExternalId = $"disk_{diskName}_read_speed",
                     SensorTag = $"Disk {diskName} Read Speed",  // Set SensorTag equal to Name
@@ -469,9 +501,10 @@ namespace JunctionRelayServer.Services
                 {
                     Name = $"Disk {diskName} Write Speed",
                     SensorType = "DiskIO",
-                    Value = writeMBs.ToString(),
+                    Value = writeSpeedValue,
                     ComponentName = "Disk",
                     Unit = "MB/s",
+                    DecimalPlaces = GetDecimalPlaces(writeSpeedValue),
                     DeviceId = 1,
                     ExternalId = $"disk_{diskName}_write_speed",
                     SensorTag = $"Disk {diskName} Write Speed",  // Set SensorTag equal to Name
@@ -490,15 +523,19 @@ namespace JunctionRelayServer.Services
         private List<Model_Sensor> GetNetworkStats()
         {
             // Placeholder: in a real scenario, you'd parse /proc/net/dev or similar.
+            string sentValue = "1234567";
+            string recvValue = "9876543";
+
             return new List<Model_Sensor>
             {
                 new Model_Sensor
                 {
                     Name = "Bytes Sent (eth0)",
                     SensorType = "Network",
-                    Value = "1234567",
+                    Value = sentValue,
                     ComponentName = "Network",
                     Unit = "bytes",
+                    DecimalPlaces = GetDecimalPlaces(sentValue),
                     DeviceId = 1,
                     ExternalId = "net_eth0_bytes_sent",
                     SensorTag = "Bytes Sent (eth0)",  // Set SensorTag equal to Name
@@ -510,9 +547,10 @@ namespace JunctionRelayServer.Services
                 {
                     Name = "Bytes Received (eth0)",
                     SensorType = "Network",
-                    Value = "9876543",
+                    Value = recvValue,
                     ComponentName = "Network",
                     Unit = "bytes",
+                    DecimalPlaces = GetDecimalPlaces(recvValue),
                     DeviceId = 1,
                     ExternalId = "net_eth0_bytes_recv",
                     SensorTag = "Bytes Received (eth0)",  // Set SensorTag equal to Name
@@ -527,15 +565,19 @@ namespace JunctionRelayServer.Services
         private List<Model_Sensor> GetGpuStats()
         {
             // Placeholder GPU info
+            string gpuUtilValue = "40";
+            string gpuTempValue = "60";
+
             return new List<Model_Sensor>
             {
                 new Model_Sensor
                 {
                     Name = "GPU 0 Utilization",
                     SensorType = "GPU",
-                    Value = "40", // placeholder
+                    Value = gpuUtilValue, // placeholder
                     ComponentName = "GPU",
                     Unit = "%",
+                    DecimalPlaces = GetDecimalPlaces(gpuUtilValue),
                     DeviceId = 1,
                     ExternalId = "gpu_0_utilization",
                     SensorTag = "GPU 0 Utilization",  // Set SensorTag equal to Name
@@ -547,9 +589,10 @@ namespace JunctionRelayServer.Services
                 {
                     Name = "GPU 0 Temperature",
                     SensorType = "GPU",
-                    Value = "60", // placeholder
+                    Value = gpuTempValue, // placeholder
                     ComponentName = "GPU",
                     Unit = "C",
+                    DecimalPlaces = GetDecimalPlaces(gpuTempValue),
                     DeviceId = 1,
                     ExternalId = "gpu_0_temperature",
                     SensorTag = "GPU 0 Temperature",  // Set SensorTag equal to Name
@@ -566,15 +609,17 @@ namespace JunctionRelayServer.Services
             const string uptimePath = "/proc/uptime";
             if (!File.Exists(uptimePath))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "System Uptime",
                         SensorType = "System",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "System",
                         Unit = "hh:mm:ss",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "system_uptime_missing",
                         SensorTag = "System Uptime",  // Set SensorTag equal to Name
@@ -588,15 +633,17 @@ namespace JunctionRelayServer.Services
             var raw = File.ReadAllText(uptimePath).Split(' ')[0];
             if (!double.TryParse(raw, out double seconds))
             {
+                string naValue = "N/A";
                 return new List<Model_Sensor>
                 {
                     new Model_Sensor
                     {
                         Name = "System Uptime",
                         SensorType = "System",
-                        Value = "N/A",
+                        Value = naValue,
                         ComponentName = "System",
                         Unit = "hh:mm:ss",
+                        DecimalPlaces = GetDecimalPlaces(naValue),
                         DeviceId = 1,
                         ExternalId = "system_uptime_parse_fail",
                         SensorTag = "System Uptime",  // Set SensorTag equal to Name
@@ -617,6 +664,7 @@ namespace JunctionRelayServer.Services
                     Value = timeStr,
                     ComponentName = "System",
                     Unit = "hh:mm:ss",
+                    DecimalPlaces = GetDecimalPlaces(timeStr),
                     DeviceId = 1,
                     ExternalId = "system_uptime",
                     SensorTag = "System Uptime",  // Set SensorTag equal to Name
@@ -631,15 +679,18 @@ namespace JunctionRelayServer.Services
         private List<Model_Sensor> GetNetworkLatency()
         {
             // Placeholder: in a real scenario, you'd ping or measure latency to a target.
+            string latencyValue = "12.5";
+
             return new List<Model_Sensor>
             {
                 new Model_Sensor
                 {
                     Name = "Latency to google.com",
                     SensorType = "Network",
-                    Value = "12.5",
+                    Value = latencyValue,
                     ComponentName = "Network",
                     Unit = "ms",
+                    DecimalPlaces = GetDecimalPlaces(latencyValue),
                     DeviceId = 1,
                     ExternalId = "latency_google",
                     SensorTag = "Latency to google.com",  // Set SensorTag equal to Name

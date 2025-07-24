@@ -98,11 +98,11 @@ namespace JunctionRelayServer.Services
 
             var sql = @"
         INSERT INTO Sensors (
-            Name, SensorType, Value, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
+            Name, SensorType, Value, DecimalPlaces, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
             MQTTTopic, MQTTServiceId, MQTTQoS
         )
         VALUES (
-            @Name, @SensorType, @Value, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
+            @Name, @SensorType, @Value, @DecimalPlaces, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
             @MQTTTopic, @MQTTServiceId, @MQTTQoS
         );
         SELECT last_insert_rowid();";
@@ -137,6 +137,7 @@ namespace JunctionRelayServer.Services
                     Name = @Name,
                     SensorType = @SensorType,
                     Value = @Value,
+                    DecimalPlaces = @DecimalPlaces,
                     ComponentName = @ComponentName,
                     Unit = @Unit,
                     DeviceId = @DeviceId,
@@ -242,7 +243,7 @@ INSERT INTO JunctionSensors (
     OriginalId, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder,
     MQTTServiceId, MQTTTopic, MQTTQoS, SensorType, 
     IsMissing, IsStale, IsSelected, IsVisible, ExternalId, DeviceId, ServiceId, CollectorId, 
-    DeviceName, Name, ComponentName, Category, Unit, Value, SensorTag, Formula, 
+    DeviceName, Name, ComponentName, Category, Unit, Value, DecimalPlaces, SensorTag, Formula, 
     LastUpdated, CustomAttribute1, CustomAttribute2, CustomAttribute3, 
     CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, 
     CustomAttribute8, CustomAttribute9, CustomAttribute10
@@ -250,7 +251,7 @@ INSERT INTO JunctionSensors (
     @OriginalId, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder,
     @MQTTServiceId, @MQTTTopic, @MQTTQoS, @SensorType, 
     @IsMissing, @IsStale, @IsSelected, @IsVisible, @ExternalId, @DeviceId, @ServiceId, @CollectorId, 
-    @DeviceName, @Name, @ComponentName, @Category, @Unit, @Value, @SensorTag, @Formula, 
+    @DeviceName, @Name, @ComponentName, @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, 
     @LastUpdated, @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, 
     @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, 
     @CustomAttribute8, @CustomAttribute9, @CustomAttribute10
@@ -368,6 +369,7 @@ INSERT INTO JunctionSensors (
             Category = @Category,
             Unit = @Unit,
             Value = @Value,
+            DecimalPlaces = @DecimalPlaces,
             SensorTag = @SensorTag,
             Formula = @Formula,
             LastUpdated = @LastUpdated,

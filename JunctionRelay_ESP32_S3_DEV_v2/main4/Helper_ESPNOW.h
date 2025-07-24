@@ -1,13 +1,14 @@
-#ifndef MANAGER_ESPNOW_H
-#define MANAGER_ESPNOW_H
+#ifndef HELPER_ESPNOW_H
+#define HELPER_ESPNOW_H
 
 #include <esp_now.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <vector>
+#include <functional>
 
-// Forward declaration
-class ConnectionManager;
+// Forward declarations
+class Helper_StreamProcessor;
 
 struct ESPNowPeer {
     uint8_t macAddress[6];
@@ -39,36 +40,11 @@ struct ESPNowMessage {
     }
 };
 
-class Manager_ESPNOW {
-private:
-    ConnectionManager* connectionManager;
-    std::vector<ESPNowPeer> peers;
-    std::vector<ESPNowMessage> messageHistory;
-    bool initialized;
-    bool isReceiveMode;
-    bool isSendMode;
-    
-    // Statistics
-    unsigned long messagesSent;
-    unsigned long messagesReceived;
-    unsigned long sendErrors;
-    unsigned long receiveErrors;
-    
-    // Configuration
-    static const size_t MAX_MESSAGE_HISTORY = 50;
-    static const size_t MAX_PEERS = 20;
-    static const unsigned long PEER_TIMEOUT_MS = 30000; // 30 seconds
-    
-    // Internal methods
-    bool addPeerInternal(const uint8_t* mac, const String& name = "");
-    void updatePeerActivity(const uint8_t* mac, int rssi = 0);
-    void cleanupInactivePeers();
-    void addToMessageHistory(const uint8_t* senderMac, const String& data, int rssi = 0);
-    
+class Helper_ESPNOW {
 public:
-    Manager_ESPNOW(ConnectionManager* connMgr);
-    ~Manager_ESPNOW();
-    
+    Helper_ESPNOW(Helper_StreamProcessor* processor);
+    ~Helper_ESPNOW();
+
     // Core functionality
     bool begin();
     void end();
@@ -91,6 +67,19 @@ public:
     bool sendJSON(const uint8_t* targetMac, const JsonDocument& doc);
     bool sendJSON(const String& targetMacString, const JsonDocument& doc);
     bool broadcastJSON(const JsonDocument& doc);
+    
+    // ESP-NOW "Endpoints" (similar to HTTP endpoints)
+    void handleDeviceInfoRequest(const uint8_t* requestorMac);
+    void handlePeerDiscoveryRequest(const uint8_t* requestorMac);
+    void handleStatsRequest(const uint8_t* requestorMac);
+    void handleCapabilitiesRequest(const uint8_t* requestorMac);
+    
+    // Response sending
+    void sendDeviceInfoResponse(const uint8_t* targetMac, const String& deviceInfoJSON);
+    void sendPeerListResponse(const uint8_t* targetMac);
+    void sendStatsResponse(const uint8_t* targetMac, const String& statsJSON);
+    void sendCapabilitiesResponse(const uint8_t* targetMac, const String& capabilitiesJSON);
+    void sendErrorResponse(const uint8_t* targetMac, const String& error, const String& requestType);
     
     // Message history
     std::vector<ESPNowMessage> getMessageHistory(int limit = -1);
@@ -116,6 +105,31 @@ public:
     // Callbacks (called by static ESP-NOW handlers)
     void handleDataReceived(const uint8_t* mac, const uint8_t* data, int len);
     void handleDataSent(const uint8_t* mac, esp_now_send_status_t status);
+
+private:
+    Helper_StreamProcessor* streamProcessor;
+    std::vector<ESPNowPeer> peers;
+    std::vector<ESPNowMessage> messageHistory;
+    bool initialized;
+    bool isReceiveMode;
+    bool isSendMode;
+    
+    // Statistics
+    unsigned long messagesSent;
+    unsigned long messagesReceived;
+    unsigned long sendErrors;
+    unsigned long receiveErrors;
+    
+    // Configuration
+    static const size_t MAX_MESSAGE_HISTORY = 50;
+    static const size_t MAX_PEERS = 20;
+    static const unsigned long PEER_TIMEOUT_MS = 30000; // 30 seconds
+    
+    // Internal methods
+    bool addPeerInternal(const uint8_t* mac, const String& name = "");
+    void updatePeerActivity(const uint8_t* mac, int rssi = 0);
+    void cleanupInactivePeers();
+    void addToMessageHistory(const uint8_t* senderMac, const String& data, int rssi = 0);
 };
 
-#endif // MANAGER_ESPNOW_H
+#endif // HELPER_ESPNOW_H

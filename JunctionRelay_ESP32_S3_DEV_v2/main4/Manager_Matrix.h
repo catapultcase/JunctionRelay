@@ -40,7 +40,7 @@ public:
     void showReadyScreen();
     
     // Method to set connection manager reference - FIXED to use Manager_Connections
-    void setConnectionManager(Manager_Connections* cm);
+    void setManager_Connections(Manager_Connections* cm);
     
     // Method to refresh the ready screen (for IP updates)
     void refreshReadyScreen();

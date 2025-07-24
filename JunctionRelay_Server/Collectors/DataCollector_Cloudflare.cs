@@ -34,6 +34,29 @@ namespace JunctionRelayServer.Collectors
         private string _apiToken = string.Empty;
         private string _zoneId = string.Empty;
 
+        // Helper method to detect decimal places in a value
+        private int GetDecimalPlaces(string value)
+        {
+            // Handle null or empty values
+            if (string.IsNullOrEmpty(value))
+                return 0;
+
+            // Try to parse as decimal to validate it's a numeric value
+            if (!decimal.TryParse(value, out decimal numericValue))
+                return 0; // Non-numeric values (including "N/A") have 0 decimal places
+
+            // Convert to string to analyze decimal places
+            string valueStr = numericValue.ToString();
+
+            // Find the decimal point
+            int decimalIndex = valueStr.IndexOf('.');
+            if (decimalIndex == -1)
+                return 0; // No decimal point found
+
+            // Count digits after decimal point
+            return valueStr.Length - decimalIndex - 1;
+        }
+
         public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
@@ -308,6 +331,7 @@ namespace JunctionRelayServer.Collectors
                 Name = "Zone Status",
                 Value = status,
                 Unit = "status",
+                DecimalPlaces = GetDecimalPlaces(status),
                 Category = "Cloudflare Zone",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -321,12 +345,14 @@ namespace JunctionRelayServer.Collectors
 
             // Development mode
             var devMode = zoneInfo["development_mode"]?.ToString() ?? "0";
+            string devModeValue = devMode == "0" ? "0" : "1";
             sensors.Add(new Model_Sensor
             {
                 ExternalId = $"cloudflare_dev_mode_{_zoneId}",
                 Name = "Development Mode",
-                Value = devMode == "0" ? "0" : "1",
+                Value = devModeValue,
                 Unit = "boolean",
+                DecimalPlaces = GetDecimalPlaces(devModeValue),
                 Category = "Cloudflare Zone",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -367,6 +393,7 @@ namespace JunctionRelayServer.Collectors
                             Name = "Total Requests (24h)",
                             Value = totalRequests,
                             Unit = "requests",
+                            DecimalPlaces = GetDecimalPlaces(totalRequests),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -386,6 +413,7 @@ namespace JunctionRelayServer.Collectors
                             Name = "Cached Requests (24h)",
                             Value = cachedRequests,
                             Unit = "requests",
+                            DecimalPlaces = GetDecimalPlaces(cachedRequests),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -405,6 +433,7 @@ namespace JunctionRelayServer.Collectors
                             Name = "Uncached Requests (24h)",
                             Value = uncachedRequests,
                             Unit = "requests",
+                            DecimalPlaces = GetDecimalPlaces(uncachedRequests),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -424,6 +453,7 @@ namespace JunctionRelayServer.Collectors
                             Name = "Unique Visitors (24h)",
                             Value = uniqueVisitors,
                             Unit = "visitors",
+                            DecimalPlaces = GetDecimalPlaces(uniqueVisitors),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -470,6 +500,7 @@ namespace JunctionRelayServer.Collectors
                             Name = "Threats Blocked (24h)",
                             Value = threatsBlocked,
                             Unit = "threats",
+                            DecimalPlaces = GetDecimalPlaces(threatsBlocked),
                             Category = "Cloudflare Security",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -511,12 +542,14 @@ namespace JunctionRelayServer.Collectors
                         // Total bandwidth
                         var totalBytes = sum?["bytes"]?.ToObject<long>() ?? 0;
                         var totalMB = Math.Round(totalBytes / (1024.0 * 1024.0), 2);
+                        string totalMBValue = totalMB.ToString();
                         sensors.Add(new Model_Sensor
                         {
                             ExternalId = $"cloudflare_total_bandwidth_{_zoneId}",
                             Name = "Total Bandwidth (24h)",
-                            Value = totalMB.ToString(),
+                            Value = totalMBValue,
                             Unit = "MB",
+                            DecimalPlaces = GetDecimalPlaces(totalMBValue),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -531,12 +564,14 @@ namespace JunctionRelayServer.Collectors
                         // Cached bandwidth
                         var cachedBytes = sum?["cachedBytes"]?.ToObject<long>() ?? 0;
                         var cachedMB = Math.Round(cachedBytes / (1024.0 * 1024.0), 2);
+                        string cachedMBValue = cachedMB.ToString();
                         sensors.Add(new Model_Sensor
                         {
                             ExternalId = $"cloudflare_cached_bandwidth_{_zoneId}",
                             Name = "Cached Bandwidth (24h)",
-                            Value = cachedMB.ToString(),
+                            Value = cachedMBValue,
                             Unit = "MB",
+                            DecimalPlaces = GetDecimalPlaces(cachedMBValue),
                             Category = "Cloudflare Analytics",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -552,12 +587,14 @@ namespace JunctionRelayServer.Collectors
                         if (totalBytes > 0)
                         {
                             var cacheHitRatio = Math.Round((cachedBytes / (double)totalBytes) * 100, 1);
+                            string cacheHitRatioValue = cacheHitRatio.ToString();
                             sensors.Add(new Model_Sensor
                             {
                                 ExternalId = $"cloudflare_cache_hit_ratio_{_zoneId}",
                                 Name = "Cache Hit Ratio (24h)",
-                                Value = cacheHitRatio.ToString(),
+                                Value = cacheHitRatioValue,
                                 Unit = "%",
+                                DecimalPlaces = GetDecimalPlaces(cacheHitRatioValue),
                                 Category = "Cloudflare Analytics",
                                 DeviceName = collector.Name,
                                 SensorType = "API",

@@ -53,7 +53,7 @@ public:
 
     // Expose device & connection to layouts
     DeviceConfig* getDevice() { return device; }
-    Manager_Connections& getConnectionManager() { return connManager; }
+    Manager_Connections& getManager_Connections() { return connManager; }
 
     // Memory debugging
     void printMemoryInfo();

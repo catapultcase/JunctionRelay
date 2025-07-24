@@ -437,7 +437,8 @@ namespace JunctionRelayServer.Services
                     ExternalAccessToken BOOLEAN DEFAULT 0,
                     PollRate INTEGER DEFAULT 5000,
                     SendRate INTEGER DEFAULT 5000,
-                    ServiceId INTEGER
+                    ServiceId INTEGER,
+                    DecimalPlaces INTEGER DEFAULT 1
                 );
             ");
 
@@ -455,6 +456,7 @@ namespace JunctionRelayServer.Services
                     CronExpression           TEXT,
                     GatewayDeviceId          INTEGER,
                     GatewayDestination       TEXT,
+                    TargetPollRate           INTEGER,
                     DestinationOverride      TEXT,
                     BaudRate                 INTEGER,   
                     AllTargetsAllData        BOOLEAN NOT NULL DEFAULT 0,
@@ -500,6 +502,7 @@ namespace JunctionRelayServer.Services
                     Category TEXT,
                     Unit TEXT,
                     Value TEXT,
+                    DecimalPlaces INTEGER DEFAULT 1,
                     SensorTag TEXT,
                     Formula TEXT,
                     LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -546,7 +549,8 @@ namespace JunctionRelayServer.Services
                     ComponentName TEXT,                  
                     Category TEXT,                      
                     Unit TEXT,                 
-                    Value TEXT,                            
+                    Value TEXT,
+                    DecimalPlaces INTEGER DEFAULT 1,
                     SensorTag TEXT,                        
                     Formula TEXT,                            
                     LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP, 

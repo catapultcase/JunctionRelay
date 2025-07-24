@@ -3,6 +3,7 @@
 #include "Helper_Decompression.h"
 #include "Helper_DebugScreen.h"
 #include "DeviceConfig.h"
+#include "Utils.h"
 
 // Static member definitions
 QueueHandle_t Helper_StreamProcessor::sensorQueue = NULL;
@@ -350,9 +351,48 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
     
     if (error) {
         Serial.printf("[StreamProcessor] ERROR: JSON parsing failed: %s\n", error.c_str());
+        if (debugScreenPtr) {
+        debugScreenPtr->trackJsonError();
+        }
         delete doc;
         errorCount++;
         return;
+    }
+    
+    // ✅ CHECK FOR DESTINATION FIRST - but handle self-destination smartly
+    if (doc->containsKey("destination")) {
+        String destinationMac = (*doc)["destination"].as<String>();
+        
+        // ✅ GET LOCAL MAC ONCE AND CACHE IT using existing utility
+        static String cachedLocalMac = "";
+        static bool macCached = false;
+        
+        if (!macCached) {
+            cachedLocalMac = getFormattedMacAddress();
+            macCached = true;
+            Serial.printf("[StreamProcessor] Cached local MAC: %s\n", cachedLocalMac.c_str());
+        }
+        
+        if (!cachedLocalMac.isEmpty() && destinationMac.equalsIgnoreCase(cachedLocalMac)) {
+            // ✅ DESTINATION IS SELF - remove destination and continue normal processing
+            // Serial.printf("[StreamProcessor] Destination is self (%s), processing locally\n", destinationMac.c_str());
+            if (debugScreenPtr) {
+            debugScreenPtr->trackLocalDestination();
+            }
+            doc->remove("destination");
+            // Continue to normal type-based routing below
+        } else {
+            // ✅ DESTINATION IS REMOTE - route to protocol callback for forwarding
+            // Serial.printf("[StreamProcessor] Message with remote destination (%s), routing to protocol callback\n", destinationMac.c_str());
+            if (debugScreenPtr) {
+            debugScreenPtr->trackRemoteDestination(destinationMac);
+            }
+            if (protocolCallback) {
+                protocolCallback(*doc);
+            }
+            delete doc;
+            return;
+        }
     }
     
     const char* type = (*doc)["type"];
@@ -370,6 +410,9 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
             // Queued successfully, but not visible in serial monitor to keep it clean
         } else {
             Serial.println("[StreamProcessor] WARNING: Sensor queue full, processing immediately");
+            if (debugScreenPtr) {
+            debugScreenPtr->trackQueueOverflow("sensor");
+            }
             screenRouter->routeSensor(*doc);
             delete doc;
         }
@@ -385,7 +428,7 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
                strcmp(type, "websocket_ping") == 0 ||
                strcmp(type, "http_request") == 0 ||
                strcmp(type, "espnow_message") == 0 ||
-               doc->containsKey("destination")) {
+               strcmp(type, "peer_management") == 0) {
         Serial.printf("[StreamProcessor] Protocol-specific payload '%s', routing to protocol callback\n", type);
         if (protocolCallback) {
             protocolCallback(*doc);

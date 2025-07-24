@@ -39,7 +39,7 @@
 #include <LilyGo_AMOLED.h>
 
 // Forward declaration
-class ConnectionManager;
+class Manager_Connections;
 
 class Device_LilyGoT4 : public DeviceConfig {
 public:

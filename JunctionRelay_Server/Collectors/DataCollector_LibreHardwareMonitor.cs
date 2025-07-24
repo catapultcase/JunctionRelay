@@ -33,6 +33,29 @@ namespace JunctionRelayServer.Collectors
 
         public string CollectorName => "LibreHardwareMonitor";
 
+        // Helper method to detect decimal places in a value
+        private int GetDecimalPlaces(string value)
+        {
+            // Handle null or empty values
+            if (string.IsNullOrEmpty(value))
+                return 0;
+
+            // Try to parse as decimal to validate it's a numeric value
+            if (!decimal.TryParse(value, out decimal numericValue))
+                return 0; // Non-numeric values (including "N/A") have 0 decimal places
+
+            // Convert to string to analyze decimal places
+            string valueStr = numericValue.ToString();
+
+            // Find the decimal point
+            int decimalIndex = valueStr.IndexOf('.');
+            if (decimalIndex == -1)
+                return 0; // No decimal point found
+
+            // Count digits after decimal point
+            return valueStr.Length - decimalIndex - 1;
+        }
+
         public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
@@ -87,7 +110,7 @@ namespace JunctionRelayServer.Collectors
                                 continue; // Skip if no component name is found
                             }
 
-                            ProcessComponents(component, hardwareName, componentName, sensorReadings);
+                            ProcessComponents(component, hardwareName, componentName, sensorReadings, collector);
                         }
                     }
                 }
@@ -127,7 +150,7 @@ namespace JunctionRelayServer.Collectors
         public Task StopSessionAsync(Model_Collector collector, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public bool IsConnected(Model_Collector collector) => true;
 
-        private void ProcessComponents(JToken component, string hardwareName, string parentComponentName, List<Model_Sensor> sensorReadings)
+        private void ProcessComponents(JToken component, string hardwareName, string parentComponentName, List<Model_Sensor> sensorReadings, Model_Collector collector)
         {
             string componentName = component["Text"]?.ToString() ?? parentComponentName;
 
@@ -143,7 +166,7 @@ namespace JunctionRelayServer.Collectors
                     {
                         // New component branch detected
                         string newComponentName = componentName;
-                        ProcessComponents(child, hardwareName, newComponentName, sensorReadings);
+                        ProcessComponents(child, hardwareName, newComponentName, sensorReadings, collector);
                     }
                     else
                     {
@@ -159,17 +182,23 @@ namespace JunctionRelayServer.Collectors
                             continue;
                         }
 
+                        string strippedValue = StripUnits(sensorValue);
+
                         Model_Sensor sensorModel = new Model_Sensor
                         {
                             Name = sensorName,
                             ComponentName = $"{hardwareName} - {parentComponentName}",
                             Category = sensorType,
                             Unit = GetSensorUnit(sensorType),
-                            Value = StripUnits(sensorValue),
+                            Value = strippedValue,
+                            DecimalPlaces = GetDecimalPlaces(strippedValue),
                             ExternalId = $"{sensorId}::{sensorName}",
                             SensorType = "API", // Set this required property
-                            DeviceName = "LibreHardwareMonitor", // Set this required property
+                            DeviceName = collector.Name, // Use collector name instead of hardcoded value
                             SensorTag = $"{sensorId}::{sensorName}",
+                            JunctionId = null,
+                            DeviceId = null,
+                            CollectorId = collector.Id,
                             LastUpdated = DateTime.UtcNow
                         };
 

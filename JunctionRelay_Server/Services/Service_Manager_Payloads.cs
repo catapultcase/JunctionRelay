@@ -177,7 +177,7 @@ namespace JunctionRelayServer.Services
                 var compressedSize = compressedData.Length;
                 var compressionRatio = (1.0 - (double)compressedSize / originalSize) * 100;
 
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 🗜️ Compressed {payloadType} payload: {originalSize}→{compressedSize} bytes ({compressionRatio:F1}% reduction)");
+                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 🗜️ Compressed {payloadType} payload: {originalSize}→{compressedSize} bytes ({compressionRatio:F1}% reduction)");
 
                 if (includePrefix)
                 {
@@ -540,8 +540,8 @@ namespace JunctionRelayServer.Services
                 return result;
             }
 
-            // 3) Get decimal places from template, default to 0 if null
-            int decimalPlaces = template.DecimalPlaces ?? 0;
+            //// 3) Get decimal places from template, default to 0 if null
+            //int decimalPlaces = template.DecimalPlaces ?? 0;
 
             // 4) Create a dictionary to hold the sensor data in the desired structure
             var sensors = new Dictionary<string, object>();
@@ -565,7 +565,7 @@ namespace JunctionRelayServer.Services
                     object formattedValue;
                     if (double.TryParse(cachedSensor.Value?.ToString(), out double numericValue))
                     {
-                        formattedValue = numericValue.ToString($"F{decimalPlaces}");
+                        formattedValue = numericValue.ToString($"F{sensor.DecimalPlaces}");
                     }
                     else
                     {

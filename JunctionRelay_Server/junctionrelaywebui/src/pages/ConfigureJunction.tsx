@@ -75,6 +75,7 @@ const getDefaultJunctionColumns = () => {
         "componentName",
         "value",
         "unit",
+        "decimalPlaces",
         "targets"
     ];
 };

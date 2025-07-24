@@ -68,13 +68,13 @@ bool Helper_Decompression::isGzipData(uint8_t* data, size_t length) {
 
 bool Helper_Decompression::decompressGzip(uint8_t* compressedData, size_t compressedSize,
                                          uint8_t** decompressedData, size_t* decompressedSize) {
-    // Validate gzip stream format (match old ConnectionManager)
+    // Validate gzip stream format (match old Manager_Connections)
     if (!isGzipData(compressedData, compressedSize)) {
         Serial.printf("[Decompression] ERROR: Invalid gzip format\n");
         return false;
     }
 
-    // Allocate decompression buffer (match old ConnectionManager size)
+    // Allocate decompression buffer (match old Manager_Connections size)
     const size_t DECOMP_BUFFER_SIZE = 16384;
     uint8_t* decompBuffer = new uint8_t[DECOMP_BUFFER_SIZE];
     
@@ -93,7 +93,7 @@ bool Helper_Decompression::decompressGzip(uint8_t* compressedData, size_t compre
     size_t deflateDataLen = compressedSize - 18; // Remove 10-byte header and 8-byte footer
     uint8_t* deflateData = compressedData + 10;  // Skip 10-byte gzip header
     
-    // Initialize deflate stream (EXACT OLD CONNECTIONMANAGER LOGIC)
+    // Initialize deflate stream (EXACT OLD Manager_Connections LOGIC)
     mz_stream stream = {};
     stream.next_in = deflateData;
     stream.avail_in = deflateDataLen;

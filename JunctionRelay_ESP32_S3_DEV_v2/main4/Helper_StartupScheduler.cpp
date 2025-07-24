@@ -77,9 +77,9 @@ void Helper_StartupScheduler::initializeFromInventory(const HardwareInventory& i
 }
 
 // NEW: Method to set connection manager after it's created
-void Helper_StartupScheduler::setConnectionManager(Manager_Connections* connMgr) {
+void Helper_StartupScheduler::setManager_Connections(Manager_Connections* connMgr) {
     if (matrixManager) {
-        matrixManager->setConnectionManager(connMgr);
+        matrixManager->setManager_Connections(connMgr);
         Serial.println("[STARTUP_SCHEDULER] ✅ Connection manager set for Matrix");
     }
 }

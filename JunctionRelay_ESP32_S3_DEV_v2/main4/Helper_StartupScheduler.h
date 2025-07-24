@@ -24,7 +24,7 @@ public:
     void initializeFromInventory(const HardwareInventory& inventory, ScreenRouter* screenRouter, DeviceConfig* device = nullptr);
     
     // NEW: Method to set connection manager after it's created
-    void setConnectionManager(Manager_Connections* connMgr);
+    void setManager_Connections(Manager_Connections* connMgr);
     
     // Get created manager instances (for registration with other systems)
     Manager_NeoPixels* getNeoPixelManager() const { return neoPixelManager; }

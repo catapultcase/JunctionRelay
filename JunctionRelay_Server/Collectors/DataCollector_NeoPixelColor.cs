@@ -54,6 +54,7 @@ namespace JunctionRelayServer.Collectors
                     ComponentName = "NeoPixelColor",
                     Value = $"{randomColor:X6}", // Force 6-digit hex with leading zeros
                     Unit = "RGB",
+                    DecimalPlaces = 0,
                     SensorTag = "neopixel",
                     SensorType = "Color",
                     Category = "LED",

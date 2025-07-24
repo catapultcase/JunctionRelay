@@ -83,6 +83,7 @@ namespace JunctionRelayServer.Services
             AllTargetsAllScreens,
             GatewayDeviceId,
             GatewayDestination,
+            TargetPollRate,
             DestinationOverride,
             BaudRate,
             MQTTBrokerId,
@@ -110,6 +111,7 @@ namespace JunctionRelayServer.Services
             @AllTargetsAllScreens,
             @GatewayDeviceId,
             @GatewayDestination,
+            @TargetPollRate,
             @DestinationOverride,
             @BaudRate,
             @MQTTBrokerId,
@@ -147,6 +149,7 @@ namespace JunctionRelayServer.Services
                 AllTargetsAllScreens     = @AllTargetsAllScreens,
                 GatewayDeviceId          = @GatewayDeviceId,    
                 GatewayDestination       = @GatewayDestination,
+                TargetPollRate           = @TargetPollRate,
                 DestinationOverride      = @DestinationOverride,
                 BaudRate                 = @BaudRate,
                 MQTTBrokerId             = @MQTTBrokerId,
@@ -316,14 +319,14 @@ namespace JunctionRelayServer.Services
     INSERT INTO Junctions (
     Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
     CronExpression, AllTargetsAllData, AllTargetsAllScreens,
-    GatewayDeviceId, GatewayDestination, DestinationOverride, BaudRate,
+    GatewayDeviceId, GatewayDestination, TargetPollRate, DestinationOverride, BaudRate,
     MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
     RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
     HealthCheckIntervalMs, EnableNotifications, CompressPayload
 ) VALUES (
     @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
     @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
-    @GatewayDeviceId, @GatewayDestination, @DestinationOverride, @BaudRate,
+    @GatewayDeviceId, @GatewayDestination, @TargetPollRate, @DestinationOverride, @BaudRate,
     @MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
     @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
     @HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
@@ -440,7 +443,7 @@ SELECT last_insert_rowid();
         INSERT INTO JunctionSensors (
             JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder, MQTTServiceId,
             MQTTTopic, MQTTQoS, SensorType, ExternalId, DeviceName, Name, ComponentName,
-            Category, Unit, Value, SensorTag, Formula, LastUpdated,
+            Category, Unit, Value, DecimalPlaces, SensorTag, Formula, LastUpdated,
             CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4,
             CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8,
             CustomAttribute9, CustomAttribute10, IsMissing, IsStale, IsSelected, IsVisible,
@@ -448,7 +451,7 @@ SELECT last_insert_rowid();
         ) VALUES (
             @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder, @MQTTServiceId,
             @MQTTTopic, @MQTTQoS, @SensorType, @ExternalId, @DeviceName, @Name, @ComponentName,
-            @Category, @Unit, @Value, @SensorTag, @Formula, @LastUpdated,
+            @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, @LastUpdated,
             @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4,
             @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8,
             @CustomAttribute9, @CustomAttribute10, @IsMissing, @IsStale, @IsSelected, @IsVisible,
@@ -471,6 +474,7 @@ SELECT last_insert_rowid();
                     cloned.Category,
                     cloned.Unit,
                     cloned.Value,
+                    cloned.DecimalPlaces,
                     cloned.SensorTag,
                     cloned.Formula,
                     cloned.LastUpdated,
@@ -556,13 +560,13 @@ SELECT last_insert_rowid();
             const string insertSql = @"
 INSERT INTO Junctions (
     Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
-    CronExpression, AllTargetsAllData, AllTargetsAllScreens, GatewayDestination, MQTTBrokerId,
+    CronExpression, AllTargetsAllData, AllTargetsAllScreens, GatewayDestination, TargetPollRate, MQTTBrokerId,
     SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
     RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
     HealthCheckIntervalMs, EnableNotifications
 ) VALUES (
     @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
-    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @MQTTBrokerId,
+    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @TargetPollRate, @MQTTBrokerId,
     @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
     @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
     @HealthCheckIntervalMs, @EnableNotifications
@@ -646,7 +650,7 @@ SELECT last_insert_rowid();";
     INSERT INTO JunctionSensors (
         JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder, MQTTServiceId,
         MQTTTopic, MQTTQoS, SensorType, ExternalId, DeviceName, Name, ComponentName,
-        Category, Unit, Value, SensorTag, Formula, LastUpdated,
+        Category, Unit, Value, DecimalPlaces, SensorTag, Formula, LastUpdated,
         CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4,
         CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8,
         CustomAttribute9, CustomAttribute10, IsMissing, IsStale, IsSelected, IsVisible,
@@ -654,7 +658,7 @@ SELECT last_insert_rowid();";
     ) VALUES (
         @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder, @MQTTServiceId,
         @MQTTTopic, @MQTTQoS, @SensorType, @ExternalId, @DeviceName, @Name, @ComponentName,
-        @Category, @Unit, @Value, @SensorTag, @Formula, @LastUpdated,
+        @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, @LastUpdated,
         @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4,
         @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8,
         @CustomAttribute9, @CustomAttribute10, @IsMissing, @IsStale, @IsSelected, @IsVisible,

@@ -50,6 +50,7 @@ namespace JunctionRelayServer.Collectors
                         ComponentName = "RateTester",
                         Value = _counter.ToString("F1"),
                         Unit = "%",
+                        DecimalPlaces = 0,
                         SensorTag = "Rate Tester",
                         SensorType = "Tester",
                         Category = "Synthetic",

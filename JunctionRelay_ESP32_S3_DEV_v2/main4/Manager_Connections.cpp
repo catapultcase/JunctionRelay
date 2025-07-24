@@ -1,6 +1,9 @@
 #include "Manager_Connections.h"
 #include "Branch_UsbDirect.h"
 #include "Branch_Wifi.h"
+#include "Branch_EspNow.h"
+#include "Branch_GatewayUsb.h"
+#include "Branch_Ethernet.h"
 #include "Helper_Preferences.h"
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
@@ -17,7 +20,10 @@ Manager_Connections::Manager_Connections()
       deviceInfo(nullptr),
       deviceCapabilities(nullptr),
       usbDirectBranch(nullptr),
-      wifiBranch(nullptr)
+      wifiBranch(nullptr),
+      espnowBranch(nullptr),
+      gatewayUsbBranch(nullptr),
+      ethernetBranch(nullptr)
 {
     // Serial.println("[Manager_Connections] Constructor called");
 }
@@ -31,6 +37,18 @@ Manager_Connections::~Manager_Connections() {
         delete wifiBranch;
         wifiBranch = nullptr;
     }
+    if (espnowBranch) {
+        delete espnowBranch;
+        espnowBranch = nullptr;
+    }
+    if (gatewayUsbBranch) {
+        delete gatewayUsbBranch;
+        gatewayUsbBranch = nullptr;
+    }
+    if (ethernetBranch) { 
+        delete ethernetBranch;
+        ethernetBranch = nullptr;
+    }
     
     cleanupHelpers();
     
@@ -42,6 +60,7 @@ ConnectionStatus Manager_Connections::getConnectionStatus() const {
     
     if (connMode == "usb_direct") {
         status.usbActive = (usbDirectBranch && usbDirectBranch->isActive());
+        status.activeNetworkType = "USB_Direct";
     } 
     else if (connMode == "wifi") {
         if (wifiBranch) {
@@ -56,8 +75,33 @@ ConnectionStatus Manager_Connections::getConnectionStatus() const {
             // status.webSocketConnected = wifiBranch->isWebSocketConnected();
         }
     } 
+    else if (connMode == "ethernet") { 
+        if (ethernetBranch) {
+            status.ethernetConnected = ethernetBranch->isConnected();
+            if (status.ethernetConnected) {
+                // Get Ethernet details from ETH library
+                status.ipAddress = ETH.localIP().toString();
+                status.macAddress = ETH.macAddress();
+                status.ethernetIP = ETH.localIP().toString();
+                status.ethernetMAC = ETH.macAddress();
+                status.activeNetworkType = "Ethernet";
+            }
+        }
+    }
+    else if (connMode == "espnow") {
+        if (espnowBranch) {
+            status.espNowActive = espnowBranch->isActive();
+            status.activeNetworkType = "ESP-NOW";
+            // ESP-NOW doesn't have traditional IP/MAC in the same way
+            // Could add peer count or other ESP-NOW specific status
+        }
+    }
     else if (connMode == "gateway_usb") {
-        status.usbActive = true; // Would check gateway USB branch when implemented
+        if (gatewayUsbBranch) {
+            status.usbActive = gatewayUsbBranch->isActive();
+            status.espNowActive = gatewayUsbBranch->isESPNowReady();
+            status.activeNetworkType = "Gateway_USB";
+        }
     }
     
     // Add other status updates based on connection mode as branches are implemented
@@ -103,20 +147,20 @@ void Manager_Connections::init() {
     else if (connMode == "usb_direct") {
         branchUsbDirect();
     }
-    else if (connMode == "ethernet") {
-        branchEthernet();
-    }
     else if (connMode == "espnow") {
         branchEspNow();
+    }
+    else if (connMode == "gateway_usb") {
+        branchGatewayUsb();
+    }
+    else if (connMode == "ethernet") {  
+        branchEthernet();
     }
     else if (connMode == "gateway_wifi") {
         branchGatewayWifi();
     }
     else if (connMode == "gateway_eth") {
         branchGatewayEthernet();
-    }
-    else if (connMode == "gateway_usb") {
-        branchGatewayUsb();
     }
     else {
         Serial.print("[Manager_Connections] ERROR: Unknown connMode: ");
@@ -131,6 +175,15 @@ void Manager_Connections::loop() {
     }
     else if (connMode == "wifi" && wifiBranch) {
         wifiBranch->loop();
+    }
+    else if (connMode == "ethernet" && ethernetBranch) {  
+        ethernetBranch->loop();
+    }
+    else if (connMode == "espnow" && espnowBranch) {
+        espnowBranch->loop();
+    }
+    else if (connMode == "gateway_usb" && gatewayUsbBranch) {
+        gatewayUsbBranch->loop();
     }
     
     // Add other connection mode loop handling here as branches are implemented
@@ -192,20 +245,46 @@ void Manager_Connections::branchWifi() {
     Serial.println("[Manager_Connections] ✅ WiFi branch initialized");
 }
 
+void Manager_Connections::branchEspNow() {
+    Serial.println("[Manager_Connections] Initializing ESP-NOW branch...");
+    
+    // Create and initialize ESP-NOW branch with device pointer and helpers
+    espnowBranch = new Branch_EspNow();
+    espnowBranch->init(screenRouter, devicePtr, deviceInfo, deviceCapabilities);
+    
+    Serial.println("[Manager_Connections] ✅ ESP-NOW branch initialized");
+}
+
+void Manager_Connections::branchGatewayUsb() {
+    Serial.println("[Manager_Connections] Initializing Gateway USB branch...");
+    
+    // Create and initialize Gateway USB branch with device pointer and helpers
+    gatewayUsbBranch = new Branch_GatewayUsb();
+    gatewayUsbBranch->init(screenRouter, devicePtr, deviceInfo, deviceCapabilities);
+    
+    Serial.println("[Manager_Connections] ✅ Gateway USB branch initialized");
+}
+
+void Manager_Connections::branchEthernet() { 
+    Serial.println("[Manager_Connections] Initializing Ethernet branch...");
+    
+    // Verify device supports Ethernet
+    if (!devicePtr || !devicePtr->supportsEthernet()) {
+        Serial.println("[Manager_Connections] ❌ Device does not support Ethernet");
+        Serial.println("[Manager_Connections] Ethernet requires compatible hardware (e.g., wESP32)");
+        return;
+    }
+    
+    // Create and initialize Ethernet branch with preferences, device pointer, and helpers
+    ethernetBranch = new Branch_Ethernet();
+    ethernetBranch->init(screenRouter, preferences, devicePtr, deviceInfo, deviceCapabilities);
+    
+    Serial.println("[Manager_Connections] ✅ Ethernet branch initialized");
+}
+
 // ==========================================
 // STUB IMPLEMENTATIONS FOR UNIMPLEMENTED BRANCHES
 // ==========================================
-
-void Manager_Connections::branchEthernet() {
-    Serial.println("[Manager_Connections] branchEthernet - NOT IMPLEMENTED");
-    Serial.println("[Manager_Connections] Would initialize Ethernet + HTTP/WS/MQTT protocols");
-    Serial.println("[Manager_Connections] Will use same Helper_HTTPEndpoints as WiFi branch");
-}
-
-void Manager_Connections::branchEspNow() {
-    Serial.println("[Manager_Connections] branchEspNow - NOT IMPLEMENTED");
-    Serial.println("[Manager_Connections] Would initialize ESP-NOW only mode");
-}
 
 void Manager_Connections::branchGatewayWifi() {
     Serial.println("[Manager_Connections] branchGatewayWifi - NOT IMPLEMENTED");
@@ -217,9 +296,4 @@ void Manager_Connections::branchGatewayEthernet() {
     Serial.println("[Manager_Connections] branchGatewayEthernet - NOT IMPLEMENTED");
     Serial.println("[Manager_Connections] Would initialize Ethernet + ESP-NOW gateway mode");
     Serial.println("[Manager_Connections] Will use Helper_HTTPEndpoints + ESP-NOW helper");
-}
-
-void Manager_Connections::branchGatewayUsb() {
-    Serial.println("[Manager_Connections] branchGatewayUsb - NOT IMPLEMENTED");
-    Serial.println("[Manager_Connections] Would initialize USB CDC + ESP-NOW gateway mode");
 }
