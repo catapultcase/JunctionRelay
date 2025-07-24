@@ -13,7 +13,6 @@ class Helper_DeviceInfo;
 class Helper_DeviceCapabilities;
 class ScreenRouter;
 class Manager_MQTT;
-class Helper_WebSocket;
 
 class Helper_HTTPEndpoints {
 public:
@@ -37,7 +36,7 @@ public:
     void setDeviceHelpers(Helper_DeviceInfo* deviceInfo, Helper_DeviceCapabilities* deviceCapabilities);
 
     // WebSocket and MQTT management
-    void setWebSocketHelper(Helper_WebSocket* wsHelper) { webSocketHelper = wsHelper; }
+    // void setWebSocketHelper(Helper_WebSocket* wsHelper) { webSocketHelper = wsHelper; }
     void setMQTTManager(Manager_MQTT* mqtt) { mqttManager = mqtt; }
 
     // Callback for protocol-specific handling
@@ -67,7 +66,7 @@ private:
     bool serverRunning;
 
     // Protocol helpers
-    Helper_WebSocket* webSocketHelper;
+    // Helper_WebSocket* webSocketHelper;
     Manager_MQTT* mqttManager;
 
     // Callbacks for routing

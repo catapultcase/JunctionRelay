@@ -95,7 +95,7 @@ void Layout_DefaultHomeScreen::create(const JsonDocument &cfg) {
         currentStatus += "to configure WiFi";
     } else {
         // Show normal connection status
-        ConnectionStatus status = mDisplayManager->getConnectionManager().getConnectionStatus();
+        ConnectionStatus status = mDisplayManager->getManager_Connections().getConnectionStatus();
         currentStatus = 
             String("ESP-NOW: ") + (status.espNowActive ? "Active\n" : "Inactive\n") +
             "WiFi: " + (status.wifiConnected ? "Connected\n" : "Disconnected\n");
@@ -190,7 +190,7 @@ void Layout_DefaultHomeScreen::update(const JsonDocument &sensorDoc) {
         currentStatus += "to configure WiFi";
     } else {
         // Show normal connection status
-        ConnectionStatus status = mDisplayManager->getConnectionManager().getConnectionStatus();
+        ConnectionStatus status = mDisplayManager->getManager_Connections().getConnectionStatus();
         currentStatus = 
             String("ESP-NOW: ") + (status.espNowActive ? "Active\n" : "Inactive\n") +
             "WiFi: " + (status.wifiConnected ? "Connected\n" : "Disconnected\n");

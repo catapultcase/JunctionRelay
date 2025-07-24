@@ -303,7 +303,7 @@ String Device_AdafruitQtPyESP32S3::performI2CScan(StaticJsonDocument<2048>& doc)
         
         xTaskCreatePinnedToCore(
             [](void* param) {
-                ConnectionManager* cm = static_cast<ConnectionManager*>(param);
+                Manager_Connections* cm = static_cast<Manager_Connections*>(param);
                 Serial.printf("[I2CInitTask] Running on core %d\n", xPortGetCoreID());
                 
                 Manager_I2C* i2cManager = Manager_I2C::getInstance(cm, &Wire1);

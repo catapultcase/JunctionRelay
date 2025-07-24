@@ -67,6 +67,7 @@ interface Sensor {
     IsSelected: boolean;
     unit?: string;
     value?: any;
+    decimalPlaces: number;
     sensorOrder: number;
     lastUpdated?: string;
     // Add other fields from Model_Sensor
@@ -227,6 +228,7 @@ const SensorEditModal: React.FC<{
         { field: 'sensorType', label: 'Sensor Type', type: 'text' },
         { field: 'category', label: 'Category', type: 'text' },
         { field: 'unit', label: 'Unit', type: 'text' },
+        { field: 'decimalPlaces', label: 'Decimal Places', type: 'number' },
         { field: 'formula', label: 'Formula', type: 'text' },
         { field: 'mqttTopic', label: 'MQTT Topic', type: 'text' },
         { field: 'mqttQoS', label: 'MQTT QoS', type: 'number' },
@@ -537,6 +539,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
             { field: "sensorTag", label: "Sensor Tag", required: false },
             { field: "value", label: "Value", required: true },
             { field: "unit", label: "Unit", required: true },
+            { field: "decimalPlaces", label: "Decimal Places", required: true },
             { field: "lastUpdated", label: "Last Updated", required: false },
             { field: "targets", label: "Targets", required: false },
             { field: "actions", label: "Actions", align: "right", required: false },
@@ -624,7 +627,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
         // Fallback to standard defaults if no defaultVisibleColumns provided
         const standardDefaults = [
             "selection", "edit", "order", "name", "sensorTag", "componentName",
-            "value", "unit", "targets", "actions"
+            "value", "unit", "decimalPlaces", "targets", "actions"
         ];
 
         // Return standard defaults filtered to available columns
@@ -1017,6 +1020,8 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                         color={selectedUnit === sensor.unit ? "primary" : "default"}
                     />
                 ) : '—';
+            case "decimalPlaces":
+                return sensor.decimalPlaces;
             case "lastUpdated":
                 return formatRelativeTime(sensor.lastUpdated);
             case "targets": {

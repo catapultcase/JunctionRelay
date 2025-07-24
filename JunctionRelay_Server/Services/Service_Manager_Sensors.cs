@@ -83,6 +83,7 @@ namespace JunctionRelayServer.Services
                             SensorType = s.SensorType,
                             Value = s.Value,
                             Unit = s.Unit,
+                            DecimalPlaces = s.DecimalPlaces,
                             ComponentName = s.ComponentName,
                             SensorTag = s.SensorTag ?? "DefaultSensorTag",
                             Category = s.Category ?? "DefaultCategory",

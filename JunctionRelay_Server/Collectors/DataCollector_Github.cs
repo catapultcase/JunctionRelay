@@ -35,6 +35,29 @@ namespace JunctionRelayServer.Collectors
         private string _owner = string.Empty;
         private string _repo = string.Empty;
 
+        // Helper method to detect decimal places in a value
+        private int GetDecimalPlaces(string value)
+        {
+            // Handle null or empty values
+            if (string.IsNullOrEmpty(value))
+                return 0;
+
+            // Try to parse as decimal to validate it's a numeric value
+            if (!decimal.TryParse(value, out decimal numericValue))
+                return 0; // Non-numeric values (including "N/A") have 0 decimal places
+
+            // Convert to string to analyze decimal places
+            string valueStr = numericValue.ToString();
+
+            // Find the decimal point
+            int decimalIndex = valueStr.IndexOf('.');
+            if (decimalIndex == -1)
+                return 0; // No decimal point found
+
+            // Count digits after decimal point
+            return valueStr.Length - decimalIndex - 1;
+        }
+
         public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
@@ -947,21 +970,6 @@ namespace JunctionRelayServer.Collectors
             return sensors;
         }
 
-        private List<Model_Sensor> ParseDiscussionsData(JObject discussionsData, Model_Collector collector)
-        {
-            var sensors = new List<Model_Sensor>();
-            var now = DateTime.UtcNow;
-
-            var totalCount = discussionsData["total_count"];
-            if (totalCount != null)
-            {
-                sensors.Add(CreateSensor($"github_discussions_total_{_owner}_{_repo}", "Total Discussions",
-                    totalCount.ToString(), "discussions", "GitHub Discussions", collector, now));
-            }
-
-            return sensors;
-        }
-
         private List<Model_Sensor> ParseWorkflowsData(JObject workflowsData, Model_Collector collector)
         {
             var sensors = new List<Model_Sensor>();
@@ -1044,6 +1052,7 @@ namespace JunctionRelayServer.Collectors
                 Name = name,
                 Value = value,
                 Unit = unit,
+                DecimalPlaces = GetDecimalPlaces(value),
                 Category = category,
                 DeviceName = collector.Name,
                 SensorType = "API",

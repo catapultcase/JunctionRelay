@@ -43,7 +43,7 @@
 #include <lvgl.h>
 
 // Forward declaration
-class ConnectionManager;
+class Manager_Connections;
 
 class Device_CrowPanel5 : public DeviceConfig {
 public:

@@ -13,9 +13,6 @@
 
 class DeviceConfig {
 public:
-    // REMOVED: Legacy begin() method - devices should use detectHardware() instead
-    // If you need this for compatibility, make it non-pure virtual with default implementation:
-    // virtual bool begin() { return true; }
 
     // Return the display width/height
     virtual int width() = 0;
@@ -140,9 +137,8 @@ public:
         lv_disp_drv_update(lv_disp_get_default(), drv);
     }
 
-    // Optionally, common LVGL helper initialization can go here
+    // Optional common LVGL helper init
     virtual void initLVGLHelper() {
-        // Implementation common to all devices (if applicable)
     }
 };
 

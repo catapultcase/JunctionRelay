@@ -3,8 +3,6 @@
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
 #include "ScreenRouter.h"
-#include "Manager_MQTT.h"
-#include "Helper_WebSocket.h"
 #include "utils.h"
 #include <Preferences.h>
 #include <Update.h>
@@ -21,9 +19,7 @@ Helper_HTTPEndpoints::Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamPr
       deviceInfo(devInfo),
       deviceCapabilities(devCaps),
       server(80),
-      serverRunning(false),
-      webSocketHelper(nullptr),
-      mqttManager(nullptr)
+      serverRunning(false)
 {
     // Serial.printf("[Helper_HTTPEndpoints] Constructor: deviceInfo=%p, deviceCapabilities=%p\n", devInfo, devCaps);
     
@@ -86,9 +82,9 @@ void Helper_HTTPEndpoints::startServer() {
         Serial.println("[Helper_HTTPEndpoints] ✅ HTTP server started on port 80");
         
         // Start WebSocket server if available
-        if (webSocketHelper) {
-            webSocketHelper->setupServer();
-        }
+        // if (webSocketHelper) {
+        //     webSocketHelper->setupServer();
+        // }
     }
 }
 
@@ -413,8 +409,8 @@ String Helper_HTTPEndpoints::getConnectionStatusJson() const {
     doc["activeNetworkType"] = "WiFi"; // Will be overridden by branch
     
     // Protocol status
-    doc["webSocketConnected"] = webSocketHelper ? webSocketHelper->hasConnectedClients() : false;
-    doc["mqttConnected"] = mqttManager ? mqttManager->connected() : false;
+    // doc["webSocketConnected"] = webSocketHelper ? webSocketHelper->hasConnectedClients() : false;
+    // doc["mqttConnected"] = mqttManager ? mqttManager->connected() : false;
     
     // Additional status (to be extended by branches)
     doc["ethernetConnected"] = false;

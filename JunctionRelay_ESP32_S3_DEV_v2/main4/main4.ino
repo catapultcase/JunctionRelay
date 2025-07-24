@@ -265,7 +265,7 @@ void setup() {
   // ===============================================
   Serial.println("[MAIN] Starting centralized manager initialization...");
   Helper_StartupScheduler* startupScheduler = Helper_StartupScheduler::getInstance();
-  startupScheduler->setConnectionManager(&connManager);  // SET BEFORE initializeFromInventory!
+  startupScheduler->setManager_Connections(&connManager);  // SET BEFORE initializeFromInventory!
   startupScheduler->initializeFromInventory(globalInventory, &screenRouter, &device);
 
   Serial.println("[MAIN] Setup complete!");

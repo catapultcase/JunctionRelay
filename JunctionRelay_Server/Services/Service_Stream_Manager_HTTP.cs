@@ -559,7 +559,7 @@ namespace JunctionRelayServer.Services
                         info.Latency = resultUncompressed.LatencyMs;
                         info.LastSentTime = DateTime.UtcNow;
 
-                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Sensor payload sent (uncompressed) to {info.DeviceName}. Latency: {resultUncompressed.LatencyMs}ms");
+                        // Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] Sensor payload sent (uncompressed) to {info.DeviceName}. Latency: {resultUncompressed.LatencyMs}ms");
 
                         var historyEntryUncompressed = _historyManager.CreateEntryFromHTTP(info);
                         _historyManager.AddHistoryEntry(historyEntryUncompressed);

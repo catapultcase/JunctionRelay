@@ -44,6 +44,24 @@ namespace JunctionRelayServer.Collectors
             CollectorId = collector.Id;
         }
 
+        private int GetDecimalPlaces(string value)
+        {
+            // Try to parse as decimal to validate it's a numeric value
+            if (!decimal.TryParse(value, out decimal numericValue))
+                return 0; // Non-numeric values have 0 decimal places
+
+            // Convert to string to analyze decimal places
+            string valueStr = numericValue.ToString();
+
+            // Find the decimal point
+            int decimalIndex = valueStr.IndexOf('.');
+            if (decimalIndex == -1)
+                return 0; // No decimal point found
+
+            // Count digits after decimal point
+            return valueStr.Length - decimalIndex - 1;
+        }
+
         public async Task<List<Model_Sensor>> FetchSensorsAsync(Model_Collector collector, CancellationToken cancellationToken = default)
         {
             ApplyConfiguration(collector);
@@ -63,13 +81,15 @@ namespace JunctionRelayServer.Collectors
                     continue;
                 var attributes = obj["attributes"] as JObject;
                 var friendlyName = attributes?["friendly_name"]?.ToString();
+                var stateValue = state.ToString();
 
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = id.ToString(),
                     Name = attributes?["friendly_name"]?.ToString() ?? id.ToString(),
-                    Value = state.ToString(),
+                    Value = stateValue,
                     Unit = attributes?["unit_of_measurement"]?.ToString() ?? "N/A",
+                    DecimalPlaces = GetDecimalPlaces(stateValue),
                     Category = "Home Assistant",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -106,13 +126,15 @@ namespace JunctionRelayServer.Collectors
                     continue;
 
                 var attributes = obj["attributes"] as JObject;
+                var stateValue = state.ToString();
 
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = id.ToString(),
                     Name = attributes?["friendly_name"]?.ToString() ?? id.ToString(),
-                    Value = state.ToString(),
+                    Value = stateValue,
                     Unit = attributes?["unit_of_measurement"]?.ToString() ?? "N/A",
+                    DecimalPlaces = GetDecimalPlaces(stateValue),
                     Category = "Home Assistant",
                     DeviceName = collector.Name,
                     SensorType = "API",

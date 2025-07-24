@@ -111,7 +111,7 @@ bool Manager_Matrix::validateCoordinates(int x, int y) {
 }
 
 // Method to set the connection manager reference - FIXED to use Manager_Connections
-void Manager_Matrix::setConnectionManager(Manager_Connections* cm) {
+void Manager_Matrix::setManager_Connections(Manager_Connections* cm) {
     connMgr = cm;
     Serial.println("[Manager_Matrix] ✅ Connection manager reference set");
 }

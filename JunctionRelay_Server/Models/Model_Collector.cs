@@ -42,6 +42,7 @@ namespace JunctionRelayServer.Models
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
         public int? ServiceId { get; set; }
+        public int? DecimalPlaces { get; set; }
 
         // ExternalEncryption
 

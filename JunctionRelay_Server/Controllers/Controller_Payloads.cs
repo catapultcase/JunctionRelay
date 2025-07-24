@@ -391,6 +391,7 @@ namespace JunctionRelayServer.Controllers
                     Unit = i % 4 == 0 ? "°C" : i % 3 == 0 ? "%" : i % 2 == 0 ? "W" : "lux",
                     // Generate random values
                     Value = random.Next(0, 100).ToString(),
+                    DecimalPlaces = 1,
                     ExternalId = $"ext_{i}",
                     DeviceName = "preview",
                     Name = $"Sensor {i}",

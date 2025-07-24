@@ -165,9 +165,9 @@ namespace JunctionRelayServer.Services
 
             var sql = @"
         INSERT INTO Collectors (
-            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId
+            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId, DecimalPlaces
         ) VALUES (
-            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId
+            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId, @DecimalPlaces
         );
         SELECT last_insert_rowid();
     ";
@@ -208,7 +208,8 @@ namespace JunctionRelayServer.Services
             ExternalAccessToken = @ExternalAccessToken,
             PollRate = @PollRate,
             SendRate = @SendRate,
-            ServiceId = @ServiceId
+            ServiceId = @ServiceId,
+            DecimalPlaces = @DecimalPlaces
         WHERE Id = @Id;
     ";
 
@@ -310,6 +311,7 @@ namespace JunctionRelayServer.Services
                 PollRate = original.PollRate,
                 SendRate = original.SendRate,
                 ServiceId = original.ServiceId,
+                DecimalPlaces = original.DecimalPlaces,
                 Status = original.Status,
             };
         }

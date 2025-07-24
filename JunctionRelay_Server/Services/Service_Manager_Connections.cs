@@ -185,9 +185,10 @@ namespace JunctionRelayServer.Services
                         // Create add peer command for COM gateway
                         var addPeerPayload = new
                         {
-                            command = "add_peer",
-                            mac = device.UniqueIdentifier,
-                            name = device.Name
+                            type = "peer_management",
+                            action = "add",
+                            peerMac = device.UniqueIdentifier,
+                            peerName = device.Name
                         };
 
                         var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();

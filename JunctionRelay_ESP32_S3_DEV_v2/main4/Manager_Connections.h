@@ -2,6 +2,7 @@
 #define MANAGER_CONNECTIONS_H
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 // Forward declarations
 class ScreenRouter;
@@ -10,6 +11,9 @@ class Helper_DeviceInfo;
 class Helper_DeviceCapabilities;
 class Branch_UsbDirect;
 class Branch_Wifi;
+class Branch_EspNow;
+class Branch_GatewayUsb;
+class Branch_Ethernet;
 class DeviceConfig;
 struct HardwareInventory;
 
@@ -63,15 +67,18 @@ private:
     // Connection branches
     Branch_UsbDirect* usbDirectBranch;
     Branch_Wifi* wifiBranch;
+    Branch_EspNow* espnowBranch;
+    Branch_GatewayUsb* gatewayUsbBranch;
+    Branch_Ethernet* ethernetBranch;  // NEW
 
     // Branch initialization methods
     void branchUsbDirect();
     void branchWifi();
-    void branchEthernet();
     void branchEspNow();
+    void branchGatewayUsb();
+    void branchEthernet();
     void branchGatewayWifi();
     void branchGatewayEthernet();
-    void branchGatewayUsb();
 
     // Helper management
     void initializeHelpers();
