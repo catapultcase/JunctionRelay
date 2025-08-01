@@ -135,7 +135,7 @@ namespace JunctionRelayServer.Services
 INSERT INTO Devices (
     Name, Description, Type, Status, LastUpdated, IPAddress, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayDevice,
     IsCloudDevice, CloudDeviceId, LastEncryptedSensorData, LastHealthReportAt,
-    ConnMode, SelectedPort,
+    ConnMode, COMPort,
     DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
 
     HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
@@ -153,7 +153,7 @@ INSERT INTO Devices (
 VALUES (
     @Name, @Description, @Type, @Status, @LastUpdated, @IPAddress, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayDevice,
     @IsCloudDevice, @CloudDeviceId, @LastEncryptedSensorData, @LastHealthReportAt,
-    @ConnMode, @SelectedPort,
+    @ConnMode, @COMPort,
     @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
 
     @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
@@ -398,7 +398,7 @@ CloudDeviceId = @CloudDeviceId,
 LastEncryptedSensorData = @LastEncryptedSensorData,
 LastHealthReportAt = @LastHealthReportAt,
 ConnMode = @ConnMode,
-SelectedPort = @SelectedPort,
+COMPort = @COMPort,
 DeviceModel = @DeviceModel,
 DeviceManufacturer = @DeviceManufacturer,
 FirmwareVersion = @FirmwareVersion,

@@ -58,6 +58,7 @@ interface DeviceScreensPanelProps {
     i2cDevices: I2CDevice[];
     setI2cDevices: (devices: I2CDevice[]) => void;
     layoutTemplates: any[];
+    frameTemplates: any[];
     isCustom: boolean;
     showSnackbar: (message: string, severity: "success" | "error" | "warning" | "info") => void;
     onScreenChange?: (screens: any[]) => void;
@@ -70,6 +71,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     i2cDevices,
     setI2cDevices,
     layoutTemplates,
+    frameTemplates,
     isCustom,
     showSnackbar,
     onScreenChange
@@ -102,6 +104,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     const [newScreenKey, setNewScreenKey] = useState("");
     const [newScreenDisplayName, setNewScreenDisplayName] = useState("");
     const [newScreenScreenLayoutId, setNewScreenScreenLayoutId] = useState<number | "">("");
+    const [newScreenFrameLayoutId, setNewScreenFrameLayoutId] = useState<number | "">("");
     const [newScreenSupportsConfigPayloads, setNewScreenSupportsConfigPayloads] = useState(true);
     const [newScreenSupportsSensorPayloads, setNewScreenSupportsSensorPayloads] = useState(true);
 
@@ -149,6 +152,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                     body: JSON.stringify({
                         displayName: screen.displayName,
                         screenLayoutId: screen.screenLayoutId,
+                        frameLayoutId: screen.frameLayoutId,
                         supportsConfigPayloads: screen.supportsConfigPayloads,
                         supportsSensorPayloads: screen.supportsSensorPayloads
                     })
@@ -214,6 +218,27 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             }
         }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
 
+    const handleFrameSelectChange = useCallback((screenId: number, field: string) =>
+        (event: any) => {
+            const newValue = event.target.value;
+            console.log(`[DeviceScreensPanel] Select change for screen ${screenId}.${field}: ${newValue}`);
+
+            const updatedScreens = deviceScreens.map(screen =>
+                screen.id === screenId ? { ...screen, [field]: newValue } : screen
+            );
+
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
+
+            // Find the updated screen and auto-save it immediately
+            const updatedScreen = updatedScreens.find(s => s.id === screenId);
+            if (updatedScreen) {
+                autoSaveScreen(updatedScreen, true); // Immediate save
+            }
+        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
+
     // Handle boolean changes with immediate auto-save
     const handleScreenBooleanChange = useCallback((screenId: number, field: string) =>
         (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,6 +278,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                 screenKey: newScreenKey,
                 displayName: newScreenDisplayName,
                 screenLayoutId: newScreenScreenLayoutId,
+                frameLayoutId: newScreenFrameLayoutId,
                 supportsConfigPayloads: newScreenSupportsConfigPayloads,
                 supportsSensorPayloads: newScreenSupportsSensorPayloads
             };
@@ -272,6 +298,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             setNewScreenKey("");
             setNewScreenDisplayName("");
             setNewScreenScreenLayoutId("");
+            setNewScreenFrameLayoutId("");
             setNewScreenSupportsConfigPayloads(true);
             setNewScreenSupportsSensorPayloads(true);
             showSnackbar("Screen added successfully", "success");
@@ -483,6 +510,28 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                 </FormControl>
                             </Box>
 
+                            <Box sx={{ mb: 2 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+                                    Frame Layout
+                                </Typography>
+                                <FormControl fullWidth size="small">
+                                    <Select
+                                        value={screen.frameLayoutId || ""}
+                                        onChange={handleFrameSelectChange(screen.id, 'frameLayoutId')}
+                                        sx={{
+                                            '& .MuiSelect-select': {
+                                                fontSize: '0.8rem',
+                                                padding: '6px 8px'
+                                            }
+                                        }}
+                                    >
+                                        {frameTemplates.map((t: any) => (
+                                            <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Box>
+
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
                                 <FormControlLabel
                                     control={
@@ -635,7 +684,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                     <TableRow>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Screen Key</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Friendly Name</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default Screen Layout</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default Payload Layout</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default FrameEngine Layout</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Config Payloads</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Sensor Payloads</TableCell>
                     </TableRow>
@@ -653,12 +703,24 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                     />
                                 </TableCell>
                                 <TableCell>
-                                    <FormControl fullWidth size="small">
+                                    <FormControl fullWidth size="small" sx={{ mb: 1 }}>
                                         <Select
                                             value={screen.screenLayoutId || ""}
                                             onChange={handleScreenSelectChange(screen.id, 'screenLayoutId')}
                                         >
                                             {layoutTemplates.map((t: any) => (
+                                                <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </TableCell>
+                                <TableCell>
+                                    <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+                                        <Select
+                                            value={screen.screenFrameId || ""}
+                                            onChange={handleScreenSelectChange(screen.id, 'screenFrameId')}
+                                        >
+                                            {frameTemplates.map((t: any) => (
                                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                                             ))}
                                         </Select>
@@ -898,7 +960,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         }}
                     />
                     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                        <InputLabel>Layout</InputLabel>
+                        <InputLabel>Screen Layout</InputLabel>
                         <Select
                             label="Layout"
                             value={newScreenScreenLayoutId}
@@ -910,6 +972,23 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                             }}
                         >
                             {layoutTemplates.map((t: any) => (
+                                <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                        <InputLabel>Frame Layout</InputLabel>
+                        <Select
+                            label="Layout"
+                            value={newScreenFrameLayoutId}
+                            onChange={e => setNewScreenFrameLayoutId(Number(e.target.value))}
+                            sx={{
+                                '& .MuiSelect-select': {
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                }
+                            }}
+                        >
+                            {frameTemplates.map((t: any) => (
                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                             ))}
                         </Select>
@@ -959,7 +1038,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         <Button
                             variant="contained"
                             onClick={handleAddScreen}
-                            disabled={!newScreenKey || !newScreenDisplayName || !newScreenScreenLayoutId}
+                            disabled={!newScreenKey || !newScreenDisplayName || !newScreenScreenLayoutId || !newScreenFrameLayoutId}
                             fullWidth={isMobile}
                             sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >

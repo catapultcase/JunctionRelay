@@ -835,7 +835,7 @@ const DeviceTableRow = memo(({
                         fontWeight="medium"
                         color="text.primary"
                     >
-                        {isScanResults ? (device.instance || device.name || 'Unknown Device') : device.name}
+                        {isScanResults ? (device.Instance || device.instance || device.name || 'Unknown Device') : device.name}
                     </Typography>
                 </Box>
             );
@@ -866,16 +866,27 @@ const DeviceTableRow = memo(({
         // Otherwise use the standard renderers
         switch (field) {
             case "model":
-                if (isScanResults && deviceDetails) {
-                    const ip = device.IpAddress || device.ipAddress;
-                    const details = (ip && deviceDetails[ip]) || {};
-                    console.log(`[MODEL DEBUG] Device: ${device.instance}, IP: ${ip}, Details:`, details);
-                    return details.deviceModel || details.DeviceModel || "";
+                if (isScanResults) {
+                    // First check if the data is directly on the device object (for COM devices after backend fix)
+                    if (device.DeviceModel || device.deviceModel) {
+                        return device.DeviceModel || device.deviceModel || "";
+                    }
+                    // Fallback to deviceDetails for network devices
+                    if (deviceDetails) {
+                        const ip = device.IpAddress || device.ipAddress;
+                        const details = (ip && deviceDetails[ip]) || {};
+                        console.log(`[MODEL DEBUG] Device: ${device.instance}, IP: ${ip}, Details:`, details);
+                        return details.deviceModel || details.DeviceModel || "";
+                    }
+                    return "";
                 }
                 return device.deviceModel || device.DeviceModel || "";
 
             case "ipAddress":
                 return device.IpAddress || device.ipAddress || "";
+
+            case "COMPort":
+                return device.COMPort || device.COMPort || "";
 
             case "uniqueIdentifier":
                 if (isScanResults) {
@@ -927,11 +938,17 @@ const DeviceTableRow = memo(({
 
             case "firmware":
                 let firmwareVersion = "";
-                if (isScanResults && deviceDetails) {
-                    const ip = device.IpAddress || device.ipAddress;
-                    const details = (ip && deviceDetails[ip]) || {};
-                    console.log(`[FIRMWARE DEBUG] Device: ${device.instance}, IP: ${ip}, Details:`, details);
-                    firmwareVersion = details.firmwareVersion || details.FirmwareVersion || "";
+                if (isScanResults) {
+                    // First check if the data is directly on the device object (for COM devices after backend fix)
+                    if (device.FirmwareVersion || device.firmwareVersion) {
+                        firmwareVersion = device.FirmwareVersion || device.firmwareVersion || "";
+                    } else if (deviceDetails) {
+                        // Fallback to deviceDetails for network devices
+                        const ip = device.IpAddress || device.ipAddress;
+                        const details = (ip && deviceDetails[ip]) || {};
+                        console.log(`[FIRMWARE DEBUG] Device: ${device.instance}, IP: ${ip}, Details:`, details);
+                        firmwareVersion = details.firmwareVersion || details.FirmwareVersion || "";
+                    }
                 } else {
                     firmwareVersion = device.firmwareVersion || device.FirmwareVersion || "";
                 }
@@ -947,15 +964,21 @@ const DeviceTableRow = memo(({
                 let hasCustomFirmware = false;
                 let isUnknown = false;
 
-                if (isScanResults && deviceDetails) {
-                    const ip = device.IpAddress || device.ipAddress;
-                    const details = (ip && deviceDetails[ip]) || {};
+                if (isScanResults) {
+                    // First check if the data is directly on the device object (for COM devices after backend fix)
+                    if (device.CustomFirmware !== undefined) {
+                        hasCustomFirmware = device.CustomFirmware === true;
+                    } else if (deviceDetails) {
+                        // Fallback to deviceDetails for network devices
+                        const ip = device.IpAddress || device.ipAddress;
+                        const details = (ip && deviceDetails[ip]) || {};
 
-                    if (details.customFirmware !== undefined) {
-                        hasCustomFirmware = details.customFirmware === true;
-                    } else {
-                        // If we don't have the info yet, mark as unknown
-                        isUnknown = true;
+                        if (details.customFirmware !== undefined) {
+                            hasCustomFirmware = details.customFirmware === true;
+                        } else {
+                            // If we don't have the info yet, mark as unknown
+                            isUnknown = true;
+                        }
                     }
                 } else {
                     hasCustomFirmware = device.hasCustomFirmware === true;
@@ -1264,6 +1287,8 @@ const DeviceTableRow = memo(({
                             case "model":
                                 return { minWidth: 150, width: 'auto' };
                             case "ipAddress":
+                                return { minWidth: 140, width: 140 };
+                            case "COMPort":
                                 return { minWidth: 140, width: 140 };
                             case "uniqueIdentifier":
                                 return { minWidth: 160, width: 'auto' };
@@ -1620,7 +1645,7 @@ const DevicesTable: React.FC<{
     const [visibleDeviceCols, setVisibleDeviceCols] = useState<string[]>(() => {
         // For scan results, use a simplified column set
         if (isScanResults) {
-            return ["actions", "name", "type", "model", "ipAddress", "uniqueIdentifier", "status", "firmware", "custom"];
+            return ["actions", "name", "type", "model", "ipAddress", "COMPort", "uniqueIdentifier", "status", "firmware", "custom"];
         }
 
         const stored = localStorage.getItem(localStorageKey);
@@ -1769,6 +1794,10 @@ const DevicesTable: React.FC<{
                 case 'ipAddress':
                     valueA = a.device.ipAddress || '';
                     valueB = b.device.ipAddress || '';
+                    break;
+                case 'COMPort':
+                    valueA = a.device.COMPort || '';
+                    valueB = b.device.COMPort || '';
                     break;
                 case 'uniqueIdentifier':
                     if (isScanResults) {
@@ -2287,6 +2316,8 @@ const DevicesTable: React.FC<{
                                                 case "model":
                                                     return { minWidth: 150, width: 'auto' };
                                                 case "ipAddress":
+                                                    return { minWidth: 140, width: 140 };
+                                                case "COMPort":
                                                     return { minWidth: 140, width: 140 };
                                                 case "uniqueIdentifier":
                                                     return { minWidth: 160, width: 'auto' };

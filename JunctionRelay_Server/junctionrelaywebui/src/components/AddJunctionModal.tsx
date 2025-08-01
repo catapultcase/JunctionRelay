@@ -46,7 +46,7 @@ interface GatewayDevice {
     id: number;
     name: string;
     ipAddress: string;
-    selectedPort?: string;
+    COMPort?: string;
     comPort?: string;
 }
 
@@ -149,7 +149,7 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
             let gatewayDestination = "";
             if (selectedDevice) {
                 if (newJunction.type === "Gateway Junction (COM to ESP:NOW)") {
-                    gatewayDestination = selectedDevice.selectedPort || selectedDevice.comPort || "";
+                    gatewayDestination = selectedDevice.COMPort || selectedDevice.comPort || "";
                 } else {
                     gatewayDestination = selectedDevice.ipAddress || "";
                 }
@@ -301,7 +301,7 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                                 gatewayDevices.map((device) => (
                                                     <MenuItem key={device.id} value={device.id.toString()}>
                                                         {newJunction.type === "Gateway Junction (COM to ESP:NOW)"
-                                                            ? `${device.name} (${device.selectedPort || device.comPort || 'No COM port'})`
+                                                            ? `${device.name} (${device.COMPort || device.comPort || 'No COM port'})`
                                                             : `${device.name} (${device.ipAddress})`
                                                         }
                                                     </MenuItem>

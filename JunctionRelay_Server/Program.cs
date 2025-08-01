@@ -22,6 +22,7 @@ using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebSockets;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -216,6 +217,7 @@ builder.Services.AddScoped<Service_Database_Manager_Collectors>();
 builder.Services.AddScoped<Service_Database_Manager_Junctions>();
 builder.Services.AddScoped<Service_Database_Manager_JunctionLinks>();
 builder.Services.AddScoped<Service_Database_Manager_Layouts>();
+builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 builder.Services.AddScoped<Service_Manager_Device_Sync>();
 builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
@@ -223,7 +225,6 @@ builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_CloudNotifications>();
 
-builder.Services.AddSingleton<StartupSignals>();
 builder.Services.AddHostedService<Service_Heartbeats>();
 
 builder.Services.AddSingleton<Service_Manager_Connections>();
@@ -233,9 +234,10 @@ builder.Services.AddSingleton<Service_Manager_Network_Scan>();
 builder.Services.AddSingleton<Service_Stream_Manager_MQTT>();
 builder.Services.AddSingleton<Service_Stream_Manager_HTTP>();
 builder.Services.AddSingleton<Service_Stream_Manager_COM>();
-
+builder.Services.AddSingleton<Service_FrameEngine>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
 builder.Services.AddSingleton<Service_Stream_History_Manager>();
+builder.Services.AddSingleton<StartupSignals>();
 
 // Register WebSocket services
 builder.Services.AddSingleton<Service_Manager_WebSocket_Devices>();
@@ -276,6 +278,7 @@ builder.Services.AddTransient<DataCollector_MQTT>();
 builder.Services.AddTransient<DataCollector_NeoPixelColor>();
 builder.Services.AddTransient<DataCollector_RateTester>();
 builder.Services.AddTransient<DataCollector_Render>();
+builder.Services.AddTransient<DataCollector_SonarrCalendar>();
 builder.Services.AddTransient<DataCollector_Stripe>();
 builder.Services.AddTransient<DataCollector_UptimeKuma>();
 
@@ -292,7 +295,8 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
         { "NeoPixelColor", c => { var i = provider.GetRequiredService<DataCollector_NeoPixelColor>(); i.ApplyConfiguration(c); return i; } },
         { "RateTester", c => { var i = provider.GetRequiredService<DataCollector_RateTester>(); i.ApplyConfiguration(c); return i; } },
         { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
-        { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },  // ADD THIS
+        { "SonarrCalendar", c => { var i = provider.GetRequiredService<DataCollector_SonarrCalendar>(); i.ApplyConfiguration(c); return i; } },
+        { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },
         { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
     };
 
@@ -353,6 +357,22 @@ app.UseCors("AllowFrontend");
 app.UseWebSockets();
 
 app.UseStaticFiles();
+
+// Configure static file serving for frames folder
+var framesPath = Path.Combine(Directory.GetCurrentDirectory(), "frames");
+if (!Directory.Exists(framesPath))
+{
+    Directory.CreateDirectory(framesPath);
+}
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(framesPath),
+    RequestPath = "/frames",
+    ServeUnknownFileTypes = true,
+    DefaultContentType = "image/png"
+});
+
 app.UseRouting();
 
 // FIXED: Use standard authentication and authorization - REMOVED custom middleware

@@ -57,6 +57,7 @@ interface SessionItem {
     location?: string;
     device?: string;
     status: 'active' | 'expired' | 'revoked';
+    friendlyName?: string;
 }
 
 interface BackendSession {
@@ -70,6 +71,7 @@ interface BackendSession {
     deviceType?: string;
     deviceStatus?: string;
     deviceLastUpdated?: string;
+    backendFriendlyName?: string;
 }
 
 interface AuthStatus {
@@ -126,7 +128,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
             return `${session.deviceType || 'Device'} - ${session.keyId}`;
         }
         if (session.tokenType === 'user' && session.backendId) {
-            return `Backend ID: ${session.backendId.substring(0, 8)}...`;
+            return `Database ID: ${session.backendId}`;
         }
         return 'Web Browser';
     };
@@ -170,9 +172,10 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                         id: session.sessionId,
                         type: getSessionType(session),
                         name: getSessionName(session),
-                        lastActive: session.createdAt, // Using creation time as last active for now
-                        location: 'Unknown', // Backend doesn't provide location yet
+                        lastActive: session.createdAt,
+                        location: 'Unknown',
                         device: getDeviceInfo(session),
+                        friendlyName: session.backendFriendlyName || undefined,
                         status: session.expiresAt && new Date(session.expiresAt) < new Date() ? 'expired' : 'active'
                     }));
                     setSessions(transformedSessions);
@@ -331,6 +334,13 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                                     {session.name}
                                 </Typography>
+
+                                {session.friendlyName && (
+                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                        {session.friendlyName}
+                                    </Typography>
+                                )}
+
                                 <Typography variant="caption" color="text.secondary">
                                     {session.device}
                                 </Typography>
@@ -370,7 +380,8 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                 <TableHead>
                     <TableRow>
                         <TableCell>Session</TableCell>
-                        <TableCell>Device</TableCell>
+                        <TableCell>Identity / Client</TableCell>
+                        <TableCell>Friendly Name</TableCell>
                         <TableCell>Token Generated</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell align="right">Actions</TableCell>
@@ -391,6 +402,13 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                                 <Typography variant="body2" color="text.secondary">
                                     {session.device}
                                 </Typography>
+                            </TableCell>
+                            <TableCell>
+                                {session.friendlyName ? (
+                                    <Typography variant="body2">{session.friendlyName}</Typography>
+                                ) : (
+                                    <Typography variant="body2" color="text.disabled">—</Typography>
+                                )}
                             </TableCell>
                             <TableCell>
                                 <Typography variant="body2" color="text.secondary">

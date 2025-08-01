@@ -29,15 +29,24 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_Sensors _sensorDb;
         private readonly Service_Database_Manager_Layouts _layoutsDb;
         private readonly Service_Manager_Connections _serviceManagerConnections;
+        private readonly Service_FrameEngine _frameEngine;
+        private readonly Service_Database_Manager_FrameEngine _frameLayoutDb;
+        private readonly Service_Database_Manager_JunctionLinks _junctionLinksService;
 
         public Service_Manager_Payloads(
             Service_Database_Manager_Sensors sensorDb,
             Service_Manager_Connections serviceManagerConnections,
-            Service_Database_Manager_Layouts layoutsDb)
+            Service_Database_Manager_Layouts layoutsDb,
+            Service_FrameEngine frameEngine,
+            Service_Database_Manager_FrameEngine frameLayoutDb,
+            Service_Database_Manager_JunctionLinks junctionLinksService)
         {
             _sensorDb = sensorDb;
             _serviceManagerConnections = serviceManagerConnections;
             _layoutsDb = layoutsDb;
+            _frameEngine = frameEngine;
+            _frameLayoutDb = frameLayoutDb;
+            _junctionLinksService = junctionLinksService;
         }
 
         // Helper method to add properties if they are present (including valid 0 values)
@@ -645,7 +654,7 @@ namespace JunctionRelayServer.Services
             }
 
             // 3) Get decimal places from template, default to 0 if null
-            int decimalPlaces = template.DecimalPlaces ?? 0;
+            // int decimalPlaces = template.DecimalPlaces ?? 0;
 
             var sensors = new Dictionary<string, object>();
 
@@ -669,7 +678,7 @@ namespace JunctionRelayServer.Services
                     string formattedValue;
                     if (double.TryParse(cachedSensor.Value?.ToString(), out double numericValue))
                     {
-                        formattedValue = numericValue.ToString($"F{decimalPlaces}");
+                        formattedValue = numericValue.ToString($"F{sensor.DecimalPlaces}");
                     }
                     else
                     {
@@ -747,6 +756,182 @@ namespace JunctionRelayServer.Services
 
             // Gateway commands are always strings (not binary), so cast appropriately
             return result as string ?? throw new InvalidOperationException("Gateway command serialization failed");
+        }
+
+        // Generate frame payloads for screens using FrameEngine
+        public async Task<Dictionary<string, object>> GenerateFramePayloadsAsync(
+    string screenKey,
+    List<Model_Sensor> assignedSensors,
+    Model_Device_Screens screen,
+    Model_JunctionScreenLayout? screenOverride = null,
+    int? junctionId = null, // Add this parameter
+    int? linkId = null, // Add this parameter
+    string? junctionType = null,
+    string? gatewayDestination = null,
+    bool compressPayload = false)
+        {
+            var result = new Dictionary<string, object>();
+
+            try
+            {
+                // 1) Get the frame layout for this screen
+                Model_Frame_Layout? frameLayout = null;
+
+                // Check if junction has a specific frame layout override for this screen
+                if (screenOverride?.FrameLayoutId.HasValue == true)
+                {
+                    frameLayout = await _frameLayoutDb.GetFrameLayoutByIdAsync(screenOverride.FrameLayoutId.Value);
+                }
+
+                // Fallback to default frame layout based on screen layout type
+                if (frameLayout == null && screen.ScreenLayoutId.HasValue)
+                {
+                    var screenLayout = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+                    if (screenLayout != null)
+                    {
+                        // Map screen layout type to frame layout type
+                        var frameLayoutType = MapScreenLayoutToFrameLayout(screenLayout.LayoutType);
+                        var frameLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync(frameLayoutType);
+                        frameLayout = frameLayouts.FirstOrDefault(f => f.IsTemplate);
+                    }
+                }
+
+                // Ultimate fallback to default sensor grid
+                if (frameLayout == null)
+                {
+                    var defaultFrameLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("FRAME_SENSOR_GRID");
+                    frameLayout = defaultFrameLayouts.FirstOrDefault(f => f.IsTemplate);
+                }
+
+                if (frameLayout == null)
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ No frame layout found for screen {screenKey}");
+                    return result;
+                }
+
+                // 2) Build sensor data dictionary from assigned sensors
+                var sensorData = new Dictionary<string, object>();
+
+                // Sort sensors by SensorOrder
+                var sortedSensors = assignedSensors.OrderBy(s => s.SensorOrder).ToList();
+
+                foreach (var sensor in sortedSensors)
+                {
+                    // Get the sensor's latest value from the global cache using OriginalId
+                    var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
+                    if (cachedSensor != null)
+                    {
+                        // Format the sensor value based on decimal places
+                        string formattedValue;
+                        if (double.TryParse(cachedSensor.Value?.ToString(), out double numericValue))
+                        {
+                            formattedValue = numericValue.ToString($"F{sensor.DecimalPlaces}");
+                        }
+                        else
+                        {
+                            formattedValue = cachedSensor.Value?.ToString() ?? "N/A";
+                        }
+
+                        // Add unit if present
+                        var unit = !string.IsNullOrEmpty(cachedSensor.Unit) ? $" {cachedSensor.Unit}" : "";
+                        sensorData[sensor.SensorTag] = $"{formattedValue}{unit}";
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Sensor with OriginalId {sensor.OriginalId} not found in cache for frame rendering");
+                        sensorData[sensor.SensorTag] = "N/A";
+                    }
+                }
+
+                // 3) Get screen configuration for URL access (if linkId is provided)
+                Model_JunctionScreenLayout? screenConfig = null;
+                if (linkId.HasValue && screen.Id > 0)
+                {
+                    try
+                    {
+                        var screenConfigs = await _junctionLinksService.GetJunctionScreenLayoutsByLinkIdAsync(linkId.Value);
+                        screenConfig = screenConfigs.FirstOrDefault(sc => sc.DeviceScreenId == screen.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Could not get screen configuration: {ex.Message}");
+                    }
+                }
+
+                // 4) Render the frame using FrameEngine with new signature
+                var frameBytes = _frameEngine.RenderFrame(frameLayout, sensorData, screenConfig, junctionId, linkId, screen.Id);
+
+                // 5) Handle compression and prefix if needed
+                object finalPayload;
+                if (compressPayload)
+                {
+                    // For frames, we could optionally compress the PNG data further
+                    // For now, PNG is already compressed, so we'll use as-is
+                    finalPayload = frameBytes;
+                }
+                else
+                {
+                    finalPayload = frameBytes;
+                }
+
+                // 6) Add prefix if required (similar to existing logic)
+                if (screen.ScreenLayoutId.HasValue)
+                {
+                    var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+                    if (template?.IncludePrefixSensor == true)
+                    {
+                        // FRAME type prefix: LLLLTTRR where TT = "02" for Frame data
+                        string routingHint = (!string.IsNullOrEmpty(junctionType) &&
+                            junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+
+                        var lengthHint = Math.Min(frameBytes.Length, 9999).ToString("D4");
+                        var typeField = "02"; // Frame data type
+                        var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
+                        var prefix = lengthHint + typeField + cleanRoutingHint;
+
+                        var prefixBytes = Encoding.UTF8.GetBytes(prefix);
+                        var prefixedFrame = new byte[prefixBytes.Length + frameBytes.Length];
+                        Array.Copy(prefixBytes, 0, prefixedFrame, 0, prefixBytes.Length);
+                        Array.Copy(frameBytes, 0, prefixedFrame, prefixBytes.Length, frameBytes.Length);
+
+                        finalPayload = prefixedFrame;
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added LLLLTTRR prefix '{prefix}' to frame payload (Type: Frame, Route: {cleanRoutingHint})");
+                    }
+                }
+
+                // 7) Add gateway destination to metadata if applicable
+                var payloadWithMetadata = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(junctionType))
+                {
+                    AddGatewayDestination(payloadWithMetadata, junctionType, gatewayDestination, screenKey);
+                }
+
+                result[screenKey] = finalPayload;
+
+                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Generated frame payload for {screenKey} using layout {frameLayout.DisplayName} ({frameBytes.Length} bytes)");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Error generating frame payload for {screenKey}: {ex.Message}");
+                return result;
+            }
+        }
+
+        // Helper method to map screen layout types to frame layout types
+        private string MapScreenLayoutToFrameLayout(string screenLayoutType)
+        {
+            return screenLayoutType.ToUpperInvariant() switch
+            {
+                "MATRIX" => "FRAME_SENSOR_GRID",
+                "DASHBOARD" => "FRAME_DASHBOARD",
+                "CHART" => "FRAME_CHART",
+                "QUAD" => "FRAME_QUAD",
+                "CALENDAR" => "FRAME_CALENDAR",
+                "IMAGE" => "FRAME_IMAGE",
+                _ => "FRAME_SENSOR_GRID" // Default fallback
+            };
         }
 
     }

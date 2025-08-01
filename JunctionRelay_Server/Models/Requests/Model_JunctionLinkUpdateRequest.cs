@@ -29,6 +29,5 @@ namespace JunctionRelayServer.Models.Requests
         public DateTime? LastSent { get; set; }
         public int? RetryAttempts { get; set; }
         public int? DeclareFailedAfter { get; set; }
-        public List<string> FieldsToInclude { get; set; } = new List<string>();
     }
 }

@@ -31,6 +31,8 @@ import ConfigureDevice from "pages/ConfigureDevice";
 import ConfigureService from "pages/ConfigureService";
 import ConfigureCollector from "pages/ConfigureCollector";
 import ConfigureJunction from "pages/ConfigureJunction";
+import FrameEngine from "pages/FrameEngine";
+import ConfigureFrame from "pages/ConfigureFrame";
 import Payloads from "pages/Payloads";
 import ConfigurePayload from "pages/ConfigurePayload";
 import Testing from "pages/Testing";
@@ -167,6 +169,10 @@ const BottomActionBarWrapper: React.FC = () => {
         return localStorage.getItem('junctionrelay_services_view_mode') || 'table';
     });
 
+    const [frameEngineViewMode, setFrameEngineViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_frameengine_view_mode') || 'table';
+    });
+
     const [payloadsViewMode, setPayloadsViewMode] = useState(() => {
         return localStorage.getItem('junctionrelay_payloads_view_mode') || 'table';
     });
@@ -196,6 +202,10 @@ const BottomActionBarWrapper: React.FC = () => {
         return localStorage.getItem('configure_service_view_mode') || 'table';
     });
 
+    const [configureFrameViewMode, setConfigureFrameViewMode] = useState(() => {
+        return localStorage.getItem('configure_frame_view_mode') || 'table';
+    });
+
     const [configurePayloadViewMode, setConfigurePayloadViewMode] = useState(() => {
         return localStorage.getItem('configure_payload_view_mode') || 'table';
     });
@@ -211,6 +221,9 @@ const BottomActionBarWrapper: React.FC = () => {
             }
             if (e.key === 'junctionrelay_services_view_mode' && e.newValue) {
                 setServicesViewMode(e.newValue);
+            }
+            if (e.key === 'junctionrelay_frameengine_view_mode' && e.newValue) {
+                setFrameEngineViewMode(e.newValue);
             }
             if (e.key === 'junctionrelay_payloads_view_mode' && e.newValue) {
                 setPayloadsViewMode(e.newValue);
@@ -233,6 +246,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     setCollectorsViewMode(e.detail.mode);
                 } else if (location.pathname === '/services') {
                     setServicesViewMode(e.detail.mode);
+                } else if (location.pathname === '/frameengine') {
+                    setFrameEngineViewMode(e.detail.mode);
                 } else if (location.pathname === '/payloads') {
                     setPayloadsViewMode(e.detail.mode);
                 } else if (location.pathname === '/') {
@@ -247,6 +262,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     setConfigureCollectorViewMode(e.detail.mode);
                 } else if (location.pathname.includes('/configure-service/')) {
                     setConfigureServiceViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-frame/')) {
+                    setConfigureFrameViewMode(e.detail.mode);
                 } else if (location.pathname.includes('/configure-payload/')) {
                     setConfigurePayloadViewMode(e.detail.mode);
                 }
@@ -290,6 +307,8 @@ const BottomActionBarWrapper: React.FC = () => {
             return collectorsViewMode;
         } else if (location.pathname === '/services') {
             return servicesViewMode;
+        } else if (location.pathname === '/frameengine') {
+            return frameEngineViewMode;
         } else if (location.pathname === '/payloads') {
             return payloadsViewMode;
         } else if (location.pathname.includes('/configure-device/')) {
@@ -300,6 +319,8 @@ const BottomActionBarWrapper: React.FC = () => {
             return configureCollectorViewMode;
         } else if (location.pathname.includes('/configure-service/')) {
             return configureServiceViewMode;
+        } else if (location.pathname.includes('/configure-frame/')) {
+            return configureFrameViewMode;
         } else if (location.pathname.includes('/configure-payload/')) {
             return configurePayloadViewMode;
         }
@@ -326,6 +347,9 @@ const BottomActionBarWrapper: React.FC = () => {
         } else if (location.pathname === '/services') {
             storageKey = 'junctionrelay_services_view_mode';
             setterFunction = setServicesViewMode;
+        } else if (location.pathname === '/frameengine') {
+            storageKey = 'junctionrelay_frameengine_view_mode';
+            setterFunction = setFrameEngineViewMode;
         } else if (location.pathname === '/payloads') {
             storageKey = 'junctionrelay_payloads_view_mode';
             setterFunction = setPayloadsViewMode;
@@ -341,7 +365,10 @@ const BottomActionBarWrapper: React.FC = () => {
         } else if (location.pathname.includes('/configure-service/')) {
             storageKey = 'configure_service_view_mode';
             setterFunction = setConfigureServiceViewMode;
-        } else if (location.pathname.includes('/configure-payload/')) {
+        } else if (location.pathname.includes('/configure-frame/')) {
+            storageKey = 'configure_frame_view_mode';
+            setterFunction = setConfigurePayloadViewMode;        
+        } else if (location.pathname.includes('/configure-frame/')) {
             storageKey = 'configure_payload_view_mode';
             setterFunction = setConfigurePayloadViewMode;
         }
@@ -470,6 +497,21 @@ const BottomActionBarWrapper: React.FC = () => {
                         }
                     ]
                 };
+            } else if (location.pathname.includes('/configure-frame/')) {
+                return {
+                    showBackButton,
+                    showSaveButton: true,
+                    viewModeActions,
+                    heroAction: {
+                        icon: <CloudUploadIcon />,
+                        label: 'Export Frame',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-export'));
+                        }
+                    },
+                    rightSecondaryActions: []
+                };
+            
             } else if (location.pathname.includes('/configure-payload/')) {
                 return {
                     showBackButton,
@@ -614,6 +656,21 @@ const BottomActionBarWrapper: React.FC = () => {
                     ]
                 };
 
+            case '/frameengine':
+                return {
+                    showBackButton,
+                    showSaveButton: false,
+                    viewModeActions,
+                    heroAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Frame',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-frame'));
+                        }
+                    }
+                    // No secondary actions for frame engine
+                };
+
             case '/payloads':
                 return {
                     showBackButton,
@@ -695,6 +752,8 @@ const AppRoutes: React.FC = () => {
                     <Route path="/configure-service/:id" element={<ConfigureService />} />
                     <Route path="/configure-collector/:id" element={<ConfigureCollector />} />
                     <Route path="/configure-junction/:id" element={<ConfigureJunction />} />
+                    <Route path="/frameengine" element={<FrameEngine />} />
+                    <Route path="/configure-frame/:id" element={<ConfigureFrame />} />
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
                     <Route path="/testing" element={<Testing />} />

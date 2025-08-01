@@ -374,6 +374,7 @@ const ConfigureJunction: React.FC = () => {
                 Name: junctionData.name,
                 Type: junctionData.type,
                 Description: junctionData.description || "",
+                RenderingMode: junctionData.renderingMode || "Payload", 
                 MQTTBrokerId: selectedMqttBrokerId || null,
                 ShowOnDashboard: junctionData.showOnDashboard,
                 AutoStartOnLaunch: junctionData.autoStartOnLaunch,
@@ -1203,7 +1204,7 @@ const ConfigureJunction: React.FC = () => {
                                     />
                                 </Box>
                             </CardContent>
-                        </Card>
+                        </Card>                        
 
                         <Card>
                             <CardContent sx={{ pb: 1 }}>
@@ -1306,12 +1307,14 @@ const ConfigureJunction: React.FC = () => {
                         handleSendRateOverrideChange={handleSendRateOverrideChange}
                     />
 
-                    <DeviceScreenLayoutsCard
-                        junctionId={junctionId}
-                        deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
-                        loading={loading}
-                        showSnackbar={showSnackbar}
-                    />
+                        <DeviceScreenLayoutsCard
+                            junctionId={junctionId}
+                            junction={junctionData}
+                            deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
+                            loading={loading}
+                            showSnackbar={showSnackbar}
+                            onJunctionUpdate={(updatedJunction) => setJunctionData(updatedJunction)}
+                        />
 
                     <EnhancedSensorsTable
                         availableSensors={availableSensors}

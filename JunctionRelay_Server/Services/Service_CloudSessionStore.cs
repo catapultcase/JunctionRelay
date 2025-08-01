@@ -466,6 +466,10 @@ namespace JunctionRelayServer.Services
             return _backendIdentity.GetBackendId();
         }
 
+        public string? GetFriendlyName()
+        {
+            return _backendIdentity.GetFriendlyName();
+        }
 
         private class CloudSessionRow
         {

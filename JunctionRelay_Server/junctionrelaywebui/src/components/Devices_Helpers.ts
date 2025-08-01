@@ -47,6 +47,7 @@ export const defaultDeviceColumns: DeviceColumn[] = [
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "model", label: "Model", align: "left", sortable: true },
     { field: "ipAddress", label: "IP Address", align: "left", sortable: true },
+    { field: "COMPort", label: "COM Port", align: "left", sortable: true },
     { field: "uniqueIdentifier", label: "MAC / Unique ID", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
     { field: "notifications", label: "Notifications", align: "center", sortable: true },
@@ -63,7 +64,7 @@ export const defaultDeviceColumns: DeviceColumn[] = [
 
 // Default visible columns for local devices
 export const defaultLocalDeviceColumns = [
-    "actions", "name", "type", "model", "ipAddress", "uniqueIdentifier",
+    "actions", "name", "type", "model", "ipAddress", "COMPort", "uniqueIdentifier",
     "status", "syncMode", "notifications", "connMode", "firmware", "custom",
     "heartbeatProtocol", "heartbeatStatus", "lastPinged", "pingLatency",
     "consecutiveFailures"

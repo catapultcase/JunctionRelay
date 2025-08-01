@@ -306,22 +306,7 @@ namespace JunctionRelayServer.Controllers
             {
                 return NotFound($"Device link with ID {linkId} not found for junction {junctionId}.");
             }
-
-            // Loop through each field that needs to be updated, as specified in FieldsToInclude
-            foreach (var field in updateRequest.FieldsToInclude)
-            {
-                // Use reflection to find the property in the Model and update it if it exists
-                var propertyInfo = typeof(Model_JunctionDeviceLink).GetProperty(field);
-                if (propertyInfo != null && propertyInfo.CanWrite)
-                {
-                    var value = updateRequest.GetType().GetProperty(field)?.GetValue(updateRequest, null);
-                    if (value != null)
-                    {
-                        propertyInfo.SetValue(link, value);
-                    }
-                }
-            }
-
+          
             var success = await _linkDb.UpdateJunctionLinkFieldsAsync(linkId, updateRequest, isDeviceLink: true);
             if (!success)
             {
@@ -339,21 +324,6 @@ namespace JunctionRelayServer.Controllers
             if (link == null || link.JunctionId != junctionId)
             {
                 return NotFound($"Collector link with ID {linkId} not found for junction {junctionId}.");
-            }
-
-            // Loop through each field that needs to be updated, as specified in FieldsToInclude
-            foreach (var field in updateRequest.FieldsToInclude)
-            {
-                // Use reflection to find the property in the Model and update it if it exists
-                var propertyInfo = typeof(Model_JunctionCollectorLink).GetProperty(field); // Use correct class here
-                if (propertyInfo != null && propertyInfo.CanWrite)
-                {
-                    var value = updateRequest.GetType().GetProperty(field)?.GetValue(updateRequest, null);
-                    if (value != null)
-                    {
-                        propertyInfo.SetValue(link, value);
-                    }
-                }
             }
 
             var success = await _linkDb.UpdateJunctionLinkFieldsAsync(linkId, updateRequest, isDeviceLink: false);

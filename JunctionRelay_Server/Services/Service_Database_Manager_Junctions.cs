@@ -83,7 +83,7 @@ namespace JunctionRelayServer.Services
             AllTargetsAllScreens,
             GatewayDeviceId,
             GatewayDestination,
-            TargetPollRate,
+            RenderingMode,
             DestinationOverride,
             BaudRate,
             MQTTBrokerId,
@@ -111,7 +111,7 @@ namespace JunctionRelayServer.Services
             @AllTargetsAllScreens,
             @GatewayDeviceId,
             @GatewayDestination,
-            @TargetPollRate,
+            @RenderingMode,
             @DestinationOverride,
             @BaudRate,
             @MQTTBrokerId,
@@ -149,7 +149,7 @@ namespace JunctionRelayServer.Services
                 AllTargetsAllScreens     = @AllTargetsAllScreens,
                 GatewayDeviceId          = @GatewayDeviceId,    
                 GatewayDestination       = @GatewayDestination,
-                TargetPollRate           = @TargetPollRate,
+                RenderingMode            = @RenderingMode,
                 DestinationOverride      = @DestinationOverride,
                 BaudRate                 = @BaudRate,
                 MQTTBrokerId             = @MQTTBrokerId,
@@ -189,15 +189,15 @@ namespace JunctionRelayServer.Services
                     await _db.ExecuteAsync("DELETE FROM JunctionSensors WHERE JunctionId = @Id", new { Id = id }, transaction);
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionSensors deleted.");
 
+                    // Delete JunctionScreenLayouts first (before deleting JunctionDeviceLinks)
+                    Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Deleting JunctionScreenLayouts...");
+                    await _db.ExecuteAsync("DELETE FROM JunctionScreenLayouts WHERE JunctionDeviceLinkId IN (SELECT Id FROM JunctionDeviceLinks WHERE JunctionId = @Id)", new { Id = id }, transaction);
+                    Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionScreenLayouts deleted.");
+
                     // Delete JunctionDeviceLinks
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Deleting JunctionDeviceLinks...");
                     await _db.ExecuteAsync("DELETE FROM JunctionDeviceLinks WHERE JunctionId = @Id", new { Id = id }, transaction);
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionDeviceLinks deleted.");
-
-                    // Delete JunctionScreenLayouts
-                    Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Deleting JunctionScreenLayouts...");
-                    await _db.ExecuteAsync("DELETE FROM JunctionScreenLayouts WHERE JunctionDeviceLinkId IN (SELECT Id FROM JunctionDeviceLinks WHERE JunctionId = @Id)", new { Id = id }, transaction);
-                    Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionScreenLayouts deleted.");
 
                     // Delete JunctionCollectorLinks
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Deleting JunctionCollectorLinks...");
@@ -234,7 +234,7 @@ namespace JunctionRelayServer.Services
         public async Task PopulateLinksAndSensors(Model_Junction junction)
         {
             // Console.WriteLine($"[SERVICE_DATABASE_MANAGER_JUNCTIONS] PopulateLinksAndSensors Called for Junction ID: {junction.Id}");
-            
+
             // Load device and collector links
             var deviceLinks = await _db.QueryAsync<Model_JunctionDeviceLink>(
                 "SELECT * FROM JunctionDeviceLinks WHERE JunctionId = @JunctionId",
@@ -306,6 +306,7 @@ namespace JunctionRelayServer.Services
                 junction.DeviceScreens = new List<Model_Device_Screens>();
             }
         }
+
         public async Task<Model_Junction?> CloneJunctionAsync(int sourceJunctionId)
         {
             var source = await GetJunctionByIdAsync(sourceJunctionId);
@@ -319,14 +320,14 @@ namespace JunctionRelayServer.Services
     INSERT INTO Junctions (
     Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
     CronExpression, AllTargetsAllData, AllTargetsAllScreens,
-    GatewayDeviceId, GatewayDestination, TargetPollRate, DestinationOverride, BaudRate,
+    GatewayDeviceId, GatewayDestination, RenderingMode, DestinationOverride, BaudRate,
     MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
     RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
     HealthCheckIntervalMs, EnableNotifications, CompressPayload
 ) VALUES (
     @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
     @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
-    @GatewayDeviceId, @GatewayDestination, @TargetPollRate, @DestinationOverride, @BaudRate,
+    @GatewayDeviceId, @GatewayDestination, @RenderingMode, @DestinationOverride, @BaudRate,
     @MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
     @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
     @HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
@@ -348,12 +349,12 @@ SELECT last_insert_rowid();
         INSERT INTO JunctionDeviceLinks (
             JunctionId, DeviceId, Role, IsSelected, IsTested, WarnOnDuplicate,
             PollRateOverride, LastPolled, SendRateOverride, LastSent,
-            DeclareFailedAfter, RetryAttempts, FieldsToInclude
+            DeclareFailedAfter, RetryAttempts
         )
         VALUES (
             @JunctionId, @DeviceId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
             @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-            @DeclareFailedAfter, @RetryAttempts, @FieldsToInclude
+            @DeclareFailedAfter, @RetryAttempts
         );
         SELECT last_insert_rowid();", new
                 {
@@ -369,7 +370,6 @@ SELECT last_insert_rowid();
                     link.LastSent,
                     link.DeclareFailedAfter,
                     link.RetryAttempts,
-                    link.FieldsToInclude
                 });
 
                 deviceLinkIdMap[link.Id] = newLinkId;
@@ -377,12 +377,29 @@ SELECT last_insert_rowid();
                 foreach (var layout in link.ScreenLayouts)
                 {
                     await _db.ExecuteAsync(@"
-            INSERT INTO JunctionScreenLayouts (JunctionDeviceLinkId, DeviceScreenId, ScreenLayoutId)
-            VALUES (@NewLinkId, @DeviceScreenId, @ScreenLayoutId);", new
+            INSERT INTO JunctionScreenLayouts (
+                JunctionDeviceLinkId, 
+                DeviceScreenId, 
+                ScreenLayoutId, 
+                FrameLayoutId, 
+                TargetPollRate, 
+                OnlySendIfChanged
+            )
+            VALUES (
+                @NewLinkId, 
+                @DeviceScreenId, 
+                @ScreenLayoutId, 
+                @FrameLayoutId, 
+                @TargetPollRate, 
+                @OnlySendIfChanged
+            );", new
                     {
                         NewLinkId = newLinkId,
                         layout.DeviceScreenId,
-                        layout.ScreenLayoutId
+                        layout.ScreenLayoutId,
+                        layout.FrameLayoutId,
+                        layout.TargetPollRate,
+                        layout.OnlySendIfChanged
                     });
                 }
             }
@@ -395,12 +412,12 @@ SELECT last_insert_rowid();
         INSERT INTO JunctionCollectorLinks (
             JunctionId, CollectorId, Role, IsSelected, IsTested, WarnOnDuplicate,
             PollRateOverride, LastPolled, SendRateOverride, LastSent,
-            DeclareFailedAfter, RetryAttempts, FieldsToInclude
+            DeclareFailedAfter, RetryAttempts
         )
         VALUES (
             @JunctionId, @CollectorId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
             @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-            @DeclareFailedAfter, @RetryAttempts, @FieldsToInclude
+            @DeclareFailedAfter, @RetryAttempts
         );
         SELECT last_insert_rowid();", new
                 {
@@ -415,8 +432,7 @@ SELECT last_insert_rowid();
                     link.SendRateOverride,
                     link.LastSent,
                     link.DeclareFailedAfter,
-                    link.RetryAttempts,
-                    link.FieldsToInclude
+                    link.RetryAttempts
                 });
 
                 collectorLinkIdMap[link.Id] = newCollectorLinkId;
@@ -522,27 +538,27 @@ SELECT last_insert_rowid();
         }
 
         public async Task<bool> ExportJunctionToJsonAsync(int id, string filePath)
+        {
+            // Step 1: Get the junction and related data
+            var junction = await GetJunctionByIdAsync(id);
+            if (junction == null)
             {
-                // Step 1: Get the junction and related data
-                var junction = await GetJunctionByIdAsync(id);
-                if (junction == null)
-                {
-                    Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Junction not found!");
-                    return false;
-                }
-
-                // Populate related data (DeviceLinks, CollectorLinks, Sensors, etc.)
-                await PopulateLinksAndSensors(junction);
-
-                // Step 2: Serialize the junction and related data to JSON
-                var jsonData = JsonConvert.SerializeObject(junction, Formatting.Indented);
-
-                // Step 3: Write to a JSON file
-                await File.WriteAllTextAsync(filePath, jsonData);
-
-                Console.WriteLine($"[SERVICE_DATABASE_MANAGER_JUNCTIONS] Junction exported to {filePath}");
-                return true;
+                Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Junction not found!");
+                return false;
             }
+
+            // Populate related data (DeviceLinks, CollectorLinks, Sensors, etc.)
+            await PopulateLinksAndSensors(junction);
+
+            // Step 2: Serialize the junction and related data to JSON
+            var jsonData = JsonConvert.SerializeObject(junction, Formatting.Indented);
+
+            // Step 3: Write to a JSON file
+            await File.WriteAllTextAsync(filePath, jsonData);
+
+            Console.WriteLine($"[SERVICE_DATABASE_MANAGER_JUNCTIONS] Junction exported to {filePath}");
+            return true;
+        }
 
         public async Task<Model_Junction?> ImportJunctionFromJsonAsync(Model_Junction junction)
         {
@@ -560,13 +576,13 @@ SELECT last_insert_rowid();
             const string insertSql = @"
 INSERT INTO Junctions (
     Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
-    CronExpression, AllTargetsAllData, AllTargetsAllScreens, GatewayDestination, TargetPollRate, MQTTBrokerId,
+    CronExpression, AllTargetsAllData, AllTargetsAllScreens, GatewayDestination, RenderingMode, MQTTBrokerId,
     SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
     RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
     HealthCheckIntervalMs, EnableNotifications
 ) VALUES (
     @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
-    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @TargetPollRate, @MQTTBrokerId,
+    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @RenderingMode, @MQTTBrokerId,
     @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
     @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
     @HealthCheckIntervalMs, @EnableNotifications
@@ -598,18 +614,17 @@ SELECT last_insert_rowid();";
             return junction;
         }
 
-
         private async Task InsertDeviceLink(Model_JunctionDeviceLink deviceLink)
         {
             const string deviceLinkSql = @"
     INSERT INTO JunctionDeviceLinks (
         JunctionId, DeviceId, Role, IsSelected, IsTested, WarnOnDuplicate,
         PollRateOverride, LastPolled, SendRateOverride, LastSent,
-        DeclareFailedAfter, RetryAttempts, FieldsToInclude
+        DeclareFailedAfter, RetryAttempts
     ) VALUES (
         @JunctionId, @DeviceId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
         @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-        @DeclareFailedAfter, @RetryAttempts, @FieldsToInclude
+        @DeclareFailedAfter, @RetryAttempts
     );
     SELECT last_insert_rowid();";
 
@@ -620,9 +635,31 @@ SELECT last_insert_rowid();";
             foreach (var layout in deviceLink.ScreenLayouts)
             {
                 await _db.ExecuteAsync(@"
-        INSERT INTO JunctionScreenLayouts (JunctionDeviceLinkId, DeviceScreenId, ScreenLayoutId)
-        VALUES (@NewDeviceLinkId, @DeviceScreenId, @ScreenLayoutId);",
-                new { NewDeviceLinkId = newDeviceLinkId, layout.DeviceScreenId, layout.ScreenLayoutId });
+        INSERT INTO JunctionScreenLayouts (
+            JunctionDeviceLinkId, 
+            DeviceScreenId, 
+            ScreenLayoutId, 
+            FrameLayoutId, 
+            TargetPollRate, 
+            OnlySendIfChanged
+        )
+        VALUES (
+            @NewDeviceLinkId, 
+            @DeviceScreenId, 
+            @ScreenLayoutId, 
+            @FrameLayoutId, 
+            @TargetPollRate, 
+            @OnlySendIfChanged
+        );",
+                new
+                {
+                    NewDeviceLinkId = newDeviceLinkId,
+                    layout.DeviceScreenId,
+                    layout.ScreenLayoutId,
+                    layout.FrameLayoutId,
+                    layout.TargetPollRate,
+                    layout.OnlySendIfChanged
+                });
             }
         }
 
@@ -632,11 +669,11 @@ SELECT last_insert_rowid();";
     INSERT INTO JunctionCollectorLinks (
         JunctionId, CollectorId, Role, IsSelected, IsTested, WarnOnDuplicate,
         PollRateOverride, LastPolled, SendRateOverride, LastSent,
-        DeclareFailedAfter, RetryAttempts, FieldsToInclude
+        DeclareFailedAfter, RetryAttempts
     ) VALUES (
         @JunctionId, @CollectorId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
         @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-        @DeclareFailedAfter, @RetryAttempts, @FieldsToInclude
+        @DeclareFailedAfter, @RetryAttempts
     );
     SELECT last_insert_rowid();";
 

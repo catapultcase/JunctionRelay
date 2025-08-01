@@ -130,6 +130,9 @@ const Devices: React.FC = () => {
     const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
     const [scanModalOpen, setScanModalOpen] = useState(false);
 
+    // COM Ports state
+    const [comPorts, setComPorts] = useState<string[]>([]);
+
     const navigate = useNavigate();
     const flags = useFeatureFlags();
     const theme = useTheme();
@@ -154,9 +157,30 @@ const Devices: React.FC = () => {
         localStorage.setItem(STORAGE_KEY_SCAN_EXISTING_VIEW_MODE, scanExistingViewMode);
     }, [scanExistingViewMode]);
 
+    // Fetch COM ports
+    const fetchComPorts = useCallback(async () => {
+        try {
+            const response = await fetch('/api/com/ports');
+            if (response.ok) {
+                const ports = await response.json();
+                setComPorts(ports);
+                console.log('COM ports fetched:', ports);
+            } else {
+                console.error('Failed to fetch COM ports');
+                setComPorts([]);
+            }
+        } catch (error) {
+            console.error('Error fetching COM ports:', error);
+            setComPorts([]);
+        }
+    }, []);
+
     // Bottom action bar event listeners
     useEffect(() => {
-        const handleAddDevice = () => setAddCustomDeviceModalOpen(true);
+        const handleAddDevice = () => {
+            fetchComPorts(); // Refresh COM ports when opening modal
+            setAddCustomDeviceModalOpen(true);
+        };
         const handleAddCloudDevice = () => setAddCloudDeviceModalOpen(true);
         const handleRefresh = () => fetchDevices(false, true);
         const handleSearch = () => setScanModalOpen(true);
@@ -182,7 +206,7 @@ const Devices: React.FC = () => {
             window.removeEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
             window.removeEventListener('scan-device-selected', handleScanDeviceSelected as EventListener);
         };
-    }, []);
+    }, [fetchComPorts]);
 
     // Group scan results by status
     const groupedScanResults = useMemo(() => {
@@ -336,6 +360,7 @@ const Devices: React.FC = () => {
                 ipAddress: ip
             });
         } else {
+            fetchComPorts(); // Refresh COM ports when opening custom device modal
             setSelectedCustomDevice({
                 name: `Device-${ip}`,
                 ipAddress: ip,
@@ -495,6 +520,7 @@ const Devices: React.FC = () => {
     // Initial data loading and interval setup
     useEffect(() => {
         fetchDevices(true, true);
+        fetchComPorts(); // Initial COM ports fetch
 
         let localInterval: NodeJS.Timeout | undefined;
         if (refreshInterval > 0) {
@@ -510,7 +536,7 @@ const Devices: React.FC = () => {
             if (localInterval) clearInterval(localInterval);
             if (cloudInterval) clearInterval(cloudInterval);
         };
-    }, [refreshInterval, cloudRefreshInterval, fetchDevices]);
+    }, [refreshInterval, cloudRefreshInterval, fetchDevices, fetchComPorts]);
 
     return (
         <Box sx={{ padding: 2 }}>
@@ -555,7 +581,10 @@ const Devices: React.FC = () => {
                 scanning={scanning}
                 buttonColor={buttonColor}
                 setScanModalOpen={setScanModalOpen}
-                setAddCustomDeviceModalOpen={setAddCustomDeviceModalOpen}
+                setAddCustomDeviceModalOpen={(open) => {
+                    if (open) fetchComPorts(); // Refresh COM ports when opening modal
+                    setAddCustomDeviceModalOpen(open);
+                }}
                 checkForUpdates={checkForUpdates}
                 isUnifiedMode={isUnifiedMode}
                 setAddCloudDeviceModalOpen={setAddCloudDeviceModalOpen}
@@ -600,7 +629,7 @@ const Devices: React.FC = () => {
                         isCloudDevicesTable={false}
                         onToggleNotifications={handleToggleNotifications}
                         onSyncModeChange={handleSyncModeChange}
-                    />                    
+                    />
 
                     <DevicesTable
                         devices={allDevices.filter(device => device.type === "Cloud Device")}
@@ -659,6 +688,7 @@ const Devices: React.FC = () => {
                 }}
                 onDeviceAdded={fetchDevices}
                 prefilledData={selectedCustomDevice}
+                comPorts={comPorts}
             />
 
             <DeviceRegistrationModal

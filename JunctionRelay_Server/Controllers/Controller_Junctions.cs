@@ -32,15 +32,18 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Database_Manager_Junctions _junctionDb;
         private readonly Service_Database_Manager_Devices _deviceDb;
         private readonly Service_Database_Manager_Collectors _collectorDb;
+        private readonly Service_Manager_Connections _connectionManager;
 
         public Controller_Junctions(
             Service_Database_Manager_Junctions junctionDb,
             Service_Database_Manager_Devices deviceDb,
-            Service_Database_Manager_Collectors collectorDb)
+            Service_Database_Manager_Collectors collectorDb,
+            Service_Manager_Connections connectionManager)
         {
             _junctionDb = junctionDb;
             _deviceDb = deviceDb;
             _collectorDb = collectorDb;
+            _connectionManager = connectionManager;
         }
 
         // GET: /api/junctions
@@ -53,6 +56,9 @@ namespace JunctionRelayServer.Controllers
 
             foreach (var junction in junctions)
             {
+                // Update with real-time status from connection manager
+                junction.Status = _connectionManager.IsJunctionRunning(junction.Id) ? "Running" : "Idle";
+
                 // Fetch and populate related DeviceLinks and CollectorLinks data
                 foreach (var link in junction.DeviceLinks)
                 {
@@ -80,12 +86,42 @@ namespace JunctionRelayServer.Controllers
             return Ok(junctions);
         }
 
+        // GET: /api/junctions/summary
+        [HttpGet("summary")]
+        public async Task<ActionResult<List<JunctionSummaryDto>>> GetAllJunctionSummaries()
+        {
+            var junctions = await _junctionDb.GetAllJunctionsAsync();
+
+            var summaries = junctions.Select(j => new JunctionSummaryDto
+            {
+                Id = j.Id,
+                Name = j.Name,
+                Type = j.Type,
+                Status = _connectionManager.IsJunctionRunning(j.Id) ? "Running" : "Idle", // Real-time status
+                ShowOnDashboard = j.ShowOnDashboard
+            }).ToList();
+
+            return Ok(summaries);
+        }
+
+        public class JunctionSummaryDto
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public string Type { get; set; }
+            public string Status { get; set; }
+            public bool ShowOnDashboard { get; set; }
+        }
+
         // GET: /api/junctions/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<Model_Junction>> GetJunctionById(int id)
         {
             var junction = await _junctionDb.GetJunctionByIdAsync(id);
             if (junction == null) return NotFound();
+
+            // Update with real-time status from connection manager
+            junction.Status = _connectionManager.IsJunctionRunning(junction.Id) ? "Running" : "Idle";
 
             var allDevices = await _deviceDb.GetAllDevicesAsync();
             var allCollectors = await _collectorDb.GetAllCollectorsAsync();

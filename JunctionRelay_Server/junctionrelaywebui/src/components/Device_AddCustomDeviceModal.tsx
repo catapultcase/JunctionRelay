@@ -25,6 +25,12 @@ import {
     Modal,
     TextField,
     Alert,
+    FormControl,
+    Select,
+    MenuItem,
+    SelectChangeEvent,
+    Switch,
+    FormControlLabel,
 } from "@mui/material";
 
 // Icon imports
@@ -40,24 +46,27 @@ interface Device_AddCustomDeviceModalProps {
     onClose: () => void;
     onDeviceAdded: () => void;
     prefilledData?: { name: string; ipAddress: string; macAddress?: string } | null;
+    comPorts?: string[];
 }
 
 const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = ({
     open,
     onClose,
     onDeviceAdded,
-    prefilledData
+    prefilledData,
+    comPorts = []
 }) => {
     const [formData, setFormData] = useState({
         name: "",
         description: "",
         ipAddress: "",
         uniqueIdentifier: "",
+        COMPort: "",
         // Match your C# model fields - Heartbeat
         HeartbeatProtocol: 'HTTP' as HeartbeatProtocol,
         HeartbeatTarget: "",
         HeartbeatExpectedValue: "",
-        HeartbeatEnabled: true,
+        HeartbeatEnabled: false,
         HeartbeatIntervalMs: 60000,
         HeartbeatGracePeriodMs: 180000,
         HeartbeatMaxRetryAttempts: 3,
@@ -94,10 +103,11 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                 description: "",
                 ipAddress: "",
                 uniqueIdentifier: "",
+                COMPort: "",
                 HeartbeatProtocol: 'HTTP' as HeartbeatProtocol,
                 HeartbeatTarget: "",
                 HeartbeatExpectedValue: "",
-                HeartbeatEnabled: true,
+                HeartbeatEnabled: false,
                 HeartbeatIntervalMs: 60000,
                 HeartbeatGracePeriodMs: 180000,
                 HeartbeatMaxRetryAttempts: 3,
@@ -128,6 +138,12 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Handle COM port selection
+    const handleComPortChange = (event: SelectChangeEvent) => {
+        const newPort = event.target.value;
+        setFormData(prev => ({ ...prev, COMPort: newPort }));
+    };
+
     // Handle changes from HeartbeatProtocolSelector
     const handleHeartbeatFormDataChange = (updates: any) => {
         console.log('AddCustomDeviceModal: Received updates from HeartbeatProtocolSelector:', updates);
@@ -145,6 +161,7 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
             description,
             ipAddress,
             uniqueIdentifier,
+            COMPort,
             HeartbeatProtocol,
             HeartbeatTarget,
             HeartbeatExpectedValue,
@@ -162,17 +179,19 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
             SshVerifyHostKey
         } = formData;
 
-        // Basic validation
-        if (!name || !description || !ipAddress || !uniqueIdentifier) {
-            setError("All required fields must be filled out.");
+        // Updated validation - only name and uniqueIdentifier are required
+        if (!name || !uniqueIdentifier) {
+            setError("Device Name and Unique Identifier are required fields.");
             return;
         }
 
-        // IP address format validation
-        const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-        if (!ipPattern.test(ipAddress)) {
-            setError("Please enter a valid IP address.");
-            return;
+        // IP address format validation (only if provided)
+        if (ipAddress) {
+            const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+            if (!ipPattern.test(ipAddress)) {
+                setError("Please enter a valid IP address.");
+                return;
+            }
         }
 
         try {
@@ -182,9 +201,10 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
             // Use PascalCase field names that match your C# Model_Device
             const payload = {
                 Name: name,
-                Description: description,
+                Description: description || "", // Optional field
                 UniqueIdentifier: uniqueIdentifier,
-                IPAddress: ipAddress,
+                IPAddress: ipAddress || "", // Optional field
+                COMPort: COMPort || "", // Optional field
                 Type: "Custom",
                 Status: "Active",
 
@@ -274,10 +294,10 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                     top: "50%",
                     left: "50%",
                     transform: "translate(-50%, -50%)",
-                    width: { xs: '95%', sm: '90%', md: '80%' },
-                    maxWidth: 900,
+                    width: { xs: '95%', sm: '85%', md: '70%' },
+                    maxWidth: 700,
                     bgcolor: "background.paper",
-                    p: { xs: 3, md: 4 },
+                    p: { xs: 2, md: 2.5 },
                     boxShadow: 24,
                     borderRadius: 2,
                     maxHeight: "90vh",
@@ -285,7 +305,7 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                 }}
             >
                 {/* Modal Header */}
-                <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
+                <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
                     {prefilledData ? `Add Custom Device: ${prefilledData.name}` : "Add Custom Local Device"}
                 </Typography>
 
@@ -294,7 +314,7 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                     <Alert
                         severity="error"
                         sx={{
-                            mb: 3,
+                            mb: 2,
                             '& .MuiAlert-message': {
                                 fontWeight: 'medium'
                             }
@@ -305,10 +325,10 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                 )}
 
                 {/* Basic Device Information Section */}
-                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'medium', color: 'primary.main' }}>
+                <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 'medium', color: 'primary.main' }}>
                     Device Information
                 </Typography>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mb: 4 }}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mb: 3 }}>
                     <TextField
                         fullWidth
                         label="Device Name *"
@@ -323,13 +343,11 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
 
                     <TextField
                         fullWidth
-                        label="Description *"
+                        label="Description"
                         name="description"
                         value={formData.description}
                         onChange={handleChange}
                         size="small"
-                        required
-                        error={!!error && !formData.description}
                         helperText="Brief description of the device's purpose"
                         multiline
                         rows={2}
@@ -337,16 +355,42 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
 
                     <TextField
                         fullWidth
-                        label="IP Address *"
+                        label="IP Address"
                         name="ipAddress"
                         value={formData.ipAddress}
                         onChange={handleChange}
                         size="small"
-                        required
-                        error={!!error && !formData.ipAddress}
                         helperText="Device's network IP address (e.g., 192.168.1.100)"
                         placeholder="192.168.1.100"
                     />
+
+                    <FormControl fullWidth size="small">
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                            COM Port
+                        </Typography>
+                        <Select
+                            value={formData.COMPort || ""}
+                            onChange={handleComPortChange}
+                            displayEmpty
+                            sx={{
+                                '& .MuiSelect-select': {
+                                    fontSize: '0.875rem'
+                                }
+                            }}
+                        >
+                            <MenuItem value="">
+                                <em>None</em>
+                            </MenuItem>
+                            {comPorts.map((port) => (
+                                <MenuItem key={port} value={port}>
+                                    {port}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                            Select a COM port if this device connects via USB/Serial
+                        </Typography>
+                    </FormControl>
 
                     <TextField
                         fullWidth
@@ -363,23 +407,51 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
                 </Box>
 
                 {/* Health Monitoring Section */}
-                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'medium', color: 'secondary.main' }}>
+                <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 'medium', color: 'secondary.main' }}>
                     Health Monitoring
                 </Typography>
-                <Box sx={{ mb: 4 }}>
-                    <HeartbeatProtocolSelector
-                        selectedProtocol={selectedProtocol}
-                        onProtocolChange={setSelectedProtocol}
-                        formData={formData}
-                        onFormDataChange={handleHeartbeatFormDataChange}
+                <Box sx={{ mb: 3 }}>
+                    {/* Enable Heartbeat Monitoring Toggle */}
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={formData.HeartbeatEnabled}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, HeartbeatEnabled: e.target.checked }))}
+                                color="primary"
+                                size="small"
+                            />
+                        }
+                        label={
+                            <Typography sx={{ fontSize: '1rem', fontWeight: 'medium' }}>
+                                Enable Heartbeat Monitoring
+                            </Typography>
+                        }
+                        sx={{ mb: 1.5 }}
                     />
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontSize: '0.85rem', mb: 2 }}
+                    >
+                        Periodically check if this device is online and responsive
+                    </Typography>
+
+                    {/* Heartbeat Protocol Configuration - Only show if enabled */}
+                    {formData.HeartbeatEnabled && (
+                        <HeartbeatProtocolSelector
+                            selectedProtocol={selectedProtocol}
+                            onProtocolChange={setSelectedProtocol}
+                            formData={formData}
+                            onFormDataChange={handleHeartbeatFormDataChange}
+                        />
+                    )}
                 </Box>
 
                 {/* Action Buttons */}
                 <Box sx={{
                     display: "flex",
                     gap: 2,
-                    mt: 4,
+                    mt: 3,
                     flexDirection: { xs: 'column', sm: 'row' },
                     justifyContent: 'flex-end'
                 }}>
@@ -419,13 +491,13 @@ const Device_AddCustomDeviceModal: React.FC<Device_AddCustomDeviceModalProps> = 
 
                 {/* Help Information */}
                 <Box sx={{
-                    mt: 3,
-                    p: 2,
+                    mt: 2,
+                    p: 1.5,
                     bgcolor: 'action.hover',
                     borderRadius: 1,
                     display: { xs: 'none', sm: 'block' }
                 }}>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                         <strong>Custom devices</strong> are non-JunctionRelay devices that you want to monitor.
                         Configure health monitoring to track device availability and performance.
                         You can use HTTP endpoints, ping, or SSH for monitoring.

@@ -17,6 +17,8 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using JunctionRelayServer.Models;
+
 public class Model_Device_Screens
 {
     public int Id { get; set; }
@@ -27,7 +29,8 @@ public class Model_Device_Screens
 
     public int? ScreenLayoutId { get; set; }
     public Model_Screen_Layout? Template { get; set; }
-
+    public int? FrameLayoutId { get; set; }
+    public Model_Frame_Layout? FrameTemplate { get; set; }
     public string? ScreenType { get; set; }
 
     public bool SupportsConfigPayloads { get; set; } = true;

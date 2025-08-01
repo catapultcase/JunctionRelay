@@ -45,10 +45,8 @@ namespace JunctionRelayServer.Models
         public int? GatewayDeviceId { get; set; }
         public string? GatewayDestination { get; set; }
         public string? DestinationOverride { get; set; }
-        public int? TargetPollRate { get; set; }
 
         // COM configuration
-
         public int? BaudRate { get; set; }
 
         // Services configuration
@@ -72,6 +70,9 @@ namespace JunctionRelayServer.Models
 
         // Notifications
         public bool EnableNotifications { get; set; } = false;
+        
+        // Rendering Configuration
+        public string RenderingMode { get; set; } = "Payload"; // "Payload" or "FrameEngine"
 
         // Related entities
         public List<Model_JunctionDeviceLink> DeviceLinks { get; set; } = new();

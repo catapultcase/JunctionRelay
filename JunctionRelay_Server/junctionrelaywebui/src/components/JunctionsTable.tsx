@@ -94,6 +94,7 @@ export interface Junction {
     name: string;
     description: string;
     type: string;
+    renderingMode: string;
     status: string;
     deviceLinks?: any[];
     collectorLinks?: any[];
@@ -260,8 +261,9 @@ const moveCol = (
 // Define column definitions outside the component to prevent recreation
 const defaultJunctionCols: JunctionColumn[] = [
     { field: "name", label: "Junction Name", align: "left", sortable: true },
-    { field: "description", label: "Description", align: "left", sortable: true },
+   // { field: "description", label: "Description", align: "left", sortable: true },
     { field: "type", label: "Type", align: "left", sortable: true },
+    { field: "renderingMode", label: "Rendering Mode", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
     { field: "sources", label: "Sources", align: "left", sortable: false },
     { field: "targets", label: "Targets", align: "left", sortable: false },
@@ -532,6 +534,8 @@ const JunctionTableRow = memo(({
                         <Typography variant="body2">{junction.type || 'Unknown'}</Typography>
                     </Box>
                 );
+            case "renderingMode":
+                return junction.renderingMode || "";
             case "status":
                 return <StatusIndicator status={junction.status} />;
             case "sources":
@@ -756,6 +760,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
         name: "",
         description: "",
         type: "COM Junction",
+        renderingMode: "Payload",
         showOnDashboard: true,
         autoStartOnLaunch: false,
         allTargetsAllData: false,
@@ -868,6 +873,10 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                     valueB = b.description?.toLowerCase() || '';
                     break;
                 case 'type':
+                    valueA = a.type?.toLowerCase() || '';
+                    valueB = b.type?.toLowerCase() || '';
+                    break;
+                case 'renderingMode':
                     valueA = a.type?.toLowerCase() || '';
                     valueB = b.type?.toLowerCase() || '';
                     break;
@@ -1001,6 +1010,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
             name: "",
             description: "",
             type: "COM Junction",
+            renderingMode: "Payload",
             showOnDashboard: true,
             autoStartOnLaunch: false,
             allTargetsAllData: false,
@@ -1452,6 +1462,18 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                                 </Typography>
                                             )}
                                         </Box>
+                                        {/* Rendering Mode */}
+                                        <Typography
+                                            variant={viewMode === 'mini' ? 'body2' : 'h6'}
+                                            sx={{
+                                                mb: viewMode === 'mini' ? 0.5 : 1,
+                                                fontSize: viewMode === 'mini' ? '0.8rem' : { xs: '1rem', sm: '1.1rem' },
+                                                fontWeight: 600,
+                                                lineHeight: viewMode === 'mini' ? 1.2 : 1.5
+                                            }}
+                                        >
+                                            {junction.renderingMode}
+                                        </Typography>
 
                                         {/* Description (only in standard mode) */}
                                         {viewMode === 'standard' && junction.description && (
@@ -1614,6 +1636,16 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                     onChange={handleChange}
                                     multiline
                                     rows={2}
+                                />
+
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Rendering Mode"
+                                    name="rendermode"
+                                    value={newJunction.renderingMode}
+                                    onChange={handleChange}
+                                    required                                    
                                 />
 
                                 <FormControl fullWidth size="small">

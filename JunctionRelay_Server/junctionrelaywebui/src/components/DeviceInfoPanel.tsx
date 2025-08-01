@@ -51,17 +51,17 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
 
     // Sync selectedComPort with deviceData changes - initialize and update
     React.useEffect(() => {
-        if (deviceData?.selectedPort !== undefined && deviceData.selectedPort !== selectedComPort) {
-            setSelectedComPort(deviceData.selectedPort || "");
+        if (deviceData?.COMPort !== undefined && deviceData.COMPort !== selectedComPort) {
+            setSelectedComPort(deviceData.COMPort || "");
         }
-    }, [deviceData?.selectedPort, selectedComPort, setSelectedComPort]);
+    }, [deviceData?.COMPort, selectedComPort, setSelectedComPort]);
 
     // Check if selected port is invalid
-    const isSelectedPortInvalid = () => {
-        return deviceData?.selectedPort &&
-            deviceData.selectedPort !== "" &&
+    const isCOMPortInvalid = () => {
+        return deviceData?.COMPort &&
+            deviceData.COMPort !== "" &&
             comPorts.length > 0 &&
-            !comPorts.includes(deviceData.selectedPort);
+            !comPorts.includes(deviceData.COMPort);
     };
 
     // Simple field change handler - match your working v4 signature
@@ -105,7 +105,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
     const handleComPortChange = (event: SelectChangeEvent) => {
         const newPort = event.target.value;
         setSelectedComPort(newPort);
-        handleFieldChange('selectedPort', newPort, true);
+        handleFieldChange('COMPort', newPort, true);
     };
 
     // Define which fields should be always editable
@@ -291,7 +291,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                         width: isMobile ? '35%' : '40%',
                                                         padding: isMobile ? '6px 8px' : '8px 16px',
                                                         borderBottom: '1px solid #eee',
-                                                        backgroundColor: isSelectedPortInvalid() ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
+                                                        backgroundColor: isCOMPortInvalid() ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
                                                     }}
                                                 >
                                                     <Typography
@@ -299,7 +299,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                         fontWeight="medium"
                                                         sx={{
                                                             fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                            color: isSelectedPortInvalid() ? 'error.main' : 'inherit'
+                                                            color: isCOMPortInvalid() ? 'error.main' : 'inherit'
                                                         }}
                                                     >
                                                         COM Port
@@ -309,10 +309,10 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                     sx={{
                                                         padding: isMobile ? '6px 8px' : '8px 16px',
                                                         borderBottom: '1px solid #eee',
-                                                        backgroundColor: isSelectedPortInvalid() ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
+                                                        backgroundColor: isCOMPortInvalid() ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
                                                     }}
                                                 >
-                                                    <FormControl fullWidth size="small" error={isSelectedPortInvalid()}>
+                                                    <FormControl fullWidth size="small" error={isCOMPortInvalid()}>
                                                         <Select
                                                             value={selectedComPort || ""}
                                                             onChange={handleComPortChange}
@@ -323,7 +323,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                                     padding: isMobile ? '6px 8px' : '8px 12px'
                                                                 },
                                                                 '& .MuiOutlinedInput-notchedOutline': {
-                                                                    borderColor: isSelectedPortInvalid() ? 'error.main' : undefined
+                                                                    borderColor: isCOMPortInvalid() ? 'error.main' : undefined
                                                                 }
                                                             }}
                                                         >
@@ -331,9 +331,9 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                                 <em>None</em>
                                                             </MenuItem>
                                                             {/* Show the invalid saved port if it exists */}
-                                                            {isSelectedPortInvalid() && (
-                                                                <MenuItem value={deviceData.selectedPort} disabled sx={{ color: 'error.main', fontStyle: 'italic' }}>
-                                                                    {deviceData.selectedPort} (No longer available)
+                                                            {isCOMPortInvalid() && (
+                                                                <MenuItem value={deviceData.COMPort} disabled sx={{ color: 'error.main', fontStyle: 'italic' }}>
+                                                                    {deviceData.COMPort} (No longer available)
                                                                 </MenuItem>
                                                             )}
                                                             {comPorts.map((port) => (
@@ -343,7 +343,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                             ))}
                                                         </Select>
                                                     </FormControl>
-                                                    {isSelectedPortInvalid() && (
+                                                    {isCOMPortInvalid() && (
                                                         <Typography
                                                             variant="caption"
                                                             color="error"

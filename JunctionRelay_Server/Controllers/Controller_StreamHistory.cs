@@ -43,6 +43,204 @@ namespace JunctionRelay_Server.Controllers
             _historyManager = historyManager;
         }
 
+        // NEW: Frame endpoint for last sent frame
+        [HttpGet("stream/{screenId}/last-frame")]
+        public IActionResult GetLastFrame(int screenId)
+        {
+            try
+            {
+                // Check HTTP stream manager first
+                if (_httpManager.IsStreaming(screenId))
+                {
+                    var frameBytes = _httpManager.GetLastFrameBytes(screenId);
+                    if (frameBytes != null)
+                    {
+                        return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                    }
+                }
+
+                // Check COM stream manager
+                if (_comManager.IsStreaming(screenId))
+                {
+                    var frameBytes = _comManager.GetLastFrameBytes(screenId);
+                    if (frameBytes != null)
+                    {
+                        return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                    }
+                }
+
+                // Check MQTT stream manager if applicable
+                //try
+                //{
+                //    if (_mqttManager.IsStreaming(screenId))
+                //    {
+                //        // Note: You'll need to add GetLastFrameBytes method to MQTT manager if it supports frames
+                //        var frameBytes = _mqttManager.GetLastFrameBytes(screenId);
+                //        if (frameBytes != null)
+                //        {
+                //            return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                //        }
+                //    }
+                //}
+                //catch (InvalidOperationException)
+                //{
+                //    // MQTT stream manager may not be registered or may not support frames yet
+                //    // This is fine, just continue to the next check
+                //}
+                //catch (System.MissingMethodException)
+                //{
+                //    // GetLastFrameBytes method may not exist on MQTT manager yet
+                //    // This is fine, just continue
+                //}
+
+                return NotFound(new
+                {
+                    message = "No frame available for this stream",
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CONTROLLER] Error retrieving frame for screen {screenId}: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    message = "Error retrieving frame",
+                    error = ex.Message,
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        // NEW: Get frame info for a specific stream
+        [HttpGet("stream/{screenId}/frame-info")]
+        public IActionResult GetFrameInfo(int screenId)
+        {
+            try
+            {
+                // Check HTTP stream manager first
+                if (_httpManager.IsStreaming(screenId))
+                {
+                    var frameInfo = _httpManager.GetFrameInfo(screenId);
+                    if (frameInfo != null)
+                    {
+                        return Ok(frameInfo);
+                    }
+                }
+
+                // Check COM stream manager
+                if (_comManager.IsStreaming(screenId))
+                {
+                    var frameInfo = _comManager.GetFrameInfo(screenId);
+                    if (frameInfo != null)
+                    {
+                        return Ok(frameInfo);
+                    }
+                }
+
+                // Check MQTT stream manager if applicable
+                //try
+                //{
+                //    if (_mqttManager.IsStreaming(screenId))
+                //    {
+                //        var frameInfo = _mqttManager.GetFrameInfo(screenId);
+                //        if (frameInfo != null)
+                //        {
+                //            return Ok(frameInfo);
+                //        }
+                //    }
+                //}
+                //catch (InvalidOperationException)
+                //{
+                //    // MQTT stream manager may not support frames yet
+                //}
+                //catch (System.MissingMethodException)
+                //{
+                //    // GetFrameInfo method may not exist on MQTT manager yet
+                //}
+
+                return NotFound(new
+                {
+                    message = "No frame info available for this stream",
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CONTROLLER] Error retrieving frame info for screen {screenId}: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    message = "Error retrieving frame info",
+                    error = ex.Message,
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        // NEW: Clear last frame for a specific stream (to free memory)
+        [HttpDelete("stream/{screenId}/last-frame")]
+        public IActionResult ClearLastFrame(int screenId)
+        {
+            try
+            {
+                bool cleared = false;
+
+                // Try HTTP stream manager
+                if (_httpManager.IsStreaming(screenId))
+                {
+                    cleared = _httpManager.ClearLastFrame(screenId);
+                }
+
+                // Try COM stream manager
+                if (!cleared && _comManager.IsStreaming(screenId))
+                {
+                    cleared = _comManager.ClearLastFrame(screenId);
+                }
+
+                //// Try MQTT stream manager if applicable
+                //if (!cleared)
+                //{
+                //    try
+                //    {
+                //        if (_mqttManager.IsStreaming(screenId))
+                //        {
+                //            cleared = _mqttManager.ClearLastFrame(screenId);
+                //        }
+                //    }
+                //    catch (InvalidOperationException)
+                //    {
+                //        // MQTT stream manager may not support frames yet
+                //    }
+                //    catch (System.MissingMethodException)
+                //    {
+                //        // ClearLastFrame method may not exist on MQTT manager yet
+                //    }
+                //}
+
+                return Ok(new
+                {
+                    success = cleared,
+                    message = cleared ? "Frame cleared" : "No frame to clear or stream not found",
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CONTROLLER] Error clearing frame for screen {screenId}: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    message = "Error clearing frame",
+                    error = ex.Message,
+                    screenId,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
         [HttpGet("summary")]
         public IActionResult GetHistorySummary()
         {

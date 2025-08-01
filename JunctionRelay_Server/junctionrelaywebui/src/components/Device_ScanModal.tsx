@@ -62,20 +62,11 @@ const SetupInstructions_Scan: React.FC<{ scanType: ScanType }> = ({ scanType }) 
                         What this scan finds:
                     </Typography>
                     <Box component="ul" sx={{ ml: 2, mb: 2 }}>
-                        <li><Typography variant="body2">ESP32 devices with JunctionRelay firmware</Typography></li>
+                        <li><Typography variant="body2">Devices with JunctionRelay firmware</Typography></li>
                         <li><Typography variant="body2">Devices that respond to mDNS queries</Typography></li>
-                        <li><Typography variant="body2">Active JunctionRelay gateways and nodes</Typography></li>
-                    </Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        Requirements:
-                    </Typography>
-                    <Box component="ul" sx={{ ml: 2, mb: 2 }}>
-                        <li><Typography variant="body2">Devices must be on the same network segment</Typography></li>
-                        <li><Typography variant="body2">mDNS must be enabled on your network</Typography></li>
-                        <li><Typography variant="body2">Devices must be powered on and connected</Typography></li>
                     </Box>
                     <Typography variant="body2" color="text.secondary">
-                        <strong>Tip:</strong> This is the fastest scan option and should be your first choice for discovering JunctionRelay devices.
+                        <strong>Tip:</strong> This is the fastest scan option and should be your first choice for discovering devices running JunctionRelay firmware.
                     </Typography>
                 </Box>
             );
@@ -87,31 +78,17 @@ const SetupInstructions_Scan: React.FC<{ scanType: ScanType }> = ({ scanType }) 
                         Full Network Scan
                     </Typography>
                     <Typography variant="body2" sx={{ mb: 2 }}>
-                        This comprehensive scan discovers all devices on your local network, not just JunctionRelay devices.
+                        This scan discovers all devices on your local network, not just those running JunctionRelay firmware.
                     </Typography>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                         What this scan finds:
                     </Typography>
                     <Box component="ul" sx={{ ml: 2, mb: 2 }}>
                         <li><Typography variant="body2">All network-connected devices (routers, computers, phones, etc.)</Typography></li>
-                        <li><Typography variant="body2">IoT devices and smart home equipment</Typography></li>
-                        <li><Typography variant="body2">Network infrastructure equipment</Typography></li>
                         <li><Typography variant="body2">Any device with an active IP address</Typography></li>
-                    </Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        Scan process:
-                    </Typography>
-                    <Box component="ul" sx={{ ml: 2, mb: 2 }}>
-                        <li><Typography variant="body2">Performs subnet scan to find active IP addresses</Typography></li>
-                        <li><Typography variant="body2">Attempts to identify device types and capabilities</Typography></li>
-                        <li><Typography variant="body2">Uses streaming updates for real-time results</Typography></li>
-                        <li><Typography variant="body2">Enriches devices with additional information when possible</Typography></li>
                     </Box>
                     <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
                         <strong>Note:</strong> This scan may take longer and will discover many non-JunctionRelay devices.
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        <strong>Use case:</strong> Best for comprehensive network discovery or when JunctionRelay scan doesn't find expected devices.
                     </Typography>
                 </Box>
             );
@@ -129,19 +106,7 @@ const SetupInstructions_Scan: React.FC<{ scanType: ScanType }> = ({ scanType }) 
                         What this scan finds:
                     </Typography>
                     <Box component="ul" sx={{ ml: 2, mb: 2 }}>
-                        <li><Typography variant="body2">USB-connected ESP32 devices</Typography></li>
-                        <li><Typography variant="body2">Serial-connected microcontrollers</Typography></li>
-                        <li><Typography variant="body2">Development boards in programming mode</Typography></li>
-                        <li><Typography variant="body2">Devices connected via UART/USB-to-serial adapters</Typography></li>
-                    </Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        Requirements:
-                    </Typography>
-                    <Box component="ul" sx={{ ml: 2, mb: 2 }}>
-                        <li><Typography variant="body2">Device must be physically connected via USB or serial</Typography></li>
-                        <li><Typography variant="body2">Appropriate drivers installed for the device</Typography></li>
-                        <li><Typography variant="body2">Device must respond to serial communication</Typography></li>
-                        <li><Typography variant="body2">COM port not in use by other applications</Typography></li>
+                        <li><Typography variant="body2">USB-connected devices</Typography></li>
                     </Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                         Configuration options:
@@ -150,9 +115,6 @@ const SetupInstructions_Scan: React.FC<{ scanType: ScanType }> = ({ scanType }) 
                         <li><Typography variant="body2"><strong>Baud Rate:</strong> Communication speed (default: 115200)</Typography></li>
                         <li><Typography variant="body2"><strong>Timeout:</strong> How long to wait for device response (default: 3000ms)</Typography></li>
                     </Box>
-                    <Typography variant="body2" color="text.secondary">
-                        <strong>Use case:</strong> Perfect for discovering devices during development or when network connectivity isn't available.
-                    </Typography>
                 </Box>
             );
 

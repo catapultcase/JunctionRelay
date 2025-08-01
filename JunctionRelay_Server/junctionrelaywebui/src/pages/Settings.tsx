@@ -77,6 +77,8 @@ const Settings: React.FC = () => {
     const [includeKeys, setIncludeKeys] = useState<boolean>(true);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+    const [backendFriendlyName, setBackendFriendlyName] = useState<string | null>(null);
+
 
     // Check if Dashboard Settings is dismissed
     const [isDashboardSettingsDismissed, setIsDashboardSettingsDismissed] = useState<boolean>(() => {
@@ -653,13 +655,24 @@ const Settings: React.FC = () => {
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <StorageIcon sx={{ mr: 1 }} />
-                            <Typography variant="h6">Database & Backend</Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="h6">Database & Backend</Typography>
+                                {backendFriendlyName && (
+                                    <Chip
+                                        label={backendFriendlyName}
+                                        size="small"
+                                        color="primary"
+                                        sx={{ fontFamily: 'monospace' }}
+                                    />
+                                )}
+                            </Box>
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
                         <Settings_Database
                             showSnackbar={showSnackbar}
                             isMobile={isMobile}
+                            setFriendlyName={setBackendFriendlyName}
                         />
                     </AccordionDetails>
                 </Accordion>
