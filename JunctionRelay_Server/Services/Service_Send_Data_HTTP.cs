@@ -34,6 +34,13 @@ namespace JunctionRelayServer.Services
         public long LatencyMs { get; set; }
         public bool KeepAlivePoolRecreated { get; set; } = false;
         public string ResponseMessage { get; set; } = string.Empty;
+
+        // Frame-specific metrics
+        public bool IsFramePayload { get; set; } = false;
+        public int? FrameSizeBytes { get; set; }
+        public long? FrameRenderTimeMs { get; set; }
+        public string? FrameLayoutType { get; set; }
+        public string PayloadType { get; set; } = "JSON"; // "JSON", "Gzip", "Frame"
     }
 
     // Stream health tracking for detailed connection analytics
@@ -60,6 +67,19 @@ namespace JunctionRelayServer.Services
         public long MaxLatency { get; set; } = 0;
         public long MinLatency { get; set; } = long.MaxValue;
 
+        // Frame-specific health metrics
+        public bool IsFrameMode { get; set; } = false;
+        public double AverageFrameSize { get; set; } = 0.0;
+        public long MaxFrameSize { get; set; } = 0;
+        public long MinFrameSize { get; set; } = long.MaxValue;
+        public double AverageFrameRenderTime { get; set; } = 0.0;
+        public long MaxFrameRenderTime { get; set; } = 0;
+        public long MinFrameRenderTime { get; set; } = long.MaxValue;
+        public string CurrentFrameLayoutType { get; set; } = string.Empty;
+        public string PayloadType { get; set; } = "JSON"; // Track current payload type
+        public int FramesSent { get; set; } = 0;
+        public int PayloadsSent { get; set; } = 0;
+
         public void UpdateHealth(HttpSendResult result)
         {
             // Update recent attempts (rolling window of 10)
@@ -78,6 +98,40 @@ namespace JunctionRelayServer.Services
                     (AverageLatency * 0.8) + (result.LatencyMs * 0.2); // Weighted average
                 MaxLatency = Math.Max(MaxLatency, result.LatencyMs);
                 MinLatency = Math.Min(MinLatency, result.LatencyMs);
+            }
+
+            // Update frame-specific metrics
+            if (result.IsFramePayload)
+            {
+                IsFrameMode = true;
+                FramesSent++;
+                PayloadType = "Frame";
+                CurrentFrameLayoutType = result.FrameLayoutType ?? string.Empty;
+
+                // Track frame size metrics
+                if (result.FrameSizeBytes.HasValue && result.FrameSizeBytes.Value > 0)
+                {
+                    var frameSize = result.FrameSizeBytes.Value;
+                    AverageFrameSize = AverageFrameSize == 0 ? frameSize :
+                        (AverageFrameSize * 0.8) + (frameSize * 0.2); // Weighted average
+                    MaxFrameSize = Math.Max(MaxFrameSize, frameSize);
+                    MinFrameSize = MinFrameSize == long.MaxValue ? frameSize : Math.Min(MinFrameSize, frameSize);
+                }
+
+                // Track frame render time metrics
+                if (result.FrameRenderTimeMs.HasValue && result.FrameRenderTimeMs.Value > 0)
+                {
+                    var renderTime = result.FrameRenderTimeMs.Value;
+                    AverageFrameRenderTime = AverageFrameRenderTime == 0 ? renderTime :
+                        (AverageFrameRenderTime * 0.8) + (renderTime * 0.2); // Weighted average
+                    MaxFrameRenderTime = Math.Max(MaxFrameRenderTime, renderTime);
+                    MinFrameRenderTime = MinFrameRenderTime == long.MaxValue ? renderTime : Math.Min(MinFrameRenderTime, renderTime);
+                }
+            }
+            else
+            {
+                PayloadsSent++;
+                PayloadType = result.PayloadType;
             }
 
             if (result.Success)
@@ -141,6 +195,42 @@ namespace JunctionRelayServer.Services
             {
                 ConnectionState = "poor";
             }
+
+            // Frame-specific health considerations
+            if (IsFrameMode && ConnectionState == "good")
+            {
+                // Consider frame rendering performance in health assessment
+                if (AverageFrameRenderTime > 500) // Frame rendering taking too long
+                {
+                    ConnectionState = "poor";
+                }
+
+                // Large frames might indicate potential issues
+                if (AverageFrameSize > 500000) // 500KB frames might be too large
+                {
+                    Console.WriteLine($"[STREAM_HEALTH] ⚠️ Large average frame size detected: {AverageFrameSize:F0} bytes");
+                }
+            }
+        }
+
+        // Helper method to get frame-specific health summary
+        public object GetFrameHealthSummary()
+        {
+            if (!IsFrameMode)
+            {
+                return new { Message = "Not in frame mode" };
+            }
+
+            return new
+            {
+                FrameMode = IsFrameMode,
+                FrameLayoutType = CurrentFrameLayoutType,
+                FramesSent,
+                AverageFrameSize = $"{AverageFrameSize:F0} bytes",
+                FrameSizeRange = $"{(MinFrameSize == long.MaxValue ? 0 : MinFrameSize)} - {MaxFrameSize} bytes",
+                AverageRenderTime = $"{AverageFrameRenderTime:F1}ms",
+                RenderTimeRange = $"{(MinFrameRenderTime == long.MaxValue ? 0 : MinFrameRenderTime)} - {MaxFrameRenderTime}ms"
+            };
         }
     }
 

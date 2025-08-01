@@ -43,19 +43,6 @@ namespace JunctionRelayServer.Models
         public string? CollectorDescription { get; set; }
         public string? CollectorStatus { get; set; }
 
-        // Raw string for FieldsToInclude, stored as a comma-separated list
-        public string? FieldsToInclude { get; set; }
-
-        // Property to get FieldsToInclude as a List<string>
-        public List<string> FieldsToIncludeList
-        {
-            get
-            {
-                if (string.IsNullOrEmpty(FieldsToInclude))
-                    return new List<string>();
-                return FieldsToInclude.Split(',').Select(f => f.Trim()).ToList();
-            }
-        }
     }
 
 }

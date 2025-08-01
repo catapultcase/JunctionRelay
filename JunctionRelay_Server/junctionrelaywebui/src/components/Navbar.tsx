@@ -51,6 +51,7 @@ import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import GitHubIcon from "@mui/icons-material/GitHub";
 import CloudIcon from "@mui/icons-material/Cloud";
 import PersonIcon from "@mui/icons-material/Person";
+import PhotoIcon from '@mui/icons-material/Photo';
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -343,6 +344,7 @@ const Navbar = () => {
         { text: "Devices", path: "/devices", icon: <DevicesIcon /> },
         { text: "Services", path: "/services", icon: <ServiceIcon /> },
         { text: "Collectors", path: "/collectors", icon: <DataObjectIcon /> },
+        { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
         { text: "Payloads", path: "/payloads", icon: <PayloadIcon /> },
     ];
 
@@ -388,23 +390,16 @@ const Navbar = () => {
                                 sx={{ display: "flex", alignItems: "center" }}
                             >
                                 <Box
+                                    component="img"
+                                    src="../JunctionRelay.svg" // replace with actual path (e.g. /assets/logo.svg)
+                                    alt="JunctionRelay"
                                     sx={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        width: 40,
                                         height: 40,
-                                        borderRadius: "50%",
-                                        backgroundColor: "#ffffff",
-                                        color: "#000000",
-                                        fontWeight: 700,
-                                        fontSize: "0.9rem",
-                                        fontFamily: "monospace",
-                                        letterSpacing: "0.5px"
+                                        width: 40,
+                                        objectFit: "contain",
+                                        borderRadius: "0%"
                                     }}
-                                >
-                                    JR
-                                </Box>
+                                />
                             </MuiLink>
                         )}
 
@@ -996,23 +991,17 @@ const Navbar = () => {
                             sx={{ display: "flex", alignItems: "center" }}
                         >
                             <Box
+                                component="img"
+                                src="/JunctionRelay.svg"
+                                alt="JunctionRelay"
                                 sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    width: 32,
                                     height: 32,
-                                    borderRadius: "50%",
-                                    backgroundColor: "#ffffff",
-                                    color: "#000000",
-                                    fontWeight: 700,
-                                    fontSize: "0.8rem",
-                                    fontFamily: "monospace",
-                                    letterSpacing: "0.5px"
+                                    width: 32,
+                                    objectFit: "contain",
+                                    borderRadius: "0%"
                                 }}
-                            >
-                                JR
-                            </Box>
+                            />
+
                         </MuiLink>
                         <Typography variant="h6" sx={{ color: '#ffffff !important', fontWeight: 'bold' }}>
                             Navigation

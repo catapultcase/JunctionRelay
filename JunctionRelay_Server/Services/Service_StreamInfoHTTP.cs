@@ -52,6 +52,13 @@ namespace JunctionRelayServer.Services
         [JsonIgnore]
         public bool CompressionEnabled { get; private set; }
 
+        // NEW: Last sent frame data for frame mode
+        [JsonIgnore]
+        public byte[]? LastSentFrameBytes { get; private set; }
+        public DateTime? LastFrameGeneratedTime { get; private set; }
+        public int? LastFrameSize => LastSentFrameBytes?.Length;
+        public string? LastFrameLayoutType { get; private set; }
+
         // Uncompressed payload prefixes (8-digit length hints before the '{')
         public string ConfigPayloadPrefix { get; set; } = string.Empty;
         public string LastSentPayloadPrefix { get; set; } = string.Empty;
@@ -97,6 +104,41 @@ namespace JunctionRelayServer.Services
                     CompressedConfigPayloadPrefix = string.Empty;
                     CompressedLastSentPayloadPrefix = string.Empty;
                 }
+            }
+        }
+
+        // NEW: Method to update last sent frame data
+        public void UpdateLastSentFrame(byte[] frameBytes, string? layoutType = null)
+        {
+            lock (_jsonCacheLock)
+            {
+                LastSentFrameBytes = frameBytes;
+                LastFrameGeneratedTime = DateTime.UtcNow;
+                LastFrameLayoutType = layoutType;
+            }
+        }
+
+        // NEW: Method to get last sent frame (thread-safe copy)
+        public byte[]? GetLastSentFrameCopy()
+        {
+            lock (_jsonCacheLock)
+            {
+                if (LastSentFrameBytes == null) return null;
+
+                var copy = new byte[LastSentFrameBytes.Length];
+                Array.Copy(LastSentFrameBytes, copy, LastSentFrameBytes.Length);
+                return copy;
+            }
+        }
+
+        // NEW: Method to clear last sent frame (to free memory if needed)
+        public void ClearLastSentFrame()
+        {
+            lock (_jsonCacheLock)
+            {
+                LastSentFrameBytes = null;
+                LastFrameGeneratedTime = null;
+                LastFrameLayoutType = null;
             }
         }
 
@@ -241,7 +283,7 @@ namespace JunctionRelayServer.Services
             return sb.ToString();
         }
 
-        // Updated dispose method to handle HTTP sender
+        // Updated dispose method to handle HTTP sender and frame data
         public void Dispose()
         {
             lock (_jsonCacheLock)
@@ -254,6 +296,11 @@ namespace JunctionRelayServer.Services
                 // Clear compressed caches
                 _compressedConfigHexCache = null;
                 _compressedLastSentHexCache = null;
+
+                // Clear frame data to free memory
+                LastSentFrameBytes = null;
+                LastFrameGeneratedTime = null;
+                LastFrameLayoutType = null;
             }
         }
     }

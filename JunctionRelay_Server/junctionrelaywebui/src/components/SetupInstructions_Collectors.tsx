@@ -231,6 +231,30 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "SonarrCalendar":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            Sonarr Calendar Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Get iCal Feed URL:</strong><br />
+                            • Open Sonarr web interface<br />
+                            • Go to Calendar - iCal Link<br />
+                            • Copy your iCal Feed Key into JunctionRelay (NOTE - This includes your API Key!)
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. What it monitors:</strong><br />
+                            • Creates daily sensors with episode information<br />
+                            • JSON format with series, season, episode, and air times<br />
+                            • Perfect for dashboard widgets showing TV schedules
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> The collector creates one sensor per day containing all episodes for that date, and 4 convienence sensors for 'Yesterday', 'Today', 'Tomorrow' and 'Next 7 Days'. Be sure to enable the cleanup task to remove old "Day" sensors from the DB.
+                        </Typography>
+                    </Box>
+                );
+
             case "RateTester":
                 return (
                     <Box>

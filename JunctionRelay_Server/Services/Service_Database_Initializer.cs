@@ -87,7 +87,7 @@ namespace JunctionRelayServer.Services
                     PushNotifications BOOLEAN DEFAULT 0,
                     SyncMode TEXT DEFAULT 'Health',
                     ConnMode TEXT,
-                    SelectedPort TEXT,
+                    COMPort TEXT,
                     DeviceModel TEXT,
                     DeviceManufacturer TEXT,
                     FirmwareVersion TEXT,
@@ -164,7 +164,7 @@ namespace JunctionRelayServer.Services
                         Type TEXT NOT NULL,
                         Status TEXT DEFAULT 'Offline',
                         UniqueIdentifier TEXT NOT NULL,
-                        SelectedPort TEXT,
+                        COMPort TEXT,
                         ServiceModel TEXT,
                         ServiceManufacturer TEXT,
                         FirmwareVersion TEXT,
@@ -213,25 +213,34 @@ namespace JunctionRelayServer.Services
                     DisplayName TEXT,
                     ScreenType TEXT,
                     ScreenLayoutId INTEGER,
+                    FrameLayoutId INTEGER,
                     SupportsConfigPayloads BOOLEAN DEFAULT 1,
                     SupportsSensorPayloads BOOLEAN DEFAULT 1,
                     UseKeepAlive BOOLEAN DEFAULT 0,
                     UNIQUE(DeviceId, ScreenKey),
                     FOREIGN KEY(DeviceId) REFERENCES Devices(Id),
                     FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id)
+                    FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
                 );
             ");
 
             // Create JunctionScreenLayouts table
             _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    JunctionDeviceLinkId INTEGER NOT NULL,
-                    DeviceScreenId INTEGER NOT NULL,
-                    ScreenLayoutId INTEGER NOT NULL,
-                    FOREIGN KEY(JunctionDeviceLinkId) REFERENCES JunctionDeviceLinks(Id) ON DELETE CASCADE,
-                    FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id)
-                );
+               CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
+                   Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   JunctionDeviceLinkId INTEGER NOT NULL,
+                   DeviceScreenId INTEGER NOT NULL,
+                   ScreenLayoutId INTEGER,
+                   FrameLayoutId INTEGER,
+                   TargetPollRate INTEGER,
+                   LastRequested DATETIME,
+                   OnlySendIfChanged INTEGER DEFAULT 1,
+                   EnableUrlAccess INTEGER DEFAULT 0,
+                   UrlPath TEXT,
+                   FOREIGN KEY(JunctionDeviceLinkId) REFERENCES JunctionDeviceLinks(Id) ON DELETE CASCADE,
+                   FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id),
+                   FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
+               );
             ");
 
             // Create DeviceI2CDevices table
@@ -260,7 +269,6 @@ namespace JunctionRelayServer.Services
                         FOREIGN KEY(I2CDeviceId) REFERENCES DeviceI2CDevices(Id)
                 );
             ");
-
 
             // Create ScreenLayouts table
             _db.Execute(@"
@@ -382,6 +390,35 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
+            // Create FrameLayouts table
+            _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS FrameLayouts (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    DisplayName NVARCHAR(100) NOT NULL,
+                    Description NVARCHAR(500),
+                    LayoutType NVARCHAR(50) NOT NULL,
+                    Rows INTEGER,
+                    Columns INTEGER,
+                    IsTemplate BOOLEAN NOT NULL DEFAULT 0,
+                    IsDraft BOOLEAN NOT NULL DEFAULT 1,
+                    IsPublished BOOLEAN NOT NULL DEFAULT 0,
+                    Created DATETIME NOT NULL,
+                    LastModified DATETIME,
+                    CreatedBy NVARCHAR(100),
+                    Version NVARCHAR(20),
+                    BackgroundType NVARCHAR(20),
+                    BackgroundColor NVARCHAR(20),
+                    BackgroundImageUrl NVARCHAR(500),
+                    BackgroundImageData TEXT,
+                    BackgroundOpacity REAL,
+                    Width INTEGER,
+                    Height INTEGER,
+                    Orientation NVARCHAR(20),
+                    JsonFrameConfig TEXT,
+                    JsonElementPositions TEXT
+                );
+            ");
+
             // Create Fonts table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS Fonts (
@@ -456,7 +493,7 @@ namespace JunctionRelayServer.Services
                     CronExpression           TEXT,
                     GatewayDeviceId          INTEGER,
                     GatewayDestination       TEXT,
-                    TargetPollRate           INTEGER,
+                    RenderingMode            TEXT,
                     DestinationOverride      TEXT,
                     BaudRate                 INTEGER,   
                     AllTargetsAllData        BOOLEAN NOT NULL DEFAULT 0,
@@ -603,7 +640,6 @@ namespace JunctionRelayServer.Services
                     LastSent DATETIME,
                     DeclareFailedAfter INTEGER DEFAULT 10000,
                     RetryAttempts INTEGER DEFAULT 3,
-                    FieldsToInclude TEXT,
                     FOREIGN KEY(DeviceId) REFERENCES Devices(Id),
                     FOREIGN KEY(JunctionId) REFERENCES Junctions(Id)
                 );
@@ -625,7 +661,6 @@ namespace JunctionRelayServer.Services
                     LastSent DATETIME,
                     DeclareFailedAfter INTEGER DEFAULT 10000,
                     RetryAttempts INTEGER DEFAULT 3,
-                    FieldsToInclude TEXT,
                     FOREIGN KEY(CollectorId) REFERENCES Collectors(Id),
                     FOREIGN KEY(JunctionId) REFERENCES Junctions(Id)
                 );

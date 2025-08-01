@@ -32,6 +32,7 @@ namespace JunctionRelayServer.Collectors
 
         private string _fullEndpoint = string.Empty;
 
+        // Helper method to detect decimal places in a value
         private int GetDecimalPlaces(string value)
         {
             // Handle null or empty values

@@ -27,6 +27,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
 import InfoIcon from '@mui/icons-material/Info';
 import ComputerIcon from '@mui/icons-material/Computer';
+import EditIcon from '@mui/icons-material/Edit';
+import IconButton from '@mui/material/IconButton';
 
 interface BackendInfo {
     databaseExists: boolean;
@@ -51,11 +53,13 @@ interface CloudUserInfo {
 interface SettingsDatabaseProps {
     showSnackbar: (message: string, severity?: AlertColor) => void;
     isMobile?: boolean;
+    setFriendlyName?: (name: string) => void;
 }
 
 const Settings_Database: React.FC<SettingsDatabaseProps> = ({
     showSnackbar,
-    isMobile = false
+    isMobile = false,
+    setFriendlyName
 }) => {
     const [backupInfo, setBackupInfo] = useState<BackendInfo | null>(null);
     const [backendIdentity, setBackendIdentity] = useState<BackendIdentity | null>(null);
@@ -65,6 +69,9 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
     const [cloudUserInfo, setCloudUserInfo] = useState<CloudUserInfo | null>(null);
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [pendingFriendlyName, setPendingFriendlyName] = useState<string | null>(null);
+    const [savingName, setSavingName] = useState(false);
 
     const fetchBackupInfo = async () => {
         try {
@@ -82,6 +89,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
             if (res.ok) {
                 const data = await res.json();
                 setBackendIdentity(data);
+                if (setFriendlyName) setFriendlyName(data.friendlyName);
             }
         } catch (err) {
             console.error("Error loading backend identity:", err);
@@ -252,15 +260,85 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                                             <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '50px' }}>
                                                 Name:
                                             </Typography>
-                                            <Chip
-                                                label={backendIdentity.friendlyName}
-                                                size="small"
-                                                color="primary"
-                                                sx={{ fontFamily: 'monospace' }}
-                                            />
+
+                                            {isEditingName ? (
+                                                <>
+                                                    <input
+                                                        value={pendingFriendlyName ?? backendIdentity.friendlyName}
+                                                        onChange={(e) => setPendingFriendlyName(e.target.value)}
+                                                        style={{
+                                                            fontFamily: 'monospace',
+                                                            fontSize: '0.75rem',
+                                                            padding: '2px 4px',
+                                                            border: '1px solid #ccc',
+                                                            borderRadius: 4,
+                                                            minWidth: 120
+                                                        }}
+                                                    />
+                                                    <Button
+                                                        variant="contained"
+                                                        size="small"
+                                                        onClick={async () => {
+                                                            try {
+                                                                setSavingName(true);
+                                                                const response = await fetch("/api/db/backend-identity/set-name", {
+                                                                    method: "POST",
+                                                                    headers: { "Content-Type": "application/json" },
+                                                                    body: JSON.stringify({ friendlyName: pendingFriendlyName }),
+                                                                });
+
+                                                                if (!response.ok) {
+                                                                    const errorData = await response.json();
+                                                                    throw new Error(errorData.error || "Failed to update name");
+                                                                }
+
+                                                                const data = await response.json();
+                                                                setBackendIdentity(data);
+                                                                if (setFriendlyName) setFriendlyName(data.friendlyName);
+                                                                showSnackbar("Friendly name updated", "success");
+                                                                setIsEditingName(false);
+                                                                setPendingFriendlyName(null);
+                                                            } catch (err: any) {
+                                                                showSnackbar(err.message || "Error saving name", "error");
+                                                            } finally {
+                                                                setSavingName(false);
+                                                            }
+                                                        }}
+                                                        disabled={savingName || !pendingFriendlyName?.trim()}
+                                                    >
+                                                        Save
+                                                    </Button>
+                                                    <Button
+                                                        variant="text"
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setIsEditingName(false);
+                                                            setPendingFriendlyName(null);
+                                                        }}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Chip
+                                                        label={backendIdentity.friendlyName}
+                                                        size="small"
+                                                        color="primary"
+                                                        sx={{ fontFamily: 'monospace' }}
+                                                    />
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => setIsEditingName(true)}
+                                                            sx={{ padding: 0 }}
+                                                        >
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                </>
+                                            )}
                                         </Box>
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '50px' }}>
                                                 ID:
                                             </Typography>
                                             <Typography variant="body2" color="text.secondary" sx={{

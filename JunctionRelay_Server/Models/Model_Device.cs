@@ -32,7 +32,8 @@ namespace JunctionRelayServer.Models
 
         // Device info
         public string? ConnMode { get; set; }
-        public string? SelectedPort { get; set; }
+        public string? COMPort { get; set; }
+        public int? BaudRate { get; set; }
         public string? DeviceModel { get; set; }
         public string? DeviceManufacturer { get; set; }
         public string? FirmwareVersion { get; set; }

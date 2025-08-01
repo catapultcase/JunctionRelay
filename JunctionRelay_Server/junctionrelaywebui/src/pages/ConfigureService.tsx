@@ -229,7 +229,7 @@ const ConfigureService = () => {
 
             setServiceData(service);
             setOriginalService({ ...service });
-            setSelectedComPort(service.selectedPort || "");
+            setSelectedComPort(service.COMPort || "");
         } catch (err: any) {
             console.error(err);
             setError(err.message);
@@ -314,7 +314,7 @@ const ConfigureService = () => {
         setSaving(true);
         try {
             const payload = { ...serviceData };
-            payload.selectedPort = selectedComPort;
+            payload.COMPort = selectedComPort;
 
             // If access token wasn't changed, remove it from payload
             if (!accessTokenChanged && originalService?.accessToken) {
@@ -346,7 +346,7 @@ const ConfigureService = () => {
     // Cancel edit mode
     const handleCancelEdit = () => {
         setServiceData({ ...originalService });
-        setSelectedComPort(originalService?.selectedPort || "");
+        setSelectedComPort(originalService?.COMPort || "");
         setAccessTokenChanged(false);
         setEditMode(false);
     };

@@ -1,48 +1,49 @@
 ﻿using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace JunctionRelayServer.Services
 {
     public class Service_BackendIdentity
     {
         private readonly string _dbDirectory;
-        private readonly string _backendIdFile;
+        private readonly string _backendIdentityFile;
         private readonly string _jwtSecretFile;
+
+        private class BackendIdentity
+        {
+            public string Id { get; set; } = Guid.NewGuid().ToString("N");
+            public string FriendlyName { get; set; } = "";
+        }
 
         public Service_BackendIdentity(IWebHostEnvironment env)
         {
             _dbDirectory = GetDatabaseDirectory();
-            _backendIdFile = Path.Combine(_dbDirectory, "backend-id.txt");
+            _backendIdentityFile = Path.Combine(_dbDirectory, "backend-id.json");
             _jwtSecretFile = Path.Combine(_dbDirectory, "jwt-secret.key");
         }
 
         public string GetBackendId()
         {
-            try
-            {
-                if (File.Exists(_backendIdFile))
-                {
-                    var existingId = File.ReadAllText(_backendIdFile).Trim();
-                    if (!string.IsNullOrWhiteSpace(existingId) && existingId.Length >= 8)
-                        return existingId;
-                }
-
-                var newId = Guid.NewGuid().ToString("N");
-                EnsureDirectoryExists();
-                File.WriteAllText(_backendIdFile, newId);
-                Console.WriteLine($"Generated new backend ID: {newId.Substring(0, 8)}...");
-                return newId;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"ERROR: Could not generate/load backend ID: {ex.Message}");
-                throw;
-            }
+            return LoadOrCreateIdentity().Id;
         }
 
         public string GetFriendlyName()
         {
-            var backendId = GetBackendId();
-            return $"Backend-{backendId.Substring(0, 8)}";
+            var identity = LoadOrCreateIdentity();
+            if (string.IsNullOrWhiteSpace(identity.FriendlyName))
+            {
+                identity.FriendlyName = $"Backend-{identity.Id.Substring(0, 8)}";
+                SaveIdentity(identity);
+            }
+            return identity.FriendlyName;
+        }
+
+        public void SetFriendlyName(string name)
+        {
+            var identity = LoadOrCreateIdentity();
+            identity.FriendlyName = name;
+            SaveIdentity(identity);
+            Console.WriteLine($"Updated backend friendly name to: {name}");
         }
 
         public string GetJwtSecret()
@@ -85,10 +86,10 @@ namespace JunctionRelayServer.Services
 
             try
             {
-                if (File.Exists(_backendIdFile))
+                if (File.Exists(_backendIdentityFile))
                 {
-                    File.Delete(_backendIdFile);
-                    deletedFiles.Add("backend-id.txt");
+                    File.Delete(_backendIdentityFile);
+                    deletedFiles.Add("backend-id.json");
                 }
 
                 if (File.Exists(_jwtSecretFile))
@@ -106,6 +107,40 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine($"Warning: Could not delete some identity files: {ex.Message}");
             }
+        }
+
+        private BackendIdentity LoadOrCreateIdentity()
+        {
+            EnsureDirectoryExists();
+
+            if (File.Exists(_backendIdentityFile))
+            {
+                try
+                {
+                    var json = File.ReadAllText(_backendIdentityFile);
+                    var identity = JsonSerializer.Deserialize<BackendIdentity>(json);
+                    if (identity != null && !string.IsNullOrWhiteSpace(identity.Id))
+                    {
+                        return identity;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Failed to read backend identity file: {ex.Message}");
+                }
+            }
+
+            var newIdentity = new BackendIdentity();
+            newIdentity.FriendlyName = $"Backend-{newIdentity.Id.Substring(0, 8)}";
+            SaveIdentity(newIdentity);
+            Console.WriteLine($"Generated new backend ID: {newIdentity.Id.Substring(0, 8)}...");
+            return newIdentity;
+        }
+
+        private void SaveIdentity(BackendIdentity identity)
+        {
+            var json = JsonSerializer.Serialize(identity, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_backendIdentityFile, json);
         }
 
         private void EnsureDirectoryExists()

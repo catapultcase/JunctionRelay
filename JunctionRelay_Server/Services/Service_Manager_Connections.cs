@@ -242,8 +242,13 @@ namespace JunctionRelayServer.Services
                 return Model_Operation_Result.Fail("Start operation was cancelled.");
 
             junction.Status = "Starting";
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Starting Junction {junctionId} (Type: {junction.Type})");
 
+            // Log junction mode
+            bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
+            string modeInfo = isFrameMode ? "Frame Engine" : "Payload";
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Starting Junction {junctionId} (Type: {junction.Type}, Mode: {modeInfo})");
+
+            // Rest of the existing StartJunctionAsync logic remains the same...
             // Populate links and sensors (including JunctionSensorTargets)
             await junctionDb.PopulateLinksAndSensors(junction);
 
@@ -391,12 +396,28 @@ namespace JunctionRelayServer.Services
 
             _startedJunctions[junctionId] = junction;
             junction.Status = "Running";
+
+            string finalModeInfo = isFrameMode ? "Frame Engine mode" : "Payload mode";
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Junction {junctionId} ({junction.Name}) started successfully in {finalModeInfo}");
+
             return Model_Operation_Result.Ok("Junction started.");
         }
 
         private async Task HandleStreamingForJunctionType(dynamic streamManager, Model_Junction junction, Service_Database_Manager_Devices deviceDb, List<Model_Sensor> selectedSensorsCopy)
         {
             var junctionLinkDb = _scopeFactory.CreateScope().ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
+
+            // Check if this is a frame rendering junction
+            bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
+
+            if (isFrameMode)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Junction {junction.Id} ({junction.Name}) is in Frame rendering mode");
+            }
+            else
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📄 Junction {junction.Id} ({junction.Name}) is in Payload rendering mode");
+            }
 
             foreach (var link in junction.TargetLinks)
             {
@@ -414,27 +435,36 @@ namespace JunctionRelayServer.Services
 
                     foreach (var screen in screens)
                     {
+                        // Apply screen layout override if exists
                         if (overrideDict.TryGetValue(screen.Id, out var screenOverride))
                         {
                             screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
                             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📱 Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+
+                            // For frame mode, also check for frame layout override
+                            if (isFrameMode && screenOverride.FrameLayoutId.HasValue)
+                            {
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Using frame layout override (ID: {screenOverride.FrameLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+                            }
                         }
 
                         var assignedSensors = junction.JunctionSensorTargets
                             .Where(jst => jst.ScreenId == screen.Id)
-                            .SelectMany(jst => selectedSensorsCopy.Where(s => s.Id == jst.SensorId)) // Using Where to get all matching sensors
+                            .SelectMany(jst => selectedSensorsCopy.Where(s => s.Id == jst.SensorId))
                             .ToList();
 
                         if (assignedSensors.Any())
                         {
                             var screenKey = $"device_{device.Id}_screen_{screen.Id}";
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with assigned sensors using a send rate of {defaultSendRate}ms.");
+
+                            string modeDescription = isFrameMode ? "Frame rendering" : "Payload rendering";
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} mode and send rate of {defaultSendRate}ms.");
 
                             // Check if this is a Gateway junction and pass the gateway destination
                             if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
                                 junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                             {
-                                // Extract gateway destination from junction properties
+                                // For gateway junctions, the GatewayDestination contains the transport info
                                 string? gatewayDestination = GetGatewayDestination(junction, device);
                                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Gateway destination for {screenKey}: {gatewayDestination ?? "Not specified"}");
 
@@ -446,6 +476,10 @@ namespace JunctionRelayServer.Services
                             }
 
                             await Task.Delay(100);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ No sensors assigned to Device {device.Name} Screen {screen.DisplayName} - skipping stream");
                         }
                     }
                 }

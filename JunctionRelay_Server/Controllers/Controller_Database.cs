@@ -42,6 +42,36 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        [HttpPost("backend-identity/set-name")]
+        public IActionResult SetFriendlyName([FromBody] FriendlyNameUpdateRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.FriendlyName))
+                return BadRequest(new { error = "Friendly name must be provided." });
+
+            try
+            {
+                _backendIdentity.SetFriendlyName(request.FriendlyName);
+                return Ok(new
+                {
+                    success = true,
+                    message = "Friendly name updated.",
+                    backendId = _backendIdentity.GetBackendId(),
+                    friendlyName = _backendIdentity.GetFriendlyName()
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating friendly name: {ex.Message}");
+                return StatusCode(500, new { error = "Failed to update friendly name." });
+            }
+        }
+
+        public class FriendlyNameUpdateRequest
+        {
+            public string FriendlyName { get; set; } = "";
+        }
+
+
         [HttpDelete("delete-database")]
         public IActionResult DeleteDatabase()
         {

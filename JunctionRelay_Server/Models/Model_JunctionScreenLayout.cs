@@ -24,8 +24,12 @@ namespace JunctionRelayServer.Models
         public int Id { get; set; }
         public int JunctionDeviceLinkId { get; set; }
         public int DeviceScreenId { get; set; }
-        public int ScreenLayoutId { get; set; }
-        // Optional reference to the template itself for convenience
-        public Model_Screen_Layout? Template { get; set; }
+        public int? ScreenLayoutId { get; set; }
+        public int? FrameLayoutId { get; set; }
+        public int? TargetPollRate { get; set; }
+        public DateTime? LastRequested {  get; set; } 
+        public bool OnlySendIfChanged { get; set; } = true;
+        public bool EnableUrlAccess { get; set; } = false;
+        public string? UrlPath { get; set; } 
     }
 }

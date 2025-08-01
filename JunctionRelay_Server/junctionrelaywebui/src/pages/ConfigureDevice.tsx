@@ -106,6 +106,7 @@ const ConfigureDevice: React.FC = () => {
     const [originalScreens, setOriginalScreens] = useState<any[]>([]);
     const [i2cDevices, setI2cDevices] = useState<any[]>([]);
     const [layoutTemplates, setLayoutTemplates] = useState<any[]>([]);
+    const [frameTemplates, setFrameTemplates] = useState<any[]>([]);
     const [comPorts, setComPorts] = useState<string[]>([]);
     const [selectedComPort, setSelectedComPort] = useState<string>("");
     const [initialFirmwareInfo, setInitialFirmwareInfo] = useState<FirmwareInfo | null>(null);
@@ -341,9 +342,10 @@ const ConfigureDevice: React.FC = () => {
             setDeviceData(device);
             setOriginalDeviceData(JSON.parse(JSON.stringify(device)));
             setComPorts(ports);
-            setSelectedComPort(device.SelectedPort || "");
+            setSelectedComPort(device.COMPort || "");
             setI2cDevices(i2c);
             setLayoutTemplates(layouts);
+            setFrameTemplates(layouts);
             setDeviceScreens(screens);
             setOriginalScreens(JSON.parse(JSON.stringify(screens)));
             setInitialFirmwareInfo(firmwareInfo);
@@ -658,6 +660,7 @@ const ConfigureDevice: React.FC = () => {
                     i2cDevices={i2cDevices}
                     setI2cDevices={setI2cDevices}
                     layoutTemplates={layoutTemplates}
+                    frameTemplates={frameTemplates}
                     isCustom={isCustom}
                     showSnackbar={showSnackbar}
                     onScreenChange={(screens) => {
@@ -1225,6 +1228,7 @@ const ConfigureDevice: React.FC = () => {
                             i2cDevices={i2cDevices}
                             setI2cDevices={setI2cDevices}
                             layoutTemplates={layoutTemplates}
+                            frameTemplates={frameTemplates}
                             isCustom={isCustom}
                             showSnackbar={showSnackbar}
                             onScreenChange={(screens) => {

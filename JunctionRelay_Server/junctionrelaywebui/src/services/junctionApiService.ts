@@ -6,6 +6,7 @@ export interface JunctionUpdatePayload {
     Name: string;
     Type: string;
     Description?: string;
+    RenderingMode?: string;
     MQTTBrokerId: string | number | null;
     ShowOnDashboard?: boolean;
     AutoStartOnLaunch?: boolean;
@@ -31,6 +32,7 @@ export interface JunctionData {
     id: number;
     name: string;
     type: string;
+    render: string;
     description?: string;
     mqttBrokerId?: number | null;
     status?: string;

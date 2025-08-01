@@ -160,7 +160,11 @@ namespace JunctionRelayServer.Controllers
                 return StatusCode(500, new { message = "Cloud API not configured." });
             }
 
-            Console.WriteLine($"🌐 Exchanging code with cloud. Code={request.Code}, State={request.State}, Backend={request.BackendId}");
+            // Always get backend identity from store
+            var backendId = _cloudSessionStore.GetBackendId();
+            var friendlyName = _cloudSessionStore.GetFriendlyName();
+
+            Console.WriteLine($"🌐 Exchanging code with cloud. Code={request.Code}, State={request.State}, Backend={backendId}, FriendlyName={friendlyName}");
 
             var exchangeUrl = $"{cloudApiUrl}/api/auth/exchange-code";
             var payload = new
@@ -168,7 +172,8 @@ namespace JunctionRelayServer.Controllers
                 code = request.Code,
                 state = request.State,
                 origin = request.Origin,
-                backendId = request.BackendId
+                backendId = backendId,
+                friendlyName = friendlyName
             };
 
             var response = _httpClient.PostAsJsonAsync(exchangeUrl, payload).Result;
@@ -202,6 +207,7 @@ namespace JunctionRelayServer.Controllers
 
                 // Get backendId from session store
                 var backendId = _cloudSessionStore.GetBackendId() ?? "";
+                var friendlyName = _cloudSessionStore.GetFriendlyName();
 
                 // Exchange code with cloud backend
                 var exchangeUrl = $"{cloudApiUrl}/api/auth/exchange-code";
@@ -210,7 +216,8 @@ namespace JunctionRelayServer.Controllers
                     code = code,
                     state = state,
                     origin = $"{Request.Scheme}://{Request.Host}",
-                    backendId = backendId
+                    backendId = backendId,                    
+                    friendlyName = friendlyName
                 };
 
                 Console.WriteLine($"DEBUG: Making request to {exchangeUrl} with payload: {System.Text.Json.JsonSerializer.Serialize(payload)}");
@@ -1019,7 +1026,6 @@ namespace JunctionRelayServer.Controllers
         public string Code { get; set; } = "";
         public string State { get; set; } = "";
         public string Origin { get; set; } = "";
-        public string BackendId { get; set; } = "";
     }
 }
 

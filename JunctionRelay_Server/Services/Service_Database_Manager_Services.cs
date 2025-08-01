@@ -155,12 +155,12 @@ namespace JunctionRelayServer.Services
 
             var sql = @"
                 INSERT INTO Services (
-                    Name, Description, Type, Status, LastUpdated, URL, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayService, SelectedPort,
+                    Name, Description, Type, Status, LastUpdated, URL, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayService, COMPort,
                     ServiceModel, ServiceManufacturer, FirmwareVersion, MCU, WirelessConnectivity, UniqueIdentifier, 
                     MQTTBrokerAddress, MQTTBrokerPort, MQTTUsername, AccessToken, ExternalAccessToken
                 )
                 VALUES (
-                    @Name, @Description, @Type, @Status, @LastUpdated, @URL, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayService, @SelectedPort,
+                    @Name, @Description, @Type, @Status, @LastUpdated, @URL, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayService, @COMPort,
                     @ServiceModel, @ServiceManufacturer, @FirmwareVersion, @MCU, @WirelessConnectivity, @UniqueIdentifier, 
                     @MQTTBrokerAddress, @MQTTBrokerPort, @MQTTUsername, @AccessToken, @ExternalAccessToken
                 );
@@ -200,7 +200,7 @@ namespace JunctionRelayServer.Services
                 UPDATE Services SET
                     Name = @Name, Description = @Description, Type = @Type, Status = @Status, LastUpdated = @LastUpdated,
                     URL = @URL, PollRate = @PollRate, SendRate = @SendRate, IsGateway = @IsGateway, GatewayId = @GatewayId,
-                    IsJunctionRelayService = @IsJunctionRelayService, SelectedPort = @SelectedPort,
+                    IsJunctionRelayService = @IsJunctionRelayService, COMPort = @COMPort,
                     ServiceModel = @ServiceModel, ServiceManufacturer = @ServiceManufacturer,
                     FirmwareVersion = @FirmwareVersion, MCU = @MCU, WirelessConnectivity = @WirelessConnectivity,
                     UniqueIdentifier = @UniqueIdentifier, 
@@ -298,7 +298,7 @@ namespace JunctionRelayServer.Services
                 Type = original.Type,
                 Status = original.Status,
                 UniqueIdentifier = original.UniqueIdentifier,
-                SelectedPort = original.SelectedPort,
+                COMPort = original.COMPort,
                 ServiceModel = original.ServiceModel,
                 ServiceManufacturer = original.ServiceManufacturer,
                 FirmwareVersion = original.FirmwareVersion,

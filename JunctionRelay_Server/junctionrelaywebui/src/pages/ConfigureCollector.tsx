@@ -74,6 +74,7 @@ import PaymentIcon from '@mui/icons-material/Payment';
 import MonitorIcon from '@mui/icons-material/Monitor';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
+import TvIcon from '@mui/icons-material/Tv';
 
 const ConfigureCollector = () => {
     const { id } = useParams<{ id: string }>();
@@ -136,6 +137,7 @@ const ConfigureCollector = () => {
             case "NeoPixelColor": return <ColorLensIcon />;
             case "RateTester": return <SpeedIcon />;
             case "Render": return <WebIcon />;
+            case "SonarrCalendar": return <TvIcon />;
             case "Stripe": return <PaymentIcon />;
             case "UptimeKuma": return <MonitorIcon />;
             default: return <SettingsIcon />;
@@ -154,6 +156,7 @@ const ConfigureCollector = () => {
             case "NeoPixelColor": return "secondary";
             case "RateTester": return "warning";
             case "Render": return "success";
+            case "SonarrCalendar": return "secondary";
             case "Stripe": return "success";
             case "UptimeKuma": return "success";
             default: return "default";
@@ -703,7 +706,7 @@ const ConfigureCollector = () => {
     const renderCollectorFields = () => {
         if (!collector) return null;
 
-        const needsUrl = ["Cloudflare", "Github", "HomeAssistant", "LibreHardwareMonitor", "Render", "Stripe", "UptimeKuma"].includes(collector.collectorType);
+        const needsUrl = ["Cloudflare", "Github", "HomeAssistant", "LibreHardwareMonitor", "Render", "SonarrCalendar", "Stripe", "UptimeKuma"].includes(collector.collectorType);
         const needsAccessToken = ["Cloudflare", "Github", "HomeAssistant", "Render", "Stripe"].includes(collector.collectorType);
         const needsService = collector.collectorType === "MQTT";
 
@@ -724,8 +727,9 @@ const ConfigureCollector = () => {
                             collector.collectorType === "Github" ? "GitHub Repository URL" :
                                 collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
                                     collector.collectorType === "Render" ? "Render Service URL" :
-                                        collector.collectorType === "Stripe" ? "Stripe API Base URL" :
-                                            "URL"
+                                        collector.collectorType === "SonarrCalendar" ? "Sonarr iCal Feed URL" :
+                                            collector.collectorType === "Stripe" ? "Stripe API Base URL" :
+                                                "URL"
                         }
                         value={collector.url || ''}
                         onChange={(e) => updateCollectorField('url', e.target.value)}
@@ -736,8 +740,9 @@ const ConfigureCollector = () => {
                             collector.collectorType === "Github" ? "https://github.com/owner/repo" :
                                 collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
                                     collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
-                                        collector.collectorType === "Stripe" ? "https://api.stripe.com" :
-                                            ""
+                                        collector.collectorType === "SonarrCalendar" ? "http://your-sonarr:8989/feed/v3/calendar/Sonarr.ics?apikey=..." :
+                                            collector.collectorType === "Stripe" ? "https://api.stripe.com" :
+                                                ""
                         }
                     />
                 )}

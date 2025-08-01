@@ -278,11 +278,12 @@ namespace JunctionRelayServer.Controllers
             bool isJunctionRelayDevice = false;
             string deviceName = $"{portName} Device";
             string status = "NEW_DEVICE";
+            Dictionary<string, object> deviceInfo = null; // Store the full device info
 
             // Try to get device info via simple serial communication
             try
             {
-                var deviceInfo = await _comPortManager.GetDeviceInfoViaSerial(portName, baudRate, 2000); // Shorter timeout for scan
+                deviceInfo = await _comPortManager.GetDeviceInfoViaSerial(portName, baudRate, 2000); // Shorter timeout for scan
                 if (deviceInfo != null)
                 {
                     isJunctionRelayDevice = true;
@@ -342,7 +343,11 @@ namespace JunctionRelayServer.Controllers
                 MatchingDeviceCount = matchedDevices.Count,
                 BaudRate = baudRate,
                 PortName = portName,
-                Type = "COM Device"
+                Type = "COM Device",
+                // Add the missing device info fields
+                DeviceModel = deviceInfo?.ContainsKey("deviceModel") == true ? deviceInfo["deviceModel"]?.ToString() : null,
+                FirmwareVersion = deviceInfo?.ContainsKey("firmwareVersion") == true ? deviceInfo["firmwareVersion"]?.ToString() : null,
+                CustomFirmware = deviceInfo?.ContainsKey("customFirmware") == true ? deviceInfo["customFirmware"] : null
             };
 
             Console.WriteLine($"[COM SCAN] Completed scan for {portName}: Status = {status}, Name = {deviceName}");

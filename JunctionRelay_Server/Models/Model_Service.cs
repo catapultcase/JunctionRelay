@@ -33,7 +33,7 @@ namespace JunctionRelayServer.Models
         public required string UniqueIdentifier { get; set; }
 
         // Service info
-        public string? SelectedPort { get; set; }
+        public string? COMPort { get; set; }
         public string? ServiceModel { get; set; }
         public string? ServiceManufacturer { get; set; }
         public string? FirmwareVersion { get; set; }

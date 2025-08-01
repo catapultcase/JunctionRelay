@@ -1908,7 +1908,7 @@ namespace JunctionRelayServer.Controllers
                 }
 
                 // Ensure we have the COM port info from dedicated COM port field
-                var comPort = device.SelectedPort; // Use dedicated COM port column
+                var comPort = device.COMPort; // Use dedicated COM port column
                 if (string.IsNullOrWhiteSpace(comPort))
                 {
                     return BadRequest("Device COM port information is missing.");

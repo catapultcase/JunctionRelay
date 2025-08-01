@@ -34,6 +34,29 @@ namespace JunctionRelayServer.Collectors
         private string _apiKey = string.Empty;
         private string _serviceId = string.Empty;
 
+        // Helper method to detect decimal places in a value
+        private int GetDecimalPlaces(string value)
+        {
+            // Handle null or empty values
+            if (string.IsNullOrEmpty(value))
+                return 0;
+
+            // Try to parse as decimal to validate it's a numeric value
+            if (!decimal.TryParse(value, out decimal numericValue))
+                return 0; // Non-numeric values (including "N/A") have 0 decimal places
+
+            // Convert to string to analyze decimal places
+            string valueStr = numericValue.ToString();
+
+            // Find the decimal point
+            int decimalIndex = valueStr.IndexOf('.');
+            if (decimalIndex == -1)
+                return 0; // No decimal point found
+
+            // Count digits after decimal point
+            return valueStr.Length - decimalIndex - 1;
+        }
+
         public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
@@ -247,7 +270,7 @@ namespace JunctionRelayServer.Collectors
                 Name = "Service Status",
                 Value = status,
                 Unit = "status",
-                DecimalPlaces = 1,
+                DecimalPlaces = GetDecimalPlaces(status),
                 Category = "Render Service",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -267,7 +290,7 @@ namespace JunctionRelayServer.Collectors
                 Name = "Service Type",
                 Value = serviceType,
                 Unit = "type",
-                DecimalPlaces = 1,
+                DecimalPlaces = GetDecimalPlaces(serviceType),
                 Category = "Render Service",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -281,13 +304,14 @@ namespace JunctionRelayServer.Collectors
 
             // Auto-deploy enabled
             var autoDeploy = serviceInfo["autoDeploy"]?.ToString() ?? "unknown";
+            string autoDeployValue = autoDeploy.ToLower() == "true" ? "1" : "0";
             sensors.Add(new Model_Sensor
             {
                 ExternalId = $"render_auto_deploy_{_serviceId}",
                 Name = "Auto Deploy",
-                Value = autoDeploy.ToLower() == "true" ? "1" : "0",
+                Value = autoDeployValue,
                 Unit = "boolean",
-                DecimalPlaces = 1,
+                DecimalPlaces = GetDecimalPlaces(autoDeployValue),
                 Category = "Render Service",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -307,7 +331,7 @@ namespace JunctionRelayServer.Collectors
                 Name = "Git Branch",
                 Value = branch,
                 Unit = "branch",
-                DecimalPlaces = 1,
+                DecimalPlaces = GetDecimalPlaces(branch),
                 Category = "Render Service",
                 DeviceName = collector.Name,
                 SensorType = "API",
@@ -330,7 +354,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Service Plan",
                     Value = plan,
                     Unit = "plan",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(plan),
                     Category = "Render Service",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -350,7 +374,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Instance Count",
                     Value = numInstances,
                     Unit = "instances",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(numInstances),
                     Category = "Render Service",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -381,7 +405,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Latest Deploy Status",
                     Value = deployStatus,
                     Unit = "status",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(deployStatus),
                     Category = "Render Deployments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -401,13 +425,14 @@ namespace JunctionRelayServer.Collectors
                     if (DateTime.TryParse(createdAt, out var created) && DateTime.TryParse(finishedAt, out var finished))
                     {
                         var duration = (finished - created).TotalSeconds;
+                        string durationValue = Math.Round(duration, 1).ToString();
                         sensors.Add(new Model_Sensor
                         {
                             ExternalId = $"render_latest_deploy_duration_{_serviceId}",
                             Name = "Latest Deploy Duration",
-                            Value = Math.Round(duration, 1).ToString(),
+                            Value = durationValue,
                             Unit = "seconds",
-                            DecimalPlaces = 1,
+                            DecimalPlaces = GetDecimalPlaces(durationValue),
                             Category = "Render Deployments",
                             DeviceName = collector.Name,
                             SensorType = "API",
@@ -423,13 +448,14 @@ namespace JunctionRelayServer.Collectors
 
                 // Count successful deployments in last 10
                 var successfulCount = deployments.Count(d => d["status"]?.ToString() == "live");
+                string successfulValue = successfulCount.ToString();
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = $"render_successful_deploys_{_serviceId}",
                     Name = "Successful Deploys (Last 10)",
-                    Value = successfulCount.ToString(),
+                    Value = successfulValue,
                     Unit = "deployments",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(successfulValue),
                     Category = "Render Deployments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -446,13 +472,14 @@ namespace JunctionRelayServer.Collectors
                     d["status"]?.ToString() == "build_failed" ||
                     d["status"]?.ToString() == "upload_failed" ||
                     d["status"]?.ToString() == "canceled");
+                string failedValue = failedCount.ToString();
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = $"render_failed_deploys_{_serviceId}",
                     Name = "Failed Deploys (Last 10)",
-                    Value = failedCount.ToString(),
+                    Value = failedValue,
                     Unit = "deployments",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(failedValue),
                     Category = "Render Deployments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -468,13 +495,14 @@ namespace JunctionRelayServer.Collectors
                 if (deployments.Count > 0)
                 {
                     var successRate = Math.Round((successfulCount / (double)deployments.Count) * 100, 1);
+                    string successRateValue = successRate.ToString();
                     sensors.Add(new Model_Sensor
                     {
                         ExternalId = $"render_deploy_success_rate_{_serviceId}",
                         Name = "Deploy Success Rate (Last 10)",
-                        Value = successRate.ToString(),
+                        Value = successRateValue,
                         Unit = "%",
-                        DecimalPlaces = 1,
+                        DecimalPlaces = GetDecimalPlaces(successRateValue),
                         Category = "Render Deployments",
                         DeviceName = collector.Name,
                         SensorType = "API",
@@ -499,13 +527,14 @@ namespace JunctionRelayServer.Collectors
             {
                 // Count events by type in last 24 hours
                 var restartCount = events.Count(e => e["type"]?.ToString()?.Contains("restart") == true);
+                string restartValue = restartCount.ToString();
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = $"render_restarts_24h_{_serviceId}",
                     Name = "Restarts (24h)",
-                    Value = restartCount.ToString(),
+                    Value = restartValue,
                     Unit = "restarts",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(restartValue),
                     Category = "Render Events",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -518,13 +547,14 @@ namespace JunctionRelayServer.Collectors
                 });
 
                 var deployCount = events.Count(e => e["type"]?.ToString()?.Contains("deploy") == true);
+                string deployValue = deployCount.ToString();
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = $"render_deploys_24h_{_serviceId}",
                     Name = "Deploys (24h)",
-                    Value = deployCount.ToString(),
+                    Value = deployValue,
                     Unit = "deploys",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(deployValue),
                     Category = "Render Events",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -537,13 +567,14 @@ namespace JunctionRelayServer.Collectors
                 });
 
                 // Total events in 24h
+                string totalValue = events.Count.ToString();
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = $"render_total_events_24h_{_serviceId}",
                     Name = "Total Events (24h)",
-                    Value = events.Count.ToString(),
+                    Value = totalValue,
                     Unit = "events",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(totalValue),
                     Category = "Render Events",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -564,7 +595,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Latest Event Type",
                     Value = latestEventType,
                     Unit = "event",
-                    DecimalPlaces = 1,
+                    DecimalPlaces = GetDecimalPlaces(latestEventType),
                     Category = "Render Events",
                     DeviceName = collector.Name,
                     SensorType = "API",

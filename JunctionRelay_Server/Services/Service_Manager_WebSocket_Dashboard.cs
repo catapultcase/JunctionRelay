@@ -288,6 +288,10 @@ namespace JunctionRelayServer.Services
                             compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
+                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
+                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
+                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
                         });
                     }
@@ -352,6 +356,10 @@ namespace JunctionRelayServer.Services
                             compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
+                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
+                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
+                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
                         });
                     }
@@ -411,6 +419,10 @@ namespace JunctionRelayServer.Services
                             compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
+                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
+                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
+                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
                         });
                     }
