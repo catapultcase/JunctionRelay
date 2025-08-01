@@ -1,9 +1,9 @@
 #include "Helper_StreamProcessor.h"
-#include "ScreenRouter.h"
+#include "Manager_ScreenRouter.h"
 #include "Helper_Decompression.h"
 #include "Helper_DebugScreen.h"
 #include "DeviceConfig.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 
 // Static member definitions
 QueueHandle_t Helper_StreamProcessor::sensorQueue = NULL;

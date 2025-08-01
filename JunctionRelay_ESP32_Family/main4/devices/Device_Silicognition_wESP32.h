@@ -7,7 +7,7 @@
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include <ETH.h>
 #include <Preferences.h>
 #include <vector>
@@ -115,6 +115,9 @@ struct HardwareInventory {
 class Device_Silicognition_wESP32 : public DeviceConfig {
 public:
     Device_Silicognition_wESP32(Manager_Connections* connMgr);
+
+    // NEW: Required begin() method declaration
+    bool begin() override;
 
     // Hardware detection method
     HardwareInventory detectHardware();

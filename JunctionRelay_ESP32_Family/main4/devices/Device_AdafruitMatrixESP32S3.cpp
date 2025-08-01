@@ -1,5 +1,5 @@
 #include "Device.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include "Manager_Matrix.h"
 
 // Define the RGBMatrix pins here (only in one file to avoid multiple definitions)
@@ -12,6 +12,17 @@ uint8_t oePin      = 14;                       // Output enable pin
 Device_AdafruitMatrixESP32S3::Device_AdafruitMatrixESP32S3(Manager_Connections* connMgr)
 : connMgr(connMgr) {
     // Store the connection manager reference for future use
+}
+
+bool Device_AdafruitMatrixESP32S3::begin() {
+    Serial.println("[DEBUG] Initializing Adafruit Matrix ESP32-S3...");
+    
+    // Initialize I2C (even though not used by matrix, good for consistency)
+    Wire.begin();
+    
+    // Matrix-specific initialization could go here if needed
+    Serial.println("[DEBUG] Matrix ESP32-S3 initialization complete");
+    return true;
 }
 
 // Device-specific setup method called by main.ino

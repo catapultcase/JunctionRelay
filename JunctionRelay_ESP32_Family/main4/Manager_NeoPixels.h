@@ -2,7 +2,7 @@
 #define MANAGER_NEOPIXELS_H
 
 #include <Adafruit_NeoPixel.h>
-#include "ScreenDestination.h"
+#include "Interface_ScreenDestination.h"
 #include <vector>
 
 enum EffectType {

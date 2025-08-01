@@ -1,5 +1,5 @@
 #include "Device.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include "Manager_I2C.h"
 #include <Wire.h>
 
@@ -13,6 +13,26 @@ Device_Silicognition_wESP32::Device_Silicognition_wESP32(Manager_Connections* co
     externalNeoPixelCount1 = EXTERNAL_NUMPIXELS;
     externalNeoPixelCount2 = EXTERNAL_NUMPIXELS;
     #endif
+}
+
+bool Device_Silicognition_wESP32::begin() {
+    Serial.println("[DEBUG] Initializing Silicognition wESP32...");
+    
+    // Basic GPIO setup
+    #if DEVICE_HAS_ONBOARD_LED
+    pinMode(PIN_ONBOARD_LED, OUTPUT);
+    digitalWrite(PIN_ONBOARD_LED, LOW);
+    #endif
+
+    #if DEVICE_HAS_BUTTONS
+    pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
+    #endif
+
+    // Initialize I2C
+    Wire.begin(I2C_SDA, I2C_SCL);
+    
+    Serial.println("[DEBUG] wESP32 initialization complete");
+    return true;
 }
 
 // Device-specific setup method called by main.ino

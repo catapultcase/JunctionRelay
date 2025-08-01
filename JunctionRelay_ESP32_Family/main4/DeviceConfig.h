@@ -13,6 +13,10 @@
 
 class DeviceConfig {
 public:
+    virtual ~DeviceConfig() = default;
+
+    // NEW: Pure virtual method for hardware initialization
+    virtual bool begin() = 0;
 
     // Return the display width/height
     virtual int width() = 0;
@@ -127,18 +131,28 @@ public:
 
     // Common rotation logic for all devices
     void rotateDisplay() {
+        // Only rotate if device has a screen
+        if (!hasOnboardScreen()) {
+            Serial.println("[DEVICE] Cannot rotate display - device has no onboard screen");
+            return;
+        }
+        
         // Increment rotation and wrap-around (0-3)
         uint8_t newRotation = (getRotation() + 1) % 4;
         setRotation(newRotation);
-        // Update LVGL display driver settings
-        lv_disp_drv_t *drv = lv_disp_get_default()->driver;
-        drv->hor_res = width();
-        drv->ver_res = height();
-        lv_disp_drv_update(lv_disp_get_default(), drv);
+        
+        // Update LVGL display driver settings (if LVGL is active)
+        if (lv_disp_get_default()) {
+            lv_disp_drv_t *drv = lv_disp_get_default()->driver;
+            drv->hor_res = width();
+            drv->ver_res = height();
+            lv_disp_drv_update(lv_disp_get_default(), drv);
+        }
     }
 
     // Optional common LVGL helper init
     virtual void initLVGLHelper() {
+        // Default empty implementation for devices without screens
     }
 };
 

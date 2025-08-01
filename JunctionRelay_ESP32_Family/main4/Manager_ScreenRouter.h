@@ -3,7 +3,7 @@
 
 #include <ArduinoJson.h>
 #include <vector>
-#include "ScreenDestination.h"  // Abstract base class for display handlers
+#include "Interface_ScreenDestination.h"  // Abstract base class for display handlers
 
 class ScreenRouter {
 private:

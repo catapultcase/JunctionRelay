@@ -2,7 +2,7 @@
 #include "Helper_StreamProcessor.h"
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
-#include "ScreenRouter.h"
+#include "Manager_ScreenRouter.h"
 #include "DeviceConfig.h"
 
 Branch_UsbDirect::Branch_UsbDirect()

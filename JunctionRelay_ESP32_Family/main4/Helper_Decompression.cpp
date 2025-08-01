@@ -1,149 +1,66 @@
 #include "Helper_Decompression.h"
-#include "miniz.h"
 
 Helper_Decompression::Helper_Decompression()
-    : decompressionCount(0),
-      decompressionErrors(0),
-      totalBytesIn(0),
-      totalBytesOut(0)
-{
-    // Serial.println("[Decompression] Helper initialized");
-}
+  : calls_(0), errors_(0), totalIn_(0), totalOut_(0) {}
 
 Helper_Decompression::~Helper_Decompression() {
-    Serial.printf("[Decompression] Stats - Processed: %d, Errors: %d, In: %d bytes, Out: %d bytes\n",
-                 decompressionCount, decompressionErrors, totalBytesIn, totalBytesOut);
+    Serial.printf("[Decompress] calls=%u, errors=%u, in=%u B, out=%u B\n",
+                  calls_, errors_, totalIn_, totalOut_);
 }
 
-bool Helper_Decompression::decompress(uint8_t* compressedData, size_t compressedSize, 
-                                     uint8_t** decompressedData, size_t* decompressedSize) {
-    if (!compressedData || compressedSize == 0 || !decompressedData || !decompressedSize) {
-        Serial.println("[Decompression] ERROR: Invalid parameters");
-        decompressionErrors++;
+bool Helper_Decompression::decompress(const uint8_t* compressedData, size_t compressedSize,
+                                      uint8_t** decompressedData, size_t* decompressedSize) {
+    if (!compressedData || !decompressedData || !decompressedSize || compressedSize == 0) {
+        errors_++;
         return false;
     }
-
-    // Check if this is gzip data
-    if (!isGzipData(compressedData, compressedSize)) {
-        Serial.println("[Decompression] ERROR: Not valid gzip data");
-        decompressionErrors++;
+    if (!isGzip(compressedData, compressedSize)) {
+        errors_++;
         return false;
     }
-
-    bool success = decompressGzip(compressedData, compressedSize, decompressedData, decompressedSize);
-    
-    if (success) {
-        decompressionCount++;
-        totalBytesIn += compressedSize;
-        totalBytesOut += *decompressedSize;
-        // Serial.printf("[Decompression] Success: %d -> %d bytes (ratio: %.2f)\n", 
-        //              compressedSize, *decompressedSize, 
-        //              (float)*decompressedSize / (float)compressedSize);
+    bool ok = decompressGzip(compressedData, compressedSize,
+                             decompressedData, decompressedSize);
+    if (ok) {
+        calls_++;
+        totalIn_  += compressedSize;
+        totalOut_ += *decompressedSize;
     } else {
-        decompressionErrors++;
-        Serial.println("[Decompression] ERROR: Decompression failed");
+        errors_++;
     }
-
-    return success;
+    return ok;
 }
 
-bool Helper_Decompression::isGzipData(uint8_t* data, size_t length) {
-    // Check minimum size for gzip header + footer
-    if (length < 18) {
+bool Helper_Decompression::isGzip(const uint8_t* data, size_t len) {
+    return len >= 3 && data[0]==0x1F && data[1]==0x8B && data[2]==0x08;
+}
+
+bool Helper_Decompression::decompressGzip(const uint8_t* in, size_t inSize,
+                                          uint8_t** outBuf, size_t* outSize) {
+    const size_t TMP_SIZE = 16 * 1024;
+    uint8_t* tmp = (uint8_t*)malloc(TMP_SIZE);
+    if (!tmp) return false;
+
+    unsigned int destLen = TMP_SIZE;
+    int st = tinf_gzip_uncompress(tmp, &destLen, in, inSize);
+    if (st != TINF_OK) {
+        free(tmp);
         return false;
     }
-    
-    // Check gzip magic bytes (0x1F 0x8B)
-    if (data[0] != 0x1F || data[1] != 0x8B) {
+
+    *outBuf = (uint8_t*)malloc(destLen);
+    if (!*outBuf) {
+        free(tmp);
         return false;
     }
-    
-    // Check compression method (should be 8 for deflate)
-    if (data[2] != 8) {
-        return false;
-    }
-    
+    memcpy(*outBuf, tmp, destLen);
+    *outSize = destLen;
+    free(tmp);
     return true;
 }
 
-bool Helper_Decompression::decompressGzip(uint8_t* compressedData, size_t compressedSize,
-                                         uint8_t** decompressedData, size_t* decompressedSize) {
-    // Validate gzip stream format (match old Manager_Connections)
-    if (!isGzipData(compressedData, compressedSize)) {
-        Serial.printf("[Decompression] ERROR: Invalid gzip format\n");
-        return false;
-    }
-
-    // Allocate decompression buffer (match old Manager_Connections size)
-    const size_t DECOMP_BUFFER_SIZE = 16384;
-    uint8_t* decompBuffer = new uint8_t[DECOMP_BUFFER_SIZE];
-    
-    if (!decompBuffer) {
-        Serial.println("[Decompression] ERROR: Failed to allocate decompression buffer");
-        return false;
-    }
-
-    // Extract raw deflate data (skip gzip header and footer) - MATCH OLD LOGIC
-    if (compressedSize < 18) {
-        Serial.printf("[Decompression] ERROR: Data too small for complete gzip stream: %d bytes\n", compressedSize);
-        delete[] decompBuffer;
-        return false;
-    }
-    
-    size_t deflateDataLen = compressedSize - 18; // Remove 10-byte header and 8-byte footer
-    uint8_t* deflateData = compressedData + 10;  // Skip 10-byte gzip header
-    
-    // Initialize deflate stream (EXACT OLD Manager_Connections LOGIC)
-    mz_stream stream = {};
-    stream.next_in = deflateData;
-    stream.avail_in = deflateDataLen;
-    stream.next_out = decompBuffer;
-    stream.avail_out = DECOMP_BUFFER_SIZE - 1;
-    
-    // Decompress using raw deflate (no gzip wrapper) - MATCH OLD CODE
-    int result = mz_inflateInit2(&stream, -15); // -15 = raw deflate, no headers
-    if (result == MZ_OK) {
-        result = mz_inflate(&stream, MZ_FINISH);
-        if (result == MZ_STREAM_END) {
-            mz_ulong decompSize = DECOMP_BUFFER_SIZE - 1 - stream.avail_out;
-            
-            // Null-terminate for safety
-            decompBuffer[decompSize] = '\0';
-            
-            // Serial.printf("[Decompression] ✅ Decompressed %d bytes -> %d bytes\n", 
-            //              compressedSize, (int)decompSize);
-            
-            // Allocate exact size buffer and copy (like old code)
-            *decompressedData = new uint8_t[decompSize];
-            if (*decompressedData) {
-                memcpy(*decompressedData, decompBuffer, decompSize);
-                *decompressedSize = decompSize;
-                delete[] decompBuffer;
-                mz_inflateEnd(&stream);
-                return true;
-            } else {
-                Serial.println("[Decompression] ERROR: Failed to allocate final buffer");
-            }
-        } else {
-            Serial.printf("[Decompression] ERROR: Deflate failed: %d\n", result);
-        }
-        mz_inflateEnd(&stream);
-    } else {
-        Serial.printf("[Decompression] ERROR: Deflate init failed: %d\n", result);
-    }
-    
-    delete[] decompBuffer;
-    return false;
-}
-
 void Helper_Decompression::printStats() {
-    Serial.println("=== Decompression Stats ===");
-    Serial.printf("Decompressions: %d\n", decompressionCount);
-    Serial.printf("Errors: %d\n", decompressionErrors);
-    Serial.printf("Total bytes in: %d\n", totalBytesIn);
-    Serial.printf("Total bytes out: %d\n", totalBytesOut);
-    if (totalBytesIn > 0) {
-        Serial.printf("Average compression ratio: %.2f\n", (float)totalBytesOut / (float)totalBytesIn);
-    }
+    Serial.println("=== Decompressor Stats ===");
+    Serial.printf("Calls: %u\nErrors: %u\nIn: %u B\nOut: %u B\n",
+                  calls_, errors_, totalIn_, totalOut_);
     Serial.println("==========================");
 }

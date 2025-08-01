@@ -3,31 +3,30 @@
 
 #include <Arduino.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+  #include "tinf.h"    // tiny-inflate API declarations
+#ifdef __cplusplus
+}
+#endif
+
 class Helper_Decompression {
 public:
     Helper_Decompression();
     ~Helper_Decompression();
 
-    // Main decompression method
-    // Returns true on success, false on failure
-    // Caller is responsible for deleting decompressedData when done
-    bool decompress(uint8_t* compressedData, size_t compressedSize, 
-                   uint8_t** decompressedData, size_t* decompressedSize);
+    bool decompress(const uint8_t* compressedData, size_t compressedSize,
+                    uint8_t** decompressedData, size_t* decompressedSize);
 
-    // Utility methods
-    bool isGzipData(uint8_t* data, size_t length);
     void printStats();
 
 private:
-    // Statistics
-    uint32_t decompressionCount;
-    uint32_t decompressionErrors;
-    uint32_t totalBytesIn;
-    uint32_t totalBytesOut;
+    bool decompressGzip(const uint8_t* in, size_t inSize,
+                        uint8_t** outBuf, size_t* outSize);
+    bool isGzip(const uint8_t* data, size_t len);
 
-    // Internal decompression helper
-    bool decompressGzip(uint8_t* compressedData, size_t compressedSize,
-                       uint8_t** decompressedData, size_t* decompressedSize);
+    uint32_t calls_, errors_, totalIn_, totalOut_;
 };
 
 #endif // HELPER_DECOMPRESSION_H

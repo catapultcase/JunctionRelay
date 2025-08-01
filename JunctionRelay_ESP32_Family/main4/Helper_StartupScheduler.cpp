@@ -4,8 +4,21 @@
 #include "Manager_Charlieplex.h"
 #include "Manager_Matrix.h"  // Add Matrix manager
 #include "Manager_Connections.h"  // Add Manager_Connections include
-#include "ScreenRouter.h"
+#include "Manager_ScreenRouter.h"
 #include "Device.h"  // For full HardwareInventory structure definitions
+
+#if DEVICE_HAS_ONBOARD_SCREEN
+class OnboardScreenDestination : public ScreenDestination {
+public:
+    String getScreenId() const override { return "onboard"; }
+    void applyConfig(const JsonDocument& configDoc) override { /* handle onboard config */ }
+    void updateSensorData(const JsonDocument& sensorDoc) override { /* handle onboard data */ }
+    bool matchesScreenId(const String& screenId, const JsonDocument& doc) const override { 
+        return screenId == "onboard"; 
+    }
+    const char* getConfigKey() const override { return "onboard"; }
+};
+#endif
 
 // Static instance
 Helper_StartupScheduler* Helper_StartupScheduler::instance = nullptr;
@@ -230,6 +243,14 @@ void Helper_StartupScheduler::registerScreenDestinations() {
     
     int registered = 0;
     
+    // Register onboard screen if device has one
+    #if DEVICE_HAS_ONBOARD_SCREEN
+        static OnboardScreenDestination onboardScreen;
+        screenRouter->registerScreen(&onboardScreen);
+        Serial.println("[STARTUP_SCHEDULER]   ✅ Registered onboard screen with ScreenRouter");
+        registered++;
+    #endif
+
     // Register Matrix manager
     if (matrixManager) {
         screenRouter->registerScreen(matrixManager);
