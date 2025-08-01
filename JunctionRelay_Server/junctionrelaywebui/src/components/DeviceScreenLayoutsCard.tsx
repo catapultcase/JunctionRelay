@@ -535,10 +535,11 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                 disabled={savingRenderingMode || loading}
                             >
                                 <MenuItem value="Payload">Payload Mode</MenuItem>
-                                <MenuItem value="FrameEngine">Frame Engine Mode</MenuItem>
+                                <MenuItem value="FrameEngine" disabled>
+                                    FrameEngine Mode (Coming Soon)
+                                </MenuItem>
                             </Select>
                         </FormControl>
-
                         <Chip
                             label={isFrameEngine ? "Frame Engine Active" : "Payload Mode Active"}
                             color={isFrameEngine ? "primary" : "default"}

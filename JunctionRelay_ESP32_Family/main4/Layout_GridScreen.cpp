@@ -1,5 +1,5 @@
 #include "Layout_GridScreen.h"
-#include "DisplayManager.h"
+#include "Display_Manager_LVGL.h"
 #include "DeviceConfig.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -7,7 +7,7 @@
 #include <cstdlib>
 
 // Constructor / Destructor
-Layout_GridScreen::Layout_GridScreen(DisplayManager* displayManager)
+Layout_GridScreen::Layout_GridScreen(Display_Manager_LVGL* displayManager)
     : mDisplayManager(displayManager)
     , mIsCreated(false)
     , mScreen(nullptr)
@@ -190,6 +190,14 @@ void Layout_GridScreen::registerSensors(const JsonDocument &cfg) {
 
 lv_obj_t* Layout_GridScreen::getScreen() const {
     return mScreen;
+}
+
+bool Layout_GridScreen::isCreated() const {
+    return mIsCreated;
+}
+
+bool Layout_GridScreen::isDestroyed() const {
+    return !mIsCreated;
 }
 
 void Layout_GridScreen::destroyTimers() {

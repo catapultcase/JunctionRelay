@@ -1,5 +1,5 @@
 #include "Layout_RadioScreen.h"
-#include "DisplayManager.h"
+#include "Display_Manager_LVGL.h"
 #include "DeviceConfig.h"
 #include <ArduinoJson.h>
 #include <cstring>
@@ -29,7 +29,7 @@ void Layout_RadioScreen::indicatorUpdateCallback(lv_event_t* e) {
 }
 
 // Constructor / Destructor
-Layout_RadioScreen::Layout_RadioScreen(DisplayManager* displayManager)
+Layout_RadioScreen::Layout_RadioScreen(Display_Manager_LVGL* displayManager)
     : mDisplayManager(displayManager)
     , mIsCreated(false)
     , mScreen(nullptr)
@@ -413,8 +413,6 @@ void Layout_RadioScreen::create(const JsonDocument &configDoc) {
         }
     }
 
-    lv_scr_load(mScreen);
-    lv_task_handler();
     mIsCreated = true;
     Serial.println("[DEBUG] Radio screen created");
 }
@@ -521,4 +519,12 @@ void Layout_RadioScreen::registerSensors(const JsonDocument &configDoc) {
 
 lv_obj_t* Layout_RadioScreen::getScreen() const {
     return mScreen;
+}
+
+bool Layout_RadioScreen::isCreated() const {
+    return mIsCreated;
+}
+
+bool Layout_RadioScreen::isDestroyed() const {
+    return !mIsCreated;
 }

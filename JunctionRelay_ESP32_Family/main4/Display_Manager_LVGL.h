@@ -3,14 +3,34 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
+#include <ArduinoJson.h>
 #include "DeviceConfig.h"
-#include "Device.h"  // Need concrete device type for casting
-#include "Layout_DefaultHomeScreen.h"  // NEW: Include the layout class
+#include "Manager_Connections.h"
+#include "Interface_ScreenDestination.h"
+#include "Interface_ScreenLayout_LVGL.h"
 
-// Forward declaration to avoid circular dependency
+// Forward declarations to avoid circular dependencies
 class Layout_DefaultHomeScreen;
+class Layout_GridScreen;
+class Layout_PlotterScreen;
+class Layout_RadioScreen;
+class Layout_AstroScreen;
+class Layout_RunScreen;
 
-class Display_Manager_LVGL {
+// Layout types enum
+enum class LayoutType {
+    NONE,
+    HOME,
+    GRID,
+    PLOTTER,
+    RADIO,
+    ASTRO,
+    RUN
+};
+
+const char* getLayoutTypeName(LayoutType type);
+
+class Display_Manager_LVGL : public ScreenDestination {
 public:
     Display_Manager_LVGL(DeviceConfig* device);
     ~Display_Manager_LVGL();
@@ -24,16 +44,30 @@ public:
     // Check if LVGL is ready
     bool isReady() const { return lvglInitialized; }
     
-    // NEW: Interface methods for Layout_DefaultHomeScreen compatibility
-    DeviceConfig* getDevice() const { return device; }
-    
-    // NEW: Set connection manager for layouts to access connectivity data
+    // Set connection manager for layouts to access connectivity data
     void setConnectionManager(Manager_Connections* connMgr) { connectionManager = connMgr; }
     Manager_Connections* getConnectionManager() const { return connectionManager; }
+    
+    // Interface methods for Layout compatibility
+    DeviceConfig* getDevice() const { return device; }
+    
+    // ScreenDestination interface implementation
+    String getScreenId() const override;
+    void applyConfig(const JsonDocument& configDoc) override;
+    void updateSensorData(const JsonDocument& sensorDoc) override;
+    bool matchesScreenId(const String& screenId, const JsonDocument& doc) const override;
+    const char* getConfigKey() const override;
+    
+    // Update only the status label on the home screen
+    void updateStatusLabel(const String& status);
+    
+    // Memory debugging and safe recovery
+    void printMemoryInfo();
+    bool enterSafeMode();
 
 private:
     DeviceConfig* device;
-    Manager_Connections* connectionManager;  // NEW: Store connection manager reference
+    Manager_Connections* connectionManager;
     bool lvglInitialized;
     
     // LVGL task handle
@@ -42,14 +76,32 @@ private:
     // LVGL task function (static)
     static void lvglTaskFunction(void* parameter);
     
-    // NEW: Use layout class instead of hardcoded screen
+    // Layout management
+    LayoutInterface* currentLayout;
     Layout_DefaultHomeScreen* homeLayout;
+    Layout_GridScreen* gridLayout;
+    Layout_PlotterScreen* plotterLayout;
+    Layout_RadioScreen* radioLayout;
+    Layout_AstroScreen* astroLayout;
+    Layout_RunScreen* runLayout;
+    LayoutType currentLayoutType;
     
-    // REMOVED: These are now handled by Layout_DefaultHomeScreen
-    // lv_obj_t* homeScreen;
-    // lv_obj_t* titleLabel;
-    // lv_obj_t* statusLabel;
-    // void buildHomeScreenUI();
+    // Layout switching and management
+    bool switchToLayout(LayoutType newType, const JsonDocument& configDoc);
+    LayoutInterface* getLayoutForType(LayoutType type);
+    
+    // State tracking
+    String lastKnownStatus;
+    bool isTransitioning;
+    unsigned long transitionStartTime;
+    static const unsigned long TRANSITION_TIMEOUT = 5000; // 5 seconds timeout
+    
+    // LVGL task processing
+    void processLVGLTasks(int iterations, int delayMs);
+    
+    // Safe screen management
+    lv_obj_t* createTransitionScreen();
+    lv_obj_t* safeScreen;
 };
 
 #endif // DISPLAY_MANAGER_LVGL_H

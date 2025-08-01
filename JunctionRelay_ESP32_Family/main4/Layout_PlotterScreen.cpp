@@ -1,5 +1,5 @@
 #include "Layout_PlotterScreen.h"
-#include "DisplayManager.h"
+#include "Display_Manager_LVGL.h"
 #include "DeviceConfig.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -32,7 +32,7 @@ void scroll_chart_timer_cb(lv_timer_t* timer) {
 }
 
 // Constructor / Destructor
-Layout_PlotterScreen::Layout_PlotterScreen(DisplayManager* displayManager)
+Layout_PlotterScreen::Layout_PlotterScreen(Display_Manager_LVGL* displayManager)
     : mDisplayManager(displayManager)
     , mIsCreated(false)
     , mScreen(nullptr)
@@ -334,7 +334,6 @@ void Layout_PlotterScreen::create(const JsonDocument &configDoc) {
         mLabelValues[i] = valLbl;
     }
 
-    lv_scr_load(mScreen);
     mIsCreated = true;
     Serial.printf("[DEBUG] Plotter screen created with %d charts (scroll rate: %dms)\n", 
                   mSensorCount, scrollRate);
@@ -456,4 +455,12 @@ void Layout_PlotterScreen::registerSensors(const JsonDocument &configDoc) {
 
 lv_obj_t* Layout_PlotterScreen::getScreen() const {
     return mScreen;
+}
+
+bool Layout_PlotterScreen::isCreated() const {
+    return mIsCreated;
+}
+
+bool Layout_PlotterScreen::isDestroyed() const {
+    return !mIsCreated;
 }
