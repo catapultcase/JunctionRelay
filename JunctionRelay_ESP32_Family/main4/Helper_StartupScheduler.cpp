@@ -2,23 +2,11 @@
 #include "Manager_NeoPixels.h"
 #include "Manager_QuadDisplay.h"
 #include "Manager_Charlieplex.h"
-#include "Manager_Matrix.h"  // Add Matrix manager
-#include "Manager_Connections.h"  // Add Manager_Connections include
+#include "Manager_Matrix.h"
+#include "Manager_Connections.h"
 #include "Manager_ScreenRouter.h"
-#include "Device.h"  // For full HardwareInventory structure definitions
-
-#if DEVICE_HAS_ONBOARD_SCREEN
-class OnboardScreenDestination : public ScreenDestination {
-public:
-    String getScreenId() const override { return "onboard"; }
-    void applyConfig(const JsonDocument& configDoc) override { /* handle onboard config */ }
-    void updateSensorData(const JsonDocument& sensorDoc) override { /* handle onboard data */ }
-    bool matchesScreenId(const String& screenId, const JsonDocument& doc) const override { 
-        return screenId == "onboard"; 
-    }
-    const char* getConfigKey() const override { return "onboard"; }
-};
-#endif
+#include "Display_Manager_LVGL.h"  // Add Display_Manager_LVGL include
+#include "Device.h"
 
 // Static instance
 Helper_StartupScheduler* Helper_StartupScheduler::instance = nullptr;
@@ -27,9 +15,11 @@ Helper_StartupScheduler::Helper_StartupScheduler()
     : neoPixelManager(nullptr),
       quadDisplayManager(nullptr),
       charliplexManager(nullptr),
-      matrixManager(nullptr),  // Initialize Matrix manager
+      matrixManager(nullptr),
+      displayManager(nullptr),  // Initialize Display manager
+      connectionManager(nullptr),  // Initialize connection manager reference
       screenRouter(nullptr),
-      devicePtr(nullptr),  // Initialize device pointer
+      devicePtr(nullptr),
       initialized(false)
 {
     // Serial.println("[STARTUP_SCHEDULER] Constructor called");
@@ -61,7 +51,7 @@ void Helper_StartupScheduler::initializeFromInventory(const HardwareInventory& i
     Serial.println("[STARTUP_SCHEDULER] ==========================================");
     
     screenRouter = router;
-    devicePtr = device;  // Store device pointer for matrix access
+    devicePtr = device;
     detectedHardware = inventory;
     
     // Log what we detected
@@ -89,16 +79,25 @@ void Helper_StartupScheduler::initializeFromInventory(const HardwareInventory& i
     Serial.println("[STARTUP_SCHEDULER] ==========================================");
 }
 
-// NEW: Method to set connection manager after it's created
 void Helper_StartupScheduler::setManager_Connections(Manager_Connections* connMgr) {
+    connectionManager = connMgr;
+    
+    // Set connection manager for existing managers
     if (matrixManager) {
         matrixManager->setManager_Connections(connMgr);
         Serial.println("[STARTUP_SCHEDULER] ✅ Connection manager set for Matrix");
+    }
+    
+    if (displayManager) {
+        displayManager->setConnectionManager(connMgr);
+        Serial.println("[STARTUP_SCHEDULER] ✅ Connection manager set for Display");
     }
 }
 
 void Helper_StartupScheduler::logInventory(const HardwareInventory& inventory) {
     Serial.println("[STARTUP_SCHEDULER] Hardware inventory:");
+    Serial.printf("[STARTUP_SCHEDULER]   Onboard Screen: %s\n", 
+                  inventory.hasOnboardScreen ? "Yes" : "No");
     Serial.printf("[STARTUP_SCHEDULER]   NeoPixel strips: %d\n", inventory.neopixelPins.size());
     for (size_t i = 0; i < inventory.neopixelPins.size(); i++) {
         Serial.printf("[STARTUP_SCHEDULER]     Strip %d: Pin %d, %d pixels\n", 
@@ -120,6 +119,12 @@ void Helper_StartupScheduler::logInventory(const HardwareInventory& inventory) {
 }
 
 void Helper_StartupScheduler::createManagers(const HardwareInventory& inventory) {
+    // Create Display manager if device has onboard screen
+    if (inventory.hasOnboardScreen) {
+        Serial.println("[STARTUP_SCHEDULER]   Creating Display manager...");
+        setupDisplayManager();
+    }
+    
     // Create Matrix manager if we have matrix hardware
     if (inventory.hasExternalMatrix) {
         Serial.println("[STARTUP_SCHEDULER]   Creating Matrix manager...");
@@ -157,7 +162,28 @@ void Helper_StartupScheduler::createManagers(const HardwareInventory& inventory)
     }
     
     Serial.printf("[STARTUP_SCHEDULER]   Created %d managers\n", 
-                  (matrixManager ? 1 : 0) + (neoPixelManager ? 1 : 0) + (quadDisplayManager ? 1 : 0) + (charliplexManager ? 1 : 0));
+                  (displayManager ? 1 : 0) + (matrixManager ? 1 : 0) + (neoPixelManager ? 1 : 0) + (quadDisplayManager ? 1 : 0) + (charliplexManager ? 1 : 0));
+}
+
+void Helper_StartupScheduler::setupDisplayManager() {
+    if (!devicePtr) {
+        Serial.println("[STARTUP_SCHEDULER] ERROR: Device pointer not set for Display manager");
+        return;
+    }
+    
+    displayManager = new Display_Manager_LVGL(devicePtr);
+    
+    if (!displayManager) {
+        Serial.println("[STARTUP_SCHEDULER] ERROR: Failed to create Display manager instance");
+        return;
+    }
+    
+    // Set connection manager if available
+    if (connectionManager) {
+        displayManager->setConnectionManager(connectionManager);
+    }
+    
+    Serial.println("[STARTUP_SCHEDULER]     Display manager configured");
 }
 
 void Helper_StartupScheduler::setupMatrixManager() {
@@ -243,13 +269,12 @@ void Helper_StartupScheduler::registerScreenDestinations() {
     
     int registered = 0;
     
-    // Register onboard screen if device has one
-    #if DEVICE_HAS_ONBOARD_SCREEN
-        static OnboardScreenDestination onboardScreen;
-        screenRouter->registerScreen(&onboardScreen);
-        Serial.println("[STARTUP_SCHEDULER]   ✅ Registered onboard screen with ScreenRouter");
+    // Register Display manager (onboard screen)
+    if (displayManager) {
+        screenRouter->registerScreen(displayManager);
+        Serial.println("[STARTUP_SCHEDULER]   ✅ Registered Display manager with ScreenRouter");
         registered++;
-    #endif
+    }
 
     // Register Matrix manager
     if (matrixManager) {
@@ -283,7 +308,14 @@ void Helper_StartupScheduler::registerScreenDestinations() {
 }
 
 void Helper_StartupScheduler::startManagerTasks() {
-    // Start Matrix manager first (if present)
+    // Start Display manager first (if present)
+    if (displayManager) {
+        Serial.println("[STARTUP_SCHEDULER]   Starting Display tasks...");
+        startDisplayTasks();
+        addDelay(200);
+    }
+    
+    // Start Matrix manager next (if present)
     if (matrixManager) {
         Serial.println("[STARTUP_SCHEDULER]   Starting Matrix tasks...");
         startMatrixTasks();
@@ -308,6 +340,21 @@ void Helper_StartupScheduler::startManagerTasks() {
         Serial.println("[STARTUP_SCHEDULER]   Starting NeoPixel tasks...");
         startNeoPixelTasks();
         addDelay(100);
+    }
+}
+
+void Helper_StartupScheduler::startDisplayTasks() {
+    if (!displayManager) return;
+    
+    // Initialize LVGL and hardware
+    if (displayManager->init()) {
+        Serial.println("[STARTUP_SCHEDULER]     ✅ Display manager initialized");
+        
+        // Create home screen
+        displayManager->createHomeScreen();
+        Serial.println("[STARTUP_SCHEDULER]     ✅ Home screen created");
+    } else {
+        Serial.println("[STARTUP_SCHEDULER]     ❌ Display manager initialization failed");
     }
 }
 
@@ -350,7 +397,6 @@ void Helper_StartupScheduler::startMatrixTasks() {
     Serial.println("[STARTUP_SCHEDULER] Matrix support disabled at compile time.");
 #endif
 }
-
 
 void Helper_StartupScheduler::startQuadDisplayTasks() {
     if (!quadDisplayManager) return;

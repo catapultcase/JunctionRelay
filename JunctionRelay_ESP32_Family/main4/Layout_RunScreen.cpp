@@ -1,5 +1,5 @@
 #include "Layout_RunScreen.h"
-#include "DisplayManager.h"
+#include "Display_Manager_LVGL.h"
 #include "Helper_Utils.h"
 #include <Arduino.h>
 
@@ -7,7 +7,7 @@
 #include "src/eezstudio/ui.h"
 #include "src/eezstudio/screens.h"
 
-Layout_RunScreen::Layout_RunScreen(DisplayManager* displayManager)
+Layout_RunScreen::Layout_RunScreen(Display_Manager_LVGL* displayManager)
   : mDisplayManager(displayManager)
   , mIsCreated(false)
   , mScreen(nullptr)
@@ -69,6 +69,15 @@ void Layout_RunScreen::destroy() {
     Serial.println("[LAYOUT_RUN] EEZStudio layout destroyed");
 }
 
+void Layout_RunScreen::destroyTimers() {
+    for (auto timer : mTimers) {
+        if (timer) {
+            lv_timer_del(timer);
+        }
+    }
+    mTimers.clear();
+}
+
 void Layout_RunScreen::update(const JsonDocument &sensorDoc) {
     if (!mIsCreated || !mScreen) return;
     
@@ -85,11 +94,25 @@ void Layout_RunScreen::update(const JsonDocument &sensorDoc) {
     tick_screen_main();
 }
 
+void Layout_RunScreen::registerSensors(const JsonDocument &configDoc) {
+    // Register any sensors needed for this layout
+    auto layout = configDoc["layout"].as<JsonArrayConst>();
+    for (auto v : layout) {
+        if (v.containsKey("id")) {
+            String id = v["id"].as<String>();
+            Serial.printf("[DEBUG] Run register sensor: %s\n", id.c_str());
+        }
+    }
+}
+
 lv_obj_t* Layout_RunScreen::getScreen() const {
     return mScreen;
 }
 
-void Layout_RunScreen::destroyTimers() {
-    for (auto t : mTimers) lv_timer_del(t);
-    mTimers.clear();
+bool Layout_RunScreen::isCreated() const {
+    return mIsCreated;
+}
+
+bool Layout_RunScreen::isDestroyed() const {
+    return !mIsCreated;
 }

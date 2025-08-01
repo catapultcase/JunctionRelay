@@ -4,9 +4,8 @@
 #include "Helper_Preferences.h"
 #include "Manager_Connections.h"
 #include "Device.h"                    // swapped per‑board at build time
-#include "Display_Manager_LVGL.h"
 #include "Manager_ScreenRouter.h"
-#include "Helper_StartupScheduler.h"   // NEW: Centralized startup management
+#include "Helper_StartupScheduler.h"   // Centralized startup management
 #include "Manager_NeoPixels.h"         // This manager is an exception
 
 #if defined(DEVICE_CROWPANEL5) || defined(DEVICE_CROWPANEL7)
@@ -17,7 +16,6 @@
 Helper_Preferences     prefsHelper;
 Manager_Connections    connManager;
 Device                 device(&connManager);
-Display_Manager_LVGL   displayManager(&device);
 ScreenRouter           screenRouter;
 HardwareInventory      globalInventory;
 
@@ -240,25 +238,7 @@ void setup() {
   startupScheduler->initializeFromInventory(globalInventory, &screenRouter, &device);
 
   // ===============================================
-  // DISPLAY MANAGER INIT
-  // ===============================================
-
-  #if DEVICE_HAS_ONBOARD_SCREEN    
-    Serial.println("[MAIN] Initializing display manager...");    
-    
-    displayManager.setConnectionManager(&connManager);
-    
-    if (displayManager.init()) {
-        Serial.println("[MAIN] Display manager initialized successfully");
-        displayManager.createHomeScreen();
-        Serial.println("[MAIN] Home screen created");
-    } else {
-        Serial.println("[MAIN] Failed to initialize display manager");
-    }  
-  #endif
-
-  // ===============================================
-  // FINISHED!
+  // FINISHED! No more display manager code needed
   // ===============================================
 
   Serial.println("[MAIN] Setup complete!");

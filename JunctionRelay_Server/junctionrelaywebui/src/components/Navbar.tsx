@@ -344,7 +344,7 @@ const Navbar = () => {
         { text: "Devices", path: "/devices", icon: <DevicesIcon /> },
         { text: "Services", path: "/services", icon: <ServiceIcon /> },
         { text: "Collectors", path: "/collectors", icon: <DataObjectIcon /> },
-        { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
+        // { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
         { text: "Payloads", path: "/payloads", icon: <PayloadIcon /> },
     ];
 
