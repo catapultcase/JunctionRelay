@@ -2,16 +2,26 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_LILYGO_T4
+#define DEVICE_CROWPANEL7
 
-// Define device info
+#include "DeviceConfig.h"
+#include "Manager_Connections.h"
+#include "Helper_Preferences.h"
+#include "Helper_Utils.h"
+#include <LovyanGFX.hpp>
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+#include <lgfx/v1/platforms/esp32/Light_PWM.hpp>
+#include <lvgl.h>
+#include <vector>
+
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "T4 S3"
-#define DEVICE_MANUFACTURER             "LilyGo"
+#define DEVICE_MODEL                    "CrowPanel7 7-inch"
+#define DEVICE_MANUFACTURER             "Elecrow"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3R8 Dual-core LX7 microprocessor"
+#define DEVICE_MCU                      "ESP32-S3-WROOM-1-N4R8"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "16 MB"
+#define DEVICE_FLASH                    "4 MB"
 #define DEVICE_PSRAM                    "8 MB"
 
 // Define capabilities for this device
@@ -23,6 +33,7 @@
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
+#define DEVICE_SUPPORTS_ETHERNET        0
 #define DEVICE_SUPPORTS_WIFI            1
 #define DEVICE_SUPPORTS_BLE             0
 #define DEVICE_SUPPORTS_USB             1
@@ -34,34 +45,81 @@
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
 
-#include "DeviceConfig.h"
-#include "Utils.h"
-#include <LilyGo_AMOLED.h>
+// Hardware inventory structures
+struct NeoPixelInfo {
+    int pin;
+    int pixelCount;
+    
+    NeoPixelInfo(int p, int count) : pin(p), pixelCount(count) {}
+};
 
-// Forward declaration
-class Manager_Connections;
+struct I2CDeviceInfo {
+    uint8_t address;
+    String deviceType;
+    
+    I2CDeviceInfo(uint8_t addr, const String& type) : address(addr), deviceType(type) {}
+};
 
-class Device_LilyGoT4 : public DeviceConfig {
+struct HardwareInventory {
+    std::vector<NeoPixelInfo> neopixelPins;
+    std::vector<I2CDeviceInfo> i2cDevices;
+    
+    // Basic capabilities (from compile-time defines)
+    bool hasOnboardScreen = DEVICE_HAS_ONBOARD_SCREEN;
+    bool hasOnboardLED = DEVICE_HAS_ONBOARD_LED;
+    bool hasOnboardRGBLED = DEVICE_HAS_ONBOARD_RGB_LED;
+    bool hasExternalMatrix = DEVICE_HAS_EXTERNAL_MATRIX;
+    bool hasExternalNeopixels = DEVICE_HAS_EXTERNAL_NEOPIXELS;
+    bool hasExternalI2CDevices = DEVICE_HAS_EXTERNAL_I2C_DEVICES;
+    bool hasButtons = DEVICE_HAS_BUTTONS;
+    bool hasBattery = DEVICE_HAS_BATTERY;
+    bool supportsEthernet = DEVICE_SUPPORTS_ETHERNET;
+    bool supportsWiFi = DEVICE_SUPPORTS_WIFI;
+    bool supportsBLE = DEVICE_SUPPORTS_BLE;
+    bool supportsUSB = DEVICE_SUPPORTS_USB;
+    bool supportsESPNow = DEVICE_SUPPORTS_ESPNOW;
+    bool supportsHTTP = DEVICE_SUPPORTS_HTTP;
+    bool supportsMQTT = DEVICE_SUPPORTS_MQTT;
+    bool supportsWebSockets = DEVICE_SUPPORTS_WEBSOCKETS;
+    bool hasSpeaker = DEVICE_HAS_SPEAKER;
+    bool hasMicroSD = DEVICE_HAS_MICROSD;
+    bool isGateway = DEVICE_IS_GATEWAY;
+};
+
+class Device_CrowPanel7 : public DeviceConfig {
 public:
-    Device_LilyGoT4(Manager_Connections* connMgr);
+    Device_CrowPanel7(Manager_Connections* connMgr);
 
-    bool begin() override;
+    // NEW: Returns hardware inventory instead of bool
+    HardwareInventory detectHardware();
+    
+    // Initialize the device (display setup, touch timing, etc.)
+    bool begin();
     
     // Initialize LVGL display helpers (called after LVGL is initialized)
-    void initLVGLHelper() override;
+    void initLVGLHelper();
 
-    const char* getName() override;
+    // Return screen dimensions
+    int width();
+    int height();
 
-    void setRotation(uint8_t rotation) override;
-    uint8_t getRotation() override;
-    int width() override;
-    int height() override;
+    // Rotation handling
+    void setRotation(uint8_t rotation);
+    uint8_t getRotation();
 
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
+    // Return device name
+    const char* getName();
+
     // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
+
+    // LVGL flush callback function
+    static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
+    // LVGL touch callback function
+    static void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -72,6 +130,7 @@ public:
     virtual bool hasExternalI2CDevices() const override { return DEVICE_HAS_EXTERNAL_I2C_DEVICES; }
     virtual bool hasButtons() const override { return DEVICE_HAS_BUTTONS; }
     virtual bool hasBattery() const override { return DEVICE_HAS_BATTERY; }
+    virtual bool supportsEthernet() const override { return DEVICE_SUPPORTS_ETHERNET; }
     virtual bool supportsWiFi() const override { return DEVICE_SUPPORTS_WIFI; }
     virtual bool supportsBLE() const override { return DEVICE_SUPPORTS_BLE; }
     virtual bool supportsUSB() const override { return DEVICE_SUPPORTS_USB; }
@@ -92,20 +151,31 @@ public:
     virtual const char* getWirelessConnectivity() const override { return DEVICE_WIRELESS_CONNECTIVITY; }
     virtual const char* getFlash() const override { return DEVICE_FLASH; }
     virtual const char* getPSRAM() const override { return DEVICE_PSRAM; }
+
     virtual const char* getUniqueIdentifier() const override {
         static String macStr = getFormattedMacAddress();
         return macStr.c_str();
     }
 
 private:
-    LilyGo_Class amoled;
+    // Custom LGFX device class for Elecrow 7-inch panel
+    class CustomLGFX : public lgfx::LGFX_Device {
+    public:
+        lgfx::Bus_RGB   _bus_instance;
+        lgfx::Panel_RGB _panel_instance;
+        lgfx::Light_PWM _light_instance;
+        CustomLGFX();
+    };
+
+    CustomLGFX lgfx_dev; // Custom display driver instance
+    lv_disp_drv_t disp_drv;      // LVGL display driver
+    lv_indev_drv_t indev_drv;    // LVGL input device driver for touch
     uint8_t rotation;
     
-    // Store the connection manager reference
     Manager_Connections* connMgr;
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_LilyGoT4 Device;
+typedef Device_CrowPanel7 Device;
 
 #endif // DEVICE_H

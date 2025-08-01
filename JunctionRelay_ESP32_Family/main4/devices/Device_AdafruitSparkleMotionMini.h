@@ -7,7 +7,7 @@
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include <Adafruit_NeoPixel.h>
 #include <vector>
 
@@ -101,7 +101,10 @@ class Device_AdafruitSparkleMotionMiniESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitSparkleMotionMiniESP32S3(Manager_Connections* connMgr);
 
-    // NEW: Returns hardware inventory instead of bool
+    // Required begin() method declaration
+    bool begin() override;
+
+    // Returns hardware inventory
     HardwareInventory detectHardware();
     
     const char* getName();

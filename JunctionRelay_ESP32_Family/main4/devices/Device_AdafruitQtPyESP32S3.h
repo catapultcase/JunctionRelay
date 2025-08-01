@@ -5,16 +5,11 @@
 #define DEVICE_ADAFRUIT_QTPY_ESP32S3
 
 #include "DeviceConfig.h"
-#include "Utils.h"
+#include "Manager_Connections.h"
+#include "Helper_Preferences.h"
+#include "Helper_Utils.h"
 #include <Adafruit_NeoPixel.h>
-#include "Manager_NeoPixels.h" 
-#include "Manager_I2C.h"
-#include <Preferences.h>
-
-#if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    #include "Manager_QuadDisplay.h"
-    #include "Manager_Charlieplex.h"
-#endif
+#include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
 #define DEVICE_MODEL                    "QT Py ESP32-S3 N4R2"
@@ -34,6 +29,7 @@
 #define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
+#define DEVICE_SUPPORTS_ETHERNET        0
 #define DEVICE_SUPPORTS_WIFI            1
 #define DEVICE_SUPPORTS_BLE             0
 #define DEVICE_SUPPORTS_USB             1
@@ -54,14 +50,63 @@
     // Default pins - will be overridden by preferences
     #define DEFAULT_EXTERNAL_PIN_1 35
     #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
-    #define EXTERNAL_NUMPIXELS 128
+    
+    // Pixel counts per strip
+    #define EXTERNAL_NUMPIXELS_STRIP_0 128
+    #define EXTERNAL_NUMPIXELS_STRIP_1 8
 #endif
+
+// Hardware inventory structures
+struct NeoPixelInfo {
+    int pin;
+    int pixelCount;
+    
+    NeoPixelInfo(int p, int count) : pin(p), pixelCount(count) {}
+};
+
+struct I2CDeviceInfo {
+    uint8_t address;
+    String deviceType;
+    
+    I2CDeviceInfo(uint8_t addr, const String& type) : address(addr), deviceType(type) {}
+};
+
+struct HardwareInventory {
+    std::vector<NeoPixelInfo> neopixelPins;
+    std::vector<I2CDeviceInfo> i2cDevices;
+    
+    // Basic capabilities (from compile-time defines)
+    bool hasOnboardScreen = DEVICE_HAS_ONBOARD_SCREEN;
+    bool hasOnboardLED = DEVICE_HAS_ONBOARD_LED;
+    bool hasOnboardRGBLED = DEVICE_HAS_ONBOARD_RGB_LED;
+    bool hasExternalMatrix = DEVICE_HAS_EXTERNAL_MATRIX;
+    bool hasExternalNeopixels = DEVICE_HAS_EXTERNAL_NEOPIXELS;
+    bool hasExternalI2CDevices = DEVICE_HAS_EXTERNAL_I2C_DEVICES;
+    bool hasButtons = DEVICE_HAS_BUTTONS;
+    bool hasBattery = DEVICE_HAS_BATTERY;
+    bool supportsEthernet = DEVICE_SUPPORTS_ETHERNET;
+    bool supportsWiFi = DEVICE_SUPPORTS_WIFI;
+    bool supportsBLE = DEVICE_SUPPORTS_BLE;
+    bool supportsUSB = DEVICE_SUPPORTS_USB;
+    bool supportsESPNow = DEVICE_SUPPORTS_ESPNOW;
+    bool supportsHTTP = DEVICE_SUPPORTS_HTTP;
+    bool supportsMQTT = DEVICE_SUPPORTS_MQTT;
+    bool supportsWebSockets = DEVICE_SUPPORTS_WEBSOCKETS;
+    bool hasSpeaker = DEVICE_HAS_SPEAKER;
+    bool hasMicroSD = DEVICE_HAS_MICROSD;
+    bool isGateway = DEVICE_IS_GATEWAY;
+};
 
 class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr);
 
-    bool begin();  
+    // NEW: Required begin() method declaration
+    bool begin() override;
+
+    // NEW: Returns hardware inventory instead of bool
+    HardwareInventory detectHardware();
+    
     const char* getName();
 
     void setRotation(uint8_t rotation);
@@ -73,14 +118,19 @@ public:
     void setupDeviceSpecific();
 
     // I2C methods
-    String performI2CScan(StaticJsonDocument<2048>& doc);
-    TwoWire* getI2CInterface() override;  // Implement base class method
+    std::vector<I2CDeviceInfo> scanI2CDevices();
+    TwoWire* getI2CInterface() override;
 
     // NeoPixel configuration methods
-    void loadNeoPixelPreferences();
-    void saveNeoPixelPreferences();
-    int getNeoPixelPin(int index = 0);
-    void setNeoPixelPin(int pin, int index = 0);
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    void loadNeoPixelPreferences() override;
+    void saveNeoPixelPreferences() override;
+    int getNeoPixelPin(int index = 0) override;
+    void setNeoPixelPin(int pin, int index = 0) override;
+    int getNeoPixelCount(int index = 0) override;
+    void setNeoPixelCount(int count, int index = 0) override;
+    std::vector<NeoPixelInfo> detectNeoPixelPins();
+    #endif
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -91,6 +141,7 @@ public:
     virtual bool hasExternalI2CDevices() const override { return DEVICE_HAS_EXTERNAL_I2C_DEVICES; }
     virtual bool hasButtons() const override { return DEVICE_HAS_BUTTONS; }
     virtual bool hasBattery() const override { return DEVICE_HAS_BATTERY; }
+    virtual bool supportsEthernet() const override { return DEVICE_SUPPORTS_ETHERNET; }
     virtual bool supportsWiFi() const override { return DEVICE_SUPPORTS_WIFI; }
     virtual bool supportsBLE() const override { return DEVICE_SUPPORTS_BLE; }
     virtual bool supportsUSB() const override { return DEVICE_SUPPORTS_USB; }
@@ -122,24 +173,25 @@ private:
     Adafruit_NeoPixel onboardPixel;
     #endif
 
-    #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
-    TaskHandle_t i2cInitTaskHandle;
-    TaskHandle_t quadDisplayTaskHandle;  // Single task for the singleton manager
-    TaskHandle_t charlieDisplayTaskHandle;  // Task for Charlieplex manager
-    bool detectedQuadDisplay;
-    bool detectedCharlieDisplay;
-    #endif
-
     Manager_Connections* connMgr;
-    
-    // NeoPixel pin configuration stored in preferences
+
+    // NeoPixel pin and count configuration stored in preferences
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     int externalNeoPixelPin1;
-    int externalNeoPixelPin2;  // Stub for future use
+    int externalNeoPixelPin2;
+    int externalNeoPixelCount1;
+    int externalNeoPixelCount2;
+    #endif
 
 public:
     // Legacy support - uses pin 1
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     int getNeoPixelPin() { return getNeoPixelPin(0); }
-    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS; }
+    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS_STRIP_0; }
+    #else
+    int getNeoPixelPin() { return -1; }
+    int getNeoPixelNum() { return 0; }
+    #endif
 };
 
 // Alias the class to the generic Device name for build system

@@ -1,25 +1,19 @@
-#ifndef LAYOUT_RADIO_SCREEN_H
-#define LAYOUT_RADIO_SCREEN_H
+#ifndef LAYOUT_GRIDSCREEN_H
+#define LAYOUT_GRIDSCREEN_H
 
 #include <lvgl.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
 #include <map>
 #include <vector>
-#include "LayoutInterface.h"
+#include "Interface_ScreenLayout_LVGL.h"
 
 class DisplayManager;
 
-// Helper to hold triangle & label pointers for the bar indicators
-struct IndicatorData {
-    lv_obj_t* triangle;
-    lv_obj_t* label;
-};
-
-class Layout_RadioScreen : public LayoutInterface {
+class Layout_GridScreen : public LayoutInterface {
 public:
-    explicit Layout_RadioScreen(DisplayManager* displayManager);
-    ~Layout_RadioScreen() override;
+    explicit Layout_GridScreen(DisplayManager* displayManager);
+    ~Layout_GridScreen() override;
 
     void create(const JsonDocument &configDoc) override;
     void destroy() override;
@@ -34,10 +28,7 @@ public:
 
 private:
     const lv_font_t* getGridFont(int size);
-    lv_color_t parseColor(const char* c, lv_color_t defaultColor = lv_color_black());
-    
-    // Event callback for updating indicators
-    static void indicatorUpdateCallback(lv_event_t* e);
+    lv_color_t parseColor(const char* c);
 
     DisplayManager*          mDisplayManager;
     bool                     mIsCreated;
@@ -45,10 +36,8 @@ private:
     lv_obj_t**               mLabelNames;
     lv_obj_t**               mLabelValues;
     std::map<String, int>    mSensorTagToIndex;
-    std::map<String, lv_obj_t*> mSensorBarMap;
-    std::vector<IndicatorData*> mIndicators;
+    int                      mGridRows, mGridCols, mSensorCount;
     std::vector<lv_timer_t*> mTimers;
-    int                      mSensorCount;
 };
 
-#endif // LAYOUT_RADIO_SCREEN_H
+#endif // LAYOUT_GRIDSCREEN_H

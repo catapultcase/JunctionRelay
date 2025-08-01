@@ -1,5 +1,5 @@
 #include "Device.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include "Manager_I2C.h"
 #include <Wire.h>
 
@@ -9,6 +9,22 @@ Device_AdafruitFeatherESP32S3::Device_AdafruitFeatherESP32S3(Manager_Connections
     #if DEVICE_HAS_ONBOARD_RGB_LED
     onboardPixel = Adafruit_NeoPixel(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
     #endif
+}
+
+bool Device_AdafruitFeatherESP32S3::begin() {
+    Serial.println("[DEBUG] Initializing Adafruit Feather ESP32-S3...");
+    
+    // Basic GPIO setup if needed
+    #if defined(NEOPIXEL_POWER)
+    pinMode(NEOPIXEL_POWER, OUTPUT);
+    digitalWrite(NEOPIXEL_POWER, HIGH);
+    #endif
+    
+    // Initialize I2C
+    Wire.begin();
+    
+    Serial.println("[DEBUG] Feather ESP32-S3 initialization complete");
+    return true;
 }
 
 // Device-specific setup method called by main.ino

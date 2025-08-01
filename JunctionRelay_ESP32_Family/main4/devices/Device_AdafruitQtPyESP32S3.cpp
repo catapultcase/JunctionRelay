@@ -3,7 +3,7 @@
 #include "Manager_I2C.h"
 #include <Wire.h>
 
-Device_AdafruitSparkleMotionMiniESP32S3::Device_AdafruitSparkleMotionMiniESP32S3(Manager_Connections* connMgr)
+Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr)
 : connMgr(connMgr)
 {
     #if DEVICE_HAS_ONBOARD_RGB_LED
@@ -19,8 +19,8 @@ Device_AdafruitSparkleMotionMiniESP32S3::Device_AdafruitSparkleMotionMiniESP32S3
     #endif
 }
 
-bool Device_AdafruitSparkleMotionMiniESP32S3::begin() {
-    Serial.println("[DEBUG] Initializing Adafruit SparkleMotionMini ESP32...");
+bool Device_AdafruitQtPyESP32S3::begin() {
+    Serial.println("[DEBUG] Initializing Adafruit QtPy ESP32-S3...");
     
     // Basic power setup
     #if defined(NEOPIXEL_POWER)
@@ -28,21 +28,21 @@ bool Device_AdafruitSparkleMotionMiniESP32S3::begin() {
     digitalWrite(NEOPIXEL_POWER, HIGH);
     #endif
     
-    // Initialize I2C on SparkleMotion pins
-    Wire.begin(19, 22);  // SparkleMotion I2C pins
+    // Initialize I2C on STEMMA QT pins
+    Wire1.begin(41, 40);  // QtPy STEMMA QT pins
     
-    Serial.println("[DEBUG] SparkleMotionMini ESP32 initialization complete");
+    Serial.println("[DEBUG] QtPy ESP32-S3 initialization complete");
     return true;
 }
 
 // Device-specific setup method called by main.ino
-void Device_AdafruitSparkleMotionMiniESP32S3::setupDeviceSpecific() {
+void Device_AdafruitQtPyESP32S3::setupDeviceSpecific() {
     Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
-// Main hardware detection method
-HardwareInventory Device_AdafruitSparkleMotionMiniESP32S3::detectHardware() {
-    Serial.println("[DEVICE] Detecting hardware for Adafruit SparkleMotionMini ESP32...");
+// NEW: Main hardware detection method
+HardwareInventory Device_AdafruitQtPyESP32S3::detectHardware() {
+    Serial.println("[DEVICE] Detecting hardware for Adafruit QtPy ESP32-S3...");
     
     HardwareInventory inventory;
     
@@ -53,6 +53,8 @@ HardwareInventory Device_AdafruitSparkleMotionMiniESP32S3::detectHardware() {
     Serial.println("[DEVICE] NeoPixel power pin enabled");
     #endif
 
+    // No onboard NeoPixel initialization - just detection
+    
     // Detect NeoPixel pins and configurations
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     loadNeoPixelPreferences();
@@ -71,7 +73,7 @@ HardwareInventory Device_AdafruitSparkleMotionMiniESP32S3::detectHardware() {
 }
 
 #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-void Device_AdafruitSparkleMotionMiniESP32S3::loadNeoPixelPreferences() {
+void Device_AdafruitQtPyESP32S3::loadNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", true); // Read-only mode
     
@@ -87,7 +89,7 @@ void Device_AdafruitSparkleMotionMiniESP32S3::loadNeoPixelPreferences() {
                   externalNeoPixelPin2, externalNeoPixelCount2);
 }
 
-void Device_AdafruitSparkleMotionMiniESP32S3::saveNeoPixelPreferences() {
+void Device_AdafruitQtPyESP32S3::saveNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", false); // Read-write mode
     
@@ -103,7 +105,7 @@ void Device_AdafruitSparkleMotionMiniESP32S3::saveNeoPixelPreferences() {
                   externalNeoPixelPin2, externalNeoPixelCount2);
 }
 
-std::vector<NeoPixelInfo> Device_AdafruitSparkleMotionMiniESP32S3::detectNeoPixelPins() {
+std::vector<NeoPixelInfo> Device_AdafruitQtPyESP32S3::detectNeoPixelPins() {
     std::vector<NeoPixelInfo> neoPixels;
     
     Serial.println("[DEVICE] Detecting NeoPixel pins...");
@@ -121,7 +123,7 @@ std::vector<NeoPixelInfo> Device_AdafruitSparkleMotionMiniESP32S3::detectNeoPixe
     return neoPixels;
 }
 
-int Device_AdafruitSparkleMotionMiniESP32S3::getNeoPixelPin(int index) {
+int Device_AdafruitQtPyESP32S3::getNeoPixelPin(int index) {
     switch(index) {
         case 0: return externalNeoPixelPin1;
         case 1: return externalNeoPixelPin2;
@@ -131,7 +133,7 @@ int Device_AdafruitSparkleMotionMiniESP32S3::getNeoPixelPin(int index) {
     }
 }
 
-void Device_AdafruitSparkleMotionMiniESP32S3::setNeoPixelPin(int pin, int index) {
+void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
     switch(index) {
         case 0:
             if (externalNeoPixelPin1 != pin) {
@@ -151,7 +153,7 @@ void Device_AdafruitSparkleMotionMiniESP32S3::setNeoPixelPin(int pin, int index)
     }
 }
 
-int Device_AdafruitSparkleMotionMiniESP32S3::getNeoPixelCount(int index) {
+int Device_AdafruitQtPyESP32S3::getNeoPixelCount(int index) {
     switch(index) {
         case 0: return externalNeoPixelCount1;
         case 1: return externalNeoPixelCount2;
@@ -161,7 +163,7 @@ int Device_AdafruitSparkleMotionMiniESP32S3::getNeoPixelCount(int index) {
     }
 }
 
-void Device_AdafruitSparkleMotionMiniESP32S3::setNeoPixelCount(int count, int index) {
+void Device_AdafruitQtPyESP32S3::setNeoPixelCount(int count, int index) {
     switch(index) {
         case 0:
             if (externalNeoPixelCount1 != count) {
@@ -182,12 +184,12 @@ void Device_AdafruitSparkleMotionMiniESP32S3::setNeoPixelCount(int count, int in
 }
 #endif
 
-std::vector<I2CDeviceInfo> Device_AdafruitSparkleMotionMiniESP32S3::scanI2CDevices() {
+std::vector<I2CDeviceInfo> Device_AdafruitQtPyESP32S3::scanI2CDevices() {
     // Use Manager_I2C as the master scanner instead of doing our own scan
-    Manager_I2C* i2cManager = Manager_I2C::getInstance(connMgr, &Wire, 19, 22); // SparkleMotion pins
+    Manager_I2C* i2cManager = Manager_I2C::getInstance(connMgr, &Wire1, 41, 40); // QtPy STEMMA QT pins
     
-    // Perform scan using Manager_I2C with original strategy
-    i2cManager->scanAndConfigureDevices(getFormattedMacAddress(), STRATEGY_ESP32_ORIGINAL);
+    // Perform scan using Manager_I2C with S3 strategy
+    i2cManager->scanAndConfigureDevices(getFormattedMacAddress(), STRATEGY_ESP32_S3_UNIFIED);
     
     // Convert Manager_I2C results to our format
     std::vector<I2CDeviceInfo> devices;
@@ -203,27 +205,27 @@ std::vector<I2CDeviceInfo> Device_AdafruitSparkleMotionMiniESP32S3::scanI2CDevic
     return devices;
 }
 
-const char* Device_AdafruitSparkleMotionMiniESP32S3::getName() {
-    return "Adafruit SparkleMotionMini ESP32";
+const char* Device_AdafruitQtPyESP32S3::getName() {
+    return "Adafruit QtPy ESP32-S3";
 }
 
-void Device_AdafruitSparkleMotionMiniESP32S3::setRotation(uint8_t r) {
+void Device_AdafruitQtPyESP32S3::setRotation(uint8_t r) {
     Serial.print("[DEVICE] Rotation set to: ");
     Serial.println(r);
 }
 
-uint8_t Device_AdafruitSparkleMotionMiniESP32S3::getRotation() {
+uint8_t Device_AdafruitQtPyESP32S3::getRotation() {
     return 0;
 }
 
-int Device_AdafruitSparkleMotionMiniESP32S3::width() {
+int Device_AdafruitQtPyESP32S3::width() {
     return 0;  
 }
 
-int Device_AdafruitSparkleMotionMiniESP32S3::height() {
+int Device_AdafruitQtPyESP32S3::height() {
     return 0;  
 }
 
-TwoWire* Device_AdafruitSparkleMotionMiniESP32S3::getI2CInterface() {
-    return &Wire;
+TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
+    return &Wire1;  // QtPy uses Wire1
 }

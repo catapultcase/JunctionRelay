@@ -2,31 +2,35 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_ADAFRUIT_FEATHER_ESP32S3
+#define DEVICE_CROWPANEL5
 
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
-#include "Utils.h"
-#include <Adafruit_NeoPixel.h>
+#include "Helper_Utils.h"
+#include <LovyanGFX.hpp>
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+#include <lgfx/v1/platforms/esp32/Light_PWM.hpp>
+#include <lvgl.h>
 #include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "Feather ESP32-S3"
-#define DEVICE_MANUFACTURER             "Adafruit"
+#define DEVICE_MODEL                    "CrowPanel5 5-inch"
+#define DEVICE_MANUFACTURER             "Elecrow"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
+#define DEVICE_MCU                      "ESP32-S3-WROOM-1-N4R8"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "8 MB"
-#define DEVICE_PSRAM                    "N/A"
+#define DEVICE_FLASH                    "4 MB"
+#define DEVICE_PSRAM                    "8 MB"
 
 // Define capabilities for this device
-#define DEVICE_HAS_ONBOARD_SCREEN       0 
+#define DEVICE_HAS_ONBOARD_SCREEN       1 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
 #define DEVICE_HAS_EXTERNAL_MATRIX      0
 #define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
-#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
+#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_ETHERNET        0
@@ -40,11 +44,6 @@
 #define DEVICE_HAS_SPEAKER              0
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
-
-#if DEVICE_HAS_ONBOARD_RGB_LED
-    #define PIN_NEOPIXEL 39
-    #define NUMPIXELS 1
-#endif
 
 // Hardware inventory structures
 struct NeoPixelInfo {
@@ -87,26 +86,40 @@ struct HardwareInventory {
     bool isGateway = DEVICE_IS_GATEWAY;
 };
 
-class Device_AdafruitFeatherESP32S3 : public DeviceConfig {
+class Device_CrowPanel5 : public DeviceConfig {
 public:
-    Device_AdafruitFeatherESP32S3(Manager_Connections* connMgr);
+    Device_CrowPanel5(Manager_Connections* connMgr);
 
     // NEW: Returns hardware inventory instead of bool
     HardwareInventory detectHardware();
     
-    const char* getName();
+    // Initialize the device (display setup, touch timing, etc.)
+    bool begin();
+    
+    // Initialize LVGL display helpers (called after LVGL is initialized)
+    void initLVGLHelper();
 
-    void setRotation(uint8_t rotation);
-    uint8_t getRotation();
+    // Return screen dimensions
     int width();
     int height();
+
+    // Rotation handling
+    void setRotation(uint8_t rotation);
+    uint8_t getRotation();
 
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // I2C methods
-    std::vector<I2CDeviceInfo> scanI2CDevices();
+    // Return device name
+    const char* getName();
+
+    // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
+
+    // LVGL flush callback function
+    static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
+    // LVGL touch callback function
+    static void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -144,17 +157,25 @@ public:
         return macStr.c_str();
     }
 
-
-
 private:
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Adafruit_NeoPixel onboardPixel;
-    #endif
+    // Custom LGFX device class for Elecrow 5-inch panel
+    class CustomLGFX : public lgfx::LGFX_Device {
+    public:
+        lgfx::Bus_RGB   _bus_instance;
+        lgfx::Panel_RGB _panel_instance;
+        lgfx::Light_PWM _light_instance;
+        CustomLGFX();
+    };
 
+    CustomLGFX lgfx_dev; // Custom display driver instance
+    lv_disp_drv_t disp_drv;      // LVGL display driver
+    lv_indev_drv_t indev_drv;    // LVGL input device driver for touch
+    uint8_t rotation;
+    
     Manager_Connections* connMgr;
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_AdafruitFeatherESP32S3 Device;
+typedef Device_CrowPanel5 Device;
 
 #endif // DEVICE_H

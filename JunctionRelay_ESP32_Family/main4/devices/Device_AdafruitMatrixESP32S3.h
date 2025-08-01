@@ -7,7 +7,7 @@
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
-#include "Utils.h"
+#include "Helper_Utils.h"
 #include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
@@ -95,6 +95,9 @@ struct HardwareInventory {
 class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitMatrixESP32S3(Manager_Connections* connMgr);
+
+    // NEW: Required begin() method declaration
+    bool begin() override;
 
     // NEW: Returns hardware inventory instead of bool
     HardwareInventory detectHardware();

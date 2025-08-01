@@ -4,7 +4,7 @@
 #include "Helper_Preferences.h"
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
-#include "ScreenRouter.h"
+#include "Manager_ScreenRouter.h"
 #include "DeviceConfig.h"
 
 // Static instance for event handler

@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <map>
 #include <vector>
-#include "LayoutInterface.h"
+#include "Interface_ScreenLayout_LVGL.h"
 
 // Forward declarations
 class DisplayManager;

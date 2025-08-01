@@ -1,4 +1,5 @@
 #include "Device.h"
+#include "Helper_Utils.h"
 #include "touch.h"
 #include <driver/gpio.h>
 #include <PCA9557.h>
@@ -72,14 +73,35 @@ Device_CrowPanel7::CustomLGFX::CustomLGFX() {
     setPanel(&_panel_instance);
 }
 
-// ✅ FIXED CONSTRUCTOR - Uses touch_setDevice() instead of g_device
-Device_CrowPanel7::Device_CrowPanel7(Manager_Connections* connMgr) : rotation(0), connMgr(connMgr) {
+Device_CrowPanel7::Device_CrowPanel7(Manager_Connections* connMgr) 
+: rotation(0), connMgr(connMgr) {
     touch_setDevice(this);  // Set device reference for touch system
 }
 
 // Device-specific setup method called by main.ino
 void Device_CrowPanel7::setupDeviceSpecific() {
     Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
+}
+
+// NEW: Main hardware detection method
+HardwareInventory Device_CrowPanel7::detectHardware() {
+    Serial.println("[DEVICE] Detecting hardware for CrowPanel7...");
+    
+    HardwareInventory inventory;
+    
+    // CrowPanel7 has an onboard screen
+    inventory.hasOnboardScreen = true;
+    Serial.println("[DEVICE] Onboard 7-inch RGB LCD detected");
+    
+    // No NeoPixels or I2C devices on CrowPanel7 
+    // (DEVICE_HAS_EXTERNAL_NEOPIXELS = 0, DEVICE_HAS_EXTERNAL_I2C_DEVICES = 0)
+
+    Serial.printf("[DEVICE] Hardware detection complete: Onboard Screen=%s, %d NeoPixel strips, %d I2C devices\n",
+                  inventory.hasOnboardScreen ? "Yes" : "No",
+                  inventory.neopixelPins.size(), 
+                  inventory.i2cDevices.size());
+    
+    return inventory;
 }
 
 bool Device_CrowPanel7::begin() {
@@ -105,13 +127,13 @@ bool Device_CrowPanel7::begin() {
     lgfx_dev.init();
     lgfx_dev.setColorDepth(16);
 
-    // ✅ Optional: Test render
+    // Optional: Test render
     lgfx_dev.fillScreen(TFT_RED); delay(300);
     lgfx_dev.fillScreen(TFT_GREEN); delay(300);
     lgfx_dev.fillScreen(TFT_BLUE); delay(300);
     lgfx_dev.fillScreen(TFT_BLACK);
 
-    // ✅ Backlight brightness control
+    // Backlight brightness control
     ledcSetup(1, 300, 8);
     ledcAttachPin(2, 1);
     ledcWrite(1, 255); // Max brightness
@@ -121,7 +143,7 @@ bool Device_CrowPanel7::begin() {
     return true;
 }
 
-// New method to init LVGL display helpers after LVGL is initialized
+// Initialize LVGL display helpers after LVGL is initialized
 void Device_CrowPanel7::initLVGLHelper() {
     // Create and initialize LVGL display buffer
     static lv_color_t draw_buf_mem[800 * 480 / 15];
@@ -179,6 +201,10 @@ const char* Device_CrowPanel7::getName() {
     return "Elecrow 7-inch Panel";
 }
 
+TwoWire* Device_CrowPanel7::getI2CInterface() {
+    return &Wire; // Return default Wire even though device doesn't use external I2C
+}
+
 void Device_CrowPanel7::my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     Device_CrowPanel7* instance = static_cast<Device_CrowPanel7*>(disp->user_data);
     if (instance) {
@@ -187,7 +213,7 @@ void Device_CrowPanel7::my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area
         instance->lgfx_dev.pushImageDMA(
             area->x1, area->y1,
             w, h,
-            reinterpret_cast<const lgfx::rgb565_t*>(&color_p->full)  // <- match manufacturer
+            reinterpret_cast<const lgfx::rgb565_t*>(&color_p->full)
         );
     }
     lv_disp_flush_ready(disp);

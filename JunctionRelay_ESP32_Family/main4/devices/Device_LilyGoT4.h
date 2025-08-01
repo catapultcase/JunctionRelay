@@ -2,31 +2,32 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_ADAFRUIT_FEATHER_ESP32S3
+#define DEVICE_LILYGO_T4
 
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
 #include "Helper_Utils.h"
-#include <Adafruit_NeoPixel.h>
+#include <LilyGo_AMOLED.h>
 #include <vector>
 
+// Define device info
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "Feather ESP32-S3"
-#define DEVICE_MANUFACTURER             "Adafruit"
+#define DEVICE_MODEL                    "T4 S3"
+#define DEVICE_MANUFACTURER             "LilyGo"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
+#define DEVICE_MCU                      "ESP32-S3R8 Dual-core LX7 microprocessor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
-#define DEVICE_FLASH                    "8 MB"
-#define DEVICE_PSRAM                    "N/A"
+#define DEVICE_FLASH                    "16 MB"
+#define DEVICE_PSRAM                    "8 MB"
 
 // Define capabilities for this device
-#define DEVICE_HAS_ONBOARD_SCREEN       0 
+#define DEVICE_HAS_ONBOARD_SCREEN       1 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
 #define DEVICE_HAS_EXTERNAL_MATRIX      0
 #define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
-#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
+#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_ETHERNET        0
@@ -40,11 +41,6 @@
 #define DEVICE_HAS_SPEAKER              0
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
-
-#if DEVICE_HAS_ONBOARD_RGB_LED
-    #define PIN_NEOPIXEL 39
-    #define NUMPIXELS 1
-#endif
 
 // Hardware inventory structures
 struct NeoPixelInfo {
@@ -87,28 +83,30 @@ struct HardwareInventory {
     bool isGateway = DEVICE_IS_GATEWAY;
 };
 
-class Device_AdafruitFeatherESP32S3 : public DeviceConfig {
+class Device_LilyGoT4 : public DeviceConfig {
 public:
-    Device_AdafruitFeatherESP32S3(Manager_Connections* connMgr);
+    Device_LilyGoT4(Manager_Connections* connMgr);
 
-    // NEW: Required begin() method declaration
+    // Required begin() method declaration
     bool begin() override;
-
-    // NEW: Returns hardware inventory instead of bool
-    HardwareInventory detectHardware();
     
-    const char* getName();
+    // Initialize LVGL display helpers (called after LVGL is initialized)
+    void initLVGLHelper() override;
 
-    void setRotation(uint8_t rotation);
-    uint8_t getRotation();
-    int width();
-    int height();
+    // Hardware detection method
+    HardwareInventory detectHardware();
+
+    const char* getName() override;
+
+    void setRotation(uint8_t rotation) override;
+    uint8_t getRotation() override;
+    int width() override;
+    int height() override;
 
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // I2C methods
-    std::vector<I2CDeviceInfo> scanI2CDevices();
+    // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
 
     // Override runtime getters for device capabilities
@@ -148,14 +146,12 @@ public:
     }
 
 private:
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Adafruit_NeoPixel onboardPixel;
-    #endif
-
+    LilyGo_Class amoled;
+    uint8_t rotation;
     Manager_Connections* connMgr;
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_AdafruitFeatherESP32S3 Device;
+typedef Device_LilyGoT4 Device;
 
 #endif // DEVICE_H

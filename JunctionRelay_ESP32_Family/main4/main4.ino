@@ -1,12 +1,11 @@
 #include <Arduino.h>
-#include <lvgl.h>
 #include <ArduinoJson.h>
 #include <nvs_flash.h>
 #include "Helper_Preferences.h"
 #include "Manager_Connections.h"
 #include "Device.h"                    // swapped per‑board at build time
-#include "DisplayManager.h"
-#include "ScreenRouter.h"
+#include "Display_Manager_LVGL.h"
+#include "Manager_ScreenRouter.h"
 #include "Helper_StartupScheduler.h"   // NEW: Centralized startup management
 #include "Manager_NeoPixels.h"         // This manager is an exception
 
@@ -18,22 +17,9 @@
 Helper_Preferences     prefsHelper;
 Manager_Connections    connManager;
 Device                 device(&connManager);
-DisplayManager         displayManager(&device, connManager);
+Display_Manager_LVGL   displayManager(&device);
 ScreenRouter           screenRouter;
 HardwareInventory      globalInventory;
-
-#if DEVICE_HAS_ONBOARD_SCREEN
-volatile bool lvglInitialized = false;
-TaskHandle_t lvglTaskHandle = NULL;
-void lvglTaskFunction(void*) {
-  lv_init();
-  lvglInitialized = true;
-  while (true) {
-    lv_task_handler();
-    vTaskDelay(pdMS_TO_TICKS(5));
-  }
-}
-#endif
 
 String readSerialInput(const String& prompt, unsigned long timeoutMs = 30000) {
   Serial.print(prompt);
@@ -225,32 +211,17 @@ void setup() {
   #endif
 
   // ===============================================
-  // NEW: Hardware Detection Phase
+  // Hardware Detection Phase
   // ===============================================
   Serial.println("[MAIN] Starting hardware detection...");
   globalInventory = device.detectHardware();
-  
-  #if DEVICE_HAS_ONBOARD_SCREEN
-    xTaskCreatePinnedToCore(
-      lvglTaskFunction, "LVGL", 4096, nullptr, 2, &lvglTaskHandle, 1
-    );
-    while (!lvglInitialized) delay(10);
-    Serial.println("[DEBUG] LVGL initialized on Core 1");
-  #endif
 
-  // Read rotation & mode via helper
+    // Read rotation & mode via helper
   int storedRotation = prefsHelper.getDisplayRotation();
   String mode        = prefsHelper.getConnectionModeString();
-
-  #if DEVICE_HAS_ONBOARD_SCREEN
-    device.setRotation(storedRotation);
-    displayManager.init();
-    displayManager.createHomeScreen();
-    screenRouter.registerScreen(&displayManager);
-  #endif
-
+  
   // ===============================================
-  // UPDATED: Configure connection manager FIRST
+  // Configure connection manager FIRST
   // ===============================================
   Serial.println("[MAIN] Configuring connection manager...");
   connManager.setConnMode(mode);
@@ -261,35 +232,45 @@ void setup() {
   connManager.init();
 
   // ===============================================
-  // UPDATED: Centralized Manager Initialization WITH connection manager
+  // Centralized Manager Initialization WITH connection manager
   // ===============================================
   Serial.println("[MAIN] Starting centralized manager initialization...");
   Helper_StartupScheduler* startupScheduler = Helper_StartupScheduler::getInstance();
   startupScheduler->setManager_Connections(&connManager);  // SET BEFORE initializeFromInventory!
   startupScheduler->initializeFromInventory(globalInventory, &screenRouter, &device);
 
+  // ===============================================
+  // DISPLAY MANAGER INIT
+  // ===============================================
+
+  #if DEVICE_HAS_ONBOARD_SCREEN    
+    Serial.println("[MAIN] Initializing display manager...");    
+    
+    displayManager.setConnectionManager(&connManager);
+    
+    if (displayManager.init()) {
+        Serial.println("[MAIN] Display manager initialized successfully");
+        displayManager.createHomeScreen();
+        Serial.println("[MAIN] Home screen created");
+    } else {
+        Serial.println("[MAIN] Failed to initialize display manager");
+    }  
+  #endif
+
+  // ===============================================
+  // FINISHED!
+  // ===============================================
+
   Serial.println("[MAIN] Setup complete!");
 }
 
 void loop() {
-  
-  // Heap monitoring
-  // static unsigned long lastHeapCheck = 0;
-  //   if (millis() - lastHeapCheck > 10000) { // Every 10 seconds
-  //       Serial.printf("[HEAP] Free: %d, Min: %d\n", 
-  //                    ESP.getFreeHeap(), ESP.getMinFreeHeap());
-  //       lastHeapCheck = millis();
-  //   }
 
   // Delegate background tasks to connections manager
   connManager.loop();
 
-  // All managers now run via their own tasks - no manual updates needed
-
-  // Exception for Manager_NeoPixels - doesn't like being in a FreeRTOS Task :(
-
-  Manager_NeoPixels::getInstance()->update();
-  delay(10); // ~100Hz update rate
-
-  //delay(1);
+  #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    Manager_NeoPixels::getInstance()->update();
+    delay(10); // ~100Hz update rate
+  #endif
 }

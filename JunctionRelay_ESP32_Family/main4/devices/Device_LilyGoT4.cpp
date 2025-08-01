@@ -1,13 +1,9 @@
 #include "Device.h"
 #include <LV_Helper.h>
 
-Device_LilyGoT4::Device_LilyGoT4(Manager_Connections* connMgr) : rotation(1), connMgr(connMgr) {
+Device_LilyGoT4::Device_LilyGoT4(Manager_Connections* connMgr) 
+: rotation(1), connMgr(connMgr) {
     // Store the connection manager reference for future use if needed
-}
-
-// Device-specific setup method called by main.ino
-void Device_LilyGoT4::setupDeviceSpecific() {
-    Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 bool Device_LilyGoT4::begin() {
@@ -25,7 +21,7 @@ bool Device_LilyGoT4::begin() {
     return true;
 }
 
-// New method to init LVGL display helpers after LVGL is initialized
+// Initialize LVGL display helpers after LVGL is initialized
 void Device_LilyGoT4::initLVGLHelper() {
     Serial.println("[DEBUG] Initializing LilyGo T4 LVGL helpers...");
     
@@ -41,6 +37,31 @@ void Device_LilyGoT4::initLVGLHelper() {
     }
     
     Serial.println("[DEBUG] LilyGo T4 LVGL helpers initialized.");
+}
+
+// Device-specific setup method called by main.ino
+void Device_LilyGoT4::setupDeviceSpecific() {
+    Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
+}
+
+// Hardware detection method
+HardwareInventory Device_LilyGoT4::detectHardware() {
+    Serial.println("[DEVICE] Detecting hardware for LilyGo T4...");
+    
+    HardwareInventory inventory;
+    
+    // LilyGo T4 has an onboard AMOLED screen
+    Serial.println("[DEVICE] Onboard AMOLED screen detected");
+    
+    // No NeoPixels, I2C devices, or other external hardware on T4
+    // (All DEVICE_HAS_EXTERNAL_* = 0 in defines)
+
+    Serial.printf("[DEVICE] Hardware detection complete: Onboard Screen=%s, %d NeoPixel strips, %d I2C devices\n",
+                  inventory.hasOnboardScreen ? "Yes" : "No",
+                  inventory.neopixelPins.size(), 
+                  inventory.i2cDevices.size());
+    
+    return inventory;
 }
 
 const char* Device_LilyGoT4::getName() {
