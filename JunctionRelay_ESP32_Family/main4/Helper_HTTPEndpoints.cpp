@@ -7,7 +7,6 @@
 #include <Preferences.h>
 #include <nvs_flash.h>
 #include <Update.h>
-#include "Helper_Utils.h"
 
 // Initialize static buffers
 char Helper_HTTPEndpoints::tempPostBodyBuffer[2048];
@@ -18,27 +17,15 @@ Helper_HTTPEndpoints::Helper_HTTPEndpoints(ScreenRouter* router, Helper_StreamPr
     : screenRouter(router),
       streamProcessor(processor),
       httpChunkProcessor(nullptr),
+      otaHelper(nullptr),
       deviceInfo(devInfo),
       deviceCapabilities(devCaps),
       server(80),
       serverRunning(false)
 {
-    // Serial.printf("[Helper_HTTPEndpoints] Constructor: deviceInfo=%p, deviceCapabilities=%p\n", devInfo, devCaps);
-    
-    // Test the helpers immediately
-    // if (devInfo) {
-    //     Serial.println("[Helper_HTTPEndpoints] Testing deviceInfo helper...");
-    //     String test = devInfo->getDeviceInfoJSON();
-    //     Serial.printf("[Helper_HTTPEndpoints] DeviceInfo test result length: %d\n", test.length());
-    // } else {
-    //     Serial.println("[Helper_HTTPEndpoints] ERROR: deviceInfo is NULL in constructor!");
-    // }
-    
-    // if (devCaps) {
-    //     Serial.println("[Helper_HTTPEndpoints] deviceCapabilities helper looks good");
-    // } else {
-    //     Serial.println("[Helper_HTTPEndpoints] ERROR: deviceCapabilities is NULL in constructor!");
-    // }
+    // Create OTA helper
+    otaHelper = new Helper_OTA();
+    Serial.println("[Helper_HTTPEndpoints] OTA helper created");
 }
 
 Helper_HTTPEndpoints::~Helper_HTTPEndpoints() {
@@ -48,6 +35,10 @@ Helper_HTTPEndpoints::~Helper_HTTPEndpoints() {
     if (httpChunkProcessor) {  
         delete httpChunkProcessor;
         httpChunkProcessor = nullptr;
+    }
+    if (otaHelper) {
+        delete otaHelper;
+        otaHelper = nullptr;
     }
     Serial.println("[Helper_HTTPEndpoints] Destructor called");
 }
@@ -59,8 +50,6 @@ void Helper_HTTPEndpoints::setDeviceHelpers(Helper_DeviceInfo* devInfo, Helper_D
 }
 
 void Helper_HTTPEndpoints::init() {
-    // Serial.println("[Helper_HTTPEndpoints] Initializing HTTP endpoints...");
-    
     if (!screenRouter || !streamProcessor) {
         Serial.println("[Helper_HTTPEndpoints] ERROR: Missing required dependencies");
         return;
@@ -82,11 +71,6 @@ void Helper_HTTPEndpoints::startServer() {
         server.begin();
         serverRunning = true;
         Serial.println("[Helper_HTTPEndpoints] ✅ HTTP server started on port 80");
-        
-        // Start WebSocket server if available
-        // if (webSocketHelper) {
-        //     webSocketHelper->setupServer();
-        // }
     }
 }
 
@@ -132,14 +116,14 @@ void Helper_HTTPEndpoints::setupStatusEndpoints() {
 }
 
 void Helper_HTTPEndpoints::setupDeviceEndpoints() {
-    // Device info endpoint - NEW
+    // Device info endpoint
     server.on("/api/device/info", HTTP_GET,
         [this](AsyncWebServerRequest* req) {
             this->handleDeviceInfo(req);
         }
     );
 
-    // Device capabilities endpoint - NEW
+    // Device capabilities endpoint
     server.on("/api/device/capabilities", HTTP_GET,
         [this](AsyncWebServerRequest* req) {
             this->handleDeviceCapabilities(req);
@@ -198,29 +182,35 @@ void Helper_HTTPEndpoints::setupFirmwareEndpoints() {
         }
     );
 
-    // OTA firmware update
+    // OTA partition information
+    server.on("/api/firmware/partition", HTTP_GET,
+        [this](AsyncWebServerRequest* req) {
+            this->handleOTAPartitionInfo(req);
+        }
+    );
+
+    // Enhanced OTA firmware update with proper size validation
     server.on("/api/firmware/update", HTTP_POST,
-        [](AsyncWebServerRequest* req) {
-            bool ok = !Update.hasError();
-            AsyncWebServerResponse* response = req->beginResponse(
-                ok ? 200 : 500, "text/plain",
-                ok ? "Update OK" : String("FAIL: ") + Update.errorString()
-            );
-            req->send(response);
-            if (ok) {
-                delay(2000);
-                ESP.restart();
-            }
+        [this](AsyncWebServerRequest* req) {
+            this->handleOTAComplete(req);
         },
-        [](AsyncWebServerRequest* req, const String& filename, size_t index,
-        uint8_t* data, size_t len, bool final) {
-            if (index == 0) {
-                Update.begin(UPDATE_SIZE_UNKNOWN);
-            }
-            Update.write(data, len);
-            if (final) {
-                Update.end(true);
-            }
+        [this](AsyncWebServerRequest* req, const String& filename, size_t index,
+               uint8_t* data, size_t len, bool final) {
+            this->handleOTAUpload(req, filename, index, data, len, final);
+        }
+    );
+
+    // OTA status endpoint
+    server.on("/api/firmware/status", HTTP_GET,
+        [this](AsyncWebServerRequest* req) {
+            this->handleOTAStatus(req);
+        }
+    );
+
+    // OTA verification endpoint
+    server.on("/api/firmware/verify", HTTP_POST,
+        [this](AsyncWebServerRequest* req) {
+            this->handleOTAVerify(req);
         }
     );
 }
@@ -232,7 +222,6 @@ void Helper_HTTPEndpoints::setupFirmwareEndpoints() {
 void Helper_HTTPEndpoints::handleDataPost(AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
     if (!streamProcessor) {
         Serial.println("[Helper_HTTPEndpoints] ERROR: StreamProcessor not available");
-        // Send error response
         if (index + len == total) {
             req->send(500, "text/plain", "StreamProcessor not available");
         }
@@ -341,7 +330,7 @@ void Helper_HTTPEndpoints::handleHeartbeat(AsyncWebServerRequest* req) {
 }
 
 void Helper_HTTPEndpoints::handleFirmwareHash(AsyncWebServerRequest* req) {
-    String response = getFirmwareInfoJson();
+    String response = ::getFirmwareInfoJson();
     req->send(200, "application/json", response);
 }
 
@@ -414,6 +403,159 @@ void Helper_HTTPEndpoints::handleDeviceWipe(AsyncWebServerRequest* req) {
 }
 
 // ==========================================
+// OTA HANDLERS
+// ==========================================
+
+void Helper_HTTPEndpoints::handleOTAPartitionInfo(AsyncWebServerRequest* req) {
+    if (!otaHelper) {
+        req->send(500, "application/json", "{\"error\":\"OTA helper not available\"}");
+        return;
+    }
+
+    String partitionInfo = otaHelper->getOTAPartitionInfo();
+    req->send(200, "application/json", partitionInfo);
+}
+
+void Helper_HTTPEndpoints::handleOTAUpload(AsyncWebServerRequest* req, const String& filename, 
+                                          size_t index, uint8_t* data, size_t len, bool final) {
+    if (!otaHelper) {
+        Serial.println("[Helper_HTTPEndpoints] ERROR: OTA helper not available");
+        return;
+    }
+
+    // First chunk - start the update
+    if (index == 0) {
+        Serial.printf("[Helper_HTTPEndpoints] Starting OTA update - filename: %s\n", filename.c_str());
+        
+        // Get expected size from Content-Length if available
+        size_t contentLength = req->contentLength();
+        
+        if (contentLength > 0) {
+            Serial.printf("[Helper_HTTPEndpoints] Content-Length: %d bytes\n", contentLength);
+            
+            // Validate size before starting
+            String validationError;
+            if (!otaHelper->validateFirmwareSize(contentLength, validationError)) {
+                Serial.printf("[Helper_HTTPEndpoints] ❌ Size validation failed: %s\n", validationError.c_str());
+                // Error response will be sent in handleOTAComplete
+                return;
+            }
+        }
+        
+        // Begin the update
+        if (!otaHelper->beginUpdate(contentLength > 0 ? contentLength : UPDATE_SIZE_UNKNOWN)) {
+            Serial.printf("[Helper_HTTPEndpoints] ❌ Failed to begin update: %s\n", otaHelper->getLastError().c_str());
+            return;
+        }
+        
+        Serial.println("[Helper_HTTPEndpoints] ✅ OTA update started");
+    }
+
+    // Write data chunk
+    if (len > 0) {
+        if (!otaHelper->writeChunk(data, len)) {
+            Serial.printf("[Helper_HTTPEndpoints] ❌ Failed to write chunk: %s\n", otaHelper->getLastError().c_str());
+            return;
+        }
+    }
+
+    // Final chunk - complete the update
+    if (final) {
+        Serial.printf("[Helper_HTTPEndpoints] OTA upload complete (%d bytes total)\n", otaHelper->getBytesWritten());
+        
+        if (!otaHelper->finishUpdate(true)) { // Verify after update
+            Serial.printf("[Helper_HTTPEndpoints] ❌ Failed to finish update: %s\n", otaHelper->getLastError().c_str());
+        } else {
+            Serial.println("[Helper_HTTPEndpoints] ✅ OTA update completed successfully");
+        }
+    }
+}
+
+void Helper_HTTPEndpoints::handleOTAComplete(AsyncWebServerRequest* req) {
+    if (!otaHelper) {
+        req->send(500, "application/json", "{\"error\":\"OTA helper not available\"}");
+        return;
+    }
+
+    StaticJsonDocument<512> response;
+    
+    if (otaHelper->getLastError().isEmpty()) {
+        // Success
+        response["status"] = "success";
+        response["message"] = "Firmware update completed successfully";
+        response["bytesWritten"] = otaHelper->getBytesWritten();
+        response["firmwareHash"] = otaHelper->getCurrentFirmwareHash();
+        response["restartIn"] = 3;
+        
+        String responseStr;
+        serializeJson(response, responseStr);
+        
+        AsyncWebServerResponse* res = req->beginResponse(200, "application/json", responseStr);
+        res->addHeader("Connection", "close");
+        req->send(res);
+        
+        // Schedule restart
+        Serial.println("[Helper_HTTPEndpoints] Scheduling restart in 3 seconds...");
+        xTaskCreate([](void*) {
+            delay(3000);
+            ESP.restart();
+            vTaskDelete(nullptr);
+        }, "OTARestart", 2048, nullptr, 1, nullptr);
+        
+    } else {
+        // Error
+        response["status"] = "error";
+        response["message"] = otaHelper->getLastError();
+        response["bytesWritten"] = otaHelper->getBytesWritten();
+        
+        String responseStr;
+        serializeJson(response, responseStr);
+        req->send(500, "application/json", responseStr);
+    }
+}
+
+void Helper_HTTPEndpoints::handleOTAStatus(AsyncWebServerRequest* req) {
+    if (!otaHelper) {
+        req->send(500, "application/json", "{\"error\":\"OTA helper not available\"}");
+        return;
+    }
+
+    StaticJsonDocument<256> response;
+    response["updateInProgress"] = otaHelper->isUpdateInProgress();
+    response["bytesWritten"] = otaHelper->getBytesWritten();
+    response["lastError"] = otaHelper->getLastError();
+    response["otaPartitionSize"] = otaHelper->getOTAPartitionSize();
+    response["availableSpace"] = otaHelper->getAvailableOTASpace();
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    req->send(200, "application/json", responseStr);
+}
+
+void Helper_HTTPEndpoints::handleOTAVerify(AsyncWebServerRequest* req) {
+    if (!otaHelper) {
+        req->send(500, "application/json", "{\"error\":\"OTA helper not available\"}");
+        return;
+    }
+
+    Serial.println("[Helper_HTTPEndpoints] Manual firmware verification requested");
+    
+    // Use cached hash instead of forcing expensive recalculation
+    String currentHash = otaHelper->getCurrentFirmwareHash(); // Uses cached
+    bool isValid = !currentHash.isEmpty() && currentHash.length() == 64;
+    
+    StaticJsonDocument<256> response;
+    response["verified"] = isValid;
+    response["firmwareHash"] = currentHash;
+    response["timestamp"] = millis();
+    response["note"] = "Using cached hash - full verification requires restart";
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    req->send(200, "application/json", responseStr);
+}
+
+// ==========================================
 // HELPER METHODS
 // ==========================================
 
@@ -425,10 +567,6 @@ String Helper_HTTPEndpoints::getConnectionStatusJson() const {
     doc["ipAddress"] = WiFi.localIP().toString();
     doc["macAddress"] = getFormattedMacAddress();
     doc["activeNetworkType"] = "WiFi"; // Will be overridden by branch
-    
-    // Protocol status
-    // doc["webSocketConnected"] = webSocketHelper ? webSocketHelper->hasConnectedClients() : false;
-    // doc["mqttConnected"] = mqttManager ? mqttManager->connected() : false;
     
     // Additional status (to be extended by branches)
     doc["ethernetConnected"] = false;
@@ -463,20 +601,6 @@ String Helper_HTTPEndpoints::getGatewayStatusJson() const {
     doc["hasESPNow"] = false;
     doc["canForward"] = false;
     doc["peerCount"] = 0;
-    
-    String response;
-    serializeJson(doc, response);
-    return response;
-}
-
-String Helper_HTTPEndpoints::getFirmwareInfoJson() const {
-    StaticJsonDocument<256> doc;
-    
-    doc["version"] = getFirmwareVersion();
-    doc["buildDate"] = __DATE__ " " __TIME__;
-    doc["sketchMD5"] = ESP.getSketchMD5();
-    doc["chipModel"] = ESP.getChipModel();
-    doc["chipRevision"] = ESP.getChipRevision();
     
     String response;
     serializeJson(doc, response);
