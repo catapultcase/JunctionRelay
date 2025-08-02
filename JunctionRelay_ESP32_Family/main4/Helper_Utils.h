@@ -139,7 +139,6 @@ inline String getFirmwareHash(bool forceRecalculate = false) {
     return hash;
 }
 
-// NEW: Get firmware info as JSON
 inline String getFirmwareInfoJson() {
     String hash = getFirmwareHash();
     unsigned long timestamp = millis();

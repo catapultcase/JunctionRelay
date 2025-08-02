@@ -237,7 +237,7 @@ namespace JunctionRelayServer.Services
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(10);
 
-                var response = await client.GetAsync($"http://{device.IPAddress}/api/firmware-hash");
+                var response = await client.GetAsync($"http://{device.IPAddress}/api/firmware/hash");
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -260,8 +260,17 @@ namespace JunctionRelayServer.Services
 
                 var hashResponse = JsonSerializer.Deserialize<Dictionary<string, object>>(responseContent);
 
-                // FIX: Add null check for hashResponse before calling TryGetValue
-                if (hashResponse == null || !hashResponse.TryGetValue("firmware_hash", out var hashObj) || hashObj?.ToString() is not string deviceHash)
+                // Try to extract hash from our firmware info response structure
+                string? deviceHash = null;
+
+                // First try the new format (our Helper_HTTPEndpoints response)
+                if (hashResponse != null && hashResponse.TryGetValue("firmware_hash", out var hashObj))
+                {
+                    deviceHash = hashObj?.ToString();
+                }
+
+                // If still no hash found, mark as custom firmware
+                if (string.IsNullOrEmpty(deviceHash))
                 {
                     var updateResult = await _deviceDbManager.SetCustomFirmwareAsync(device.Id, true);
 
@@ -683,15 +692,52 @@ namespace JunctionRelayServer.Services
             {
                 try
                 {
-                    await client.GetAsync($"http://{ip}/update?force=true");
+                    Console.WriteLine($"[OTA POLL] Force update - downloading and uploading firmware to device {deviceId}");
+
+                    // Get the firmware file for this device
+                    var firmwareResult = await GetFirmware(deviceId, releaseTag, version, force, requestScheme, requestHost);
+
+                    if (firmwareResult.IsError)
+                    {
+                        Console.WriteLine($"[OTA POLL] Failed to get firmware: {firmwareResult.Message}");
+                        return Result<object>.Error(firmwareResult.StatusCode, $"Failed to get firmware: {firmwareResult.Message}");
+                    }
+
+                    Console.WriteLine($"[OTA POLL] Got firmware file: {firmwareResult.FileName}, uploading to device...");
+
+                    // Create multipart form content for file upload
+                    using var multipartContent = new MultipartFormDataContent();
+                    using var streamContent = new StreamContent(firmwareResult.FileStream);
+                    streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                    multipartContent.Add(streamContent, "firmware", firmwareResult.FileName);
+
+                    // Set longer timeout for firmware upload
+                    client.Timeout = TimeSpan.FromMinutes(5);
+
+                    // Upload firmware to device
+                    var uploadResponse = await client.PostAsync($"http://{ip}/api/firmware/update", multipartContent);
+
+                    if (uploadResponse.IsSuccessStatusCode)
+                    {
+                        var uploadResult = await uploadResponse.Content.ReadAsStringAsync();
+                        Console.WriteLine($"[OTA POLL] Firmware upload successful: {uploadResult}");
+
+                        // Device will restart automatically after successful upload
+                        // Wait a moment for the restart to begin
+                        await Task.Delay(5000);
+                    }
+                    else
+                    {
+                        var errorContent = await uploadResponse.Content.ReadAsStringAsync();
+                        Console.WriteLine($"[OTA POLL] Firmware upload failed: {uploadResponse.StatusCode} - {errorContent}");
+                        return Result<object>.Error(500, $"Firmware upload failed: {uploadResponse.StatusCode} - {errorContent}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[OTA POLL] Expected error triggering device update: {ex.Message}");
+                    Console.WriteLine($"[OTA POLL] Error during firmware upload: {ex.Message}");
+                    return Result<object>.Error(500, $"Firmware upload failed: {ex.Message}");
                 }
-
-                // Wait a moment for the device to process
-                await Task.Delay(3000);
 
                 try
                 {
@@ -824,8 +870,6 @@ namespace JunctionRelayServer.Services
 
             return Result<object>.Success(new { updated = false, message = "No updates detected." });
         }
-
-        #region Helper Methods
 
         private GitHubAsset? FindFirmwareByHash(List<GitHubRelease> releases, string hash)
         {
@@ -1345,8 +1389,6 @@ namespace JunctionRelayServer.Services
             Console.WriteLine($"[OTA CACHE] No matching asset found for target: {targetFirmware}");
             return null;
         }
-
-        #endregion
     }
 
     // Data models

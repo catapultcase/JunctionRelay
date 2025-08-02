@@ -266,7 +266,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                     Pro Subscription Benefits
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    Unlocks advanced features like remote management, OTA updates, cloud backups, priority support, and exclusive Pro-only functionality.
+                    Support the JunctionRelay project and access features like cloud device management, android push messages and cloud backup service (coming soon!).
                 </Typography>
             </Box>
 
