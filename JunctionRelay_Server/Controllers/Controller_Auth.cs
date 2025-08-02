@@ -96,7 +96,11 @@ namespace JunctionRelayServer.Controllers
 
                 var mode = request.Mode.ToLower();
 
-                // BUSINESS LOGIC: Check if local mode can be activated
+                // Always set the mode first
+                await _authService.SetAuthModeAsync(mode);
+                _logger.LogInformation("Authentication mode changed to: {Mode}", mode);
+
+                // FIXED: Check setup requirements AFTER setting the mode
                 if (mode == "local")
                 {
                     var hasUsers = await _authService.HasAnyUsersAsync();
@@ -104,16 +108,13 @@ namespace JunctionRelayServer.Controllers
                     {
                         return Ok(new
                         {
-                            success = false,
-                            requiresSetup = true,
-                            message = "Local authentication requires user setup first"
+                            success = true,              // ✅ Mode was successfully set
+                            requiresSetup = true,        // Frontend should show setup
+                            message = $"Authentication mode set to {mode}. Setup required.",
+                            authMode = mode
                         });
                     }
                 }
-
-                // Mode can be set - do it
-                await _authService.SetAuthModeAsync(mode);
-                _logger.LogInformation("Authentication mode changed to: {Mode}", mode);
 
                 return Ok(new
                 {
