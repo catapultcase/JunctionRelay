@@ -32,9 +32,8 @@ public:
     bool isActive() const { return initialized && isConnected(); }
     bool isConnected() const;
 
-    // Network information - SAME PATTERN AS WiFi
+    // Network information
     String getIPAddress() const;
-    String getMacAddress() const;
 
 private:
     bool initialized;
@@ -101,8 +100,7 @@ private:
     static void WiFiEventHandler(WiFiEvent_t event);
     static Branch_Ethernet* instance;
 
-    // Utility methods - SAME AS WiFi
-    String getFormattedMacAddress() const;
+    // Utility methods
     void emitStatus();
     void printConnectionStatus();
 };

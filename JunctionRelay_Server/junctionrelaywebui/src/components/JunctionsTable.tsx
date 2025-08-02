@@ -103,6 +103,7 @@ export interface Junction {
     allTargetsAllData?: boolean;
     sortOrder: number;
     gatewayDestination?: string;
+    gatewayDeviceId?: number; 
     selectedGatewayDeviceId?: string;
 }
 

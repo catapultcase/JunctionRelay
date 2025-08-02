@@ -10,6 +10,7 @@
 #include "Manager_ScreenRouter.h"
 #include "DeviceConfig.h"
 #include "Device.h"
+#include "Helper_Utils.h"
 
 Manager_Connections::Manager_Connections() 
     : connMode(""),
@@ -67,7 +68,7 @@ ConnectionStatus Manager_Connections::getConnectionStatus() const {
             status.wifiConnected = wifiBranch->isWiFiConnected();
             if (status.wifiConnected) {
                 status.ipAddress = wifiBranch->getIPAddress();
-                status.macAddress = wifiBranch->getMacAddress();
+                status.macAddress = getFormattedMacAddress();
                 status.activeNetworkType = "WiFi";
             }
             // Would need to get MQTT and WebSocket status from branch

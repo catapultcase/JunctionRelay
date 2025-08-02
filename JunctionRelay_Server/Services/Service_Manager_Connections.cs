@@ -319,10 +319,13 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
+                // Get current gateway destination from the gateway device
+                var currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+
                 // Add all target devices as peers to the HTTP gateway
-                if (!string.IsNullOrEmpty(junction.GatewayDestination) && targetDevices.Any())
+                if (!string.IsNullOrEmpty(currentGatewayDestination) && targetDevices.Any())
                 {
-                    var peersAdded = await AddPeersToGatewayAsync(junction.GatewayDestination, targetDevices);
+                    var peersAdded = await AddPeersToGatewayAsync(currentGatewayDestination, targetDevices);
 
                     if (!peersAdded)
                     {
@@ -331,7 +334,7 @@ namespace JunctionRelayServer.Services
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ HTTP Gateway junction has no destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ HTTP Gateway junction has no valid gateway destination or target devices specified");
                 }
             }
             else if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
@@ -349,10 +352,13 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
+                // Get current gateway destination from the gateway device
+                var currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+
                 // Add all target devices as peers to the COM gateway
-                if (!string.IsNullOrEmpty(junction.GatewayDestination) && targetDevices.Any())
+                if (!string.IsNullOrEmpty(currentGatewayDestination) && targetDevices.Any())
                 {
-                    var peersAdded = await AddPeersToCOMGatewayAsync(junction.GatewayDestination, targetDevices);
+                    var peersAdded = await AddPeersToCOMGatewayAsync(currentGatewayDestination, targetDevices);
 
                     if (!peersAdded)
                     {
@@ -361,7 +367,7 @@ namespace JunctionRelayServer.Services
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ COM Gateway junction has no destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ COM Gateway junction has no valid gateway destination or target devices specified");
                 }
             }
 
@@ -460,15 +466,15 @@ namespace JunctionRelayServer.Services
                             string modeDescription = isFrameMode ? "Frame rendering" : "Payload rendering";
                             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} mode and send rate of {defaultSendRate}ms.");
 
-                            // Check if this is a Gateway junction and pass the gateway destination
+                            // Check if this is a Gateway junction and get the current gateway destination
                             if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
                                 junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                             {
-                                // For gateway junctions, the GatewayDestination contains the transport info
-                                string? gatewayDestination = GetGatewayDestination(junction, device);
-                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Gateway destination for {screenKey}: {gatewayDestination ?? "Not specified"}");
+                                // For gateway junctions, get the current destination from the gateway device
+                                string? currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Current gateway destination for {screenKey}: {currentGatewayDestination ?? "Not available"}");
 
-                                await streamManager.StartStreamingAsync(junction.Id, device.Id, defaultSendRate, screenKey, assignedSensors, screen, junction.Type, gatewayDestination);
+                                await streamManager.StartStreamingAsync(junction.Id, device.Id, defaultSendRate, screenKey, assignedSensors, screen, junction.Type, currentGatewayDestination);
                             }
                             else
                             {
@@ -486,20 +492,51 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Helper method to extract gateway destination from junction properties
-        private string? GetGatewayDestination(Model_Junction junction, Model_Device device)
+        private async Task<string?> GetCurrentGatewayDestination(Model_Junction junction, Service_Database_Manager_Devices deviceDb)
         {
-            // For gateway junctions, GatewayDestination contains the target device MAC address
-            // The gateway device transport (IP/COM) is determined by the junction type and source device
-
-            // Check if junction has a GatewayDestination property (target MAC)
-            if (!string.IsNullOrEmpty(junction.GatewayDestination))
+            if (!junction.GatewayDeviceId.HasValue)
             {
-                return junction.GatewayDestination;
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Gateway junction {junction.Id} has no GatewayDeviceId specified");
+                return null;
             }
 
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Gateway junction {junction.Id} has no target MAC address specified");
-            return null;
+            var gatewayDevice = await deviceDb.GetDeviceByIdAsync(junction.GatewayDeviceId.Value);
+            if (gatewayDevice == null)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device with ID {junction.GatewayDeviceId} not found");
+                return null;
+            }
+
+            string? destination = null;
+
+            if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+            {
+                destination = gatewayDevice.COMPort;
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Using COM port '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+            }
+            else if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+            {
+                destination = gatewayDevice.COMPort;
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🌐 Using IP address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+            }
+            else
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Unknown gateway junction type: {junction.Type}");
+            }
+
+            if (string.IsNullOrEmpty(destination))
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device '{gatewayDevice.Name}' has no {(junction.Type.Contains("COM") ? "COM port" : "IP address")} configured");
+            }
+
+            return destination;
+        }
+
+        // Updated method signature for GetGatewayDestination helper
+        private async Task<string?> GetGatewayDestination(Model_Junction junction, Model_Device device, Service_Database_Manager_Devices deviceDb)
+        {
+            // For gateway junctions, get the current destination from the gateway device
+            return await GetCurrentGatewayDestination(junction, deviceDb);
         }
 
         public async Task<Model_Operation_Result> StopJunctionAsync(int junctionId, CancellationToken cancellationToken)

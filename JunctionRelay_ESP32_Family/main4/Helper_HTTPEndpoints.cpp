@@ -5,7 +5,9 @@
 #include "Manager_ScreenRouter.h"
 #include "Helper_Utils.h"
 #include <Preferences.h>
+#include <nvs_flash.h>
 #include <Update.h>
+#include "Helper_Utils.h"
 
 // Initialize static buffers
 char Helper_HTTPEndpoints::tempPostBodyBuffer[2048];
@@ -313,14 +315,28 @@ void Helper_HTTPEndpoints::handleGatewayStatus(AsyncWebServerRequest* req) {
 
 void Helper_HTTPEndpoints::handleHeartbeat(AsyncWebServerRequest* req) {
     String mac = getFormattedMacAddress();
+    String firmware = getFirmwareVersion();
     String response = "{";
+
     response += "\"status\":\"OK\",";
-    response += "\"mac\":\"" + mac + "\",";
-    response += "\"firmware\":\"" + getFirmwareVersion() + "\",";
-    response += "\"uptime\":" + String(millis()) + ",";
-    response += "\"free_heap\":" + String(ESP.getFreeHeap());
-    response += "}";
     
+    response += "\"mac\":\"";
+    response += mac;
+    response += "\",";
+
+    response += "\"firmware\":\"";
+    response += firmware;
+    response += "\",";
+
+    response += "\"uptime\":";
+    response += String(millis());
+    response += ",";
+
+    response += "\"free_heap\":";
+    response += String(ESP.getFreeHeap());
+
+    response += "}";
+
     req->send(200, "application/json", response);
 }
 
@@ -371,28 +387,30 @@ void Helper_HTTPEndpoints::handleSetPreferences(AsyncWebServerRequest* req, uint
 }
 
 void Helper_HTTPEndpoints::handleDeviceWipe(AsyncWebServerRequest* req) {
-    Serial.println("[Helper_HTTPEndpoints] Device wipe requested");
-    
-    Preferences prefs;
-    bool success = true;
-    
-    // Clear all preference namespaces
-    if (prefs.begin("junctionrelay", false)) {
-        success &= prefs.clear();
-        prefs.end();
-    }
-    
-    String response = success ? 
-        "{\"status\":\"OK\",\"message\":\"Device wiped successfully\"}" :
-        "{\"status\":\"ERROR\",\"message\":\"Failed to wipe device\"}";
-    
-    req->send(success ? 200 : 500, "application/json", response);
-    
-    if (success) {
-        Serial.println("[Helper_HTTPEndpoints] Device will restart in 3 seconds...");
-        delay(3000);
-        ESP.restart();
-    }
+    Serial.println("[Helper_HTTPEndpoints] FULL NVS WIPE requested");
+
+    // 1) Immediately reply so the client sees the result
+    AsyncWebServerResponse* res = req->beginResponse(
+        200,
+        "application/json",
+        "{\"status\":\"OK\",\"message\":\"Wiping ALL NVS (prefs + WiFi) and rebooting now\"}"
+    );
+    res->addHeader("Connection", "close");
+    req->send(res);
+
+    // 2) Offload the actual erase+restart so we don't block the HTTP thread
+    xTaskCreate(
+        [](void*) {
+            nvs_flash_erase();   // nukes all namespaces, including WiFi credentials
+            ESP.restart();       // immediate reboot
+            vTaskDelete(nullptr);
+        },
+        "WipeAndRestart",
+        2048,
+        nullptr,
+        tskIDLE_PRIORITY + 1,
+        nullptr
+    );
 }
 
 // ==========================================
@@ -463,17 +481,4 @@ String Helper_HTTPEndpoints::getFirmwareInfoJson() const {
     String response;
     serializeJson(doc, response);
     return response;
-}
-
-String Helper_HTTPEndpoints::getFormattedMacAddress() const {
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", 
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    return String(macStr);
-}
-
-String Helper_HTTPEndpoints::getFirmwareVersion() const {
-    return "JunctionRelay_v1.0.0"; // Should be defined in a header file
 }

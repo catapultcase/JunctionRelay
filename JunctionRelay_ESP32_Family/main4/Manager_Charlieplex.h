@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <functional>
+#include "Helper_Utils.h"
 
 class Manager_Charlieplex : public ScreenDestination {
 public:
