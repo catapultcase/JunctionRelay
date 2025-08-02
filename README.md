@@ -8,6 +8,8 @@
 ☁️ [Cloud Dashboard](https://dashboard.junctionrelay.com)
 
 ![Dashboard Demo](./assets/ActiveStreams.gif)
+![Examples](./assets/Examples.gif)
+![Rack1](./assets/Rack1.jpg)
 
 ---
 
@@ -343,10 +345,6 @@ Deploy JunctionRelay on a Raspberry Pi to collect data from multiple ESP32 senso
 ---
 
 ## Screenshots
-
-### Cloud Device Management
-
-New cloud dashboard for managing ESP32 devices with secure registration and health monitoring.
 
 ### Plotters
 
