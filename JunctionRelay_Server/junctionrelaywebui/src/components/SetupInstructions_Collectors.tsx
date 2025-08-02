@@ -255,6 +255,46 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "Unraid":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            How to get Unraid credentials:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Install Unraid Connect Plugin:</strong><br />
+                            • Go to Apps tab in Unraid<br />
+                            • Search for "Unraid Connect"<br />
+                            • Install the plugin
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. Enable GraphQL Sandbox via CLI:</strong><br />
+                            • SSH into your Unraid server<br />
+                            • Run: <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>unraid-api developer</code><br />
+                            • Follow the prompts to enable the sandbox
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. Create API Key via CLI:</strong><br />
+                            • Run: <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>unraid-api apikey --create</code><br />
+                            • Follow prompts to set name, description, roles, and permissions<br />
+                            • Copy the generated API key
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>4. GraphQL Endpoint:</strong><br />
+                            Use: <strong>http://your-unraid-ip/graphql</strong><br />
+                            (Note: NO /api prefix needed)
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>5. Test the API:</strong><br />
+                            • Navigate to: <strong>http://your-unraid-ip/graphql</strong><br />
+                            • Use the Apollo Sandbox to test queries
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>What it monitors:</strong> System info (OS, CPU), array status, Docker containers, disk information
+                        </Typography>
+                    </Box>
+                );
+
             case "RateTester":
                 return (
                     <Box>

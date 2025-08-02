@@ -37,7 +37,6 @@ public:
 
     // Network information
     String getIPAddress() const;
-    String getMacAddress() const;
     int getSignalStrength() const;
 
 private:
@@ -87,7 +86,6 @@ private:
     void handleSystemCommand(const JsonDocument& doc);
 
     // Utility methods
-    String getFormattedMacAddress() const;
     void emitStatus();
     void printWiFiStatus();
 };

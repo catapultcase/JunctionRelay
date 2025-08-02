@@ -89,6 +89,7 @@ const AddCollectorModal: React.FC<{
         { value: "Render", name: "Render", desc: "Cloud platform metrics" },
         { value: "SonarrCalendar", name: "Sonarr Calendar", desc: "TV show schedule" },
         { value: "Stripe", name: "Stripe", desc: "Payment processing" },
+        // { value: "Unraid", name: "Unraid", desc: "NAS server monitoring" },
         { value: "UptimeKuma", name: "Uptime Kuma", desc: "Service monitoring" }
     ];
 
@@ -149,6 +150,7 @@ const AddCollectorModal: React.FC<{
                 collector.collectorType === "LibreHardwareMonitor" ||
                 collector.collectorType === "Render" ||
                 collector.collectorType === "Stripe" ||
+                collector.collectorType === "Unraid" ||
                 collector.collectorType === "UptimeKuma") &&
             !collector.url
         ) {
@@ -163,7 +165,8 @@ const AddCollectorModal: React.FC<{
             collector.collectorType === "HomeAssistant" ||
             collector.collectorType === "Render" ||
             collector.collectorType === "SonarrCalendar" ||
-            collector.collectorType === "Stripe") && !collector.accessToken) {
+            collector.collectorType === "Stripe" ||
+            collector.collectorType === "Unraid") && !collector.accessToken) {
             setError("Access Token is required for this collector type.");
             setLoading(false);
             return;
@@ -178,6 +181,7 @@ const AddCollectorModal: React.FC<{
                 collector.collectorType === "LibreHardwareMonitor" ||
                 collector.collectorType === "Render" ||
                 collector.collectorType === "Stripe" ||
+                collector.collectorType === "Unraid" ||
                 collector.collectorType === "UptimeKuma") &&
             collector.url &&
             !urlPattern.test(collector.url)
@@ -411,6 +415,15 @@ const AddCollectorModal: React.FC<{
                 externalAccessToken: false,
                 pollRate: 60000,
             }));
+        } else if (collector.collectorType === "Unraid") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "Unraid",
+                url: "http://your-unraid-ip",
+                accessToken: "",
+                externalAccessToken: false,
+                pollRate: 30000,
+            }));
         } else if (collector.collectorType === "SonarrCalendar") {
             setCollector((prev: any) => ({
                 ...prev,
@@ -600,6 +613,7 @@ const AddCollectorModal: React.FC<{
                                                 collector.collectorType === "LibreHardwareMonitor" ||
                                                 collector.collectorType === "Render" ||
                                                 collector.collectorType === "Stripe" ||
+                                                collector.collectorType === "Unraid" ||
                                                 collector.collectorType === "UptimeKuma") && (
                                                     <TextField
                                                         fullWidth
@@ -609,7 +623,8 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
                                                                     collector.collectorType === "Render" ? "Render Service URL" :
                                                                         collector.collectorType === "Stripe" ? "Stripe API Base URL" :
-                                                                            "URL"
+                                                                            collector.collectorType === "Unraid" ? "Unraid GraphQL Endpoint" :
+                                                                                "URL"
                                                         }
                                                         name="url"
                                                         value={collector.url}
@@ -620,7 +635,8 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
                                                                     collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
                                                                         collector.collectorType === "Stripe" ? "https://api.stripe.com" :
-                                                                            ""
+                                                                            collector.collectorType === "Unraid" ? "http://your-unraid-ip/api/graphql" :
+                                                                                ""
                                                         }
                                                     />
                                                 )}
@@ -660,7 +676,8 @@ const AddCollectorModal: React.FC<{
                                                 collector.collectorType === "Github" ||
                                                 collector.collectorType === "HomeAssistant" ||
                                                 collector.collectorType === "Render" ||
-                                                collector.collectorType === "Stripe") && (
+                                                collector.collectorType === "Stripe" ||
+                                                collector.collectorType === "Unraid") && (
                                                     <TextField
                                                         fullWidth
                                                         size="small"
@@ -669,7 +686,8 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
                                                                     collector.collectorType === "Render" ? "Render API Key" :
                                                                         collector.collectorType === "Stripe" ? "Stripe Secret Key" :
-                                                                            "Access Token"
+                                                                            collector.collectorType === "Unraid" ? "Unraid API Key" :
+                                                                                "Access Token"
                                                         }
                                                         name="accessToken"
                                                         value={collector.accessToken}
@@ -681,7 +699,8 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "cf_api_token..." :
                                                                     collector.collectorType === "Render" ? "rnd_..." :
                                                                         collector.collectorType === "Stripe" ? "sk_..." :
-                                                                            ""
+                                                                            collector.collectorType === "Unraid" ? "your-api-key" :
+                                                                                ""
                                                         }
                                                     />
                                                 )}
@@ -714,187 +733,188 @@ const AddCollectorModal: React.FC<{
                                     )}
                                 </Box>
 
-                                {/* Security Options Section - Show for collectors that require access tokens (now includes Sonarr) */}
-                                {collector.collectorType && (
-                                    collector.collectorType === "Cloudflare" ||
-                                    collector.collectorType === "Github" ||
-                                    collector.collectorType === "HomeAssistant" ||
-                                    collector.collectorType === "Render" ||
-                                    collector.collectorType === "SonarrCalendar" ||
-                                    collector.collectorType === "Stripe"
-                                ) && (
-                                        <Box sx={{ mt: 3 }}>
-                                            <Divider sx={{ mb: 2 }} />
-                                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
-                                                {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL Security" : "Access Token Security"}
-                                            </Typography>
+                                    {/* Security Options Section - Show for collectors that require access tokens (now includes Sonarr and Unraid) */}
+                                    {collector.collectorType && (
+                                        collector.collectorType === "Cloudflare" ||
+                                        collector.collectorType === "Github" ||
+                                        collector.collectorType === "HomeAssistant" ||
+                                        collector.collectorType === "Render" ||
+                                        collector.collectorType === "SonarrCalendar" ||
+                                        collector.collectorType === "Stripe" ||
+                                        collector.collectorType === "Unraid"
+                                    ) && (
+                                            <Box sx={{ mt: 3 }}>
+                                                <Divider sx={{ mb: 2 }} />
+                                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                                    {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL Security" : "Access Token Security"}
+                                                </Typography>
 
-                                            <FormControl component="fieldset">
-                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <input
-                                                            type="radio"
-                                                            id="local-encryption"
-                                                            name="encryption-method"
-                                                            checked={!collector.externalAccessToken}
-                                                            onChange={() => setCollector({ ...collector, externalAccessToken: false })}
-                                                            style={{ marginRight: '8px' }}
-                                                        />
-                                                        <label htmlFor="local-encryption" style={{ cursor: 'pointer' }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                                Save to local DB (Default)
-                                                            </Typography>
-                                                        </label>
-                                                    </Box>
+                                                <FormControl component="fieldset">
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                            <input
+                                                                type="radio"
+                                                                id="local-encryption"
+                                                                name="encryption-method"
+                                                                checked={!collector.externalAccessToken}
+                                                                onChange={() => setCollector({ ...collector, externalAccessToken: false })}
+                                                                style={{ marginRight: '8px' }}
+                                                            />
+                                                            <label htmlFor="local-encryption" style={{ cursor: 'pointer' }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                    Save to local DB (Default)
+                                                                </Typography>
+                                                            </label>
+                                                        </Box>
 
-                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <input
-                                                            type="radio"
-                                                            id="external-encryption"
-                                                            name="encryption-method"
-                                                            checked={collector.externalAccessToken}
-                                                            onChange={() => setCollector({ ...collector, externalAccessToken: true })}
-                                                            style={{ marginRight: '8px' }}
-                                                        />
-                                                        <label htmlFor="external-encryption" style={{ cursor: 'pointer' }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                                Encrypt with external password
-                                                            </Typography>
-                                                        </label>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                            <input
+                                                                type="radio"
+                                                                id="external-encryption"
+                                                                name="encryption-method"
+                                                                checked={collector.externalAccessToken}
+                                                                onChange={() => setCollector({ ...collector, externalAccessToken: true })}
+                                                                style={{ marginRight: '8px' }}
+                                                            />
+                                                            <label htmlFor="external-encryption" style={{ cursor: 'pointer' }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                    Encrypt with external password
+                                                                </Typography>
+                                                            </label>
+                                                        </Box>
                                                     </Box>
+                                                </FormControl>
+
+                                                {/* Encryption Password field - only show if external encryption is selected */}
+                                                {collector.externalAccessToken && (
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Encryption Password"
+                                                        type="password"
+                                                        value={encryptionPassword}
+                                                        onChange={(e) => setEncryptionPassword(e.target.value)}
+                                                        required
+                                                        sx={{ mt: 2 }}
+                                                        placeholder="Enter a strong password for encryption"
+                                                        helperText="This password will be required each time the application starts"
+                                                    />
+                                                )}
+
+                                                {/* Help text - Hide on mobile */}
+                                                <Box sx={{
+                                                    mt: 2,
+                                                    p: 2,
+                                                    bgcolor: 'action.hover',
+                                                    borderRadius: 1,
+                                                    display: { xs: 'none', md: 'block' }
+                                                }}>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                        <strong>Local DB:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" : collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted but the encryption keys exist in the application directory.
+                                                        This is usually sufficient if you have secured your local network/docker environment and if the {collector.collectorType === "SonarrCalendar" ? "API key" : collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} is not high value.
+                                                        The application will decrypt automatically on app start so you do not need to re-enter the {collector.collectorType === "SonarrCalendar" ? "URL" : "token"}.
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        <strong>External Password:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" : collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted using a password that is not saved in the DB -
+                                                        this provides maximum security for your {collector.collectorType === "SonarrCalendar" ? "API key" : collector.collectorType === "Unraid" ? "API Key" : "AccessToken"}, but means you must enter the password on application start
+                                                        for each collector that is encrypted via this method before it can be used. If you lose your password,
+                                                        you will not be able to recover the collector and you will need to recreate it.
+                                                    </Typography>
                                                 </Box>
-                                            </FormControl>
-
-                                            {/* Encryption Password field - only show if external encryption is selected */}
-                                            {collector.externalAccessToken && (
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Encryption Password"
-                                                    type="password"
-                                                    value={encryptionPassword}
-                                                    onChange={(e) => setEncryptionPassword(e.target.value)}
-                                                    required
-                                                    sx={{ mt: 2 }}
-                                                    placeholder="Enter a strong password for encryption"
-                                                    helperText="This password will be required each time the application starts"
-                                                />
-                                            )}
-
-                                            {/* Help text - Hide on mobile */}
-                                            <Box sx={{
-                                                mt: 2,
-                                                p: 2,
-                                                bgcolor: 'action.hover',
-                                                borderRadius: 1,
-                                                display: { xs: 'none', md: 'block' }
-                                            }}>
-                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                    <strong>Local DB:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" : "AccessToken"} will be encrypted but the encryption keys exist in the application directory.
-                                                    This is usually sufficient if you have secured your local network/docker environment and if the {collector.collectorType === "SonarrCalendar" ? "API key" : "AccessToken"} is not high value.
-                                                    The application will decrypt automatically on app start so you do not need to re-enter the {collector.collectorType === "SonarrCalendar" ? "URL" : "token"}.
-                                                </Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    <strong>External Password:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" : "AccessToken"} will be encrypted using a password that is not saved in the DB -
-                                                    this provides maximum security for your {collector.collectorType === "SonarrCalendar" ? "API key" : "AccessToken"}, but means you must enter the password on application start
-                                                    for each collector that is encrypted via this method before it can be used. If you lose your password,
-                                                    you will not be able to recover the collector and you will need to recreate it.
-                                                </Typography>
                                             </Box>
-                                        </Box>
-                                    )}
-                            </Box>
-
-                            {/* Instructions - responsive height - Hide on mobile */}
-                            {collector.collectorType && (
-                                <Box sx={{
-                                    display: { xs: 'none', md: 'block' },
-                                    borderTop: '1px solid',
-                                    borderColor: 'divider'
-                                }}>
-                                    {/* Always Visible Header */}
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        p: 2,
-                                        bgcolor: 'action.hover',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            bgcolor: 'action.selected'
-                                        }
-                                    }}
-                                        onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
-                                    >
-                                        <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
-                                            Setup Instructions
-                                        </Typography>
-                                        <IconButton size="small" sx={{ p: 0 }}>
-                                            {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
-                                        </IconButton>
-                                    </Box>
-
-                                    {/* Collapsible Content */}
-                                    {!setupInstructionsMinimized && (
-                                        <Box sx={{
-                                            maxHeight: '300px',
-                                            p: 3,
-                                            overflowY: 'auto',
-                                            bgcolor: 'background.default'
-                                        }}>
-                                            <SetupInstructions_Collectors collectorType={collector.collectorType} />
-                                        </Box>
-                                    )}
+                                        )}
                                 </Box>
-                            )}
 
-                            {/* Action buttons - responsive layout */}
-                            <Box sx={{
-                                p: { xs: 2, md: 3 },
-                                borderTop: '1px solid',
-                                borderColor: 'divider',
-                                display: "flex",
-                                flexDirection: { xs: 'column', sm: 'row' },
-                                gap: { xs: 1, sm: 2 },
-                                flexShrink: 0
-                            }}>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleAddCollector(false)}
-                                    size="small"
-                                    startIcon={<AddIcon />}
-                                    disabled={loading || !collector.collectorType}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleAddCollector(true)}
-                                    size="small"
-                                    color="secondary"
-                                    startIcon={<EditIcon />}
-                                    disabled={loading || !collector.collectorType}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={onClose}
-                                    size="small"
-                                    disabled={loading}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    Cancel
-                                </Button>
+                                {/* Instructions - responsive height - Hide on mobile */}
+                                {collector.collectorType && (
+                                    <Box sx={{
+                                        display: { xs: 'none', md: 'block' },
+                                        borderTop: '1px solid',
+                                        borderColor: 'divider'
+                                    }}>
+                                        {/* Always Visible Header */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            p: 2,
+                                            bgcolor: 'action.hover',
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                bgcolor: 'action.selected'
+                                            }
+                                        }}
+                                            onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
+                                        >
+                                            <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                                                Setup Instructions
+                                            </Typography>
+                                            <IconButton size="small" sx={{ p: 0 }}>
+                                                {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
+                                            </IconButton>
+                                        </Box>
+
+                                        {/* Collapsible Content */}
+                                        {!setupInstructionsMinimized && (
+                                            <Box sx={{
+                                                maxHeight: '300px',
+                                                p: 3,
+                                                overflowY: 'auto',
+                                                bgcolor: 'background.default'
+                                            }}>
+                                                <SetupInstructions_Collectors collectorType={collector.collectorType} />
+                                            </Box>
+                                        )}
+                                    </Box>
+                                )}
+
+                                {/* Action buttons - responsive layout */}
+                                <Box sx={{
+                                    p: { xs: 2, md: 3 },
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider',
+                                    display: "flex",
+                                    flexDirection: { xs: 'column', sm: 'row' },
+                                    gap: { xs: 1, sm: 2 },
+                                    flexShrink: 0
+                                }}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleAddCollector(false)}
+                                        size="small"
+                                        startIcon={<AddIcon />}
+                                        disabled={loading || !collector.collectorType}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleAddCollector(true)}
+                                        size="small"
+                                        color="secondary"
+                                        startIcon={<EditIcon />}
+                                        disabled={loading || !collector.collectorType}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={onClose}
+                                        size="small"
+                                        disabled={loading}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </Box>
                             </Box>
                         </Box>
-                    </Box>
-                )}
-            </Box>
-        </Modal>
-    );
-};
+                    )}
+                </Box>
+            </Modal>
+        );
+    };
 
 export default AddCollectorModal;

@@ -1,19 +1,11 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using System.Data;
 using Microsoft.Data.Sqlite;
 using System.Runtime.InteropServices;
 using JunctionRelayServer.Services;
-using System.IO;
-using Dapper;
 using JunctionRelayServer.Collectors;
 using JunctionRelayServer.Interfaces;
 using JunctionRelayServer.Models;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using JunctionRelayServer;
 using JunctionRelayServer.Services.FactoryServices;
 using JunctionRelayServer.Utils;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -271,8 +263,8 @@ builder.Services.AddSingleton<Func<string, Service_Send_Data_COM>>(provider => c
 
 builder.Services.AddTransient<DataCollector_Cloudflare>();
 builder.Services.AddTransient<DataCollector_Github>();
-builder.Services.AddTransient<DataCollector_Host>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
+builder.Services.AddTransient<DataCollector_Host>();
 builder.Services.AddTransient<DataCollector_LibreHardwareMonitor>();
 builder.Services.AddTransient<DataCollector_MQTT>();
 builder.Services.AddTransient<DataCollector_NeoPixelColor>();
@@ -280,6 +272,7 @@ builder.Services.AddTransient<DataCollector_RateTester>();
 builder.Services.AddTransient<DataCollector_Render>();
 builder.Services.AddTransient<DataCollector_SonarrCalendar>();
 builder.Services.AddTransient<DataCollector_Stripe>();
+builder.Services.AddTransient<DataCollector_Unraid>();
 builder.Services.AddTransient<DataCollector_UptimeKuma>();
 
 builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
@@ -297,6 +290,7 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
         { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
         { "SonarrCalendar", c => { var i = provider.GetRequiredService<DataCollector_SonarrCalendar>(); i.ApplyConfiguration(c); return i; } },
         { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },
+        { "Unraid", c => { var i = provider.GetRequiredService<DataCollector_Unraid>(); i.ApplyConfiguration(c); return i; } },
         { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
     };
 

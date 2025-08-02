@@ -35,6 +35,7 @@ import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import * as junctionService from '../services/junctionApiService';
 
 // Components
+import Junction_ConfigPanel from '../components/Junction_ConfigPanel';
 import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
 import ScreenSelectionModal from '../components/ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/AvailableSourcesTargetsTable';
@@ -1051,222 +1052,18 @@ const ConfigureJunction: React.FC = () => {
                 </Box>
             </Paper>
 
-            {/* Compact Settings Section */}
-            <Accordion
-                expanded={settingsExpanded}
-                onChange={(event, isExpanded) => handleSettingsExpandedChange(isExpanded)}
-                sx={{ mb: 3 }}
-            >
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box display="flex" alignItems="center" gap={1}>
-                        <SettingsIcon />
-                        <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                            Junction Settings
-                        </Typography>
-                    </Box>
-                </AccordionSummary>
-                <AccordionDetails>
-                    <Box display="flex" flexDirection="column" gap={2}>
-
-                        {/* Junction Info */}
-                        <Card>
-                            <CardContent sx={{ pb: 1 }}>
-                                <Typography variant="subtitle1" gutterBottom>Junction Info</Typography>
-                                <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} gap={1}>
-                                    <TextField
-                                        fullWidth
-                                        label="Name"
-                                        value={junctionData.name || ""}
-                                        onChange={(e) => setJunctionData({ ...junctionData, name: e.target.value })}
-                                        size="small"
-                                    />
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel>Type</InputLabel>
-                                        <Select
-                                            value={junctionData.type || ""}
-                                            label="Type"
-                                            onChange={(e) => setJunctionData({ ...junctionData, type: e.target.value })}
-                                        >
-                                            {JUNCTION_TYPES.map((type) => (
-                                                <MenuItem key={type} value={type}>{type}</MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Box>
-                                <TextField
-                                    fullWidth
-                                    label="Description"
-                                    value={junctionData.description || ""}
-                                    onChange={(e) => setJunctionData({ ...junctionData, description: e.target.value })}
-                                    multiline
-                                    rows={2}
-                                    size="small"
-                                    sx={{ mt: 1 }}
-                                />
-                            </CardContent>
-                        </Card>
-
-                        {/* Junction Configuration */}
-                        <Card>
-                            <CardContent sx={{ pb: 1 }}>
-                                <Typography variant="subtitle1" gutterBottom>Junction Configuration</Typography>
-
-                                <Box display="flex" flexWrap="wrap" gap={1}>
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={junctionData.showOnDashboard || false}
-                                                onChange={(e) => setJunctionData({ ...junctionData, showOnDashboard: e.target.checked })}
-                                                size="small"
-                                            />
-                                        }
-                                        label="Show on Dashboard"
-                                    />
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={junctionData.autoStartOnLaunch || false}
-                                                onChange={(e) => setJunctionData({ ...junctionData, autoStartOnLaunch: e.target.checked })}
-                                                size="small"
-                                            />
-                                        }
-                                        label="Auto Start on Launch"
-                                    />
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={junctionData.compressPayload || false}
-                                                onChange={(e) => setJunctionData({ ...junctionData, compressPayload: e.target.checked })}
-                                                size="small"
-                                            />
-                                        }
-                                        label="Enable Payload Compression"
-                                    />
-                                </Box>
-
-                                <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={1} mt={1}>
-                                    <TextField
-                                        fullWidth
-                                        label="Retry Count"
-                                        type="number"
-                                        value={junctionData.retryCount || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, retryCount: parseInt(e.target.value) || 0 })}
-                                        size="small"
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Retry Interval (ms)"
-                                        type="number"
-                                        value={junctionData.retryIntervalMs || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, retryIntervalMs: parseInt(e.target.value) || 0 })}
-                                        size="small"
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Stream Timeout (ms)"
-                                        type="number"
-                                        value={junctionData.streamAutoTimeoutMs || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, streamAutoTimeoutMs: parseInt(e.target.value) || 0 })}
-                                        size="small"
-                                    />
-                                </Box>
-                            </CardContent>
-                        </Card>
-
-                        {/* Gateway Configuration */}
-                        <Card>
-                            <CardContent sx={{ pb: 1 }}>
-                                <Typography variant="subtitle1" gutterBottom>Gateway Configuration</Typography>
-
-                                <Box display="flex" flexDirection="column" gap={1}>
-                                    <TextField
-                                        label="Gateway Device"
-                                        value={junctionData.gatewayDeviceId || ''}
-                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDeviceId: e.target.value })}
-                                        size="small"
-                                        helperText="This device will forward received payloads via ESP:NOW to selected target devices below"
-                                    />
-                                    <TextField
-                                        label="Gateway Destination"
-                                        value={junctionData.gatewayDestination || ''}
-                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDestination: e.target.value })}
-                                        placeholder=""
-                                        size="small"
-                                        helperText="For internet protocols, this will be the IP Address of the Gateway. For COM/USB/Serial, this should be a port e.g. COM3 or /dev/ttyUSB0"
-                                    />
-                                    <TextField
-                                        label="Baud Rate"
-                                        type="number"
-                                        value={junctionData.baudRate || 115200}
-                                        onChange={(e) => setJunctionData({ ...junctionData, baudRate: parseInt(e.target.value) || 115200 })}
-                                        size="small"
-                                        helperText="Only applies for UART protocol"
-                                    />
-                                </Box>
-                            </CardContent>
-                        </Card>                        
-
-                        <Card>
-                            <CardContent sx={{ pb: 1 }}>
-                                <Typography variant="subtitle1" gutterBottom>MQTT Broker Configuration</Typography>
-
-                                <Box
-                                    sx={{
-                                        display: 'flex',
-                                        flexDirection: { xs: 'column', md: 'row' },
-                                        gap: 1,
-                                        alignItems: { xs: 'stretch', md: 'flex-end' }
-                                    }}
-                                >
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel>MQTT Broker</InputLabel>
-                                        <Select
-                                            value={selectedMqttBrokerId}
-                                            label="MQTT Broker"
-                                            onChange={handleMqttBrokerChange}
-                                        >
-                                            <MenuItem value="">
-                                                <em>None</em>
-                                            </MenuItem>
-                                            {mqttBrokers.map((broker) => (
-                                                <MenuItem key={broker.id} value={broker.id.toString()}>
-                                                    {broker.name}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-
-                                    <Box sx={{ width: { xs: '100%', md: 'auto' }, minWidth: { md: '120px' } }}>
-                                        <Button
-                                            fullWidth
-                                            variant="outlined"
-                                            onClick={connectToMQTTBroker}
-                                            startIcon={<LinkIcon />}
-                                            disabled={!selectedMqttBrokerId || loading}
-                                            size="small"
-                                        >
-                                            Connect
-                                        </Button>
-                                    </Box>
-                                </Box>
-                            </CardContent>
-                        </Card>
-
-                        {/* Save Button aligned right */}
-                        <Box display="flex" justifyContent="flex-end">
-                            <Button
-                                variant="contained"
-                                onClick={saveJunction}
-                                startIcon={<SaveIcon />}
-                                disabled={loading}
-                                size="small"
-                            >
-                                Save Junction Settings
-                            </Button>
-                        </Box>
-                    </Box>
-                </AccordionDetails>
-            </Accordion>
+            <Junction_ConfigPanel
+                junctionData={junctionData}
+                setJunctionData={setJunctionData}
+                selectedMqttBrokerId={selectedMqttBrokerId}
+                setSelectedMqttBrokerId={setSelectedMqttBrokerId}
+                mqttBrokers={mqttBrokers}
+                loading={loading}
+                settingsExpanded={settingsExpanded}
+                onSettingsExpandedChange={handleSettingsExpandedChange}
+                onSaveJunction={saveJunction}
+                onConnectToMQTTBroker={connectToMQTTBroker}
+            />
 
             {/* COM Setup Advice - Only show for COM and Gateway COM junctions */}
             {shouldShowCOMSetup(junctionData.type) && (

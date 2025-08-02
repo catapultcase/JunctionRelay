@@ -6,6 +6,7 @@
 #include "Helper_DeviceCapabilities.h"
 #include "Manager_ScreenRouter.h"
 #include "DeviceConfig.h"
+#include "Helper_Utils.h"
 
 Branch_Wifi::Branch_Wifi()
     : initialized(false),
@@ -486,21 +487,8 @@ String Branch_Wifi::getIPAddress() const {
     return WiFi.localIP().toString();
 }
 
-String Branch_Wifi::getMacAddress() const {
-    return getFormattedMacAddress();
-}
-
 int Branch_Wifi::getSignalStrength() const {
     return WiFi.RSSI();
-}
-
-String Branch_Wifi::getFormattedMacAddress() const {
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", 
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    return String(macStr);
 }
 
 void Branch_Wifi::emitStatus() {
@@ -521,5 +509,5 @@ void Branch_Wifi::printWiFiStatus() {
     Serial.printf("  - DNS: %s\n", WiFi.dnsIP().toString().c_str());
     Serial.printf("  - RSSI: %d dBm\n", WiFi.RSSI());
     Serial.printf("  - Channel: %d\n", WiFi.channel());
-    Serial.printf("  - MAC: %s\n", getMacAddress().c_str());
+    Serial.printf("  - MAC: %s\n", getFormattedMacAddress().c_str());
 }

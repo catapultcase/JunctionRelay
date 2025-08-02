@@ -72,9 +72,11 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
         deviceLinks: [],
         collectorLinks: [],
         sortOrder: 0,
-        gatewayDestination: "",
-        selectedGatewayDeviceId: ""
+        gatewayDeviceId: undefined // Only store the device ID, not the destination
     });
+
+    // Separate state for UI display purposes only
+    const [displayGatewayDestination, setDisplayGatewayDestination] = useState<string>("");
 
     // Load gateway devices when component mounts
     useEffect(() => {
@@ -114,9 +116,9 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
             deviceLinks: [],
             collectorLinks: [],
             sortOrder: highestSortOrder + 1,
-            gatewayDestination: "",
-            selectedGatewayDeviceId: ""
+            gatewayDeviceId: undefined // Only store the device ID
         });
+        setDisplayGatewayDestination(""); // Reset display value
         setError("");
         hasBeenOpenedRef.current = false;
     }, [junctions]);
@@ -142,26 +144,39 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
         const { name, value } = e.target;
 
         // Handle gateway device selection
-        if (name === "selectedGatewayDeviceId") {
+        if (name === "gatewayDeviceId") {
             const selectedDevice = gatewayDevices.find(device => device.id.toString() === value);
 
-            // Determine what to show based on junction type
-            let gatewayDestination = "";
-            if (selectedDevice) {
-                if (newJunction.type === "Gateway Junction (COM to ESP:NOW)") {
-                    gatewayDestination = selectedDevice.COMPort || selectedDevice.comPort || "";
-                } else {
-                    gatewayDestination = selectedDevice.ipAddress || "";
-                }
-            }
-
+            // Update the junction with only the device ID
             setNewJunction({
                 ...newJunction,
-                [name]: value,
-                gatewayDestination: gatewayDestination
+                gatewayDeviceId: value ? parseInt(value) : undefined
             });
+
+            // Update display value for UI purposes only
+            if (selectedDevice) {
+                if (newJunction.type === "Gateway Junction (COM to ESP:NOW)") {
+                    setDisplayGatewayDestination(selectedDevice.COMPort || selectedDevice.comPort || "");
+                } else {
+                    setDisplayGatewayDestination(selectedDevice.ipAddress || "");
+                }
+            } else {
+                setDisplayGatewayDestination("");
+            }
         } else {
             setNewJunction({ ...newJunction, [name]: value });
+
+            // If junction type changes, update display destination for currently selected device
+            if (name === "type" && newJunction.gatewayDeviceId) {
+                const selectedDevice = gatewayDevices.find(device => device.id === newJunction.gatewayDeviceId);
+                if (selectedDevice) {
+                    if (value === "Gateway Junction (COM to ESP:NOW)") {
+                        setDisplayGatewayDestination(selectedDevice.COMPort || selectedDevice.comPort || "");
+                    } else {
+                        setDisplayGatewayDestination(selectedDevice.ipAddress || "");
+                    }
+                }
+            }
         }
     };
 
@@ -181,21 +196,35 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
             return;
         }
 
-        // Validate gateway destination for Gateway types
+        // Validate gateway device selection for Gateway types
         if ((newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
             newJunction.type === "Gateway Junction (COM to ESP:NOW)" ||
             newJunction.type === "Gateway Junction (Websocket to ESP:NOW)") &&
-            !newJunction.selectedGatewayDeviceId) {
+            !newJunction.gatewayDeviceId) {
             setError("Please select a gateway device for Gateway junctions!");
             setModalLoading(false);
             return;
         }
 
         try {
+            // Create the payload - explicitly exclude any destination field
+            const junctionPayload = {
+                name: newJunction.name,
+                description: newJunction.description,
+                type: newJunction.type,
+                showOnDashboard: newJunction.showOnDashboard,
+                autoStartOnLaunch: newJunction.autoStartOnLaunch,
+                allTargetsAllData: newJunction.allTargetsAllData,
+                sortOrder: newJunction.sortOrder,
+                status: "Idle",
+                // Only include gatewayDeviceId if this is a gateway junction
+                ...(shouldShowGatewaySelection() && { gatewayDeviceId: newJunction.gatewayDeviceId })
+            };
+
             const response = await fetch("/api/junctions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...newJunction, status: "Idle" }),
+                body: JSON.stringify(junctionPayload),
             });
 
             if (!response.ok) {
@@ -282,16 +311,16 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                             {/* Gateway Device Selection - only show for Gateway types */}
                             {shouldShowGatewaySelection() && (
                                 <>
-                                    <FormControl fullWidth size="small" error={shouldShowGatewaySelection() && !newJunction.selectedGatewayDeviceId}>
+                                    <FormControl fullWidth size="small" error={shouldShowGatewaySelection() && !newJunction.gatewayDeviceId}>
                                         <InputLabel id="gateway-device-label">Gateway Device</InputLabel>
                                         <Select
                                             labelId="gateway-device-label"
-                                            name="selectedGatewayDeviceId"
-                                            value={newJunction.selectedGatewayDeviceId || ""}
+                                            name="gatewayDeviceId"
+                                            value={newJunction.gatewayDeviceId?.toString() || ""}
                                             onChange={handleSelectChange}
                                             label="Gateway Device"
                                             required
-                                            error={shouldShowGatewaySelection() && !newJunction.selectedGatewayDeviceId}
+                                            error={shouldShowGatewaySelection() && !newJunction.gatewayDeviceId}
                                         >
                                             {gatewayDevices.length === 0 ? (
                                                 <MenuItem disabled>
@@ -310,21 +339,24 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                         </Select>
                                     </FormControl>
 
-                                    {/* Show the appropriate connection info that will be used */}
-                                    {newJunction.gatewayDestination && (
+                                    {/* Show the appropriate connection info that will be used - FOR DISPLAY ONLY */}
+                                    {displayGatewayDestination && (
                                         <TextField
                                             fullWidth
                                             size="small"
                                             label={newJunction.type === "Gateway Junction (COM to ESP:NOW)" ? "Gateway COM Port" : "Gateway IP Address"}
-                                            value={newJunction.gatewayDestination}
+                                            value={displayGatewayDestination}
                                             disabled
-                                            helperText={newJunction.type === "Gateway Junction (COM to ESP:NOW)" ? "COM port of the selected gateway device" : "IP address of the selected gateway device"}
-                                            error={shouldShowGatewaySelection() && !newJunction.gatewayDestination}
+                                            helperText={
+                                                (newJunction.type === "Gateway Junction (COM to ESP:NOW)"
+                                                    ? "COM port of the selected gateway device (for display only)"
+                                                    : "IP address of the selected gateway device (for display only)")
+                                            }
                                         />
                                     )}
 
                                     {/* Show error message if gateway is required but not selected */}
-                                    {shouldShowGatewaySelection() && !newJunction.selectedGatewayDeviceId && (
+                                    {shouldShowGatewaySelection() && !newJunction.gatewayDeviceId && (
                                         <TextField
                                             fullWidth
                                             size="small"

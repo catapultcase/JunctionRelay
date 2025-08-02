@@ -6,6 +6,7 @@
 #include "Helper_DeviceCapabilities.h"
 #include "Manager_ScreenRouter.h"
 #include "DeviceConfig.h"
+#include "Helper_Utils.h"
 
 // Static instance for event handler
 Branch_Ethernet* Branch_Ethernet::instance = nullptr;
@@ -402,7 +403,7 @@ void Branch_Ethernet::handleStatsRequest(const JsonDocument& doc) {
     Serial.printf("  - Connected: %s\n", isConnected() ? "Yes" : "No");
     if (isConnected()) {
         Serial.printf("  - IP: %s\n", getIPAddress().c_str());
-        Serial.printf("  - MAC: %s\n", getMacAddress().c_str());
+        Serial.printf("  - MAC: %s\n", getFormattedMacAddress().c_str());
         Serial.printf("  - Speed: %d Mbps\n", ETH.linkSpeed());
         Serial.printf("  - Duplex: %s\n", ETH.fullDuplex() ? "Full" : "Half");
         Serial.printf("  - Gateway: %s\n", ETH.gatewayIP().toString().c_str());
@@ -541,19 +542,11 @@ void Branch_Ethernet::WiFiEventHandler(WiFiEvent_t event) {
 }
 
 // ==========================================
-// UTILITY METHODS - SAME AS WiFi
+// UTILITY METHODS
 // ==========================================
 
 String Branch_Ethernet::getIPAddress() const {
     return ETH.localIP().toString();
-}
-
-String Branch_Ethernet::getMacAddress() const {
-    return ETH.macAddress();
-}
-
-String Branch_Ethernet::getFormattedMacAddress() const {
-    return ETH.macAddress();
 }
 
 void Branch_Ethernet::emitStatus() {
@@ -572,7 +565,7 @@ void Branch_Ethernet::printConnectionStatus() {
     Serial.printf("  - Subnet Mask: %s\n", ETH.subnetMask().toString().c_str());
     Serial.printf("  - Gateway: %s\n", ETH.gatewayIP().toString().c_str());
     Serial.printf("  - DNS: %s\n", ETH.dnsIP().toString().c_str());
-    Serial.printf("  - MAC: %s\n", getMacAddress().c_str());
+    Serial.printf("  - MAC: %s\n", getFormattedMacAddress().c_str());
     Serial.printf("  - Link Speed: %d Mbps\n", ETH.linkSpeed());
     Serial.printf("  - Full Duplex: %s\n", ETH.fullDuplex() ? "Yes" : "No");
 }

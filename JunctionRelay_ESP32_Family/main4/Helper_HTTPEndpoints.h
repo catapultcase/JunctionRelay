@@ -102,8 +102,6 @@ private:
     String getSystemStatsLiteJson() const;
     String getGatewayStatusJson() const;
     String getFirmwareInfoJson() const;
-    String getFormattedMacAddress() const;
-    String getFirmwareVersion() const;
 
     // Temporary buffer for POST data
     static char tempPostBodyBuffer[2048];

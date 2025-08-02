@@ -25,7 +25,7 @@ import {
     SelectChangeEvent, Popover, List, ListItem, ListItemText, IconButton,
     Modal, Dialog, DialogTitle, DialogContent, DialogActions,
     ToggleButtonGroup, ToggleButton, Card, CardContent, Divider,
-    useTheme, useMediaQuery, Tooltip, Switch
+    useTheme, useMediaQuery, Tooltip, Switch, TableContainer, Grid
 } from "@mui/material";
 
 // Icon imports
@@ -190,6 +190,8 @@ const SensorEditModal: React.FC<{
     sensor: Sensor | null;
     onSave: (updatedSensor: Sensor) => Promise<void>;
 }> = ({ open, onClose, sensor, onSave }) => {
+    const theme = useTheme();
+    const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
     const [editedSensor, setEditedSensor] = useState<Sensor | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -216,6 +218,22 @@ const SensorEditModal: React.FC<{
     const handleFieldChange = (field: string, value: any) => {
         if (!editedSensor) return;
         setEditedSensor({ ...editedSensor, [field]: value });
+    };
+
+    const handleNumberFieldChange = (field: string, value: string) => {
+        if (!editedSensor) return;
+
+        // Allow empty string (user clearing the field)
+        if (value === '') {
+            setEditedSensor({ ...editedSensor, [field]: '' });
+            return;
+        }
+
+        // Parse the number and handle the case where user enters '0'
+        const numValue = Number(value);
+        if (!isNaN(numValue)) {
+            setEditedSensor({ ...editedSensor, [field]: numValue });
+        }
     };
 
     if (!editedSensor) return null;
@@ -245,21 +263,31 @@ const SensorEditModal: React.FC<{
     ];
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
             <DialogTitle>Edit Sensor: {editedSensor.name}</DialogTitle>
             <DialogContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-                    {editableFields.map(({ field, label, type }) => (
-                        <TextField
-                            key={field}
-                            label={label}
-                            type={type}
-                            value={editedSensor[field] || ''}
-                            onChange={(e) => handleFieldChange(field, type === 'number' ? Number(e.target.value) || 0 : e.target.value)}
-                            size="small"
-                            fullWidth
-                        />
-                    ))}
+                <Box sx={{ mt: 1 }}>
+                    <Grid container spacing={2}>
+                        {editableFields.map(({ field, label, type }) => (
+                            <Grid item xs={12} md={isDesktop ? 6 : 12} key={field}>
+                                <TextField
+                                    label={label}
+                                    type={type}
+                                    value={editedSensor[field] !== undefined ? editedSensor[field] : ''}
+                                    onChange={(e) => {
+                                        if (type === 'number') {
+                                            handleNumberFieldChange(field, e.target.value);
+                                        } else {
+                                            handleFieldChange(field, e.target.value);
+                                        }
+                                    }}
+                                    size="small"
+                                    fullWidth
+                                    inputProps={type === 'number' ? { min: 0 } : undefined}
+                                />
+                            </Grid>
+                        ))}
+                    </Grid>
                 </Box>
             </DialogContent>
             <DialogActions>
@@ -1448,9 +1476,9 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 
             {/* Render content based on view mode */}
             {viewMode === 'table' ? (
-                /* Table View */
+                /* Table View with TableContainer to handle overflow */
                 <>
-                    <Paper variant="outlined" sx={{ mb: 2 }}>
+                    <TableContainer component={Paper} variant="outlined" sx={{ mb: 2, maxWidth: '100%' }}>
                         <Table size="small" stickyHeader>
                             <TableHead>
                                 <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
@@ -1504,7 +1532,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                                 )}
                             </TableBody>
                         </Table>
-                    </Paper>
+                    </TableContainer>
                 </>
             ) : (
                 /* Tile Views */
