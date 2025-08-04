@@ -2,35 +2,31 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_CROWPANEL7
+#define DEVICE_ADAFRUIT_QTPY_ESP32S3
 
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
 #include "Helper_Utils.h"
-#include <LovyanGFX.hpp>
-#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
-#include <lgfx/v1/platforms/esp32/Light_PWM.hpp>
-#include <lvgl.h>
+#include <Adafruit_NeoPixel.h>
 #include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "CrowPanel7 7-inch"
-#define DEVICE_MANUFACTURER             "Elecrow"
+#define DEVICE_MODEL                    "QT Py ESP32-S3 N4R2"
+#define DEVICE_MANUFACTURER             "Adafruit"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
-#define DEVICE_MCU                      "ESP32-S3-WROOM-1-N4R8"
+#define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
 #define DEVICE_WIRELESS_CONNECTIVITY    "2.4 GHz Wi-Fi & Bluetooth 5 (LE)"
 #define DEVICE_FLASH                    "4 MB"
-#define DEVICE_PSRAM                    "8 MB"
+#define DEVICE_PSRAM                    "2 MB"
 
 // Define capabilities for this device
-#define DEVICE_HAS_ONBOARD_SCREEN       1 
+#define DEVICE_HAS_ONBOARD_SCREEN       0 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
 #define DEVICE_HAS_EXTERNAL_MATRIX      0
-#define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
-#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
+#define DEVICE_HAS_EXTERNAL_NEOPIXELS   1 
+#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_ETHERNET        0
@@ -44,6 +40,21 @@
 #define DEVICE_HAS_SPEAKER              0
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
+
+#if DEVICE_HAS_ONBOARD_RGB_LED
+    #define PIN_NEOPIXEL 39
+    #define NUMPIXELS 1
+#endif
+
+#if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    // Default pins - will be overridden by preferences
+    #define DEFAULT_EXTERNAL_PIN_1 35
+    #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
+    
+    // Pixel counts per strip
+    #define EXTERNAL_NUMPIXELS_STRIP_0 128
+    #define EXTERNAL_NUMPIXELS_STRIP_1 8
+#endif
 
 // Hardware inventory structures
 struct NeoPixelInfo {
@@ -86,40 +97,40 @@ struct HardwareInventory {
     bool isGateway = DEVICE_IS_GATEWAY;
 };
 
-class Device_CrowPanel7 : public DeviceConfig {
+class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
 public:
-    Device_CrowPanel7(Manager_Connections* connMgr);
+    Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr);
+
+    // NEW: Required begin() method declaration
+    bool begin() override;
 
     // NEW: Returns hardware inventory instead of bool
     HardwareInventory detectHardware();
     
-    // Initialize the device (display setup, touch timing, etc.)
-    bool begin();
-    
-    // Initialize LVGL display helpers (called after LVGL is initialized)
-    void initLVGLHelper();
+    const char* getName();
 
-    // Return screen dimensions
-    int width();
-    int height();
-
-    // Rotation handling
     void setRotation(uint8_t rotation);
     uint8_t getRotation();
+    int width();
+    int height();
 
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // Return device name
-    const char* getName();
-
-    // I2C interface (not used by this device, but required by DeviceConfig)
+    // I2C methods
+    std::vector<I2CDeviceInfo> scanI2CDevices();
     TwoWire* getI2CInterface() override;
 
-    // LVGL flush callback function
-    static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
-    // LVGL touch callback function
-    static void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
+    // NeoPixel configuration methods
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    void loadNeoPixelPreferences() override;
+    void saveNeoPixelPreferences() override;
+    int getNeoPixelPin(int index = 0) override;
+    void setNeoPixelPin(int pin, int index = 0) override;
+    int getNeoPixelCount(int index = 0) override;
+    void setNeoPixelCount(int count, int index = 0) override;
+    std::vector<NeoPixelInfo> detectNeoPixelPins();
+    #endif
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -158,24 +169,32 @@ public:
     }
 
 private:
-    // Custom LGFX device class for Elecrow 7-inch panel
-    class CustomLGFX : public lgfx::LGFX_Device {
-    public:
-        lgfx::Bus_RGB   _bus_instance;
-        lgfx::Panel_RGB _panel_instance;
-        lgfx::Light_PWM _light_instance;
-        CustomLGFX();
-    };
+    #if DEVICE_HAS_ONBOARD_RGB_LED
+    Adafruit_NeoPixel onboardPixel;
+    #endif
 
-    CustomLGFX lgfx_dev; // Custom display driver instance
-    lv_disp_drv_t disp_drv;      // LVGL display driver
-    lv_indev_drv_t indev_drv;    // LVGL input device driver for touch
-    uint8_t rotation;
-    
     Manager_Connections* connMgr;
+
+    // NeoPixel pin and count configuration stored in preferences
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    int externalNeoPixelPin1;
+    int externalNeoPixelPin2;
+    int externalNeoPixelCount1;
+    int externalNeoPixelCount2;
+    #endif
+
+public:
+    // Legacy support - uses pin 1
+    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+    int getNeoPixelPin() { return getNeoPixelPin(0); }
+    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS_STRIP_0; }
+    #else
+    int getNeoPixelPin() { return -1; }
+    int getNeoPixelNum() { return 0; }
+    #endif
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_CrowPanel7 Device;
+typedef Device_AdafruitQtPyESP32S3 Device;
 
 #endif // DEVICE_H
