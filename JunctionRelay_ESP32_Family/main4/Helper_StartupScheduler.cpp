@@ -224,7 +224,16 @@ void Helper_StartupScheduler::setupNeoPixelManager(const std::vector<NeoPixelInf
 }
 
 void Helper_StartupScheduler::setupQuadDisplayManager(const std::vector<I2CDeviceInfo>& i2cDevices) {
-    quadDisplayManager = Manager_QuadDisplay::getInstance();
+    // Get the correct I2C interface from the device
+    TwoWire* wireInterface = nullptr;
+    if (devicePtr) {
+        wireInterface = devicePtr->getI2CInterface();
+        Serial.printf("[STARTUP_SCHEDULER]     Using I2C interface: %s\n", 
+                     (wireInterface == &Wire1) ? "Wire1" : "Wire");
+    }
+    
+    // Pass the correct wire interface to the singleton
+    quadDisplayManager = Manager_QuadDisplay::getInstance(wireInterface);
     
     if (!quadDisplayManager) {
         Serial.println("[STARTUP_SCHEDULER] ERROR: Failed to get QuadDisplay manager instance");
@@ -243,7 +252,16 @@ void Helper_StartupScheduler::setupQuadDisplayManager(const std::vector<I2CDevic
 }
 
 void Helper_StartupScheduler::setupCharliplexManager(const std::vector<I2CDeviceInfo>& i2cDevices) {
-    charliplexManager = Manager_Charlieplex::getInstance();
+    // Get the correct I2C interface from the device
+    TwoWire* wireInterface = nullptr;
+    if (devicePtr) {
+        wireInterface = devicePtr->getI2CInterface();
+        Serial.printf("[STARTUP_SCHEDULER]     Using I2C interface: %s\n", 
+                     (wireInterface == &Wire1) ? "Wire1" : "Wire");
+    }
+    
+    // Pass the correct wire interface to the singleton
+    charliplexManager = Manager_Charlieplex::getInstance(wireInterface);
     
     if (!charliplexManager) {
         Serial.println("[STARTUP_SCHEDULER] ERROR: Failed to get Charlieplex manager instance");

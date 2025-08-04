@@ -1,72 +1,72 @@
 {
   "Releases": [
     {
-      "tag_name": "v0.8.4",
-      "name": "Junction Relay ESP32 Family Firmware v0.8.4",
+      "tag_name": "v0.8.5",
+      "name": "Junction Relay ESP32 Family Firmware v0.8.5",
       "prerelease": true,
       "assets": [
         {
-          "Name": "junctionrelay_adafruit_feather_esp32_s3_v0.8.4_FullFlash.zip",
-          "Size": 983347,
+          "Name": "junctionrelay_adafruit_feather_esp32_s3_v0.8.5_FullFlash.zip",
+          "Size": 995152,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_adafruit_feather_esp32_s3_v0.8.4_OTA.bin",
-          "Size": 1753232,
-          "Sha256Hash": "823d39dd4b0fd4e1298d6f5df08f3e6f0e4cef3360753f6a31ba213bda2c6b44"
+          "Name": "junctionrelay_adafruit_feather_esp32_s3_v0.8.5_OTA.bin",
+          "Size": 1774976,
+          "Sha256Hash": "a8cb49a22053cf2cbe42db544441d6f46b37c6b124e2466911390c5dfc489cf5"
         },
         {
-          "Name": "junctionrelay_adafruit_matrix_esp32_s3_v0.8.4_FullFlash.zip",
-          "Size": 989952,
+          "Name": "junctionrelay_adafruit_matrix_esp32_s3_v0.8.5_FullFlash.zip",
+          "Size": 1001519,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_adafruit_matrix_esp32_s3_v0.8.4_OTA.bin",
-          "Size": 1758736,
-          "Sha256Hash": "8249cd31ddf17865562fa7ad407f38bfef53f9b42cfebc599f43693560ab261a"
+          "Name": "junctionrelay_adafruit_matrix_esp32_s3_v0.8.5_OTA.bin",
+          "Size": 1780480,
+          "Sha256Hash": "6e471fad4c71936df94f3c59900217087bec115a74fb35560faac665856e2538"
         },
         {
-          "Name": "junctionrelay_adafruit_qt_py_esp32_s3_n4r2_v0.8.4_FullFlash.zip",
-          "Size": 987868,
+          "Name": "junctionrelay_adafruit_qt_py_esp32_s3_n4r2_v0.8.5_FullFlash.zip",
+          "Size": 999216,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_adafruit_qt_py_esp32_s3_n4r2_v0.8.4_OTA.bin",
-          "Size": 1760304,
-          "Sha256Hash": "2f9eb9f097d5eff3846797c97d6ad8b4191520e124505fafecc0b805f49ca503"
+          "Name": "junctionrelay_adafruit_qt_py_esp32_s3_n4r2_v0.8.5_OTA.bin",
+          "Size": 1782080,
+          "Sha256Hash": "14fa071128366259668159da0a78f8d207a453d7cae22939edfbe6473171e56d"
         },
         {
-          "Name": "junctionrelay_elecrow_crowpanel_5_v0.8.4_FullFlash.zip",
-          "Size": 998249,
+          "Name": "junctionrelay_elecrow_crowpanel_5_v0.8.5_FullFlash.zip",
+          "Size": 1009595,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_elecrow_crowpanel_5_v0.8.4_OTA.bin",
-          "Size": 1792096,
-          "Sha256Hash": "e003cca6e4ce114c96715a8aa507f2561f7c3b6620b5acfdd1ce392166406ce9"
+          "Name": "junctionrelay_elecrow_crowpanel_5_v0.8.5_OTA.bin",
+          "Size": 1813792,
+          "Sha256Hash": "bafa21c761ee2326064605fcc6fb3f101d08124ac68843422fc74b2e60158ab1"
         },
         {
-          "Name": "junctionrelay_elecrow_crowpanel_7_v0.8.4_FullFlash.zip",
-          "Size": 998244,
+          "Name": "junctionrelay_elecrow_crowpanel_7_v0.8.5_FullFlash.zip",
+          "Size": 1009580,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_elecrow_crowpanel_7_v0.8.4_OTA.bin",
-          "Size": 1792096,
-          "Sha256Hash": "d511ebd57dc5f1f30c9260f15704de25e35b237b4076303077dabaab23f4d01c"
+          "Name": "junctionrelay_elecrow_crowpanel_7_v0.8.5_OTA.bin",
+          "Size": 1813792,
+          "Sha256Hash": "3349278c5073845056793fe38178218c8492b703153dff86a62a5ebbf205da24"
         },
         {
-          "Name": "junctionrelay_silicognition_wesp32_v0.8.4_FullFlash.zip",
-          "Size": 1015363,
+          "Name": "junctionrelay_silicognition_wesp32_v0.8.5_FullFlash.zip",
+          "Size": 1026626,
           "Sha256Hash": null
         },
         {
-          "Name": "junctionrelay_silicognition_wesp32_v0.8.4_OTA.bin",
-          "Size": 1819360,
-          "Sha256Hash": "977abec9dfb7b14fe15130b85d6332d2206003d902b61b288c83d95d92d1f7b9"
+          "Name": "junctionrelay_silicognition_wesp32_v0.8.5_OTA.bin",
+          "Size": 1841072,
+          "Sha256Hash": "8dbefb8f919532710b28d869af1914d2ea8c98fe3226b59adb28dfa1e2d075a1"
         }
       ]
     }
   ],
-  "CachedAt": "2025-08-01T19:18:58.690296-05:00"
+  "CachedAt": "2025-08-04T08:33:51.46685-05:00"
 }
