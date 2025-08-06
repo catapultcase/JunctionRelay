@@ -221,6 +221,86 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        // Add peers to WebSocket gateway for ESP-NOW communication (WebSocket-based)
+        private async Task<bool> AddPeersToWebSocketGatewayAsync(string gatewayDeviceMac, List<Model_Device> targetDevices)
+        {
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Adding {targetDevices.Count} peers to WebSocket gateway {gatewayDeviceMac}");
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var webSocketManager = scope.ServiceProvider.GetRequiredService<Service_Manager_WebSocket_Devices>();
+
+                // Check if gateway device is connected via WebSocket
+                if (!webSocketManager.IsDeviceConnected(gatewayDeviceMac))
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ WebSocket gateway {gatewayDeviceMac} is not connected");
+                    return false;
+                }
+
+                bool allSuccessful = true;
+
+                foreach (var device in targetDevices)
+                {
+                    try
+                    {
+                        // Create add peer command for WebSocket gateway
+                        var addPeerPayload = new
+                        {
+                            type = "peer_management",
+                            action = "add",
+                            peerMac = device.UniqueIdentifier,
+                            peerName = device.Name
+                        };
+
+                        var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                        var serializedPayload = payloadService.SerializeGatewayCommand(
+                            addPeerPayload,
+                            includePrefix: true,  // WebSocket may need prefix depending on implementation
+                            compressPayload: false  // Gateway commands probably don't need compression
+                        );
+
+                        // Create a temporary WebSocket sender for gateway commands
+                        var webSocketSender = new Service_Send_Data_WebSocket(
+                            gatewayDeviceMac,
+                            webSocketManager,
+                            isGatewayMode: false,  // This is the gateway itself, not forwarding
+                            gatewayTarget: null
+                        );
+
+                        var result = await webSocketSender.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(serializedPayload));
+
+                        if (result.Success)
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Added peer {device.Name} ({device.UniqueIdentifier}) to WebSocket gateway");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to add peer {device.Name}: {result.ErrorMessage}");
+                            allSuccessful = false;
+                        }
+
+                        webSocketSender.Dispose();
+
+                        // Small delay between peer additions
+                        await Task.Delay(200);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error adding peer {device.Name} to WebSocket gateway: {ex.Message}");
+                        allSuccessful = false;
+                    }
+                }
+
+                return allSuccessful;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ WebSocket Gateway peer setup failed: {ex.Message}");
+                return false;
+            }
+        }
+
         // Start Junction
         public async Task<Model_Operation_Result> StartJunctionAsync(int junctionId, CancellationToken cancellationToken)
         {
@@ -248,7 +328,6 @@ namespace JunctionRelayServer.Services
             string modeInfo = isFrameMode ? "Frame Engine" : "Payload";
             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Starting Junction {junctionId} (Type: {junction.Type}, Mode: {modeInfo})");
 
-            // Rest of the existing StartJunctionAsync logic remains the same...
             // Populate links and sensors (including JunctionSensorTargets)
             await junctionDb.PopulateLinksAndSensors(junction);
 
@@ -370,6 +449,39 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ COM Gateway junction has no valid gateway destination or target devices specified");
                 }
             }
+            else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Starting WebSocket Gateway junction {junctionId}");
+
+                // Get all target devices for this junction
+                var targetDevices = new List<Model_Device>();
+                foreach (var link in junction.TargetLinks)
+                {
+                    var device = await deviceDb.GetDeviceByIdAsync(link.DeviceId);
+                    if (device != null)
+                    {
+                        targetDevices.Add(device);
+                    }
+                }
+
+                // Get current gateway destination from the gateway device
+                var currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+
+                // Add all target devices as peers to the WebSocket gateway
+                if (!string.IsNullOrEmpty(currentGatewayDestination) && targetDevices.Any())
+                {
+                    var peersAdded = await AddPeersToWebSocketGatewayAsync(currentGatewayDestination, targetDevices);
+
+                    if (!peersAdded)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Some peers failed to be added to WebSocket gateway, continuing anyway...");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ WebSocket Gateway junction has no valid gateway destination or target devices specified");
+                }
+            }
 
             // Streaming based on junction type
             switch (junction.Type)
@@ -384,6 +496,11 @@ namespace JunctionRelayServer.Services
                     await HandleStreamingForJunctionType(com, junction, deviceDb, selectedSensorsCopy);
                     break;
 
+                case "WebSocket Junction":
+                    var webSocket = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_WebSocket>();
+                    await HandleStreamingForJunctionType(webSocket, junction, deviceDb, selectedSensorsCopy);
+                    break;
+
                 case "Gateway Junction (COM to ESP:NOW)":
                     var comGatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_COM>();
                     await HandleStreamingForJunctionType(comGatewayStream, junction, deviceDb, selectedSensorsCopy);
@@ -392,6 +509,11 @@ namespace JunctionRelayServer.Services
                 case "Gateway Junction (HTTP to ESP:NOW)":
                     var httpGatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_HTTP>();
                     await HandleStreamingForJunctionType(httpGatewayStream, junction, deviceDb, selectedSensorsCopy);
+                    break;
+
+                case "Gateway Junction (WebSocket to ESP:NOW)":
+                    var webSocketGatewayStream = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_WebSocket>();
+                    await HandleStreamingForJunctionType(webSocketGatewayStream, junction, deviceDb, selectedSensorsCopy);
                     break;
 
                 default:
@@ -468,7 +590,8 @@ namespace JunctionRelayServer.Services
 
                             // Check if this is a Gateway junction and get the current gateway destination
                             if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
-                                junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+                                junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
+                                junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
                             {
                                 // For gateway junctions, get the current destination from the gateway device
                                 string? currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
@@ -516,8 +639,13 @@ namespace JunctionRelayServer.Services
             }
             else if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
-                destination = gatewayDevice.COMPort;
+                destination = gatewayDevice.IPAddress; // FIXED: was using COMPort instead of IPAddress
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🌐 Using IP address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+            }
+            else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+            {
+                destination = gatewayDevice.UniqueIdentifier; // WebSocket uses MAC address for device identification
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Using MAC address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else
             {
@@ -526,7 +654,14 @@ namespace JunctionRelayServer.Services
 
             if (string.IsNullOrEmpty(destination))
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device '{gatewayDevice.Name}' has no {(junction.Type.Contains("COM") ? "COM port" : "IP address")} configured");
+                string destinationType = junction.Type switch
+                {
+                    var t when t.Contains("COM") => "COM port",
+                    var t when t.Contains("HTTP") => "IP address",
+                    var t when t.Contains("WebSocket") => "MAC address",
+                    _ => "destination"
+                };
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device '{gatewayDevice.Name}' has no {destinationType} configured");
             }
 
             return destination;
@@ -538,7 +673,6 @@ namespace JunctionRelayServer.Services
             // For gateway junctions, get the current destination from the gateway device
             return await GetCurrentGatewayDestination(junction, deviceDb);
         }
-
         public async Task<Model_Operation_Result> StopJunctionAsync(int junctionId, CancellationToken cancellationToken)
         {
             if (!_startedJunctions.TryGetValue(junctionId, out var junction))
@@ -558,6 +692,11 @@ namespace JunctionRelayServer.Services
                 case "COM Junction":
                 case "Gateway Junction (COM to ESP:NOW)":
                     streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_COM>();
+                    break;
+
+                case "WebSocket Junction":
+                case "Gateway Junction (WebSocket to ESP:NOW)":
+                    streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_WebSocket>();
                     break;
 
                 default:

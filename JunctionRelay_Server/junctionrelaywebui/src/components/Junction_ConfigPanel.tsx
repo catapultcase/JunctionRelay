@@ -55,10 +55,10 @@ const JUNCTION_TYPES = [
     "COM Junction",
     "HTTP Junction",
     "MQTT Junction",
-    "Websocket Junction",
+    "WebSocket Junction",
     "Gateway Junction (COM to ESP:NOW)",
     "Gateway Junction (HTTP to ESP:NOW)",
-    "Gateway Junction (Websocket to ESP:NOW)"
+    "Gateway Junction (WebSocket to ESP:NOW)"
 ];
 
 const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
@@ -132,7 +132,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
     const shouldShowGatewaySelection = () => {
         return junctionData?.type === "Gateway Junction (HTTP to ESP:NOW)" ||
             junctionData?.type === "Gateway Junction (COM to ESP:NOW)" ||
-            junctionData?.type === "Gateway Junction (Websocket to ESP:NOW)";
+            junctionData?.type === "Gateway Junction (WebSocket to ESP:NOW)";
     };
 
     return (

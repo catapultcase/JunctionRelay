@@ -349,10 +349,10 @@ namespace JunctionRelayServer.Services
         }
 
         private async Task ProcessDeviceHeartbeatAsync(
-            Service_Database_Manager_Devices deviceDb,
-            Model_Device device,
-            List<DeviceHealthReport> healthReports,
-            CancellationToken token)
+    Service_Database_Manager_Devices deviceDb,
+    Model_Device device,
+    List<DeviceHealthReport> healthReports,
+    CancellationToken token)
         {
             var now = DateTime.UtcNow;
             device.LastPingAttempt = now;
@@ -589,17 +589,40 @@ namespace JunctionRelayServer.Services
             }
             else if (device.HeartbeatProtocol?.ToUpper() == "WEBSOCKET")
             {
-                // Prepare heartbeat request data
-                var heartbeatData = new
+                if (string.IsNullOrEmpty(device.UniqueIdentifier))
                 {
-                    expectedValue = device.HeartbeatExpectedValue ?? "ok",
-                    deviceId = device.Id,
-                    timeout = 10000 // 10 seconds timeout
-                };
+                    Console.WriteLine($"[HEARTBEATS] ❌ Device '{device.Name}' missing MAC address for WebSocket heartbeat");
+                    success = false;
+                    duration = 0;
+                }
+                else
+                {
+                    // Send heartbeat request and wait for response
+                    var (wsSuccess, wsDuration, response) = await _webSocketService.SendHeartbeatRequestAsync(device.UniqueIdentifier!, new { }).ConfigureAwait(false);
 
-                var (wsSuccess, wsDuration, response) = await _webSocketService.SendHeartbeatRequestAsync(device.UniqueIdentifier!, heartbeatData).ConfigureAwait(false);
-                success = wsSuccess;
-                duration = wsDuration;
+                    if (wsSuccess && !string.IsNullOrEmpty(response))
+                    {
+                        // Validate the response includes correct MAC address
+                        var validationResult = ValidateWebSocketHeartbeatResponse(response, device.UniqueIdentifier, device.Name);
+                        success = validationResult.isValid;
+                        duration = wsDuration;
+
+                        if (success)
+                        {
+                            Console.WriteLine($"[HEARTBEATS] ✅ WebSocket heartbeat verified for '{device.Name}': {validationResult.details}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[HEARTBEATS] ❌ WebSocket heartbeat validation failed for '{device.Name}': {validationResult.details}");
+                        }
+                    }
+                    else
+                    {
+                        success = false;
+                        duration = wsDuration;
+                        Console.WriteLine($"[HEARTBEATS] ❌ WebSocket heartbeat failed for '{device.Name}': {response ?? "No response"}");
+                    }
+                }
             }
             else if (device.HeartbeatProtocol?.ToUpper() == "ESPNOW")
             {
@@ -697,6 +720,96 @@ namespace JunctionRelayServer.Services
             }
 
             await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
+        }
+
+        // Add this validation method to the Service_Heartbeats class
+        private (bool isValid, string details) ValidateWebSocketHeartbeatResponse(string jsonResponse, string expectedMac, string deviceName)
+        {
+            try
+            {
+                var response = JsonSerializer.Deserialize<JsonElement>(jsonResponse, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                // Check basic response structure
+                if (!response.TryGetProperty("type", out var typeElement) ||
+                    typeElement.GetString() != "heartbeat-response")
+                {
+                    return (false, "Invalid response type");
+                }
+
+                if (!response.TryGetProperty("status", out var statusElement) ||
+                    statusElement.GetString() != "ok")
+                {
+                    var actualStatus = statusElement.GetString() ?? "unknown";
+                    return (false, $"Status not OK: {actualStatus}");
+                }
+
+                // Critical: Verify MAC address
+                if (!response.TryGetProperty("mac", out var macElement))
+                {
+                    return (false, "Missing MAC address in response");
+                }
+
+                var responseMac = macElement.GetString();
+                if (string.IsNullOrEmpty(responseMac))
+                {
+                    return (false, "Empty MAC address in response");
+                }
+
+                // Normalize MAC addresses for comparison (remove colons, dashes, make uppercase)
+                var normalizedExpected = expectedMac.Replace(":", "").Replace("-", "").ToUpper();
+                var normalizedResponse = responseMac.Replace(":", "").Replace("-", "").ToUpper();
+
+                if (!string.Equals(normalizedExpected, normalizedResponse, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (false, $"MAC mismatch: expected {expectedMac}, got {responseMac}");
+                }
+
+                // Extract diagnostic info for logging
+                var diagnostics = new List<string>();
+
+                if (response.TryGetProperty("uptime", out var uptimeElement))
+                {
+                    var uptimeMs = uptimeElement.GetInt64();
+                    var uptimeSeconds = uptimeMs / 1000;
+                    if (uptimeSeconds > 86400) // > 1 day
+                        diagnostics.Add($"uptime: {uptimeSeconds / 86400}d");
+                    else if (uptimeSeconds > 3600) // > 1 hour
+                        diagnostics.Add($"uptime: {uptimeSeconds / 3600}h");
+                    else
+                        diagnostics.Add($"uptime: {uptimeSeconds}s");
+                }
+
+                if (response.TryGetProperty("freeHeap", out var heapElement))
+                {
+                    var freeHeap = heapElement.GetInt32();
+                    diagnostics.Add($"heap: {freeHeap / 1024}KB");
+                }
+
+                if (response.TryGetProperty("ip", out var ipElement))
+                {
+                    diagnostics.Add($"ip: {ipElement.GetString()}");
+                }
+
+                if (response.TryGetProperty("firmware", out var firmwareElement))
+                {
+                    diagnostics.Add($"fw: {firmwareElement.GetString()}");
+                }
+
+                var details = $"MAC verified: {responseMac}";
+                if (diagnostics.Any())
+                {
+                    details += $" ({string.Join(", ", diagnostics)})";
+                }
+
+                return (true, details);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"JSON parse error: {ex.Message}");
+            }
         }
 
         // Helper method to add device health report to collection if applicable

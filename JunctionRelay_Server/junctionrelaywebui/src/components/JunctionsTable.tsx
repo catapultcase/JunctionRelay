@@ -322,7 +322,7 @@ const ProtocolIcon = memo(({ type }: { type: string }) => {
                     style={{ verticalAlign: 'middle' }}
                 />
             );
-        case 'Websocket Junction':
+        case 'WebSocket Junction':
             return (
                 <img
                     src="/Protocols/WebSocket/svg/websocket-icon-solid.svg"
@@ -333,7 +333,7 @@ const ProtocolIcon = memo(({ type }: { type: string }) => {
                 />
             );
         case 'Gateway Junction (HTTP to ESP:NOW)':
-        case 'Gateway Junction (Websocket to ESP:NOW)':
+        case 'Gateway Junction (WebSocket to ESP:NOW)':
             return (
                 <img
                     src="/Protocols/Gateway/svg/gateway-icon-solid.svg"
@@ -1098,7 +1098,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
 
         // Validate gateway destination for Gateway types
         if ((newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
-            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)") &&
+            newJunction.type === "Gateway Junction (WebSocket to ESP:NOW)") &&
             !newJunction.selectedGatewayDeviceId) {
             setError("Please select a gateway device for Gateway junctions!");
             setLoading(false);
@@ -1147,7 +1147,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     // Helper function to determine if a gateway device should be shown
     const shouldShowGatewaySelection = () => {
         return newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
-            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)";
+            newJunction.type === "Gateway Junction (WebSocket to ESP:NOW)";
     };
 
     // Junction tile click handler
@@ -1661,9 +1661,9 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                         <MenuItem value="COM Junction">COM Junction</MenuItem>
                                         <MenuItem value="HTTP Junction">HTTP Junction</MenuItem>
                                         <MenuItem value="MQTT Junction">MQTT Junction</MenuItem>
-                                        <MenuItem value="Websocket Junction">Websocket Junction</MenuItem>
+                                        <MenuItem value="WebSocket Junction">WebSocket Junction</MenuItem>
                                         <MenuItem value="Gateway Junction (HTTP to ESP:NOW)">Gateway Junction (HTTP to ESP:NOW)</MenuItem>
-                                        <MenuItem value="Gateway Junction (Websocket to ESP:NOW)">Gateway Junction (Websocket to ESP:NOW)</MenuItem>
+                                        <MenuItem value="Gateway Junction (WebSocket to ESP:NOW)">Gateway Junction (WebSocket to ESP:NOW)</MenuItem>
                                     </Select>
                                 </FormControl>
 

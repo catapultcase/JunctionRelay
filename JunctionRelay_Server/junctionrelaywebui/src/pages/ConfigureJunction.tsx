@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,10 +86,10 @@ const JUNCTION_TYPES = [
     "COM Junction",
     "HTTP Junction",
     "MQTT Junction",
-    "Websocket Junction",
+    "WebSocket Junction",
     "Gateway Junction (COM to ESP:NOW)",
     "Gateway Junction (HTTP to ESP:NOW)",
-    "Gateway Junction (Websocket to ESP:NOW)"
+    "Gateway Junction (WebSocket to ESP:NOW)"
 ];
 
 // Helper function to determine if COM setup should be shown

@@ -543,19 +543,21 @@ const Navbar = () => {
                     </Box>
 
                     <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        {/* Version display - always on the far left when enabled */}
+                        {/* Version display - show for ALL users when flag is enabled */}
                         {flags?.top_bar_show_current_version === 'true' && version && (
                             <Tooltip title={`Current Version: ${version}`}>
                                 <Box
                                     sx={{
-                                        display: "flex",
+                                        display: "flex !important", // Force display
                                         alignItems: "center",
                                         color: "#ffffff",
                                         fontSize: "0.875rem",
                                         fontWeight: 500,
                                         padding: "4px 8px",
                                         borderRadius: "4px",
-                                        backgroundColor: "rgba(255,255,255,0.1)"
+                                        backgroundColor: "rgba(255,255,255,0.1)",
+                                        visibility: "visible !important", // Force visibility
+                                        opacity: 1 // Ensure opacity
                                     }}
                                 >
                                     v{version}

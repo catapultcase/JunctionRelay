@@ -1,6 +1,7 @@
 #include "Branch_Ethernet.h"
 #include "Helper_StreamProcessor.h"
 #include "Helper_HTTPEndpoints.h"
+#include "Helper_WebSocket.h"
 #include "Helper_Preferences.h"
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
@@ -20,6 +21,7 @@ Branch_Ethernet::Branch_Ethernet()
       deviceCapabilities(nullptr),
       streamProcessor(nullptr),
       httpEndpoints(nullptr),
+      webSocketHelper(nullptr),  // NEW
       lastConnectionCheck(0)
 {
     instance = this;
@@ -27,6 +29,10 @@ Branch_Ethernet::Branch_Ethernet()
 }
 
 Branch_Ethernet::~Branch_Ethernet() {
+    if (webSocketHelper) {
+        delete webSocketHelper;
+        webSocketHelper = nullptr;
+    }
     if (httpEndpoints) {
         delete httpEndpoints;
         httpEndpoints = nullptr;
@@ -53,7 +59,7 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
     deviceInfo = devInfo;
     deviceCapabilities = devCaps;
     
-    Serial.println("[Branch_Ethernet] Initializing Ethernet mode...");
+    Serial.println("[Branch_Ethernet] Initializing Ethernet mode with HTTP and WebSocket support...");
     
     // Verify device supports Ethernet
     if (!devicePtr->supportsEthernet()) {
@@ -66,7 +72,7 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
     
     Serial.printf("[Branch_Ethernet] Loaded settings - Device: %s\n", deviceName.c_str());
     
-    // Create StreamProcessor with device pointer - EXACT SAME AS WiFi
+    // Create StreamProcessor with device pointer
     streamProcessor = new Helper_StreamProcessor(
         screenRouter,
         [this](const JsonDocument& doc) { this->handleProtocolPayload(doc); },
@@ -74,10 +80,13 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
         devicePtr
     );
     
-    // Create HTTP endpoints helper WITH device helpers injected - EXACT SAME AS WiFi
+    // Create HTTP endpoints helper WITH device helpers injected
     httpEndpoints = new Helper_HTTPEndpoints(screenRouter, streamProcessor, deviceInfo, deviceCapabilities);
     
-    // Set up bidirectional callbacks - EXACT SAME AS WiFi
+    // NEW: Create WebSocket helper WITH device helpers injected
+    webSocketHelper = new Helper_WebSocket(streamProcessor, deviceInfo, deviceCapabilities);
+    
+    // Set up bidirectional callbacks for HTTP
     httpEndpoints->setProtocolCallback([this](const JsonDocument& doc) { 
         this->handleProtocolPayload(doc); 
     });
@@ -85,8 +94,19 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
         this->handleSystemPayload(doc); 
     });
     
-    // Initialize HTTP endpoints - EXACT SAME AS WiFi
+    // NEW: Set up bidirectional callbacks for WebSocket
+    webSocketHelper->setProtocolCallback([this](const JsonDocument& doc) { 
+        this->handleProtocolPayload(doc); 
+    });
+    webSocketHelper->setSystemCallback([this](const JsonDocument& doc) { 
+        this->handleSystemPayload(doc); 
+    });
+    
+    // Initialize HTTP endpoints
     initializeHTTPEndpoints();
+    
+    // NEW: Initialize WebSocket
+    initializeWebSocket();
     
     // Initialize Ethernet connection
     initializeEthernet();
@@ -96,6 +116,7 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
         // Ethernet connected - initialize network-dependent services
         setupMDNS();
         httpEndpoints->startServer();
+        webSocketHelper->startServer();  // NEW: Start WebSocket server
     } else {
         Serial.println("[Branch_Ethernet] Ethernet connection failed");
     }
@@ -103,7 +124,7 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
     initialized = true;
     emitStatus();
     
-    Serial.println("[Branch_Ethernet] Ethernet mode ready");
+    Serial.println("[Branch_Ethernet] Ethernet mode ready with HTTP and WebSocket support");
     Serial.println("[Branch_Ethernet] HTTP endpoints available:");
     Serial.println("[Branch_Ethernet] GET  /api/device/info");
     Serial.println("[Branch_Ethernet] GET  /api/device/capabilities");
@@ -111,6 +132,14 @@ void Branch_Ethernet::init(ScreenRouter* router, Helper_Preferences* prefs, Devi
     Serial.println("[Branch_Ethernet] GET  /api/system/stats");
     Serial.println("[Branch_Ethernet] GET  /api/connection/status");
     Serial.println("[Branch_Ethernet] GET  /api/health/heartbeat");
+    Serial.println("[Branch_Ethernet] POST /api/data");
+    // NEW: WebSocket information
+    Serial.println("[Branch_Ethernet] WebSocket server available:");
+    if (isConnected()) {
+        Serial.printf("[Branch_Ethernet] ws://%s:81/ (for WebSocket junctions)\n", ETH.localIP().toString().c_str());
+    } else {
+        Serial.println("[Branch_Ethernet] ws://[device-ip]:81/ (when Ethernet connected)");
+    }
 }
 
 void Branch_Ethernet::loop() {
@@ -118,7 +147,12 @@ void Branch_Ethernet::loop() {
     
     unsigned long currentTime = millis();
     
-    // Check Ethernet connection periodically - SAME PATTERN AS WiFi
+    // NEW: Process WebSocket events
+    if (webSocketHelper) {
+        webSocketHelper->loop();
+    }
+    
+    // Check Ethernet connection periodically
     if (currentTime - lastConnectionCheck > CONNECTION_CHECK_INTERVAL) {
         lastConnectionCheck = currentTime;
         
@@ -129,7 +163,7 @@ void Branch_Ethernet::loop() {
 }
 
 // ==========================================
-// INITIALIZATION METHODS - SAME PATTERN AS WiFi
+// INITIALIZATION METHODS
 // ==========================================
 
 void Branch_Ethernet::initializeEthernet() {
@@ -150,6 +184,17 @@ void Branch_Ethernet::initializeHTTPEndpoints() {
     Serial.println("[Branch_Ethernet] HTTP endpoints initialized");
 }
 
+void Branch_Ethernet::initializeWebSocket() {
+    if (!webSocketHelper) {
+        Serial.println("[Branch_Ethernet] ERROR: WebSocket helper not created");
+        return;
+    }
+    
+    // Initialize WebSocket server on port 81 (standard for ESP32)
+    webSocketHelper->init(81);
+    Serial.println("[Branch_Ethernet] WebSocket helper initialized on port 81");
+}
+
 void Branch_Ethernet::setupMDNS() {
     if (!isConnected()) {
         Serial.println("[Branch_Ethernet] Cannot setup mDNS - Ethernet not connected");
@@ -161,7 +206,9 @@ void Branch_Ethernet::setupMDNS() {
     
     if (MDNS.begin(host.c_str())) {
         MDNS.addService("junctionrelay", "tcp", 80);
+        MDNS.addService("junctionrelay-ws", "tcp", 81);  // NEW: WebSocket service
         Serial.printf("[Branch_Ethernet] mDNS started with hostname: %s\n", host.c_str());
+        Serial.println("[Branch_Ethernet] Services: HTTP (port 80), WebSocket (port 81)");
     } else {
         Serial.println("[Branch_Ethernet] Failed to start mDNS responder");
     }
@@ -196,7 +243,7 @@ bool Branch_Ethernet::connectToEthernet() {
     String hostname = deviceName.isEmpty() ? "JunctionRelay_" + getFormattedMacAddress() : deviceName;
     ETH.setHostname(hostname.c_str());
     
-    // Wait for connection with timeout - SAME PATTERN AS WiFi
+    // Wait for connection with timeout
     unsigned long startTime = millis();
     const unsigned long timeout = 30000; // 30 seconds
     
@@ -216,10 +263,23 @@ bool Branch_Ethernet::connectToEthernet() {
 }
 
 void Branch_Ethernet::handleEthernetDisconnection() {
-    Serial.println("[Branch_Ethernet] Ethernet disconnected, checking status...");
+    Serial.println("[Branch_Ethernet] Ethernet disconnected, stopping services and checking status...");
+    
+    // Stop WebSocket server when Ethernet disconnects
+    if (webSocketHelper && webSocketHelper->isServerRunning()) {
+        webSocketHelper->stopServer();
+        Serial.println("[Branch_Ethernet] WebSocket server stopped due to Ethernet disconnection");
+    }
     
     if (isConnected()) {
-        Serial.println("[Branch_Ethernet] Ethernet reconnected successfully");
+        Serial.println("[Branch_Ethernet] Ethernet reconnected successfully, restarting services...");
+        
+        // Restart WebSocket server when Ethernet reconnects
+        if (webSocketHelper) {
+            webSocketHelper->startServer();
+            Serial.println("[Branch_Ethernet] WebSocket server restarted after Ethernet reconnection");
+        }
+        
         emitStatus();
     } else {
         Serial.println("[Branch_Ethernet] Ethernet still disconnected");
@@ -263,7 +323,7 @@ void Branch_Ethernet::detectHardwareConfig() {
 }
 
 // ==========================================
-// STREAMPROCESSOR CALLBACK HANDLERS - EXACT SAME AS WiFi
+// STREAMPROCESSOR CALLBACK HANDLERS
 // ==========================================
 
 void Branch_Ethernet::handleProtocolPayload(const JsonDocument& doc) {
@@ -274,6 +334,12 @@ void Branch_Ethernet::handleProtocolPayload(const JsonDocument& doc) {
     
     if (strcmp(type, "http_request") == 0) {
         handleHTTPRequest(doc);
+    }
+    else if (strcmp(type, "websocket_ping") == 0) {
+        handleWebSocketPing(doc);
+    }
+    else if (strcmp(type, "gateway_forward") == 0) {
+        handleGatewayForward(doc);
     }
     else if (doc.containsKey("destination")) {
         // This would be for gateway forwarding (not applicable in ethernet mode)
@@ -312,7 +378,7 @@ void Branch_Ethernet::handleSystemPayload(const JsonDocument& doc) {
 }
 
 // ==========================================
-// PROTOCOL-SPECIFIC HANDLERS - SAME AS WiFi
+// PROTOCOL-SPECIFIC HANDLERS
 // ==========================================
 
 void Branch_Ethernet::handleHTTPRequest(const JsonDocument& doc) {
@@ -329,8 +395,56 @@ void Branch_Ethernet::handleHTTPRequest(const JsonDocument& doc) {
     }
 }
 
+void Branch_Ethernet::handleWebSocketPing(const JsonDocument& doc) {
+    Serial.println("[Branch_Ethernet] 🏓 WebSocket ping request received");
+    
+    // Extract client ID if available
+    uint8_t clientId = doc.containsKey("websocketClientId") ? doc["websocketClientId"].as<uint8_t>() : 0;
+    
+    if (webSocketHelper && webSocketHelper->isServerRunning()) {
+        // Send pong response
+        DynamicJsonDocument pongDoc(256);
+        pongDoc["type"] = "websocket_pong";
+        pongDoc["timestamp"] = millis();
+        pongDoc["uptime"] = millis();
+        pongDoc["freeHeap"] = ESP.getFreeHeap();
+        pongDoc["clients"] = webSocketHelper->getConnectedClientsCount();
+        pongDoc["linkSpeed"] = ETH.linkSpeed();
+        pongDoc["linkUp"] = ETH.linkUp();
+        
+        if (clientId > 0) {
+            webSocketHelper->sendToClient(clientId, pongDoc);
+            Serial.printf("[Branch_Ethernet] Sent WebSocket pong to client %d\n", clientId);
+        } else {
+            webSocketHelper->broadcastData(pongDoc);
+            Serial.println("[Branch_Ethernet] Broadcast WebSocket pong to all clients");
+        }
+    } else {
+        Serial.println("[Branch_Ethernet] WebSocket server not available for pong response");
+    }
+}
+
+void Branch_Ethernet::handleGatewayForward(const JsonDocument& doc) {
+    Serial.println("[Branch_Ethernet] 🌐 Gateway forward request received (not supported in Ethernet mode)");
+    
+    // Extract client ID if available
+    uint8_t clientId = doc.containsKey("websocketClientId") ? doc["websocketClientId"].as<uint8_t>() : 0;
+    
+    if (webSocketHelper && clientId > 0) {
+        // Send error response
+        DynamicJsonDocument errorDoc(256);
+        errorDoc["type"] = "gateway-forward-error";
+        errorDoc["error"] = "Gateway forwarding not supported in Ethernet mode";
+        errorDoc["suggestion"] = "Use Gateway USB or Gateway Ethernet mode for ESP-NOW forwarding";
+        errorDoc["timestamp"] = millis();
+        
+        webSocketHelper->sendToClient(clientId, errorDoc);
+        Serial.printf("[Branch_Ethernet] Sent gateway error response to client %d\n", clientId);
+    }
+}
+
 // ==========================================
-// SYSTEM HANDLERS USING INJECTED HELPERS - EXACT SAME AS WiFi
+// SYSTEM HANDLERS USING INJECTED HELPERS
 // ==========================================
 
 void Branch_Ethernet::handleDeviceInfoRequest(const JsonDocument& doc) {
@@ -409,6 +523,16 @@ void Branch_Ethernet::handleStatsRequest(const JsonDocument& doc) {
         Serial.printf("  - Gateway: %s\n", ETH.gatewayIP().toString().c_str());
     }
     
+    // NEW: Show WebSocket stats
+    if (webSocketHelper) {
+        Serial.printf("[Branch_Ethernet] WebSocket Status:\n");
+        Serial.printf("  - Server Running: %s\n", webSocketHelper->isServerRunning() ? "Yes" : "No");
+        Serial.printf("  - Connected Clients: %d\n", webSocketHelper->getConnectedClientsCount());
+        Serial.printf("  - Messages Received: %d\n", webSocketHelper->getMessagesReceived());
+        Serial.printf("  - Messages Sent: %d\n", webSocketHelper->getMessagesSent());
+        Serial.printf("  - Errors: %d\n", webSocketHelper->getErrorCount());
+    }
+    
     // Show queue status from StreamProcessor
     if (streamProcessor) {
         auto queueStatus = streamProcessor->getQueueStatus();
@@ -484,6 +608,17 @@ void Branch_Ethernet::handleSystemCommand(const JsonDocument& doc) {
             Serial.println("[Branch_Ethernet] Ethernet status requested");
             printConnectionStatus();
         }
+        else if (cmd == "websocket_status") {
+            Serial.println("[Branch_Ethernet] WebSocket status requested");
+            if (webSocketHelper) {
+                Serial.printf("WebSocket Server: %s\n", webSocketHelper->isServerRunning() ? "Running" : "Stopped");
+                Serial.printf("Connected Clients: %d\n", webSocketHelper->getConnectedClientsCount());
+                Serial.printf("Messages Received: %d\n", webSocketHelper->getMessagesReceived());
+                Serial.printf("Messages Sent: %d\n", webSocketHelper->getMessagesSent());
+            } else {
+                Serial.println("WebSocket helper not available");
+            }
+        }
         else {
             Serial.printf("[Branch_Ethernet] Unknown command: %s\n", cmd.c_str());
         }
@@ -527,9 +662,23 @@ void Branch_Ethernet::handleEthernetEvent(WiFiEvent_t event) {
 void Branch_Ethernet::updateConnectionState(bool connected) {
     if (connected) {
         Serial.printf("[Branch_Ethernet] 📶 CONNECTED: %s\n", getIPAddress().c_str());
+        
+        // Start WebSocket server when Ethernet connects
+        if (webSocketHelper && !webSocketHelper->isServerRunning()) {
+            webSocketHelper->startServer();
+            Serial.println("[Branch_Ethernet] WebSocket server started after Ethernet connection");
+        }
+        
         emitStatus();
     } else {
         Serial.println("[Branch_Ethernet] 📵 DISCONNECTED");
+        
+        // Stop WebSocket server when Ethernet disconnects
+        if (webSocketHelper && webSocketHelper->isServerRunning()) {
+            webSocketHelper->stopServer();
+            Serial.println("[Branch_Ethernet] WebSocket server stopped due to Ethernet disconnection");
+        }
+        
         emitStatus();
     }
 }
@@ -549,6 +698,14 @@ String Branch_Ethernet::getIPAddress() const {
     return ETH.localIP().toString();
 }
 
+bool Branch_Ethernet::isWebSocketActive() const {
+    return webSocketHelper && webSocketHelper->isServerRunning();
+}
+
+uint8_t Branch_Ethernet::getWebSocketClients() const {
+    return webSocketHelper ? webSocketHelper->getConnectedClientsCount() : 0;
+}
+
 void Branch_Ethernet::emitStatus() {
     Serial.printf("[Branch_Ethernet] Status Update:\n");
     Serial.printf("  - Initialized: %s\n", initialized ? "Yes" : "No");
@@ -556,6 +713,9 @@ void Branch_Ethernet::emitStatus() {
     if (isConnected()) {
         Serial.printf("  - IP Address: %s\n", getIPAddress().c_str());
         Serial.printf("  - Link Speed: %d Mbps\n", ETH.linkSpeed());
+        Serial.printf("  - HTTP Server: %s\n", httpEndpoints && httpEndpoints->isServerRunning() ? "Running" : "Stopped");
+        Serial.printf("  - WebSocket Server: %s\n", webSocketHelper && webSocketHelper->isServerRunning() ? "Running" : "Stopped");
+        Serial.printf("  - WebSocket Clients: %d\n", getWebSocketClients());
     }
 }
 
@@ -568,4 +728,10 @@ void Branch_Ethernet::printConnectionStatus() {
     Serial.printf("  - MAC: %s\n", getFormattedMacAddress().c_str());
     Serial.printf("  - Link Speed: %d Mbps\n", ETH.linkSpeed());
     Serial.printf("  - Full Duplex: %s\n", ETH.fullDuplex() ? "Yes" : "No");
+    
+    // NEW: Show service availability
+    Serial.println("[Branch_Ethernet] Available Services:");
+    Serial.printf("  - HTTP Server: http://%s/ (port 80)\n", ETH.localIP().toString().c_str());
+    Serial.printf("  - WebSocket Server: ws://%s:81/ (port 81)\n", ETH.localIP().toString().c_str());
+    Serial.printf("  - WebSocket Clients Connected: %d\n", getWebSocketClients());
 }

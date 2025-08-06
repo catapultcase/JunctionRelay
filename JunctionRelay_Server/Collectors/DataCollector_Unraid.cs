@@ -35,10 +35,11 @@ namespace JunctionRelayServer.Collectors
 
             CollectorId = collector.Id;
 
-            // Initialize HttpClientHandler to follow HTTP→HTTPS redirects
+            // Initialize HttpClientHandler with SSL bypass for local connections
             HttpClientHandler handler = new HttpClientHandler
             {
-                AllowAutoRedirect = true
+                AllowAutoRedirect = true,
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
             };
 
             _client = new HttpClient(handler)
@@ -66,7 +67,6 @@ namespace JunctionRelayServer.Collectors
             string json = JsonConvert.SerializeObject(payload);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            Console.WriteLine("DEBUG: POST " + _client.BaseAddress);
             HttpResponseMessage response;
             try
             {
@@ -75,7 +75,7 @@ namespace JunctionRelayServer.Collectors
             catch (HttpRequestException ex) when (ex.InnerException is AuthenticationException)
             {
                 throw new InvalidOperationException(
-                    "SSL handshake failed. Import your Unraid server certificate into this machine’s trust store.", ex);
+                    "SSL handshake failed. Import your Unraid server certificate into this machine's trust store.", ex);
             }
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
@@ -85,9 +85,8 @@ namespace JunctionRelayServer.Collectors
             response.EnsureSuccessStatusCode();
 
             string body = await response.Content.ReadAsStringAsync(cancellationToken);
-            Console.WriteLine("DEBUG: Response JSON: " + body);
-
             JObject root = JObject.Parse(body);
+
             if (root["errors"] is JArray errors && errors.Count > 0)
             {
                 string message = errors[0]?["message"]?.ToString() ?? "Unknown GraphQL error";
@@ -126,6 +125,7 @@ namespace JunctionRelayServer.Collectors
                     info {
                         os { platform distro release uptime }
                         cpu { manufacturer brand cores threads }
+                        memory { total free used }
                     }
                 }";
             try
@@ -150,6 +150,13 @@ namespace JunctionRelayServer.Collectors
                         AddSensorIfNotNull(sensors, collector, "cpu.cores", cpu["cores"]?.ToString(), "cores", "CPU");
                         AddSensorIfNotNull(sensors, collector, "cpu.threads", cpu["threads"]?.ToString(), "threads", "CPU");
                     }
+                    JToken memory = info["memory"];
+                    if (memory != null)
+                    {
+                        AddSensorIfNotNull(sensors, collector, "memory.total", memory["total"]?.ToString(), "bytes", "Memory");
+                        AddSensorIfNotNull(sensors, collector, "memory.free", memory["free"]?.ToString(), "bytes", "Memory");
+                        AddSensorIfNotNull(sensors, collector, "memory.used", memory["used"]?.ToString(), "bytes", "Memory");
+                    }
                 }
             }
             catch (Exception ex)
@@ -167,7 +174,10 @@ namespace JunctionRelayServer.Collectors
                 query {
                     array {
                         state
-                        capacity { disks { free used total } }
+                        capacity { 
+                            kilobytes { free used total }
+                            disks { free used total } 
+                        }
                         disks { name size status temp }
                     }
                 }";
@@ -178,13 +188,25 @@ namespace JunctionRelayServer.Collectors
                 if (arrayInfo != null)
                 {
                     AddSensorIfNotNull(sensors, collector, "array.state", arrayInfo["state"]?.ToString(), "N/A", "Array");
-                    JToken cap = arrayInfo["capacity"]?["disks"];
-                    if (cap != null)
+
+                    // Storage capacity in kilobytes
+                    JToken storageCap = arrayInfo["capacity"]?["kilobytes"];
+                    if (storageCap != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "array.capacity.free", cap["free"]?.ToString(), "bytes", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.capacity.used", cap["used"]?.ToString(), "bytes", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.capacity.total", cap["total"]?.ToString(), "bytes", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.free", storageCap["free"]?.ToString(), "KB", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.used", storageCap["used"]?.ToString(), "KB", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.total", storageCap["total"]?.ToString(), "KB", "Array");
                     }
+
+                    // Disk slot capacity (number of disk bays)
+                    JToken diskCap = arrayInfo["capacity"]?["disks"];
+                    if (diskCap != null)
+                    {
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.free", diskCap["free"]?.ToString(), "slots", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.used", diskCap["used"]?.ToString(), "slots", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.total", diskCap["total"]?.ToString(), "slots", "Array");
+                    }
+
                     JArray disks = arrayInfo["disks"] as JArray;
                     if (disks != null)
                     {
@@ -212,12 +234,12 @@ namespace JunctionRelayServer.Collectors
         {
             string query = @"
                 query {
-                    dockerContainers { id names state status autoStart }
+                    docker { containers { id names state status } }
                 }";
             try
             {
                 JObject result = await ExecuteGraphQLQuery(query, cancellationToken);
-                JArray? containers = result["data"]?["dockerContainers"] as JArray;
+                JArray? containers = result["data"]?["docker"]?["containers"] as JArray;
                 if (containers != null)
                 {
                     foreach (JToken container in containers)
@@ -226,10 +248,11 @@ namespace JunctionRelayServer.Collectors
                         JArray? names = container["names"] as JArray;
                         string? name = names?.FirstOrDefault()?.ToString() ?? idField;
                         if (string.IsNullOrEmpty(idField)) continue;
-                        string shortId = idField.Length > 12 ? idField.Substring(0, 12) : idField;
-                        AddSensorIfNotNull(sensors, collector, "docker." + shortId + ".state", container["state"]?.ToString(), "N/A", "Docker", name);
-                        AddSensorIfNotNull(sensors, collector, "docker." + shortId + ".status", container["status"]?.ToString(), "N/A", "Docker", name);
-                        AddSensorIfNotNull(sensors, collector, "docker." + shortId + ".autoStart", container["autoStart"]?.ToString(), "N/A", "Docker", name);
+
+                        string cleanName = name?.TrimStart('/') ?? "unknown";
+
+                        AddSensorIfNotNull(sensors, collector, $"docker.{cleanName}.state", container["state"]?.ToString(), "N/A", "Docker", cleanName);
+                        AddSensorIfNotNull(sensors, collector, $"docker.{cleanName}.status", container["status"]?.ToString(), "N/A", "Docker", cleanName);
                     }
                 }
             }

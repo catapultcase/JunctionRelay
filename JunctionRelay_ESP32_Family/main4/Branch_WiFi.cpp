@@ -1,6 +1,7 @@
 #include "Branch_Wifi.h"
 #include "Helper_StreamProcessor.h"
 #include "Helper_HTTPEndpoints.h"
+#include "Helper_WebSocket.h"
 #include "Helper_Preferences.h"
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
@@ -17,12 +18,17 @@ Branch_Wifi::Branch_Wifi()
       deviceCapabilities(nullptr),
       streamProcessor(nullptr),
       httpEndpoints(nullptr),
+      webSocketHelper(nullptr),
       lastWiFiCheck(0)
 {
     // Serial.println("[Branch_Wifi] Constructor called");
 }
 
 Branch_Wifi::~Branch_Wifi() {
+    if (webSocketHelper) {
+        delete webSocketHelper;
+        webSocketHelper = nullptr;
+    }
     if (httpEndpoints) {
         delete httpEndpoints;
         httpEndpoints = nullptr;
@@ -35,9 +41,6 @@ Branch_Wifi::~Branch_Wifi() {
     WiFi.disconnect(true);
     Serial.println("[Branch_Wifi] Destructor called");
 }
-
-// UPDATE: Only the relevant section showing the constructor call change
-// In Branch_Wifi::init() method:
 
 void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceConfig* device,
                        Helper_DeviceInfo* devInfo, Helper_DeviceCapabilities* devCaps) {
@@ -52,7 +55,7 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
     deviceInfo = devInfo;
     deviceCapabilities = devCaps;
     
-    Serial.println("[Branch_Wifi] Initializing WiFi mode...");
+    Serial.println("[Branch_Wifi] Initializing WiFi mode with HTTP and WebSocket support...");
     
     // Load WiFi credentials from centralized preferences
     ssid = preferences->getWiFiSSID();
@@ -73,7 +76,10 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
     // Create HTTP endpoints helper WITH device helpers injected
     httpEndpoints = new Helper_HTTPEndpoints(screenRouter, streamProcessor, deviceInfo, deviceCapabilities);
     
-    // Set up bidirectional callbacks
+    // NEW: Create WebSocket helper WITH device helpers injected
+    webSocketHelper = new Helper_WebSocket(streamProcessor, deviceInfo, deviceCapabilities);
+    
+    // Set up bidirectional callbacks for HTTP
     httpEndpoints->setProtocolCallback([this](const JsonDocument& doc) { 
         this->handleProtocolPayload(doc); 
     });
@@ -81,8 +87,19 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
         this->handleSystemPayload(doc); 
     });
     
+    // NEW: Set up bidirectional callbacks for WebSocket
+    webSocketHelper->setProtocolCallback([this](const JsonDocument& doc) { 
+        this->handleProtocolPayload(doc); 
+    });
+    webSocketHelper->setSystemCallback([this](const JsonDocument& doc) { 
+        this->handleSystemPayload(doc); 
+    });
+    
     // Initialize HTTP endpoints
     initializeHTTPEndpoints();
+    
+    // NEW: Initialize WebSocket
+    initializeWebSocket();
     
     // Initialize WiFi connection
     initializeWiFi();
@@ -93,6 +110,7 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
             // WiFi connected - initialize network-dependent services
             setupMDNS();
             httpEndpoints->startServer();
+            webSocketHelper->startServer();  // NEW: Start WebSocket server
         } else {
             Serial.println("[Branch_Wifi] WiFi connection failed");
         }
@@ -103,7 +121,7 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
     initialized = true;
     emitStatus();
     
-    Serial.println("[Branch_Wifi] WiFi mode ready");
+    Serial.println("[Branch_Wifi] WiFi mode ready with HTTP and WebSocket support");
     Serial.println("[Branch_Wifi] HTTP endpoints available:");
     Serial.println("[Branch_Wifi] GET  /api/device/info");
     Serial.println("[Branch_Wifi] GET  /api/device/capabilities");
@@ -111,12 +129,25 @@ void Branch_Wifi::init(ScreenRouter* router, Helper_Preferences* prefs, DeviceCo
     Serial.println("[Branch_Wifi] GET  /api/system/stats");
     Serial.println("[Branch_Wifi] GET  /api/connection/status");
     Serial.println("[Branch_Wifi] GET  /api/health/heartbeat");
+    Serial.println("[Branch_Wifi] POST /api/data");
+    // NEW: WebSocket information
+    Serial.println("[Branch_Wifi] WebSocket server available:");
+    if (isWiFiConnected()) {
+        Serial.printf("[Branch_Wifi] ws://%s:81/ (for WebSocket junctions)\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println("[Branch_Wifi] ws://[device-ip]:81/ (when WiFi connected)");
+    }
 }
 
 void Branch_Wifi::loop() {
     if (!initialized) return;
     
     unsigned long currentTime = millis();
+    
+    // NEW: Process WebSocket events
+    if (webSocketHelper) {
+        webSocketHelper->loop();
+    }
     
     // Check WiFi connection periodically
     if (currentTime - lastWiFiCheck > WIFI_CHECK_INTERVAL) {
@@ -149,6 +180,17 @@ void Branch_Wifi::initializeHTTPEndpoints() {
     Serial.println("[Branch_Wifi] HTTP endpoints initialized");
 }
 
+void Branch_Wifi::initializeWebSocket() {
+    if (!webSocketHelper) {
+        Serial.println("[Branch_Wifi] ERROR: WebSocket helper not created");
+        return;
+    }
+    
+    // Initialize WebSocket server on port 81 (standard for ESP32)
+    webSocketHelper->init(81);
+    Serial.println("[Branch_Wifi] WebSocket helper initialized on port 81");
+}
+
 void Branch_Wifi::setupMDNS() {
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("[Branch_Wifi] Cannot setup mDNS - WiFi not connected");
@@ -160,7 +202,9 @@ void Branch_Wifi::setupMDNS() {
     
     if (MDNS.begin(host.c_str())) {
         MDNS.addService("junctionrelay", "tcp", 80);
+        MDNS.addService("junctionrelay-ws", "tcp", 81);  // NEW: WebSocket service
         Serial.printf("[Branch_Wifi] mDNS started with hostname: %s\n", host.c_str());
+        Serial.println("[Branch_Wifi] Services: HTTP (port 80), WebSocket (port 81)");
     } else {
         Serial.println("[Branch_Wifi] Failed to start mDNS responder");
     }
@@ -200,10 +244,23 @@ bool Branch_Wifi::connectToWiFi() {
 }
 
 void Branch_Wifi::handleWiFiDisconnection() {
-    Serial.println("[Branch_Wifi] WiFi disconnected, attempting reconnection...");
+    Serial.println("[Branch_Wifi] WiFi disconnected, stopping services and attempting reconnection...");
+    
+    // Stop WebSocket server when WiFi disconnects
+    if (webSocketHelper && webSocketHelper->isServerRunning()) {
+        webSocketHelper->stopServer();
+        Serial.println("[Branch_Wifi] WebSocket server stopped due to WiFi disconnection");
+    }
     
     if (connectToWiFi()) {
-        Serial.println("[Branch_Wifi] WiFi reconnected successfully");
+        Serial.println("[Branch_Wifi] WiFi reconnected successfully, restarting services...");
+        
+        // Restart WebSocket server when WiFi reconnects
+        if (webSocketHelper) {
+            webSocketHelper->startServer();
+            Serial.println("[Branch_Wifi] WebSocket server restarted after WiFi reconnection");
+        }
+        
         emitStatus();
     } else {
         Serial.println("[Branch_Wifi] WiFi reconnection failed");
@@ -228,6 +285,12 @@ void Branch_Wifi::handleProtocolPayload(const JsonDocument& doc) {
     
     if (strcmp(type, "http_request") == 0) {
         handleHTTPRequest(doc);
+    }
+    else if (strcmp(type, "websocket_ping") == 0) {
+        handleWebSocketPing(doc);
+    }
+    else if (strcmp(type, "gateway_forward") == 0) {
+        handleGatewayForward(doc);
     }
     else if (doc.containsKey("destination")) {
         // This would be for gateway forwarding (not applicable in wifi mode)
@@ -280,6 +343,52 @@ void Branch_Wifi::handleHTTPRequest(const JsonDocument& doc) {
         
         // Could implement HTTP client functionality here
         // For now, just log the request
+    }
+}
+
+void Branch_Wifi::handleWebSocketPing(const JsonDocument& doc) {
+    Serial.println("[Branch_Wifi] 🏓 WebSocket ping request received");
+    
+    // Extract client ID if available
+    uint8_t clientId = doc.containsKey("websocketClientId") ? doc["websocketClientId"].as<uint8_t>() : 0;
+    
+    if (webSocketHelper && webSocketHelper->isServerRunning()) {
+        // Send pong response
+        DynamicJsonDocument pongDoc(256);
+        pongDoc["type"] = "websocket_pong";
+        pongDoc["timestamp"] = millis();
+        pongDoc["uptime"] = millis();
+        pongDoc["freeHeap"] = ESP.getFreeHeap();
+        pongDoc["clients"] = webSocketHelper->getConnectedClientsCount();
+        
+        if (clientId > 0) {
+            webSocketHelper->sendToClient(clientId, pongDoc);
+            Serial.printf("[Branch_Wifi] Sent WebSocket pong to client %d\n", clientId);
+        } else {
+            webSocketHelper->broadcastData(pongDoc);
+            Serial.println("[Branch_Wifi] Broadcast WebSocket pong to all clients");
+        }
+    } else {
+        Serial.println("[Branch_Wifi] WebSocket server not available for pong response");
+    }
+}
+
+void Branch_Wifi::handleGatewayForward(const JsonDocument& doc) {
+    Serial.println("[Branch_Wifi] 🌐 Gateway forward request received (not supported in WiFi mode)");
+    
+    // Extract client ID if available
+    uint8_t clientId = doc.containsKey("websocketClientId") ? doc["websocketClientId"].as<uint8_t>() : 0;
+    
+    if (webSocketHelper && clientId > 0) {
+        // Send error response
+        DynamicJsonDocument errorDoc(256);
+        errorDoc["type"] = "gateway-forward-error";
+        errorDoc["error"] = "Gateway forwarding not supported in WiFi mode";
+        errorDoc["suggestion"] = "Use Gateway USB or Gateway Ethernet mode for ESP-NOW forwarding";
+        errorDoc["timestamp"] = millis();
+        
+        webSocketHelper->sendToClient(clientId, errorDoc);
+        Serial.printf("[Branch_Wifi] Sent gateway error response to client %d\n", clientId);
     }
 }
 
@@ -360,6 +469,16 @@ void Branch_Wifi::handleStatsRequest(const JsonDocument& doc) {
         Serial.printf("  - RSSI: %d dBm\n", getSignalStrength());
         Serial.printf("  - Channel: %d\n", WiFi.channel());
         Serial.printf("  - SSID: %s\n", WiFi.SSID().c_str());
+    }
+    
+    // NEW: Show WebSocket stats
+    if (webSocketHelper) {
+        Serial.printf("[Branch_Wifi] WebSocket Status:\n");
+        Serial.printf("  - Server Running: %s\n", webSocketHelper->isServerRunning() ? "Yes" : "No");
+        Serial.printf("  - Connected Clients: %d\n", webSocketHelper->getConnectedClientsCount());
+        Serial.printf("  - Messages Received: %d\n", webSocketHelper->getMessagesReceived());
+        Serial.printf("  - Messages Sent: %d\n", webSocketHelper->getMessagesSent());
+        Serial.printf("  - Errors: %d\n", webSocketHelper->getErrorCount());
     }
     
     // Show queue status from StreamProcessor
@@ -473,6 +592,17 @@ void Branch_Wifi::handleSystemCommand(const JsonDocument& doc) {
             Serial.println("[Branch_Wifi] WiFi status requested");
             printWiFiStatus();
         }
+        else if (cmd == "websocket_status") {
+            Serial.println("[Branch_Wifi] WebSocket status requested");
+            if (webSocketHelper) {
+                Serial.printf("WebSocket Server: %s\n", webSocketHelper->isServerRunning() ? "Running" : "Stopped");
+                Serial.printf("Connected Clients: %d\n", webSocketHelper->getConnectedClientsCount());
+                Serial.printf("Messages Received: %d\n", webSocketHelper->getMessagesReceived());
+                Serial.printf("Messages Sent: %d\n", webSocketHelper->getMessagesSent());
+            } else {
+                Serial.println("WebSocket helper not available");
+            }
+        }
         else {
             Serial.printf("[Branch_Wifi] Unknown command: %s\n", cmd.c_str());
         }
@@ -491,6 +621,14 @@ int Branch_Wifi::getSignalStrength() const {
     return WiFi.RSSI();
 }
 
+bool Branch_Wifi::isWebSocketActive() const {
+    return webSocketHelper && webSocketHelper->isServerRunning();
+}
+
+uint8_t Branch_Wifi::getWebSocketClients() const {
+    return webSocketHelper ? webSocketHelper->getConnectedClientsCount() : 0;
+}
+
 void Branch_Wifi::emitStatus() {
     Serial.printf("[Branch_Wifi] Status Update:\n");
     Serial.printf("  - Initialized: %s\n", initialized ? "Yes" : "No");
@@ -498,6 +636,9 @@ void Branch_Wifi::emitStatus() {
     if (isWiFiConnected()) {
         Serial.printf("  - IP Address: %s\n", getIPAddress().c_str());
         Serial.printf("  - Signal Strength: %d dBm\n", getSignalStrength());
+        Serial.printf("  - HTTP Server: %s\n", httpEndpoints && httpEndpoints->isServerRunning() ? "Running" : "Stopped");
+        Serial.printf("  - WebSocket Server: %s\n", webSocketHelper && webSocketHelper->isServerRunning() ? "Running" : "Stopped");
+        Serial.printf("  - WebSocket Clients: %d\n", getWebSocketClients());
     }
 }
 
@@ -510,4 +651,10 @@ void Branch_Wifi::printWiFiStatus() {
     Serial.printf("  - RSSI: %d dBm\n", WiFi.RSSI());
     Serial.printf("  - Channel: %d\n", WiFi.channel());
     Serial.printf("  - MAC: %s\n", getFormattedMacAddress().c_str());
+    
+    // NEW: Show service availability
+    Serial.println("[Branch_Wifi] Available Services:");
+    Serial.printf("  - HTTP Server: http://%s/ (port 80)\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  - WebSocket Server: ws://%s:81/ (port 81)\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  - WebSocket Clients Connected: %d\n", getWebSocketClients());
 }

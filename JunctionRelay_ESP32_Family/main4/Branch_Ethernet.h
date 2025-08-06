@@ -10,6 +10,7 @@
 // Forward declarations
 class Helper_StreamProcessor;
 class Helper_HTTPEndpoints;
+class Helper_WebSocket;
 class Helper_Preferences;
 class Helper_DeviceInfo;
 class Helper_DeviceCapabilities;
@@ -21,19 +22,23 @@ public:
     Branch_Ethernet();
     ~Branch_Ethernet();
 
-    // Initialize the branch with required components - EXACT SAME SIGNATURE AS WiFi
+    // Initialize the branch with required components
     void init(ScreenRouter* screenRouter, Helper_Preferences* preferences, DeviceConfig* device,
               Helper_DeviceInfo* deviceInfo, Helper_DeviceCapabilities* deviceCapabilities);
 
     // Main loop - called from Manager_Connections::loop()
     void loop();
 
-    // Status checks - EXACT SAME AS WiFi
+    // Status checks
     bool isActive() const { return initialized && isConnected(); }
     bool isConnected() const;
 
     // Network information
     String getIPAddress() const;
+
+    // WebSocket access
+    bool isWebSocketActive() const;
+    uint8_t getWebSocketClients() const;
 
 private:
     bool initialized;
@@ -41,13 +46,14 @@ private:
     Helper_Preferences* preferences;
     DeviceConfig* devicePtr;
     
-    // Injected helpers - EXACT SAME AS WiFi
+    // Injected helpers
     Helper_DeviceInfo* deviceInfo;
     Helper_DeviceCapabilities* deviceCapabilities;
     
-    // Core helpers - EXACT SAME AS WiFi
+    // Core helpers
     Helper_StreamProcessor* streamProcessor;
     Helper_HTTPEndpoints* httpEndpoints;
+    Helper_WebSocket* webSocketHelper;  // NEW: WebSocket support
 
     // Ethernet-specific settings
     String deviceName;
@@ -68,9 +74,10 @@ private:
     
     EthernetConfig ethernetConfig;
 
-    // Core initialization methods - SAME PATTERN AS WiFi
+    // Core initialization methods
     void initializeEthernet();
     void initializeHTTPEndpoints();
+    void initializeWebSocket();  // NEW
     void setupMDNS();
 
     // Connection management
@@ -78,14 +85,16 @@ private:
     void handleEthernetDisconnection();
     void detectHardwareConfig();
 
-    // StreamProcessor callback handlers - EXACT SAME AS WiFi
+    // StreamProcessor callback handlers
     void handleProtocolPayload(const JsonDocument& doc);
     void handleSystemPayload(const JsonDocument& doc);
 
-    // Protocol-specific handlers - SAME AS WiFi
+    // Protocol-specific handlers
     void handleHTTPRequest(const JsonDocument& doc);
+    void handleWebSocketPing(const JsonDocument& doc);      // NEW
+    void handleGatewayForward(const JsonDocument& doc);     // NEW
 
-    // System handlers using injected helpers - EXACT SAME AS WiFi 
+    // System handlers using injected helpers
     void handleDeviceInfoRequest(const JsonDocument& doc);
     void handleDeviceCapabilitiesRequest(const JsonDocument& doc);
     void handleStatsRequest(const JsonDocument& doc);

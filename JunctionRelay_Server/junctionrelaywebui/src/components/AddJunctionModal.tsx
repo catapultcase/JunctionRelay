@@ -199,7 +199,7 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
         // Validate gateway device selection for Gateway types
         if ((newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
             newJunction.type === "Gateway Junction (COM to ESP:NOW)" ||
-            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)") &&
+            newJunction.type === "Gateway Junction (WebSocket to ESP:NOW)") &&
             !newJunction.gatewayDeviceId) {
             setError("Please select a gateway device for Gateway junctions!");
             setModalLoading(false);
@@ -249,7 +249,7 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
     const shouldShowGatewaySelection = () => {
         return newJunction.type === "Gateway Junction (HTTP to ESP:NOW)" ||
             newJunction.type === "Gateway Junction (COM to ESP:NOW)" ||
-            newJunction.type === "Gateway Junction (Websocket to ESP:NOW)";
+            newJunction.type === "Gateway Junction (WebSocket to ESP:NOW)";
     };
 
     return (
@@ -301,10 +301,10 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                     <MenuItem value="COM Junction">COM Junction</MenuItem>
                                     <MenuItem value="HTTP Junction">HTTP Junction</MenuItem>
                                     <MenuItem value="MQTT Junction">MQTT Junction</MenuItem>
-                                    <MenuItem value="Websocket Junction">Websocket Junction</MenuItem>
+                                    <MenuItem value="WebSocket Junction">WebSocket Junction</MenuItem>
                                     <MenuItem value="Gateway Junction (COM to ESP:NOW)">Gateway Junction (COM to ESP:NOW)</MenuItem>
                                     <MenuItem value="Gateway Junction (HTTP to ESP:NOW)">Gateway Junction (HTTP to ESP:NOW)</MenuItem>
-                                    <MenuItem value="Gateway Junction (Websocket to ESP:NOW)">Gateway Junction (Websocket to ESP:NOW)</MenuItem>
+                                    <MenuItem value="Gateway Junction (WebSocket to ESP:NOW)">Gateway Junction (WebSocket to ESP:NOW)</MenuItem>
                                 </Select>
                             </FormControl>
 

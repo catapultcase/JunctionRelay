@@ -10,6 +10,7 @@
 // Forward declarations
 class Helper_StreamProcessor;
 class Helper_HTTPEndpoints;
+class Helper_WebSocket;
 class Helper_Preferences;
 class Helper_DeviceInfo;
 class Helper_DeviceCapabilities;
@@ -39,6 +40,10 @@ public:
     String getIPAddress() const;
     int getSignalStrength() const;
 
+    // WebSocket access
+    bool isWebSocketActive() const;
+    uint8_t getWebSocketClients() const;
+
 private:
     bool initialized;
     ScreenRouter* screenRouter;
@@ -52,6 +57,7 @@ private:
     // Core helpers
     Helper_StreamProcessor* streamProcessor;
     Helper_HTTPEndpoints* httpEndpoints;
+    Helper_WebSocket* webSocketHelper; 
 
     // WiFi credentials and settings
     String ssid;
@@ -65,6 +71,7 @@ private:
     // Core initialization methods
     void initializeWiFi();
     void initializeHTTPEndpoints();
+    void initializeWebSocket();
     void setupMDNS();
 
     // Connection management
@@ -77,6 +84,8 @@ private:
 
     // Protocol-specific handlers
     void handleHTTPRequest(const JsonDocument& doc);
+    void handleWebSocketPing(const JsonDocument& doc);
+    void handleGatewayForward(const JsonDocument& doc);
 
     // System handlers using injected helpers
     void handleDeviceInfoRequest(const JsonDocument& doc);
