@@ -89,7 +89,7 @@ const AddCollectorModal: React.FC<{
         { value: "Render", name: "Render", desc: "Cloud platform metrics" },
         { value: "SonarrCalendar", name: "Sonarr Calendar", desc: "TV show schedule" },
         { value: "Stripe", name: "Stripe", desc: "Payment processing" },
-        // { value: "Unraid", name: "Unraid", desc: "NAS server monitoring" },
+        { value: "Unraid", name: "Unraid", desc: "NAS server monitoring" },
         { value: "UptimeKuma", name: "Uptime Kuma", desc: "Service monitoring" }
     ];
 
@@ -419,7 +419,7 @@ const AddCollectorModal: React.FC<{
             setCollector((prev: any) => ({
                 ...prev,
                 name: "Unraid",
-                url: "http://your-unraid-ip",
+                url: "https://your-unraid-ip",
                 accessToken: "",
                 externalAccessToken: false,
                 pollRate: 30000,
@@ -623,7 +623,7 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
                                                                     collector.collectorType === "Render" ? "Render Service URL" :
                                                                         collector.collectorType === "Stripe" ? "Stripe API Base URL" :
-                                                                            collector.collectorType === "Unraid" ? "Unraid GraphQL Endpoint" :
+                                                                            collector.collectorType === "Unraid" ? "Unraid IP (be sure to use HTTPS if enabled)" :
                                                                                 "URL"
                                                         }
                                                         name="url"
@@ -635,7 +635,7 @@ const AddCollectorModal: React.FC<{
                                                                 collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
                                                                     collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
                                                                         collector.collectorType === "Stripe" ? "https://api.stripe.com" :
-                                                                            collector.collectorType === "Unraid" ? "http://your-unraid-ip/api/graphql" :
+                                                                            collector.collectorType === "Unraid" ? "https://your-unraid-ip" :
                                                                                 ""
                                                         }
                                                     />

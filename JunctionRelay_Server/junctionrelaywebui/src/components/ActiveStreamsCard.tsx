@@ -1,4 +1,22 @@
-﻿// components/ActiveStreamsCard.tsx
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
@@ -41,12 +59,17 @@ interface StreamData {
     screenId?: number;
     protocol?: string;
     deviceName?: string;
+    deviceMac?: string; // Added for WebSocket streams
     screenName?: string;
     status?: string;
     sensorsCount?: number;
     rate?: number;
     latency?: number;
     lastSentTime?: string;
+    // WebSocket-specific properties
+    isGatewayMode?: boolean;
+    gatewayTarget?: string;
+    compressionEnabled?: boolean;
     health?: {
         connectionState?: string;
         successRate?: number;
@@ -59,10 +82,28 @@ interface StreamData {
         minLatency?: number;
         lastSuccessTime?: string;
         lastFailureTime?: string;
-        // Protocol-specific health properties (only include if needed)
+        // Protocol-specific health properties
         httpStatusCode?: number;
         acknowledgmentTimeouts?: number;
         publishFailures?: number;
+        // WebSocket-specific health properties
+        connectionRecreated?: boolean;
+        lastWebSocketState?: string;
+        connectionRecreationCount?: number;
+        isFrameMode?: boolean;
+        payloadType?: string;
+        framesSent?: number;
+        payloadsSent?: number;
+        currentFrameLayoutType?: string;
+        averageFrameSize?: number;
+        maxFrameSize?: number;
+        minFrameSize?: number;
+        averageFrameRenderTime?: number;
+        maxFrameRenderTime?: number;
+        minFrameRenderTime?: number;
+        isGatewayMode?: boolean;
+        gatewayTarget?: string;
+        gatewayMessagesSent?: number;
     };
 }
 
@@ -118,12 +159,16 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                     streamKey: stream.streamKey ?? key,
                     protocol: stream.protocol || 'HTTP',
                     deviceName,
+                    deviceMac: stream.deviceMac || '',
                     screenName,
                     status: stream.status || 'Unknown',
                     sensorsCount: stream.sensorsCount || 0,
                     rate: stream.rate || 1000,
                     latency: stream.latency || 0,
                     lastSentTime: stream.lastSentTime || '',
+                    isGatewayMode: stream.isGatewayMode || false,
+                    gatewayTarget: stream.gatewayTarget || '',
+                    compressionEnabled: stream.compressionEnabled || false,
                     health: stream.health || {
                         connectionState: 'unknown',
                         successRate: 0,
@@ -230,15 +275,22 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
             return protocol === 'com';
         });
 
+        const webSocketStreams = displayedStreams.filter(item => {
+            const protocol = item.stream.protocol?.toLowerCase() || '';
+            return protocol === 'websocket' || protocol.includes('websocket');
+        });
+
         const otherStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
             return !protocol.includes('http') &&
                 protocol !== 'mqtt' &&
                 protocol !== 'com' &&
-                protocol !== 'https';
+                protocol !== 'https' &&
+                protocol !== 'websocket' &&
+                !protocol.includes('websocket');
         });
 
-        return { httpStreams, mqttStreams, comStreams, otherStreams };
+        return { httpStreams, mqttStreams, comStreams, webSocketStreams, otherStreams };
     }, [displayedStreams]);
 
     // Render the appropriate visualization component
@@ -248,6 +300,17 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         if (protocol === 'mqtt') {
             return (
                 <ECGStreamVisualizationMQTT
+                    key={item.key}
+                    stream={item.stream}
+                    width={400}
+                    height={120}
+                />
+            );
+        } else if (protocol === 'websocket' || protocol.includes('websocket')) {
+            // Use HTTP visualization for WebSocket streams (they have similar structure)
+            // You could create a dedicated ECGStreamVisualizationWebSocket component if needed
+            return (
+                <ECGStreamVisualizationHTTP
                     key={item.key}
                     stream={item.stream}
                     width={400}
@@ -374,6 +437,13 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                                 label={`${groupedStreams.comStreams.length} COM`}
                                                 size="small"
                                                 sx={{ bgcolor: '#4caf50', color: 'white' }}
+                                            />
+                                        )}
+                                        {groupedStreams.webSocketStreams.length > 0 && (
+                                            <Chip
+                                                label={`${groupedStreams.webSocketStreams.length} WebSocket`}
+                                                size="small"
+                                                sx={{ bgcolor: '#ff9800', color: 'white' }}
                                             />
                                         )}
                                         {groupedStreams.otherStreams.length > 0 && (
@@ -514,6 +584,26 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                             }
                                         }}>
                                             {groupedStreams.comStreams.map(renderStreamVisualization)}
+                                        </Box>
+                                    </Box>
+                                )}
+
+                                {/* WebSocket Streams Section */}
+                                {groupedStreams.webSocketStreams.length > 0 && (
+                                    <Box sx={{ mb: 3 }}>
+                                        <Typography variant="subtitle2" sx={{ mb: 2, color: '#ff9800', fontWeight: 'bold' }}>
+                                            WebSocket Streams ({groupedStreams.webSocketStreams.length})
+                                        </Typography>
+                                        <Box sx={{
+                                            display: 'grid',
+                                            gap: 2,
+                                            gridTemplateColumns: {
+                                                xs: '1fr',
+                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
+                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
+                                            }
+                                        }}>
+                                            {groupedStreams.webSocketStreams.map(renderStreamVisualization)}
                                         </Box>
                                     </Box>
                                 )}

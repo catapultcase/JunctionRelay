@@ -26,7 +26,7 @@ const HeartbeatWebSocket: React.FC<HeartbeatComponentProps> = ({ formData, onFor
         <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>WebSocket Heartbeat</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Monitor device health through WebSocket connection. Uses WebSocketsServer library on port 81 by default.
+                Monitor device health through WebSocket connection with MAC address verification for security.
             </Typography>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -45,17 +45,28 @@ const HeartbeatWebSocket: React.FC<HeartbeatComponentProps> = ({ formData, onFor
                     onChange={(e) => updateField('expected', e.target.value)}
                     placeholder="ok"
                     size="small"
-                    helperText="Expected value in heartbeat response status field"
+                    helperText="Expected value in heartbeat response status field (leave 'ok' for MAC verification)"
                 />
 
                 <Box sx={{ mt: 1, p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                        <strong>Target Examples:</strong><br />
-                        • "81" → ws://{`{device_ip}`}:81/<br />
-                        • "ws://192.168.1.100:81/" → Direct URL<br />
-                        • "/ws" → ws://{`{device_ip}`}/ws (old format)<br />
-                        <strong>Protocol:</strong> Sends "ping", expects "pong" (sub-15ms)<br />
-                        <strong>Library:</strong> WebSocketsServer (more reliable than AsyncWebSocket)
+                        <strong>Enhanced WebSocket Heartbeat Protocol:</strong><br />
+                        • Sends "heartbeat" message to device<br />
+                        • Expects JSON response with MAC address verification<br />
+                        • Includes diagnostic data (uptime, memory, firmware)<br />
+                        <br />
+                        <strong>Response Format:</strong><br />
+                        {`{`}<br />
+                        &nbsp;&nbsp;"type": "heartbeat-response",<br />
+                        &nbsp;&nbsp;"status": "ok",<br />
+                        &nbsp;&nbsp;"mac": "DC:54:75:EB:BD:60",<br />
+                        &nbsp;&nbsp;"ip": "192.168.1.100",<br />
+                        &nbsp;&nbsp;"uptime": 12345,<br />
+                        &nbsp;&nbsp;"freeHeap": 45678<br />
+                        {`}`}<br />
+                        <br />
+                        <strong>Security:</strong> MAC address must match device UniqueIdentifier<br />
+                        <strong>Library:</strong> WebSocketsServer on ESP32 (port 81 default)
                     </Typography>
                 </Box>
             </Box>

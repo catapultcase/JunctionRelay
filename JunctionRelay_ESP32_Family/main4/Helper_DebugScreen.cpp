@@ -3,8 +3,7 @@
 
 Helper_DebugScreen::Helper_DebugScreen() {}
 
-void Helper_DebugScreen::begin() {
-    Wire.begin();
+void Helper_DebugScreen::begin() {    
 
     // Try to detect screens
     if (narrowOLED.begin()) {
@@ -116,8 +115,8 @@ void Helper_DebugScreen::screenCyclingTaskFunction(void* parameter) {
                     instance->updateDisplay();
                     instance->lastScreenSwitch = millis();
                     
-                    Serial.printf("[DebugScreen] Task: Switched to screen %d\n", 
-                                 static_cast<int>(instance->currentScreen));
+                    // Serial.printf("[DebugScreen] Task: Switched to screen %d\n", 
+                    //              static_cast<int>(instance->currentScreen));
                 }
                 xSemaphoreGive(instance->displayMutex);
             }
@@ -203,7 +202,7 @@ void Helper_DebugScreen::switchToNextScreen() {
     screenIndex = (screenIndex + 1) % TOTAL_SCREENS;
     currentScreen = static_cast<ScreenMode>(screenIndex);
     
-    Serial.printf("[DebugScreen] Switched to screen mode %d\n", screenIndex);
+    // Serial.printf("[DebugScreen] Switched to screen mode %d\n", screenIndex);
 }
 
 String Helper_DebugScreen::getTypeString(uint8_t typeField) {

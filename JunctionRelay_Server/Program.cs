@@ -225,6 +225,7 @@ builder.Services.AddSingleton<Service_Manager_COM_Ports>();
 builder.Services.AddSingleton<Service_Manager_Network_Scan>();
 builder.Services.AddSingleton<Service_Stream_Manager_MQTT>();
 builder.Services.AddSingleton<Service_Stream_Manager_HTTP>();
+builder.Services.AddSingleton<Service_Stream_Manager_WebSocket>();
 builder.Services.AddSingleton<Service_Stream_Manager_COM>();
 builder.Services.AddSingleton<Service_FrameEngine>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();

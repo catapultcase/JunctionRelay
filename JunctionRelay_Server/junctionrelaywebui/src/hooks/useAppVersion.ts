@@ -34,74 +34,78 @@ export const useAppVersion = (): VersionInfo => {
     useEffect(() => {
         const fetchVersionInfo = async () => {
             try {
-                // Step 1: Check auth mode first
-                const modeResponse = await fetch('/api/auth/mode');
+                // Step 1: Always fetch current version (public endpoint)
+                const res = await fetch("/api/settings/version");
+                if (res.ok) {
+                    const data = await res.json();
+                    const currentVersion = data.version;
+                    setVersion(currentVersion);
+                } else {
+                    console.warn("[useAppVersion] Failed to fetch version:", res.status);
+                    setVersion(null);
+                }
 
+                // Step 2: Check auth mode for latest version check (cloud-only feature)
+                const modeResponse = await fetch('/api/auth/mode');
                 if (modeResponse.ok) {
                     const modeData = await modeResponse.json();
                     const authMode = modeData.mode || 'none';
 
-                    // Only make ANY API calls for cloud auth mode with valid token
+                    // Only check for updates in cloud mode with valid token
                     if (authMode === 'cloud') {
                         const proxyToken = localStorage.getItem('cloud_proxy_token');
                         if (proxyToken) {
-                            // Step 2: Fetch current backend version (only for cloud users)
-                            const res = await fetch("/api/settings/version");
-                            const data = await res.json();
-                            const currentVersion = data.version;
-                            setVersion(currentVersion);
-
-                            // Step 3: Fetch latest version from backend (only for cloud users)
+                            // Step 3: Fetch latest version from backend (cloud users only)
                             const latestVersionRes = await fetch("/api/settings/version/latest");
-                            if (!latestVersionRes.ok) {
-                                throw new Error("Failed to fetch latest version from backend");
-                            }
+                            if (latestVersionRes.ok) {
+                                const latestVersionData = await latestVersionRes.json();
+                                const latestVersion = latestVersionData.latest_version;
+                                const versionSource = latestVersionData.source;
 
-                            const latestVersionData = await latestVersionRes.json();
-                            const latestVersion = latestVersionData.latest_version;
-                            const versionSource = latestVersionData.source;
+                                setLatest(latestVersion);
+                                setSource(versionSource);
 
-                            setLatest(latestVersion);
-                            setSource(versionSource);
+                                // Step 4: Compare versions
+                                if (version && latestVersion && version !== latestVersion) {
+                                    // More sophisticated version comparison
+                                    const parseVersion = (version: string) => {
+                                        const parts = version.replace(/^v/, "").split('.').map(Number);
+                                        return parts[0] * 10000 + parts[1] * 100 + parts[2];
+                                    };
 
-                            // Step 4: Compare versions
-                            if (currentVersion && latestVersion && currentVersion !== latestVersion) {
-                                // More sophisticated version comparison
-                                const parseVersion = (version: string) => {
-                                    const parts = version.replace(/^v/, "").split('.').map(Number);
-                                    return parts[0] * 10000 + parts[1] * 100 + parts[2];
-                                };
-
-                                const currentVersionNum = parseVersion(currentVersion);
-                                const latestVersionNum = parseVersion(latestVersion);
-                                setIsOutdated(currentVersionNum < latestVersionNum);
+                                    const currentVersionNum = parseVersion(version);
+                                    const latestVersionNum = parseVersion(latestVersion);
+                                    setIsOutdated(currentVersionNum < latestVersionNum);
+                                } else {
+                                    setIsOutdated(false);
+                                }
                             } else {
+                                console.warn("[useAppVersion] Failed to fetch latest version:", latestVersionRes.status);
+                                setLatest(null);
                                 setIsOutdated(false);
+                                setSource(undefined);
                             }
                         } else {
-                            // Cloud mode but no token - set defaults
-                            setVersion(null);
+                            // Cloud mode but no token - can't check for updates
                             setLatest(null);
                             setIsOutdated(false);
                             setSource(undefined);
                         }
                     } else {
-                        // Non-cloud mode (local/none) - NO API CALLS, set defaults
-                        setVersion(null);
+                        // Non-cloud mode - version display works, but no update checking
                         setLatest(null);
                         setIsOutdated(false);
                         setSource(undefined);
                     }
                 } else {
-                    // Can't determine auth mode - set defaults, no API calls
-                    setVersion(null);
+                    // Can't determine auth mode - version still works, no update checking
                     setLatest(null);
                     setIsOutdated(false);
                     setSource(undefined);
                 }
             } catch (err) {
                 console.error("[useAppVersion] Version check failed:", err);
-                setVersion(null);
+                // Keep any version we might have fetched, but clear update info
                 setLatest(null);
                 setIsOutdated(false);
                 setSource(undefined);

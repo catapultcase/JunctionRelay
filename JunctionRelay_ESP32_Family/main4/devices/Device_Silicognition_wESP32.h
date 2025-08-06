@@ -55,8 +55,8 @@
 #define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN
 
 // I2C pins for wESP32
-#define I2C_SDA             21
-#define I2C_SCL             22
+#define I2C_SDA             15
+#define I2C_SCL             4
 
 // MicroSD pins
 #define SD_CS               5

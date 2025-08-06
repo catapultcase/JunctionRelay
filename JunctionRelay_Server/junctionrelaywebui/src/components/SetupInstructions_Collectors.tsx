@@ -280,14 +280,9 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                             • Copy the generated API key
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>4. GraphQL Endpoint:</strong><br />
-                            Use: <strong>http://your-unraid-ip/graphql</strong><br />
-                            (Note: NO /api prefix needed)
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>5. Test the API:</strong><br />
-                            • Navigate to: <strong>http://your-unraid-ip/graphql</strong><br />
-                            • Use the Apollo Sandbox to test queries
+                            <strong>4. Unraid IP:</strong><br />
+                            Use: <strong>https://your-unraid-ip</strong><br />
+                            (Note: If you have SLS/HTTPS disabled, you can just use HTTP://)
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
                             <strong>What it monitors:</strong> System info (OS, CPU), array status, Docker containers, disk information

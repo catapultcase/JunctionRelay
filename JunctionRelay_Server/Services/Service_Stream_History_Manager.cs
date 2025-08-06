@@ -302,6 +302,50 @@ namespace JunctionRelayServer.Services
             };
         }
 
+        // Add this method to your Service_Stream_History_Manager class
+
+        // Create entry from WebSocket stream info
+        public StreamHistoryEntry CreateEntryFromWebSocket(Service_StreamInfo_WebSocket info)
+        {
+            return new StreamHistoryEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ScreenId = info.ScreenId,
+                DeviceName = info.DeviceName,
+                ScreenName = info.ScreenName,
+                Protocol = info.Protocol,
+                Status = info.Status,
+                Latency = info.Latency,
+                SensorsCount = info.SensorsCount,
+                Rate = info.Rate,
+                ConnectionState = info.Health.ConnectionState,
+                SuccessRate = info.Health.SuccessRate,
+                ConsecutiveFailures = info.Health.ConsecutiveFailures,
+                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
+                AverageLatency = info.Health.AverageLatency,
+                LastErrorMessage = info.Health.LastErrorMessage,
+                ErrorType = info.Health.ErrorType,
+                ProtocolSpecificData = new Dictionary<string, object>
+                {
+                    ["DeviceMac"] = info.DeviceMac,
+                    ["LastWebSocketState"] = info.Health.LastWebSocketState?.ToString() ?? "Unknown",
+                    ["ConnectionRecreated"] = info.Health.ConnectionRecreated,
+                    ["ConnectionRecreationCount"] = info.Health.ConnectionRecreationCount,
+                    ["MinLatency"] = info.Health.MinLatency,
+                    ["MaxLatency"] = info.Health.MaxLatency,
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
+                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O"),
+                    ["IsGatewayMode"] = info.IsGatewayMode,
+                    ["GatewayTarget"] = info.GatewayTarget ?? "",
+                    ["GatewayMessagesSent"] = info.Health.GatewayMessagesSent,
+                    ["IsFrameMode"] = info.Health.IsFrameMode,
+                    ["FramesSent"] = info.Health.FramesSent,
+                    ["PayloadsSent"] = info.Health.PayloadsSent,
+                    ["PayloadType"] = info.Health.PayloadType
+                }
+            };
+        }
+
         // Create entry from MQTT stream info
         public StreamHistoryEntry CreateEntryFromMQTT(Service_StreamInfo_MQTT info)
         {
