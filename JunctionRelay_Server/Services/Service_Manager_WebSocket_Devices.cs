@@ -577,9 +577,10 @@ namespace JunctionRelayServer.Services
                 }
 
                 // Send the data through the client WebSocket - optimized for speed
+                // FIXED: Send as Binary instead of Text since we're receiving byte[] data
                 await connection.WebSocket!.SendAsync(
                     new ArraySegment<byte>(data),
-                    WebSocketMessageType.Text,
+                    WebSocketMessageType.Binary,  // Changed from Text to Binary
                     true,
                     connection.CancellationToken.Token);
 

@@ -7,7 +7,7 @@
 #include <mbedtls/sha256.h>
 
 // Centralized firmware version
-#define FIRMWARE_VERSION "JunctionRelay v0.8.5"
+#define FIRMWARE_VERSION "JunctionRelay v0.8.6"
 
 inline const char* getFirmwareVersion() {
     return FIRMWARE_VERSION;

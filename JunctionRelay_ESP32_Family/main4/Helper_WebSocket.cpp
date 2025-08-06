@@ -22,7 +22,6 @@
 #include "Helper_DeviceInfo.h"
 #include "Helper_DeviceCapabilities.h"
 #include "Helper_Utils.h"
-#include <mbedtls/base64.h>
 
 Helper_WebSocket::Helper_WebSocket(Helper_StreamProcessor* processor,
                                   Helper_DeviceInfo* devInfo,
@@ -170,196 +169,33 @@ void Helper_WebSocket::handleIncomingMessage(uint8_t clientNum, const String& me
         return;
     }
     
-    // Validate JSON format
-    if (!isValidJsonMessage(message)) {
-        Serial.printf("[Helper_WebSocket] Invalid JSON from client %u\n", clientNum);
-        sendErrorResponse(clientNum, "Invalid JSON format", "message_validation");
-        return;
-    }
-    
-    // Parse JSON message
-    DynamicJsonDocument doc(4096);
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-        Serial.printf("[Helper_WebSocket] JSON parse error from client %u: %s\n", 
-                     clientNum, error.c_str());
-        sendErrorResponse(clientNum, "JSON parse error: " + String(error.c_str()), "json_parse");
-        return;
-    }
-    
-    // Check message type and route accordingly
-    const char* type = doc["type"];
-    if (!type) {
-        Serial.printf("[Helper_WebSocket] No message type from client %u\n", clientNum);
-        sendErrorResponse(clientNum, "Missing message type", "type_validation");
-        return;
-    }
-    
-    // Serial.printf("[Helper_WebSocket] Received '%s' message from client %u\n", type, clientNum);
-    
-    // Route based on message type
-    if (strcmp(type, "data-payload") == 0) {
-        handleDirectMessage(clientNum, doc);
-    } else if (strcmp(type, "gateway-forward") == 0) {
-        handleGatewayMessage(clientNum, doc);
-    } else {
-        // Route other message types through callbacks (same pattern as HTTPEndpoints)
-        handleJunctionMessage(clientNum, doc);
-    }
-}
-
-void Helper_WebSocket::handleIncomingBinary(uint8_t clientNum, uint8_t* payload, size_t length) {
-    // Serial.printf("[Helper_WebSocket] Received %u bytes of binary data from client %u\n", 
-    //              length, clientNum);
-    
-    // Process binary data directly through StreamProcessor
-    processWebSocketData(clientNum, payload, length);
-}
-
-// ==========================================
-// MESSAGE PROCESSING
-// ==========================================
-
-void Helper_WebSocket::processWebSocketData(uint8_t clientNum, uint8_t* data, size_t length) {
+    // EXACTLY LIKE HTTP: Send ALL text data directly to StreamProcessor
     if (!streamProcessor) {
         Serial.println("[Helper_WebSocket] ERROR: StreamProcessor not available");
         sendErrorResponse(clientNum, "StreamProcessor not available", "internal_error");
         return;
     }
     
-    // Process through StreamProcessor (same as HTTP does)
-    streamProcessor->processData(data, length);
+    // Process ALL text data through StreamProcessor (prefixed strings, JSON, etc.)
+    streamProcessor->processData((uint8_t*)message.c_str(), message.length());
     
-    // Send acknowledgment
-    sendTextToClient(clientNum, "OK");
+    // Send acknowledgment (same as HTTP)
+    // sendTextToClient(clientNum, "OK");
 }
 
-void Helper_WebSocket::handleDirectMessage(uint8_t clientNum, const JsonDocument& doc) {
-    // Handle direct data-payload messages from WebSocket junction
-    if (!doc.containsKey("payload")) {
-        sendErrorResponse(clientNum, "Missing payload field", "payload_validation");
+void Helper_WebSocket::handleIncomingBinary(uint8_t clientNum, uint8_t* payload, size_t length) {
+    // EXACTLY LIKE HTTP: Send ALL binary data directly to StreamProcessor
+    if (!streamProcessor) {
+        Serial.println("[Helper_WebSocket] ERROR: StreamProcessor not available");
+        sendErrorResponse(clientNum, "StreamProcessor not available", "internal_error");
         return;
     }
     
-    String format = doc["format"].as<String>();
-    String payloadData = doc["payload"].as<String>();
+    // Process ALL binary data through StreamProcessor (gzip, prefixed binary, etc.)
+    streamProcessor->processData(payload, length);
     
-    if (format == "binary") {
-        // Decode Base64 payload and process through StreamProcessor
-        String decodedPayload = decodeBase64Payload(payloadData);
-        if (!decodedPayload.isEmpty()) {
-            processWebSocketData(clientNum, (uint8_t*)decodedPayload.c_str(), decodedPayload.length());
-        } else {
-            sendErrorResponse(clientNum, "Failed to decode Base64 payload", "base64_decode");
-        }
-    } else {
-        // Process as raw text through StreamProcessor
-        processWebSocketData(clientNum, (uint8_t*)payloadData.c_str(), payloadData.length());
-    }
-}
-
-void Helper_WebSocket::handleGatewayMessage(uint8_t clientNum, const JsonDocument& doc) {
-    // Handle gateway-forward messages (ESP-NOW forwarding)
-    Serial.printf("[Helper_WebSocket] Gateway forward message from client %u\n", clientNum);
-    
-    if (!doc.containsKey("target") || !doc.containsKey("payload")) {
-        sendErrorResponse(clientNum, "Missing target or payload field", "gateway_validation");
-        return;
-    }
-    
-    String target = doc["target"].as<String>();
-    String protocol = doc["protocol"].as<String>();
-    String payloadData = doc["payload"].as<String>();
-    
-    Serial.printf("[Helper_WebSocket] Gateway forward to %s via %s\n", 
-                 target.c_str(), protocol.c_str());
-    
-    // Route through protocol callback for ESP-NOW forwarding
-    if (protocolCallback) {
-        // Create a modified document for ESP-NOW processing
-        DynamicJsonDocument gatewayDoc(4096);
-        gatewayDoc["type"] = "gateway_forward";
-        gatewayDoc["destination"] = target;
-        gatewayDoc["protocol"] = protocol;
-        gatewayDoc["source"] = "websocket";
-        gatewayDoc["clientId"] = clientNum;
-        
-        // Decode payload and add to document
-        String decodedPayload = decodeBase64Payload(payloadData);
-        if (!decodedPayload.isEmpty()) {
-            // Try to parse payload as JSON for easier processing
-            DynamicJsonDocument payloadDoc(2048);
-            if (deserializeJson(payloadDoc, decodedPayload) == DeserializationError::Ok) {
-                gatewayDoc["payloadData"] = payloadDoc;
-            } else {
-                gatewayDoc["payloadRaw"] = decodedPayload;
-            }
-        }
-        
-        protocolCallback(gatewayDoc);
-        
-        // Send acknowledgment
-        DynamicJsonDocument ackDoc(256);
-        ackDoc["type"] = "gateway-forward-ack";
-        ackDoc["target"] = target;
-        ackDoc["status"] = "forwarded";
-        ackDoc["timestamp"] = millis();
-        
-        sendToClient(clientNum, ackDoc);
-    } else {
-        sendErrorResponse(clientNum, "Gateway forwarding not supported", "gateway_not_supported");
-    }
-}
-
-void Helper_WebSocket::handleJunctionMessage(uint8_t clientNum, const JsonDocument& doc) {
-    const char* type = doc["type"];
-
-    // Protocol-specific messages
-    if (strcmp(type, "websocket_ping") == 0 ||
-        strcmp(type, "peer_management") == 0 ||
-        strcmp(type, "gateway_status") == 0) {
-
-        if (protocolCallback) {
-            DynamicJsonDocument contextDoc(4096);
-            contextDoc.set(doc);
-            contextDoc["websocketClientId"] = clientNum;
-            contextDoc["websocketClientIP"] = clientInfo.count(clientNum) ? clientInfo[clientNum] : "unknown";
-            protocolCallback(contextDoc);
-        }
-    }
-    // System messages  
-    else if (strcmp(type, "device_info") == 0 ||
-             strcmp(type, "device_capabilities") == 0 ||
-             strcmp(type, "stats") == 0 ||
-             strcmp(type, "preferences") == 0 ||
-             strcmp(type, "system_command") == 0) {
-
-        if (systemCallback) {
-            DynamicJsonDocument contextDoc(4096);
-            contextDoc.set(doc);
-            contextDoc["websocketClientId"] = clientNum;
-            contextDoc["websocketClientIP"] = clientInfo.count(clientNum) ? clientInfo[clientNum] : "unknown";
-            systemCallback(contextDoc);
-        }
-    }
-    // ✅ NEW: Sensor/config messages go directly to stream processor
-    else if (strcmp(type, "sensor") == 0 || strcmp(type, "config") == 0) {
-        if (!streamProcessor) {
-            sendErrorResponse(clientNum, "StreamProcessor not available", "internal_error");
-            return;
-        }
-
-        String jsonStr;
-        serializeJson(doc, jsonStr);
-        streamProcessor->processData((uint8_t*)jsonStr.c_str(), jsonStr.length());
-        sendTextToClient(clientNum, "OK");
-    }
-    // ❌ Unknown message types
-    else {
-        Serial.printf("[Helper_WebSocket] Unknown message type '%s' from client %u\n", type, clientNum);
-        sendErrorResponse(clientNum, "Unknown message type: " + String(type), "unknown_type");
-    }
+    // Send acknowledgment (same as HTTP)
+    // sendTextToClient(clientNum, "OK");
 }
 
 // ==========================================
@@ -395,6 +231,7 @@ void Helper_WebSocket::sendDeviceInfo(uint8_t clientNum) {
     doc["port"] = serverPort;
     doc["protocol"] = "WebSocket";
     doc["clientId"] = clientNum;
+    doc["note"] = "Send data as text or binary - both supported";
     
     sendToClient(clientNum, doc);
     Serial.printf("[Helper_WebSocket] Sent device info to client %u\n", clientNum);
@@ -437,7 +274,6 @@ void Helper_WebSocket::broadcastData(const JsonDocument& data) {
     Serial.printf("[Helper_WebSocket] 📤 Broadcast to %d client(s) (%d bytes)\n", 
                  connectedClients, message.length());
 }
-
 
 void Helper_WebSocket::broadcastText(const String& message) {
     if (!serverRunning || !webSocketServer || connectedClients == 0) {
@@ -495,53 +331,4 @@ std::vector<uint8_t> Helper_WebSocket::getConnectedClientIds() const {
         clientIds.push_back(pair.first);
     }
     return clientIds;
-}
-
-bool Helper_WebSocket::isValidJsonMessage(const String& message) {
-    if (message.isEmpty()) return false;
-    
-    // Quick validation - should start with { and end with }
-    String trimmed = message;
-    trimmed.trim();
-    return trimmed.startsWith("{") && trimmed.endsWith("}");
-}
-
-void Helper_WebSocket::logClientActivity(uint8_t clientNum, const String& activity) {
-    String clientIP = clientInfo.count(clientNum) ? clientInfo[clientNum] : "unknown";
-    Serial.printf("[Helper_WebSocket] Client %u (%s): %s\n", clientNum, clientIP.c_str(), activity.c_str());
-}
-
-String Helper_WebSocket::decodeBase64Payload(const String& base64Data) {
-    if (base64Data.isEmpty()) {
-        return "";
-    }
-    
-    // Calculate required buffer size
-    size_t decodedLen = 0;
-    int result = mbedtls_base64_decode(nullptr, 0, &decodedLen, 
-                                      (const unsigned char*)base64Data.c_str(), 
-                                      base64Data.length());
-    
-    if (result != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-        Serial.println("[Helper_WebSocket] Base64 size calculation failed");
-        return "";
-    }
-    
-    // Allocate buffer and decode
-    uint8_t* decodedBuffer = new uint8_t[decodedLen + 1];
-    result = mbedtls_base64_decode(decodedBuffer, decodedLen, &decodedLen,
-                                  (const unsigned char*)base64Data.c_str(),
-                                  base64Data.length());
-    
-    if (result != 0) {
-        Serial.printf("[Helper_WebSocket] Base64 decode failed: %d\n", result);
-        delete[] decodedBuffer;
-        return "";
-    }
-    
-    decodedBuffer[decodedLen] = '\0'; // Null terminate
-    String decoded = String((char*)decodedBuffer);
-    delete[] decodedBuffer;
-    
-    return decoded;
 }
