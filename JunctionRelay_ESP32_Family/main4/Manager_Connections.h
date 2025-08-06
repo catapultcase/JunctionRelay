@@ -14,6 +14,7 @@ class Branch_Wifi;
 class Branch_EspNow;
 class Branch_GatewayUsb;
 class Branch_Ethernet;
+class Branch_GatewayEthernet;
 class DeviceConfig;
 struct HardwareInventory;
 
@@ -69,7 +70,8 @@ private:
     Branch_Wifi* wifiBranch;
     Branch_EspNow* espnowBranch;
     Branch_GatewayUsb* gatewayUsbBranch;
-    Branch_Ethernet* ethernetBranch;  // NEW
+    Branch_Ethernet* ethernetBranch;
+    Branch_GatewayEthernet* gatewayEthernetBranch;
 
     // Branch initialization methods
     void branchUsbDirect();

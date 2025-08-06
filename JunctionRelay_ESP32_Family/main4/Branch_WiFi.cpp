@@ -279,7 +279,7 @@ void Branch_Wifi::reconnectWiFi() {
 
 void Branch_Wifi::handleProtocolPayload(const JsonDocument& doc) {
     const char* type = doc["type"];
-    Serial.printf("[Branch_Wifi] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
+    // Serial.printf("[Branch_Wifi] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
     
     if (!type) return;
     

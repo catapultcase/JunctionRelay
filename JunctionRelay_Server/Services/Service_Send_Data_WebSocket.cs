@@ -368,33 +368,8 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
-                byte[] messageBytes;
+                byte[] messageBytes = payloadBytes;
 
-                if (_isGatewayMode)
-                {
-                    // FIXED: Gateway mode - wrap payload for ESP-NOW forwarding
-                    // BUT still send as binary WebSocket message, not text
-                    var gatewayMessage = new
-                    {
-                        type = "gateway-forward",
-                        target = _gatewayTarget,
-                        protocol = "esp-now",
-                        payload = Convert.ToBase64String(payloadBytes),
-                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    };
-
-                    string jsonMessage = JsonSerializer.Serialize(gatewayMessage);
-                    // FIXED: Convert to bytes - everything goes as binary WebSocket
-                    messageBytes = Encoding.UTF8.GetBytes(jsonMessage);
-                }
-                else
-                {
-                    // FIXED: Direct mode - send raw payload as binary WebSocket
-                    messageBytes = payloadBytes;
-                }
-
-                // FIXED: Send ALL data as binary WebSocket message (same as HTTP approach)
-                // This ensures compressed gzip data is not corrupted by text encoding
                 var sendResult = await _webSocketManager.SendDataToDeviceAsync(_deviceMac, messageBytes);
 
                 stopwatch.Stop();

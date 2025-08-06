@@ -328,7 +328,7 @@ void Branch_Ethernet::detectHardwareConfig() {
 
 void Branch_Ethernet::handleProtocolPayload(const JsonDocument& doc) {
     const char* type = doc["type"];
-    Serial.printf("[Branch_Ethernet] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
+    // Serial.printf("[Branch_Ethernet] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
     
     if (!type) return;
     
