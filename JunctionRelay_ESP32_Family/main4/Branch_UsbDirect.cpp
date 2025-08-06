@@ -216,7 +216,7 @@ void Branch_UsbDirect::flushResponse(const String& data) {
 
 void Branch_UsbDirect::handleProtocolPayload(const JsonDocument& doc) {
     const char* type = doc["type"];
-    Serial.printf("[Branch_UsbDirect] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
+    // Serial.printf("[Branch_UsbDirect] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
     
     // Handle protocol-specific payloads
     if (type) {

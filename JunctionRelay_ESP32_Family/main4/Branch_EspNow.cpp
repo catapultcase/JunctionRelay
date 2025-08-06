@@ -157,7 +157,7 @@ void Branch_EspNow::broadcastJSON(const JsonDocument& doc) {
 
 void Branch_EspNow::handleProtocolPayload(const JsonDocument& doc) {
     const char* type = doc["type"];
-    Serial.printf("[Branch_EspNow] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
+    // Serial.printf("[Branch_EspNow] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
     
     if (!type) return;
     

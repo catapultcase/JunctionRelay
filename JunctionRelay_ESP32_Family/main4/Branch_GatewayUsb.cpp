@@ -301,7 +301,7 @@ String Branch_GatewayUsb::getESPNowPeersJSON() const {
 
 void Branch_GatewayUsb::handleProtocolPayload(const JsonDocument& doc) {
     const char* type = doc["type"];
-    Serial.printf("[Branch_GatewayUsb] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
+    // Serial.printf("[Branch_GatewayUsb] 📡 PROTOCOL callback received: %s\n", type ? type : "unknown");
     
     // Check for destination-based forwarding FIRST
     if (doc.containsKey("destination")) {
