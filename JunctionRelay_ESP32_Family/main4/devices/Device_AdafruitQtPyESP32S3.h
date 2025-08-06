@@ -101,10 +101,10 @@ class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
 public:
     Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr);
 
-    // NEW: Required begin() method declaration
+    // Required begin() method declaration
     bool begin() override;
 
-    // NEW: Returns hardware inventory instead of bool
+    // Returns hardware inventory
     HardwareInventory detectHardware();
     
     const char* getName();
@@ -117,7 +117,7 @@ public:
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // I2C methods
+    // I2C methods - calls centralized Manager_I2C scanner
     std::vector<I2CDeviceInfo> scanI2CDevices();
     TwoWire* getI2CInterface() override;
 
