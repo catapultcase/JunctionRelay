@@ -25,7 +25,7 @@
 #include <ArduinoJson.h>
 #include <functional>
 #include <map>
-#include <vector>  // ADD THIS LINE
+#include <vector>
 
 // Forward declarations
 class Helper_StreamProcessor;
@@ -52,7 +52,7 @@ public:
     uint8_t getConnectedClientsCount() const { return connectedClients; }
     bool hasConnectedClients() const { return connectedClients > 0; }
 
-    // Set callbacks for routing (same pattern as HTTPEndpoints)
+    // Set callbacks for routing (used for system and protocol messages - same as HTTP)
     void setProtocolCallback(std::function<void(const JsonDocument&)> callback) { 
         protocolCallback = callback; 
     }
@@ -87,14 +87,14 @@ private:
     uint8_t connectedClients;
     
     // Client tracking
-    std::map<uint8_t, String> clientInfo; // clientId -> client info
+    std::map<uint8_t, String> clientInfo; // clientId -> client IP
     
     // Statistics
     uint32_t messagesReceived;
     uint32_t messagesSent;
     uint32_t errorCount;
     
-    // Callbacks for routing (same pattern as HTTPEndpoints)
+    // Callbacks for routing (used for system and protocol messages - same as HTTP)
     std::function<void(const JsonDocument&)> protocolCallback;
     std::function<void(const JsonDocument&)> systemCallback;
 
@@ -105,21 +105,10 @@ private:
     void handleIncomingMessage(uint8_t clientNum, const String& message);
     void handleIncomingBinary(uint8_t clientNum, uint8_t* payload, size_t length);
     
-    // Message processing
-    void processWebSocketData(uint8_t clientNum, uint8_t* data, size_t length);
-    void handleJunctionMessage(uint8_t clientNum, const JsonDocument& doc);
-    void handleGatewayMessage(uint8_t clientNum, const JsonDocument& doc);
-    void handleDirectMessage(uint8_t clientNum, const JsonDocument& doc);
-    
     // Response handlers
     void sendHeartbeatResponse(uint8_t clientNum);
     void sendDeviceInfo(uint8_t clientNum);
     void sendErrorResponse(uint8_t clientNum, const String& error, const String& context = "");
-    
-    // Utility methods
-    bool isValidJsonMessage(const String& message);
-    void logClientActivity(uint8_t clientNum, const String& activity);
-    String decodeBase64Payload(const String& base64Data);
 };
 
 #endif // HELPER_WEBSOCKET_H

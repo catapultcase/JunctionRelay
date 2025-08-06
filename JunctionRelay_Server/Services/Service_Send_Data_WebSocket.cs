@@ -305,7 +305,7 @@ namespace JunctionRelayServer.Services
                 if (string.IsNullOrEmpty(payload))
                     return Task.FromResult((false, "Payload cannot be null or empty."));
 
-                // Convert string to UTF-8 bytes and send as binary
+                // FIXED: Use same approach as HTTP - convert string to UTF-8 bytes and send as binary
                 byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
                 return SendPayloadAsync(payloadBytes);
             }
@@ -372,7 +372,8 @@ namespace JunctionRelayServer.Services
 
                 if (_isGatewayMode)
                 {
-                    // Gateway mode: wrap payload for ESP-NOW forwarding
+                    // FIXED: Gateway mode - wrap payload for ESP-NOW forwarding
+                    // BUT still send as binary WebSocket message, not text
                     var gatewayMessage = new
                     {
                         type = "gateway-forward",
@@ -383,15 +384,17 @@ namespace JunctionRelayServer.Services
                     };
 
                     string jsonMessage = JsonSerializer.Serialize(gatewayMessage);
+                    // FIXED: Convert to bytes - everything goes as binary WebSocket
                     messageBytes = Encoding.UTF8.GetBytes(jsonMessage);
                 }
                 else
                 {
-                    // Direct mode: send raw payload directly to ESP32
+                    // FIXED: Direct mode - send raw payload as binary WebSocket
                     messageBytes = payloadBytes;
                 }
 
-                // Send via WebSocket - single call, no additional checks
+                // FIXED: Send ALL data as binary WebSocket message (same as HTTP approach)
+                // This ensures compressed gzip data is not corrupted by text encoding
                 var sendResult = await _webSocketManager.SendDataToDeviceAsync(_deviceMac, messageBytes);
 
                 stopwatch.Stop();
