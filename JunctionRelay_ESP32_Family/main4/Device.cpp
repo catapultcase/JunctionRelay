@@ -3,59 +3,55 @@
 #include "Manager_I2C.h"
 #include <Wire.h>
 
-Device_Silicognition_wESP32::Device_Silicognition_wESP32(Manager_Connections* connMgr)
+Device_AdafruitQtPyESP32S3::Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr)
 : connMgr(connMgr)
 {
+    #if DEVICE_HAS_ONBOARD_RGB_LED
+    onboardPixel = Adafruit_NeoPixel(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+    #endif
+
     // Initialize NeoPixel pin and count defaults
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     externalNeoPixelPin1 = DEFAULT_EXTERNAL_PIN_1;
     externalNeoPixelPin2 = DEFAULT_EXTERNAL_PIN_2;
-    externalNeoPixelCount1 = EXTERNAL_NUMPIXELS;
-    externalNeoPixelCount2 = EXTERNAL_NUMPIXELS;
+    externalNeoPixelCount1 = EXTERNAL_NUMPIXELS_STRIP_0;
+    externalNeoPixelCount2 = EXTERNAL_NUMPIXELS_STRIP_1;
     #endif
 }
 
-bool Device_Silicognition_wESP32::begin() {
-    Serial.println("[DEBUG] Initializing Silicognition wESP32...");
+bool Device_AdafruitQtPyESP32S3::begin() {
+    Serial.println("[DEBUG] Initializing Adafruit QtPy ESP32-S3...");
     
-    // Basic GPIO setup
-    #if DEVICE_HAS_ONBOARD_LED
-    pinMode(PIN_ONBOARD_LED, OUTPUT);
-    digitalWrite(PIN_ONBOARD_LED, LOW);
+    // Basic power setup
+    #if defined(NEOPIXEL_POWER)
+    pinMode(NEOPIXEL_POWER, OUTPUT);
+    digitalWrite(NEOPIXEL_POWER, HIGH);
     #endif
-
-    #if DEVICE_HAS_BUTTONS
-    pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
-    #endif
-
-    // Initialize I2C
-    Wire.begin(I2C_SDA, I2C_SCL);
     
-    Serial.println("[DEBUG] wESP32 initialization complete");
+    // Initialize I2C on STEMMA QT pins
+    Wire1.begin(41, 40);  // QtPy STEMMA QT pins
+    Wire1.setClock(100000); // Set to 100kHz for better reliability
+    
+    Serial.println("[DEBUG] QtPy ESP32-S3 initialization complete");
     return true;
 }
 
 // Device-specific setup method called by main.ino
-void Device_Silicognition_wESP32::setupDeviceSpecific() {
+void Device_AdafruitQtPyESP32S3::setupDeviceSpecific() {
     Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
 // Main hardware detection method
-HardwareInventory Device_Silicognition_wESP32::detectHardware() {
-    Serial.println("[DEVICE] Detecting hardware for Silicognition wESP32...");
+HardwareInventory Device_AdafruitQtPyESP32S3::detectHardware() {
+    Serial.println("[DEVICE] Detecting hardware for Adafruit QtPy ESP32-S3...");
     
     HardwareInventory inventory;
     
     // Basic power setup (safe GPIO operations only)
-    #if DEVICE_HAS_ONBOARD_LED
-    pinMode(PIN_ONBOARD_LED, OUTPUT);
-    digitalWrite(PIN_ONBOARD_LED, LOW);
-    Serial.println("[DEVICE] Onboard LED initialized");
-    #endif
-
-    #if DEVICE_HAS_BUTTONS
-    pinMode(PIN_BOOT_BUTTON, INPUT_PULLUP);
-    Serial.println("[DEVICE] Boot button initialized");
+    #if defined(NEOPIXEL_POWER)
+    pinMode(NEOPIXEL_POWER, OUTPUT);
+    digitalWrite(NEOPIXEL_POWER, HIGH);
+    Serial.println("[DEVICE] NeoPixel power pin enabled");
     #endif
 
     // Detect NeoPixel pins and configurations
@@ -64,64 +60,35 @@ HardwareInventory Device_Silicognition_wESP32::detectHardware() {
     inventory.neopixelPins = detectNeoPixelPins();
     #endif
 
-    // Detect I2C devices
+    // Call centralized I2C scanner using Manager_I2C
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     inventory.i2cDevices = scanI2CDevices();
     #endif
 
-    // NOTE: Ethernet initialization completely removed - handled by Branch_Ethernet
-
-    Serial.printf("[DEVICE] Hardware detection complete: %d NeoPixel strips, %d I2C devices, Ethernet: %s\n",
-                  inventory.neopixelPins.size(), inventory.i2cDevices.size(),
-                  inventory.supportsEthernet ? "Available" : "Not Available");
+    Serial.printf("[DEVICE] Hardware detection complete: %d NeoPixel strips, %d I2C devices\n",
+                  inventory.neopixelPins.size(), inventory.i2cDevices.size());
     
     return inventory;
 }
 
-std::vector<I2CDeviceInfo> Device_Silicognition_wESP32::scanI2CDevices() {
-    // Use Manager_I2C as the master scanner
-    Manager_I2C* i2cManager = Manager_I2C::getInstance(connMgr, &Wire, I2C_SDA, I2C_SCL);
-    
-    // Perform scan using Manager_I2C with original strategy
-    i2cManager->scanAndConfigureDevices(getFormattedMacAddress(), STRATEGY_ESP32_ORIGINAL);
-    
-    // Convert Manager_I2C results to our format
-    std::vector<I2CDeviceInfo> devices;
-    if (i2cManager->hasScanResults()) {
-        JsonArrayConst screens = i2cManager->getStoredScreens();
-        for (JsonVariantConst screen : screens) {
-            uint8_t addr = strtol(screen["I2CAddress"].as<String>().c_str(), nullptr, 0);
-            String deviceType = screen["DeviceType"].as<String>();
-            devices.emplace_back(addr, deviceType);
-        }
-    }
-    
-    return devices;
-}
-
-// NeoPixel methods - Always provide implementations regardless of DEVICE_HAS_EXTERNAL_NEOPIXELS
-void Device_Silicognition_wESP32::loadNeoPixelPreferences() {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+#if DEVICE_HAS_EXTERNAL_NEOPIXELS
+void Device_AdafruitQtPyESP32S3::loadNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", true); // Read-only mode
     
     externalNeoPixelPin1 = prefs.getInt("neoPin1", DEFAULT_EXTERNAL_PIN_1);
     externalNeoPixelPin2 = prefs.getInt("neoPin2", DEFAULT_EXTERNAL_PIN_2);
-    externalNeoPixelCount1 = prefs.getInt("neoCount1", EXTERNAL_NUMPIXELS);
-    externalNeoPixelCount2 = prefs.getInt("neoCount2", EXTERNAL_NUMPIXELS);
+    externalNeoPixelCount1 = prefs.getInt("neoCount1", EXTERNAL_NUMPIXELS_STRIP_0);
+    externalNeoPixelCount2 = prefs.getInt("neoCount2", EXTERNAL_NUMPIXELS_STRIP_1);
     
     prefs.end();
     
     Serial.printf("[DEVICE] Loaded NeoPixel preferences: Pin1=%d(%d pixels), Pin2=%d(%d pixels)\n", 
                   externalNeoPixelPin1, externalNeoPixelCount1,
                   externalNeoPixelPin2, externalNeoPixelCount2);
-    #else
-    // Do nothing - NeoPixels disabled
-    #endif
 }
 
-void Device_Silicognition_wESP32::saveNeoPixelPreferences() {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+void Device_AdafruitQtPyESP32S3::saveNeoPixelPreferences() {
     Preferences prefs;
     prefs.begin("neopixelConfig", false); // Read-write mode
     
@@ -135,15 +102,11 @@ void Device_Silicognition_wESP32::saveNeoPixelPreferences() {
     Serial.printf("[DEVICE] Saved NeoPixel preferences: Pin1=%d(%d pixels), Pin2=%d(%d pixels)\n", 
                   externalNeoPixelPin1, externalNeoPixelCount1,
                   externalNeoPixelPin2, externalNeoPixelCount2);
-    #else
-    // Do nothing - NeoPixels disabled
-    #endif
 }
 
-std::vector<NeoPixelInfo> Device_Silicognition_wESP32::detectNeoPixelPins() {
+std::vector<NeoPixelInfo> Device_AdafruitQtPyESP32S3::detectNeoPixelPins() {
     std::vector<NeoPixelInfo> neoPixels;
     
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     Serial.println("[DEVICE] Detecting NeoPixel pins...");
     
     // Add configured strips
@@ -155,15 +118,11 @@ std::vector<NeoPixelInfo> Device_Silicognition_wESP32::detectNeoPixelPins() {
         Serial.printf("[DEVICE]   Strip %d: Pin %d, %d pixels\n", 
                       i, neoPixels[i].pin, neoPixels[i].pixelCount);
     }
-    #else
-    // Return empty vector - NeoPixels disabled
-    #endif
     
     return neoPixels;
 }
 
-int Device_Silicognition_wESP32::getNeoPixelPin(int index) {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+int Device_AdafruitQtPyESP32S3::getNeoPixelPin(int index) {
     switch(index) {
         case 0: return externalNeoPixelPin1;
         case 1: return externalNeoPixelPin2;
@@ -171,13 +130,9 @@ int Device_Silicognition_wESP32::getNeoPixelPin(int index) {
             Serial.printf("[ERROR][DEVICE] Invalid NeoPixel pin index: %d\n", index);
             return externalNeoPixelPin1;
     }
-    #else
-    return -1; // Invalid pin - NeoPixels disabled
-    #endif
 }
 
-void Device_Silicognition_wESP32::setNeoPixelPin(int pin, int index) {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+void Device_AdafruitQtPyESP32S3::setNeoPixelPin(int pin, int index) {
     switch(index) {
         case 0:
             if (externalNeoPixelPin1 != pin) {
@@ -195,13 +150,9 @@ void Device_Silicognition_wESP32::setNeoPixelPin(int pin, int index) {
             Serial.printf("[ERROR][DEVICE] Invalid NeoPixel pin index: %d\n", index);
             break;
     }
-    #else
-    // Do nothing - NeoPixels disabled
-    #endif
 }
 
-int Device_Silicognition_wESP32::getNeoPixelCount(int index) {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+int Device_AdafruitQtPyESP32S3::getNeoPixelCount(int index) {
     switch(index) {
         case 0: return externalNeoPixelCount1;
         case 1: return externalNeoPixelCount2;
@@ -209,13 +160,9 @@ int Device_Silicognition_wESP32::getNeoPixelCount(int index) {
             Serial.printf("[ERROR][DEVICE] Invalid NeoPixel count index: %d\n", index);
             return externalNeoPixelCount1;
     }
-    #else
-    return 0; // No pixels - NeoPixels disabled
-    #endif
 }
 
-void Device_Silicognition_wESP32::setNeoPixelCount(int count, int index) {
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
+void Device_AdafruitQtPyESP32S3::setNeoPixelCount(int count, int index) {
     switch(index) {
         case 0:
             if (externalNeoPixelCount1 != count) {
@@ -233,41 +180,54 @@ void Device_Silicognition_wESP32::setNeoPixelCount(int count, int index) {
             Serial.printf("[ERROR][DEVICE] Invalid NeoPixel count index: %d\n", index);
             break;
     }
-    #else
-    // Do nothing - NeoPixels disabled
-    #endif
+}
+#endif
+
+std::vector<I2CDeviceInfo> Device_AdafruitQtPyESP32S3::scanI2CDevices() {
+    // Use Manager_I2C as the centralized scanner
+    Manager_I2C* i2cManager = Manager_I2C::getInstance(connMgr, &Wire1, 41, 40); // QtPy STEMMA QT pins
+    
+    // Perform scan using Manager_I2C with S3 strategy
+    i2cManager->scanAndConfigureDevices(getFormattedMacAddress(), STRATEGY_ESP32_S3_UNIFIED);
+    
+    // Convert Manager_I2C results to our format
+    std::vector<I2CDeviceInfo> devices;
+    if (i2cManager->hasScanResults()) {
+        JsonArrayConst screens = i2cManager->getStoredScreens();
+        for (JsonVariantConst screen : screens) {
+            uint8_t addr = strtol(screen["I2CAddress"].as<String>().c_str(), nullptr, 0);
+            String deviceType = screen["DeviceType"].as<String>();
+            devices.emplace_back(addr, deviceType);
+        }
+    }
+    
+    return devices;
 }
 
-bool Device_Silicognition_wESP32::isBootButtonPressed() {
-    #if DEVICE_HAS_BUTTONS
-    return digitalRead(PIN_BOOT_BUTTON) == LOW;
-    #else
-    return false; // No button - always return false
-    #endif
+const char* Device_AdafruitQtPyESP32S3::getName() {
+    return "Adafruit QtPy ESP32-S3";
 }
 
-const char* Device_Silicognition_wESP32::getName() {
-    return "Silicognition wESP32";
-}
-
-void Device_Silicognition_wESP32::setRotation(uint8_t r) {
+void Device_AdafruitQtPyESP32S3::setRotation(uint8_t r) {
     Serial.print("[DEVICE] Rotation set to: ");
     Serial.println(r);
 }
 
-uint8_t Device_Silicognition_wESP32::getRotation() {
+uint8_t Device_AdafruitQtPyESP32S3::getRotation() {
     return 0;
 }
 
-int Device_Silicognition_wESP32::width() {
+int Device_AdafruitQtPyESP32S3::width() {
     return 0;  
 }
 
-int Device_Silicognition_wESP32::height() {
+int Device_AdafruitQtPyESP32S3::height() {
     return 0;  
 }
 
-// Implement I2C interface method
-TwoWire* Device_Silicognition_wESP32::getI2CInterface() {
-    return &Wire;  // wESP32 uses standard Wire interface
+TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
+    // Ensure Wire1 is always ready with correct pins every time it's requested
+    Wire1.begin(41, 40);
+    Wire1.setClock(100000);
+    return &Wire1;  // QtPy uses Wire1 with pins 41, 40
 }

@@ -30,6 +30,7 @@ bool Device_AdafruitQtPyESP32S3::begin() {
     
     // Initialize I2C on STEMMA QT pins
     Wire1.begin(41, 40);  // QtPy STEMMA QT pins
+    Wire1.setClock(100000); // Set to 100kHz for better reliability
     
     Serial.println("[DEBUG] QtPy ESP32-S3 initialization complete");
     return true;
@@ -40,7 +41,7 @@ void Device_AdafruitQtPyESP32S3::setupDeviceSpecific() {
     Serial.println("[DEVICE] Device-specific setup complete (no additional setup required)");
 }
 
-// NEW: Main hardware detection method
+// Main hardware detection method
 HardwareInventory Device_AdafruitQtPyESP32S3::detectHardware() {
     Serial.println("[DEVICE] Detecting hardware for Adafruit QtPy ESP32-S3...");
     
@@ -53,15 +54,13 @@ HardwareInventory Device_AdafruitQtPyESP32S3::detectHardware() {
     Serial.println("[DEVICE] NeoPixel power pin enabled");
     #endif
 
-    // No onboard NeoPixel initialization - just detection
-    
     // Detect NeoPixel pins and configurations
     #if DEVICE_HAS_EXTERNAL_NEOPIXELS
     loadNeoPixelPreferences();
     inventory.neopixelPins = detectNeoPixelPins();
     #endif
 
-    // Detect I2C devices
+    // Call centralized I2C scanner using Manager_I2C
     #if DEVICE_HAS_EXTERNAL_I2C_DEVICES
     inventory.i2cDevices = scanI2CDevices();
     #endif
@@ -185,7 +184,7 @@ void Device_AdafruitQtPyESP32S3::setNeoPixelCount(int count, int index) {
 #endif
 
 std::vector<I2CDeviceInfo> Device_AdafruitQtPyESP32S3::scanI2CDevices() {
-    // Use Manager_I2C as the master scanner instead of doing our own scan
+    // Use Manager_I2C as the centralized scanner
     Manager_I2C* i2cManager = Manager_I2C::getInstance(connMgr, &Wire1, 41, 40); // QtPy STEMMA QT pins
     
     // Perform scan using Manager_I2C with S3 strategy
@@ -227,5 +226,8 @@ int Device_AdafruitQtPyESP32S3::height() {
 }
 
 TwoWire* Device_AdafruitQtPyESP32S3::getI2CInterface() {
-    return &Wire1;  // QtPy uses Wire1
+    // Ensure Wire1 is always ready with correct pins every time it's requested
+    Wire1.begin(41, 40);
+    Wire1.setClock(100000);
+    return &Wire1;  // QtPy uses Wire1 with pins 41, 40
 }
