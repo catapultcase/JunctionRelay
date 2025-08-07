@@ -12,7 +12,7 @@ Full user and developer documentation is available at:
 
 ---
 
-![Dashboard Demo](./assets/ui/ActiveStreams.gif)
+![Dashboard Demo](./assets/ui/Dashboard.gif)
 ![Examples](./assets/examples/examples.gif)
 
 ---
@@ -67,8 +67,6 @@ JunctionRelay includes out-of-the-box collectors for:
 
 Want more integrations? [Request additional collectors in Discussions](https://github.com/catapultcase/JunctionRelay/discussions)
 
-![Dashboard Demo](./assets/ui/Dashboard.gif)
-
 ---
 
 ## IoT Device Monitoring and Management
@@ -91,6 +89,7 @@ Monitor existing devices or add JunctionRelay support with minimal changes.
 <p float="left">
   <img src="./assets/mobile/Mobile1.png" alt="Mobile1" width="200" />
   <img src="./assets/mobile/Mobile2.png" alt="Mobile2" width="200" />
+  <img src="./assets/mobile/Mobile4.png" alt="Mobile2" width="200" />
 </p>
 
 ---
@@ -121,27 +120,19 @@ JunctionRelay now supports cloud-managed ESP32 devices for simplified deployment
 
 ---
 
-### UI Thumbnails
+### UI Screenshots
 
-| Dashboard                            | Cloud Dashboard                                | Devices                          |
-| ------------------------------------ | ---------------------------------------------- | -------------------------------- |
+| Dashboard                        | Cloud Dashboard                   | Devices                         |
+|:--------------------------------:|:----------------------------------:|:-------------------------------:|
 | ![Dashboard](./assets/ui/Dashboard.png) | ![CloudDashboard](./assets/ui/CloudDashboard.png) | ![Devices](./assets/ui/Devices.png) |
 
-| Stats                        | Payloads                           | Settings                           |
-| ---------------------------- | ---------------------------------- | ---------------------------------- |
+| Device Stats                    | Payloads                          | Settings                        |
+|:-------------------------------:|:---------------------------------:|:-------------------------------:|
 | ![Stats](./assets/ui/Stats.png) | ![Payloads](./assets/ui/Payloads.png) | ![Settings](./assets/ui/Settings.png) |
 
-| Configure Device 1                             | Configure Device 2                             | Stream Monitor                            |
-| ---------------------------------------------- | ---------------------------------------------- | ------------------------------------------ |
+| Configure Device 1             | Configure Device 2               | Stream Monitor                  |
+|:------------------------------:|:--------------------------------:|:-------------------------------:|
 | ![ConfigureDevice1](./assets/ui/ConfigureDevice1.png) | ![ConfigureDevice2](./assets/ui/ConfigureDevice2.png) | ![StreamMonitor](./assets/ui/StreamMonitor.png) |
-
-| Mobile 1                             | Mobile 2                             | Mobile 3                             |
-| ------------------------------------| ------------------------------------ | ------------------------------------ |
-| ![Mobile1](./assets/mobile/Mobile3.png)    | ![Mobile2](./assets/mobile/Mobile4.png)    | ![Mobile3](./assets/mobile/Mobile5.png)    |
-
-| Mobile 4                             | Mobile 5                             | Mobile 6                             |
-| ------------------------------------ | ------------------------------------ | ------------------------------------ |
-| ![Mobile4](./assets/mobile/Mobile6.png)    | ![Mobile5](./assets/mobile/Mobile7.png)    | ![Mobile6](./assets/mobile/Mobile8.png)    |
 
 ---
 
