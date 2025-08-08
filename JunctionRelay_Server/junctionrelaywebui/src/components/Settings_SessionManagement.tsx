@@ -114,18 +114,18 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
     };
 
     const getSessionName = (session: BackendSession): string => {
-        if (session.tokenType === 'device' && session.deviceName) {
-            return session.deviceName;
+        if (session.tokenType === 'device') {
+            return 'Cloud Device';
         }
         if (session.tokenType === 'user' && session.backendId) {
-            return `Backend Session`;
+            return 'Backend Session';
         }
         return 'Cloud Dashboard';
     };
 
     const getDeviceInfo = (session: BackendSession): string => {
         if (session.tokenType === 'device') {
-            return `${session.deviceType || 'Device'} - ${session.keyId}`;
+            return `Device ID: ${session.keyId}`;
         }
         if (session.tokenType === 'user' && session.backendId) {
             return `Database ID: ${session.backendId}`;
@@ -175,7 +175,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                         lastActive: session.createdAt,
                         location: 'Unknown',
                         device: getDeviceInfo(session),
-                        friendlyName: session.backendFriendlyName || undefined,
+                        friendlyName: session.deviceName || session.backendFriendlyName || undefined,
                         status: session.expiresAt && new Date(session.expiresAt) < new Date() ? 'expired' : 'active'
                     }));
                     setSessions(transformedSessions);
@@ -382,7 +382,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                         <TableCell>Session</TableCell>
                         <TableCell>Identity / Client</TableCell>
                         <TableCell>Friendly Name</TableCell>
-                        <TableCell>Token Generated</TableCell>
+                        <TableCell>Token Generated / Refreshed</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell align="right">Actions</TableCell>
                     </TableRow>

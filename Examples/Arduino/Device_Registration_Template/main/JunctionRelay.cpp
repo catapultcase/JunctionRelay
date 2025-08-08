@@ -1,7 +1,7 @@
 #include "JunctionRelay.h"
 
 JunctionRelay::JunctionRelay()
-    : _lastReport(0), _registered(false)
+    : _lastReport(0), _lastTokenRefresh(0), _registered(false)
 {
     mbedtls_entropy_init(&_entropy);
     mbedtls_ctr_drbg_init(&_ctr_drbg);
@@ -12,6 +12,9 @@ void JunctionRelay::begin() {
     _prefs.begin("relay", false);
     _jwt = _prefs.getString("jwt", "");
     _registered = !_jwt.isEmpty();
+
+    // Load stored refresh tokens
+    loadStoredTokens();
 
     if (_registered) {
         Serial.println("✅ Device registered");
@@ -68,6 +71,10 @@ void JunctionRelay::handle() {
         if (!_registered) waitForToken();
         return;
     }
+    
+    // Check if we need to refresh the JWT token (every 5 minutes)
+    checkAndRefreshToken();
+    
     if (millis() - _lastReport > 60000) {
         sendHealth();
         _lastReport = millis();
@@ -79,6 +86,178 @@ void JunctionRelay::setToken(const String& token) {
         _regToken = token;
         parseRegistrationToken();
     }
+}
+
+void JunctionRelay::setDeviceJwt(const String& jwt) {
+    _jwt = jwt;
+    _prefs.putString("jwt", _jwt);
+    Serial.println("🔑 Updated JWT token");
+}
+
+void JunctionRelay::loadStoredTokens() {
+    _refreshToken = _prefs.getString("refreshToken", "");
+    _deviceId = _prefs.getString("deviceId", "");
+    _jwtExpiresAt = _prefs.getULong64("jwtExpiresAt", 0);
+    _lastTokenRefresh = _prefs.getULong64("lastTokenRefresh", 0);
+    
+    if (_refreshToken.length() > 0 && _deviceId.length() > 0) {
+        Serial.println("📱 Found stored refresh token");
+        Serial.println("🆔 Device ID: " + _deviceId);
+    } else {
+        Serial.println("ℹ️ No stored tokens found - will need fresh registration");
+    }
+}
+
+void JunctionRelay::saveTokens(const String& refreshToken, const String& deviceId) {
+    _prefs.putString("refreshToken", refreshToken);
+    _prefs.putString("deviceId", deviceId);
+    _prefs.putULong64("jwtExpiresAt", _jwtExpiresAt);
+    _prefs.putULong64("lastTokenRefresh", _lastTokenRefresh);
+    _refreshToken = refreshToken;
+    _deviceId = deviceId;
+    Serial.println("💾 Tokens saved to flash memory");
+}
+
+void JunctionRelay::clearStoredTokens() {
+    _prefs.remove("refreshToken");
+    _prefs.remove("deviceId");
+    _prefs.remove("jwtExpiresAt");
+    _prefs.remove("lastTokenRefresh");
+    _refreshToken = "";
+    _deviceId = "";
+    _jwtExpiresAt = 0;
+    _lastTokenRefresh = 0;
+    Serial.println("🗑️ Cleared stored tokens");
+}
+
+void JunctionRelay::checkAndRefreshToken() {
+    // If we don't have a refresh token, we can't refresh
+    if (_refreshToken.length() == 0 || _deviceId.length() == 0) {
+        return;
+    }
+    
+    unsigned long currentTime = millis();
+
+// Check if 7 hours have passed since last refresh attempt
+    if (currentTime - _lastTokenRefresh < TOKEN_REFRESH_INTERVAL) {
+        return; // Too soon to refresh again
+    }
+    
+// Also check if JWT is near expiry (refresh 5 minutes early if we know the expiry)
+    bool nearExpiry = (_jwtExpiresAt > 0 && currentTime + JWT_REFRESH_BUFFER >= _jwtExpiresAt);
+    bool intervalReached = (currentTime - _lastTokenRefresh >= TOKEN_REFRESH_INTERVAL);
+    
+    if (intervalReached || nearExpiry) {
+        Serial.println("🔄 JWT token refresh triggered");
+        if (intervalReached) {
+            Serial.println("  📅 Reason: 7-hour interval reached");
+        }
+        if (nearExpiry) {
+            Serial.println("  ⏰ Reason: Token near expiry");
+        }
+        
+        _lastTokenRefresh = currentTime;
+        if (!refreshDeviceToken()) {
+            handleTokenRefreshFailure();
+        } else {
+            // Save the successful refresh timestamp
+            _prefs.putULong64("lastTokenRefresh", _lastTokenRefresh);
+        }
+    }
+}
+
+bool JunctionRelay::refreshDeviceToken() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("❌ WiFi not connected - cannot refresh token");
+        return false;
+    }
+    
+    HTTPClient http;
+    String url = _cloudBaseUrl + "/cloud/devices/refresh";
+    
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    
+    // Create refresh request payload
+    StaticJsonDocument<512> doc;
+    doc["RefreshToken"] = _refreshToken;
+    doc["DeviceId"] = _deviceId;
+    
+    String payload;
+    serializeJson(doc, payload);
+    
+    Serial.println("📤 Sending token refresh request");
+    Serial.println("🔗 URL: " + url);
+    Serial.println("📋 Payload: " + payload);
+    
+    int httpResponseCode = http.POST(payload);
+    
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+        Serial.println("✅ Token refresh successful");
+        Serial.println("📨 Response: " + response);
+        
+        // Parse the response
+        StaticJsonDocument<1024> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, response);
+        
+        if (!error && responseDoc["success"] == true) {
+            String newJwt = responseDoc["token"].as<String>();
+            
+            // Parse expiresAt and convert to millis (if provided)
+            if (responseDoc.containsKey("expiresAt")) {
+                String expiresAtStr = responseDoc["expiresAt"].as<String>();
+                _jwtExpiresAt = parseISODateTime(expiresAtStr);
+                Serial.println("⏰ Expires at: " + expiresAtStr);
+            } else {
+                // Default to 8 hours from now if not provided
+                _jwtExpiresAt = millis() + (8 * 60 * 60 * 1000);
+                Serial.println("⏰ Using default 8-hour expiry");
+            }
+            
+            // Update the JWT
+            setDeviceJwt(newJwt);
+            
+            // Save updated expiry time
+            _prefs.putULong64("jwtExpiresAt", _jwtExpiresAt);
+            
+            return true;
+        } else {
+            Serial.println("❌ Failed to parse token refresh response or success=false");
+            if (error) {
+                Serial.println("🔍 JSON parse error: " + String(error.c_str()));
+            }
+            return false;
+        }
+    } else {
+        Serial.println("❌ Token refresh failed with code: " + String(httpResponseCode));
+        String response = http.getString();
+        Serial.println("📨 Error response: " + response);
+        return false;
+    }
+    
+    http.end();
+}
+
+void JunctionRelay::handleTokenRefreshFailure() {
+    Serial.println("⚠️ Token refresh failed - clearing stored tokens");
+    
+    // Clear tokens if refresh fails (they might be expired/invalid)
+    clearStoredTokens();
+    
+    // Clear registration status so device can re-register
+    _registered = false;
+    _prefs.remove("jwt");
+    _jwt = "";
+    
+    Serial.println("🔄 Device will need to re-register");
+}
+
+unsigned long JunctionRelay::parseISODateTime(const String& isoString) {
+    // Simple fallback parser - backend should return a valid future time
+    // For production, you might want a more robust ISO8601 parser
+    // For now, assume the backend returns a valid expiry time 8 hours from issue
+    return millis() + (8 * 60 * 60 * 1000); // 8 hours in milliseconds
 }
 
 bool JunctionRelay::setPublicKey(const String& base64Key) {
@@ -380,7 +559,7 @@ void JunctionRelay::parseRegistrationToken()
 void JunctionRelay::registerDevice()
 {
     HTTPClient http;
-    http.begin("https://api.junctionrelay.com/cloud/devices/register");
+    http.begin(_cloudBaseUrl + "/cloud/devices/register");
     http.addHeader("Content-Type", "application/json");
 
     uint64_t mac = ESP.getEfuseMac();
@@ -408,10 +587,26 @@ void JunctionRelay::registerDevice()
             _jwt = rdoc["deviceJwt"].as<String>();
             _prefs.putString("jwt", _jwt);
             _registered = true;
-            Serial.println("✅ Device registered!");
+            
+            // Extract and store refresh token and device ID
+            if (rdoc.containsKey("refreshToken")) {
+                String refreshToken = rdoc["refreshToken"].as<String>();
+                String deviceId = macStr;  // Use MAC address as device ID
+                
+                // Calculate JWT expiry (8 hours from now based on backend)
+                _jwtExpiresAt = millis() + (8 * 60 * 60 * 1000);
+                _lastTokenRefresh = millis(); // Mark initial registration time
+                
+                saveTokens(refreshToken, deviceId);
+                Serial.println("✅ Device registered with refresh token!");
+            } else {
+                Serial.println("✅ Device registered!");
+            }
         }
     } else {
         Serial.println("❌ Registration failed: " + String(code));
+        String response = http.getString();
+        Serial.println("Response: " + response);
     }
     http.end();
 }
@@ -571,7 +766,7 @@ void JunctionRelay::sendHealth()
     Serial.println("DEBUG: Encrypted data length: " + String(enc.length()));
 
     HTTPClient http;
-    http.begin("https://api.junctionrelay.com/cloud/devices/health");
+    http.begin(_cloudBaseUrl + "/cloud/devices/health");
     http.addHeader("Authorization", "Bearer " + _jwt);
     http.addHeader("Content-Type", "application/json");
 

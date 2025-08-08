@@ -112,11 +112,11 @@ JunctionRelay now supports cloud-managed ESP32 devices for simplified deployment
 
 | Adafruit Feather ESP32 S3 | Adafruit QtPy ESP32 S3 | SparkleMotion Mini |
 |---------------------------|-------------------------|---------------------|
-| [![Feather](./assets/examples/feather.gif)](https://junctionrelay-docs.onrender.com/examples/feather) | [![QtPy](./assets/examples/qtpy.jpg)](https://junctionrelay-docs.onrender.com/examples/qtpye) | [![SparkleMotion](./assets/examples/sparkle-motion.jpg)](https://junctionrelay-docs.onrender.com/examples/sparkle-motion) |
+| [![Feather](./assets/examples/feather.gif)](https://junctionrelay-docs.onrender.com/examples/feather/) | [![QtPy](./assets/examples/qtpy.jpg)](https://junctionrelay-docs.onrender.com/examples/qtpy/) | [![SparkleMotion](./assets/examples/sparkle-motion.jpg)](https://junctionrelay-docs.onrender.com/examples/sparkle-motion/) |
 
 | CrowPanel 5” – Plotters | CrowPanel 7” – Grids |  |
 |------------------------|----------------------|--|
-| [![CrowPanel5](./assets/examples/crowpanel5-plotters.jpg)](https://junctionrelay-docs.onrender.com/examples/crowpanel5-plotters) | [![CrowPanel7](./assets/examples/crowpanel7-grids.jpg)](https://junctionrelay-docs.onrender.com/examples/crowpanel7-grids) | &nbsp; |
+| [![CrowPanel5](./assets/examples/crowpanel5-plotters.jpg)](https://junctionrelay-docs.onrender.com/examples/crowpanel5-plotters/) | [![CrowPanel7](./assets/examples/crowpanel7-grids.jpg)](https://junctionrelay-docs.onrender.com/examples/crowpanel7-grids/) | &nbsp; |
 
 ---
 
