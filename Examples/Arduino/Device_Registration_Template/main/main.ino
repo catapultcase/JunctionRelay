@@ -2,12 +2,16 @@
 #include "JunctionRelay.h"
 
 // UPDATE THESE
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WIFI_SSID = "Jon6";
+const char* WIFI_PASSWORD = "fv4!F48P8&tR";
+//const char* WIFI_SSID = "YOUR_WIFI_SSID";
+//const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // OPTIONAL: Paste registration token from cloud dashboard
 const char* REGISTRATION_TOKEN = "";
-// Example: {"deviceName":"Living Room Sensor","publicKey":"base64-encoded-p256-key","token":"abc123..."}
+
+// OPTIONAL: Set custom cloud base URL (defaults to https://api.junctionrelay.com)
+// const char* CLOUD_BASE_URL = "https://your-backend.com";
 
 JunctionRelay relay;
 
@@ -26,7 +30,10 @@ void setup() {
   Serial.println("✅ WiFi connected!");
   Serial.println("📍 IP: " + WiFi.localIP().toString());
   
-  // Initialize JunctionRelay
+  // OPTIONAL: Set custom cloud base URL
+  // relay.setCloudBaseUrl(CLOUD_BASE_URL);
+  
+  // Initialize JunctionRelay (automatically handles token refresh)
   relay.begin();
   
   // Auto-setup if token provided
@@ -39,6 +46,7 @@ void setup() {
 }
 
 void loop() {
+  // The relay.handle() now automatically manages token refresh
   relay.handle();
   
   // Add sensor readings every 30 seconds
