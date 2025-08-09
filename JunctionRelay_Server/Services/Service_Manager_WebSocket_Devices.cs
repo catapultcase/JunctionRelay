@@ -41,6 +41,9 @@ namespace JunctionRelayServer.Services
         private readonly ConcurrentDictionary<string, (bool isConnected, DateTime lastCheck)> _connectionCache = new();
         private readonly TimeSpan _connectionCacheTimeout = TimeSpan.FromMilliseconds(500);
 
+        // Track connection attempts to prevent duplicate simultaneous connections
+        private readonly ConcurrentDictionary<string, Task> _connectionAttempts = new();
+
         public Service_Manager_WebSocket_Devices(IServiceScopeFactory scopeFactory)
         {
             _scopeFactory = scopeFactory;
@@ -102,6 +105,94 @@ namespace JunctionRelayServer.Services
             await DisconnectAllDevicesAsync();
         }
 
+        // NEW METHOD: Ensure connection exists for a device (on-demand connection)
+        public async Task<bool> EnsureConnectionAsync(string deviceMac, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(deviceMac))
+            {
+                Console.WriteLine("[WebSocket Service] ❌ Device MAC cannot be null or empty");
+                return false;
+            }
+
+            // Check if already connected
+            if (IsDeviceConnected(deviceMac))
+            {
+                Console.WriteLine($"[WebSocket Service] ✅ Device {deviceMac} already connected");
+                return true;
+            }
+
+            // Check if there's already a connection attempt in progress
+            if (_connectionAttempts.TryGetValue(deviceMac, out var existingAttempt) && !existingAttempt.IsCompleted)
+            {
+                Console.WriteLine($"[WebSocket Service] ⏳ Connection attempt already in progress for {deviceMac}, waiting...");
+                try
+                {
+                    await existingAttempt;
+                    return IsDeviceConnected(deviceMac);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            // Start new connection attempt
+            var connectionTask = ConnectToDeviceByMacAsync(deviceMac, cancellationToken);
+            _connectionAttempts[deviceMac] = connectionTask;
+
+            try
+            {
+                var success = await connectionTask;
+                Console.WriteLine($"[WebSocket Service] {(success ? "✅" : "❌")} On-demand connection for {deviceMac}: {success}");
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WebSocket Service] ❌ Error in on-demand connection for {deviceMac}: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                _connectionAttempts.TryRemove(deviceMac, out _);
+            }
+        }
+
+        // NEW METHOD: Connect to device by MAC address (used by EnsureConnectionAsync)
+        private async Task<bool> ConnectToDeviceByMacAsync(string deviceMac, CancellationToken cancellationToken = default)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
+
+            try
+            {
+                // Find device by MAC address
+                var devices = await deviceDb.GetAllDevicesAsync();
+                var device = devices.FirstOrDefault(d =>
+                    string.Equals(d.UniqueIdentifier, deviceMac, StringComparison.OrdinalIgnoreCase));
+
+                if (device == null)
+                {
+                    Console.WriteLine($"[WebSocket Service] ❌ Device with MAC {deviceMac} not found in database");
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(device.IPAddress))
+                {
+                    Console.WriteLine($"[WebSocket Service] ❌ Device {device.Name} ({deviceMac}) has no IP address");
+                    return false;
+                }
+
+                Console.WriteLine($"[WebSocket Service] 🔄 On-demand connection to {device.Name} ({deviceMac}) at {device.IPAddress}");
+
+                return await ConnectToDeviceAsync(device, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WebSocket Service] ❌ Error finding device {deviceMac}: {ex.Message}");
+                return false;
+            }
+        }
+
         private async Task DiscoverAndConnectToDevicesAsync(CancellationToken stoppingToken)
         {
             using var scope = _scopeFactory.CreateScope();
@@ -117,7 +208,7 @@ namespace JunctionRelayServer.Services
                     !string.IsNullOrWhiteSpace(d.UniqueIdentifier)
                 ).ToList();
 
-                Console.WriteLine($"[WebSocket Service] Found {webSocketDevices.Count} WebSocket devices");
+                Console.WriteLine($"[WebSocket Service] Found {webSocketDevices.Count} WebSocket devices for heartbeat discovery");
 
                 foreach (var device in webSocketDevices)
                 {
@@ -134,6 +225,12 @@ namespace JunctionRelayServer.Services
                     // Check if enough time has passed since last reconnect attempt
                     if (existingConn != null &&
                         (DateTime.UtcNow - existingConn.LastReconnectAttempt).TotalMilliseconds < _reconnectIntervalMs)
+                    {
+                        continue;
+                    }
+
+                    // Skip if there's an ongoing connection attempt
+                    if (_connectionAttempts.ContainsKey(deviceMac))
                     {
                         continue;
                     }
@@ -169,7 +266,7 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        private async Task ConnectToDeviceAsync(Model_Device device, CancellationToken stoppingToken)
+        private async Task<bool> ConnectToDeviceAsync(Model_Device device, CancellationToken stoppingToken)
         {
             var deviceMac = device.UniqueIdentifier!;
 
@@ -242,11 +339,13 @@ namespace JunctionRelayServer.Services
                     connection.ReceiveTask = Task.Run(async () => await ReceiveMessagesAsync(connection, stoppingToken));
 
                     Console.WriteLine($"[WebSocket Client] ✅ Connected to {device.Name} ({deviceMac})");
+                    return true;
                 }
                 else
                 {
                     Console.WriteLine($"[WebSocket Client] ❌ Failed to connect to {device.Name} ({deviceMac}) - State: {webSocket.State}");
                     webSocket.Dispose();
+                    return false;
                 }
             }
             catch (Exception ex)
@@ -258,6 +357,7 @@ namespace JunctionRelayServer.Services
                     existingConn.ReconnectAttempts++;
                     existingConn.LastReconnectAttempt = DateTime.UtcNow;
                 }
+                return false;
             }
         }
 

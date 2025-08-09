@@ -157,12 +157,14 @@ namespace JunctionRelayServer.Services
                 INSERT INTO Services (
                     Name, Description, Type, Status, LastUpdated, URL, PollRate, SendRate, IsGateway, GatewayId, IsJunctionRelayService, COMPort,
                     ServiceModel, ServiceManufacturer, FirmwareVersion, MCU, WirelessConnectivity, UniqueIdentifier, 
-                    MQTTBrokerAddress, MQTTBrokerPort, MQTTUsername, AccessToken, ExternalAccessToken
+                    MQTTBrokerAddress, MQTTBrokerPort, MQTTUsername, AccessToken, ExternalAccessToken,
+                    GrafanaSharedMetrics, HomeAssistantSharedJunctions
                 )
                 VALUES (
                     @Name, @Description, @Type, @Status, @LastUpdated, @URL, @PollRate, @SendRate, @IsGateway, @GatewayId, @IsJunctionRelayService, @COMPort,
                     @ServiceModel, @ServiceManufacturer, @FirmwareVersion, @MCU, @WirelessConnectivity, @UniqueIdentifier, 
-                    @MQTTBrokerAddress, @MQTTBrokerPort, @MQTTUsername, @AccessToken, @ExternalAccessToken
+                    @MQTTBrokerAddress, @MQTTBrokerPort, @MQTTUsername, @AccessToken, @ExternalAccessToken,
+                    @GrafanaSharedMetrics, @HomeAssistantSharedJunctions
                 );
                 SELECT last_insert_rowid();";
 
@@ -205,7 +207,9 @@ namespace JunctionRelayServer.Services
                     FirmwareVersion = @FirmwareVersion, MCU = @MCU, WirelessConnectivity = @WirelessConnectivity,
                     UniqueIdentifier = @UniqueIdentifier, 
                     MQTTBrokerAddress = @MQTTBrokerAddress, MQTTBrokerPort = @MQTTBrokerPort, MQTTUsername = @MQTTUsername, 
-                    AccessToken = @AccessToken, ExternalAccessToken = @ExternalAccessToken
+                    AccessToken = @AccessToken, ExternalAccessToken = @ExternalAccessToken,
+                    GrafanaSharedMetrics = @GrafanaSharedMetrics,
+                    HomeAssistantSharedJunctions = @HomeAssistantSharedJunctions
                 WHERE Id = @Id;";
 
             await _db.ExecuteAsync(sql, serviceForDb);
@@ -321,6 +325,8 @@ namespace JunctionRelayServer.Services
                 MQTTBrokerAddress = original.MQTTBrokerAddress,
                 MQTTBrokerPort = original.MQTTBrokerPort,
                 MQTTUsername = original.MQTTUsername,
+                GrafanaSharedMetrics = original.GrafanaSharedMetrics,
+                HomeAssistantSharedJunctions = original.HomeAssistantSharedJunctions,
             };
         }
     }

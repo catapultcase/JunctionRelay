@@ -67,7 +67,7 @@ export const useAutoSave = (
     options: AutoSaveOptions = {}
 ): AutoSaveState => {
     const {
-        debounceDelay = 2000,
+        debounceDelay = 500,
         savedStatusDuration = 2000,
         errorStatusDuration = 3000,
         onSuccess,

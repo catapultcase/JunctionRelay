@@ -328,25 +328,44 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
                     }}
                 >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', mb: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, mr: 2 }}>
-                            {getSessionIcon(session.type)}
-                            <Box sx={{ ml: 1 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', flex: 1, mr: 2 }}>
+                            <Box sx={{ mt: 0.5 }}> {/* Slight margin top to align icon with first line */}
+                                {getSessionIcon(session.type)}
+                            </Box>
+                            <Box sx={{ ml: 1, flex: 1, minWidth: 0 }}> {/* Added flex: 1 and minWidth: 0 for proper text wrapping */}
+                                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                     {session.name}
                                 </Typography>
 
                                 {session.friendlyName && (
-                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            color: 'text.secondary',
+                                            display: 'block', // Force block display for new line
+                                            mb: 0.5,
+                                            wordBreak: 'break-all' // Break long IDs if needed
+                                        }}
+                                    >
                                         {session.friendlyName}
                                     </Typography>
                                 )}
 
-                                <Typography variant="caption" color="text.secondary">
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: 'text.secondary',
+                                        display: 'block', // Force block display for new line
+                                        wordBreak: 'break-all', // Break long IDs if needed
+                                        fontFamily: 'monospace', // Make IDs easier to read
+                                        fontSize: '0.7rem' // Slightly smaller for IDs
+                                    }}
+                                >
                                     {session.device}
                                 </Typography>
                             </Box>
                         </Box>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
                             <Chip
                                 label={session.status}
                                 size="small"

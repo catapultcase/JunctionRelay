@@ -16,9 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
 using System.ComponentModel.DataAnnotations.Schema;
-
 namespace JunctionRelayServer.Models
 {
     public class Model_Service
@@ -50,19 +48,15 @@ namespace JunctionRelayServer.Models
 
         // Timestamps
         public DateTime LastUpdated { get; set; }
+        public DateTime? LastPolled { get; set; }
 
-        // Sensors can now be linked to either devices or collectors
+        // Navigation properties
         public List<Model_Sensor> Sensors { get; set; } = new();
         public List<Model_Device> Peers { get; set; } = new();
 
-        // Junction device links (NEW)
-        // public List<Model_JunctionDeviceLink> JunctionLinks { get; set; } = new();
-
-        // Poll and Send
-        // public string? AccessToken { get; set; }
+        // Polling configuration
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
-        public DateTime? LastPolled { get; set; }
 
         // Shared Security
         public string? AccessToken { get; set; }
@@ -72,16 +66,21 @@ namespace JunctionRelayServer.Models
         public string? HomeAssistantAddress { get; set; }
         public string? HomeAssistantAPIKey { get; set; }
         public string? HomeAssistantUsername { get; set; }
+        public string? HomeAssistantSharedJunctions { get; set; }
 
         // MQTT Properties
         public string? MQTTBrokerAddress { get; set; }
         public string? MQTTBrokerPort { get; set; }
         public string? MQTTUsername { get; set; }
 
-        // ExternalEncryption
+        // Grafana Properties
+        public string? GrafanaSharedMetrics { get; set; } // JSON array of metric types to share (junctions, sensors, system)
 
+        // ExternalEncryption
         [NotMapped]
         public string? EncryptionPassword { get; set; }
+
+        [NotMapped]
         public string? DecryptedAccessToken { get; set; }
     }
 }

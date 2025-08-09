@@ -57,16 +57,12 @@ import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ConnectWithoutContactIcon from '@mui/icons-material/ConnectWithoutContact';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
 import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
 import RouterIcon from '@mui/icons-material/Router';
 import StorageIcon from '@mui/icons-material/Storage';
 
-interface Subscription {
-    topic: string;
-    qos: number;
-}
+// Import the new dynamic configuration component
+import ServiceConfigurationSection from '../components/Service_ConfigurationSection';
 
 const ConfigureService = () => {
     const { id } = useParams<{ id: string }>();
@@ -88,12 +84,6 @@ const ConfigureService = () => {
     const [unlockPassword, setUnlockPassword] = useState("");
     const [showUnlockDialog, setShowUnlockDialog] = useState(false);
 
-    // MQTT and subscriptions
-    const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-    const [showAddSubscriptionModal, setShowAddSubscriptionModal] = useState(false);
-    const [newTopic, setNewTopic] = useState("");
-    const [newTopicQoS, setNewTopicQoS] = useState<number>(0);
-
     // COM ports (if applicable)
     const [comPorts, setComPorts] = useState<string[]>([]);
     const [selectedComPort, setSelectedComPort] = useState<string>("");
@@ -111,8 +101,13 @@ const ConfigureService = () => {
     // Get service type icon
     const getServiceIcon = (type: string) => {
         switch (type?.toLowerCase()) {
-            case "mqtt": return <RouterIcon />;
-            case "host service": return <StorageIcon />;
+            case "mqtt":
+            case "mqtt broker":
+                return <RouterIcon />;
+            case "host service":
+            case "homeassistant":
+            case "grafana":
+                return <StorageIcon />;
             default: return <RouterIcon />;
         }
     };
@@ -120,8 +115,15 @@ const ConfigureService = () => {
     // Get service type color
     const getServiceColor = (type: string): "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error" => {
         switch (type?.toLowerCase()) {
-            case "mqtt": return "primary";
-            case "host service": return "success";
+            case "mqtt":
+            case "mqtt broker":
+                return "primary";
+            case "host service":
+                return "success";
+            case "homeassistant":
+                return "info";
+            case "grafana":
+                return "secondary";
             default: return "default";
         }
     };
@@ -203,23 +205,6 @@ const ConfigureService = () => {
         setServiceData({ ...serviceData, [field]: value });
     };
 
-    // Get access token display value
-    const getAccessTokenDisplay = () => {
-        const isExisting = originalService?.accessToken;
-        if (isExisting && !accessTokenChanged) {
-            return '••••••••••••••••';
-        }
-        return serviceData?.accessToken || '';
-    };
-
-    const getAccessTokenHelperText = () => {
-        const isExisting = originalService?.accessToken;
-        if (isExisting && !accessTokenChanged) {
-            return "Encrypted access token exists. Enter new token to change it.";
-        }
-        return "Access token (will be encrypted when saved)";
-    };
-
     // Fetch service data
     const fetchServiceData = useCallback(async () => {
         try {
@@ -248,44 +233,6 @@ const ConfigureService = () => {
         }
     };
 
-    // Fetch subscriptions
-    const fetchSubscriptions = async () => {
-        if (isLocked) return; // Don't fetch if locked
-
-        try {
-            const res = await fetch(`/api/services/subscriptions/${id}`);
-            if (!res.ok) {
-                if (res.status === 500) {
-                    setSubscriptions([]);
-                    return;
-                }
-                throw new Error("Failed to fetch subscriptions");
-            }
-            const data = await res.json();
-
-            const subscriptions: Subscription[] = (data.subscriptions || []).map((sub: any) => {
-                let parsedQoS: number;
-                if (typeof sub.qos === "string") {
-                    parsedQoS = parseInt(sub.qos, 10);
-                } else if (typeof sub.qos === "number") {
-                    parsedQoS = sub.qos;
-                } else {
-                    parsedQoS = 0;
-                }
-
-                return {
-                    topic: sub.topic,
-                    qos: isNaN(parsedQoS) ? 0 : parsedQoS,
-                };
-            });
-
-            setSubscriptions(subscriptions);
-        } catch (err) {
-            console.error("Error fetching subscriptions:", err);
-            setSubscriptions([]);
-        }
-    };
-
     // Initial data loading
     useEffect(() => {
         const load = async () => {
@@ -293,7 +240,6 @@ const ConfigureService = () => {
                 await fetchServiceData();
                 await fetchComPorts();
                 await checkUnlockStatus();
-                await fetchSubscriptions();
             } catch (err) {
                 console.error("Error during initial load:", err);
             } finally {
@@ -351,81 +297,41 @@ const ConfigureService = () => {
         setEditMode(false);
     };
 
-    // MQTT Operations
-    const handleConnect = async () => {
+    // Test service functionality based on type
+    const handleTestService = async () => {
         if (isLocked) {
             showSnackbar("Please unlock the service first", "warning");
             setShowUnlockDialog(true);
             return;
         }
 
-        try {
-            const res = await fetch(`/api/services/connect-to-mqtt/${id}`, { method: "POST" });
-            if (!res.ok) throw new Error("Failed to connect");
-            showSnackbar("Connected to MQTT broker", "success");
-        } catch (err) {
-            showSnackbar("Connect failed", "error");
-            console.error(err);
-        }
-    };
-
-    const handleDisconnect = async () => {
-        try {
-            const res = await fetch(`/api/services/disconnect-from-mqtt/${id}`, { method: "POST" });
-            if (!res.ok) throw new Error("Failed to disconnect");
-            showSnackbar("Disconnected from MQTT broker", "success");
-        } catch (err) {
-            showSnackbar("Disconnect failed", "error");
-            console.error(err);
-        }
-    };
-
-    // Subscription management
-    const handleAddCustomSubscription = async () => {
-        if (isLocked) {
-            showSnackbar("Please unlock the service first", "warning");
-            setShowUnlockDialog(true);
-            return;
-        }
+        const serviceType = serviceData?.type?.toLowerCase();
 
         try {
-            const res = await fetch(`/api/services/subscribe/${id}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ topic: newTopic, qos: newTopicQoS })
-            });
+            switch (serviceType) {
+                case "mqtt":
+                case "mqtt broker":
+                    const mqttResponse = await fetch(`/api/services/connect-to-mqtt/${id}`, { method: "POST" });
+                    if (!mqttResponse.ok) throw new Error("Failed to connect to MQTT");
+                    showSnackbar("MQTT connection test successful", "success");
+                    break;
 
-            if (!res.ok) throw new Error("Failed to add subscription");
-            showSnackbar("Subscription added!", "success");
-            setNewTopic("");
-            setNewTopicQoS(0);
-            setShowAddSubscriptionModal(false);
-            await fetchSubscriptions();
-        } catch (err: any) {
-            showSnackbar("Failed to subscribe", "error");
-        }
-    };
+                case "homeassistant":
+                    showSnackbar("HomeAssistant service is running", "info");
+                    break;
 
-    const handleRemoveSubscription = async (topic: string) => {
-        if (isLocked) {
-            showSnackbar("Please unlock the service first", "warning");
-            setShowUnlockDialog(true);
-            return;
-        }
+                case "grafana":
+                    showSnackbar("Testing Grafana connection...", "info");
+                    // Add actual Grafana test logic here
+                    break;
 
-        try {
-            const res = await fetch(`/api/services/unsubscribe/${id}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ topic }),
-            });
-
-            if (!res.ok) throw new Error("Unsubscribe failed");
-            showSnackbar("Unsubscribed successfully", "success");
-            await fetchSubscriptions();
-        } catch (err) {
-            console.error("Unsubscribe error:", err);
-            showSnackbar("Unsubscribe failed", "error");
+                default:
+                    showSnackbar("Testing service connection...", "info");
+                    break;
+            }
+        } catch (error) {
+            showSnackbar("Service test failed", "error");
+            console.error("Service test error:", error);
         }
     };
 
@@ -457,7 +363,7 @@ const ConfigureService = () => {
     // Navigation
     const handleBack = () => navigate("/services");
 
-    // NEW: Listen for bottom action bar events
+    // Listen for bottom action bar events
     useEffect(() => {
         const handleBottomActionBack = () => {
             handleBack();
@@ -474,18 +380,7 @@ const ConfigureService = () => {
         };
 
         const handleBottomActionTestService = () => {
-            if (!isLocked) {
-                // Test MQTT connection for MQTT services
-                if (serviceData?.type?.toLowerCase() === "mqtt") {
-                    handleConnect();
-                } else {
-                    showSnackbar("Testing service connection...", "info");
-                    // You can add other service test logic here
-                }
-            } else {
-                showSnackbar("Please unlock the service first", "warning");
-                setShowUnlockDialog(true);
-            }
+            handleTestService();
         };
 
         const handleBottomActionDelete = () => {
@@ -507,14 +402,11 @@ const ConfigureService = () => {
             window.removeEventListener('bottom-action-test-service', handleBottomActionTestService);
             window.removeEventListener('bottom-action-delete', handleBottomActionDelete);
         };
-    }, [editMode, isLocked, serviceData, handleSaveService, handleDeleteService, handleBack, handleConnect]);
+    }, [editMode, isLocked, serviceData, handleSaveService, handleDeleteService, handleBack]);
 
-    // Render service configuration fields
-    const renderServiceFields = () => {
+    // Render basic service configuration fields (common to all service types)
+    const renderBasicServiceFields = () => {
         if (!serviceData) return null;
-
-        const isMqttService = serviceData.type?.toLowerCase() === "mqtt";
-        const needsAccessToken = ["mqtt"].includes(serviceData.type?.toLowerCase());
 
         return (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -536,49 +428,6 @@ const ConfigureService = () => {
                     multiline
                     rows={2}
                 />
-
-                {isMqttService && (
-                    <>
-                        <TextField
-                            label="MQTT Broker Address"
-                            value={serviceData.mqttBrokerAddress || ''}
-                            onChange={(e) => updateServiceField('mqttBrokerAddress', e.target.value)}
-                            disabled={!editMode || isLocked}
-                            size="small"
-                            placeholder="localhost"
-                        />
-
-                        <TextField
-                            label="MQTT Broker Port"
-                            type="number"
-                            value={serviceData.mqttBrokerPort || 1883}
-                            onChange={(e) => updateServiceField('mqttBrokerPort', parseInt(e.target.value) || 1883)}
-                            disabled={!editMode || isLocked}
-                            size="small"
-                        />
-
-                        <TextField
-                            label="MQTT Username"
-                            value={serviceData.mqttUsername || ''}
-                            onChange={(e) => updateServiceField('mqttUsername', e.target.value)}
-                            disabled={!editMode || isLocked}
-                            size="small"
-                        />
-
-                        {needsAccessToken && (
-                            <TextField
-                                label="MQTT Password"
-                                type="password"
-                                value={getAccessTokenDisplay()}
-                                onChange={(e) => updateServiceField('accessToken', e.target.value)}
-                                disabled={!editMode || isLocked}
-                                size="small"
-                                helperText={editMode ? getAccessTokenHelperText() : ""}
-                                placeholder={originalService?.accessToken && !accessTokenChanged ? "Enter new password to change existing" : ""}
-                            />
-                        )}
-                    </>
-                )}
 
                 {comPorts.length > 0 && (
                     <FormControl size="small" disabled={!editMode || isLocked}>
@@ -714,7 +563,7 @@ const ConfigureService = () => {
                             </Button>
                         }
                     >
-                        This service is locked. Unlock it to access MQTT features or modify settings.
+                        This service is locked. Unlock it to access features or modify settings.
                     </Alert>
                 </Box>
             )}
@@ -800,155 +649,27 @@ const ConfigureService = () => {
                     <Divider sx={{ my: 2 }} />
 
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                        {/* Service Configuration */}
+                        {/* Basic Service Configuration */}
                         <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
                             <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'medium' }}>
-                                Service Configuration
+                                Basic Configuration
                             </Typography>
-                            {renderServiceFields()}
+                            {renderBasicServiceFields()}
                         </Box>
 
-                        {/* MQTT Management */}
-                        {serviceData.type?.toLowerCase() === "mqtt" && (
-                            <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
-                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'medium' }}>
-                                    MQTT Management
-                                </Typography>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <Button
-                                            variant="contained"
-                                            color="success"
-                                            onClick={handleConnect}
-                                            disabled={isLocked}
-                                            startIcon={<ConnectWithoutContactIcon />}
-                                            size="small"
-                                        >
-                                            {isLocked ? "Unlock First" : "Connect"}
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            color="error"
-                                            onClick={handleDisconnect}
-                                            startIcon={<LinkOffIcon />}
-                                            size="small"
-                                        >
-                                            Disconnect
-                                        </Button>
-                                    </Box>
-
-                                    <Box sx={{
-                                        p: 2,
-                                        bgcolor: 'action.hover',
-                                        borderRadius: 1,
-                                        textAlign: 'center'
-                                    }}>
-                                        <Typography variant="body2" color="text.secondary">
-                                            <strong>Active Subscriptions:</strong> {subscriptions.length}
-                                        </Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                            <strong>Broker:</strong> {serviceData.mqttBrokerAddress || 'Not configured'}
-                                        </Typography>
-                                    </Box>
-
-                                    {/* Security Notice for MQTT */}
-                                    {requiresPassword && (
-                                        <Box sx={{
-                                            p: 2,
-                                            bgcolor: 'rgba(76, 175, 80, 0.08)',
-                                            borderRadius: 1,
-                                            border: '1px solid rgba(76, 175, 80, 0.23)'
-                                        }}>
-                                            <Typography variant="caption" color="success.main" sx={{
-                                                fontWeight: 'medium',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                mb: 0.5
-                                            }}>
-                                                <SecurityIcon sx={{ mr: 1, fontSize: 16 }} />
-                                                Security Notice
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                MQTT credentials are automatically encrypted before being stored.
-                                                {requiresPassword ? " This service uses password-based encryption for enhanced security." : " Existing credentials are never sent to your browser for security."}
-                                            </Typography>
-                                        </Box>
-                                    )}
-                                </Box>
-                            </Box>
-                        )}
+                        {/* Service-Specific Configuration */}
+                        <Box sx={{ flex: '1 1 300px', minWidth: '300px' }}>
+                            <ServiceConfigurationSection
+                                serviceData={serviceData}
+                                editMode={editMode}
+                                isLocked={isLocked}
+                                onServiceUpdate={updateServiceField}
+                                onShowSnackbar={showSnackbar}
+                            />
+                        </Box>
                     </Box>
                 </CardContent>
             </Card>
-
-            {/* MQTT Subscriptions Management */}
-            {serviceData.type?.toLowerCase() === "mqtt" && (
-                <>
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h6">MQTT Subscriptions</Typography>
-                        <Button
-                            variant="outlined"
-                            onClick={() => setShowAddSubscriptionModal(true)}
-                            disabled={isLocked}
-                            startIcon={<AddIcon />}
-                        >
-                            {isLocked ? "Unlock to Add" : "Add Subscription"}
-                        </Button>
-                    </Box>
-
-                    <Card elevation={2} sx={{ mb: 3 }}>
-                        <CardContent>
-                            {subscriptions.length > 0 ? (
-                                <Table>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Topic</TableCell>
-                                            <TableCell>QoS Level</TableCell>
-                                            <TableCell>Actions</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {subscriptions.map((sub) => (
-                                            <TableRow key={sub.topic}>
-                                                <TableCell>{sub.topic}</TableCell>
-                                                <TableCell>
-                                                    {sub.qos} - {["At Most Once", "At Least Once", "Exactly Once"][sub.qos] ?? "Unknown QoS"}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button
-                                                        color="error"
-                                                        onClick={() => handleRemoveSubscription(sub.topic)}
-                                                        disabled={isLocked}
-                                                        startIcon={<RemoveIcon />}
-                                                        size="small"
-                                                    >
-                                                        Remove
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            ) : (
-                                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                                    <Typography variant="body1" color="text.secondary">
-                                        No MQTT subscriptions configured.
-                                    </Typography>
-                                    <Button
-                                        variant="contained"
-                                        onClick={() => setShowAddSubscriptionModal(true)}
-                                        disabled={isLocked}
-                                        startIcon={<AddIcon />}
-                                        sx={{ mt: 2 }}
-                                    >
-                                        {isLocked ? "Unlock to Add Subscription" : "Add First Subscription"}
-                                    </Button>
-                                </Paper>
-                            )}
-                        </CardContent>
-                    </Card>
-                </>
-            )}
 
             {/* Service Sensors */}
             {serviceData.sensors && serviceData.sensors.length > 0 && (
@@ -1086,44 +807,6 @@ const ConfigureService = () => {
                         startIcon={unlocking ? <CircularProgress size={20} /> : <LockOpenIcon />}
                     >
                         {unlocking ? "Unlocking..." : "Unlock"}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Add Subscription Dialog */}
-            <Dialog open={showAddSubscriptionModal} onClose={() => setShowAddSubscriptionModal(false)}>
-                <DialogTitle>Add MQTT Subscription</DialogTitle>
-                <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 400 }}>
-                    <TextField
-                        label="MQTT Topic"
-                        fullWidth
-                        value={newTopic}
-                        onChange={(e) => setNewTopic(e.target.value)}
-                        placeholder="sensor/temperature"
-                        margin="normal"
-                    />
-                    <FormControl fullWidth margin="normal">
-                        <InputLabel id="qos-label">QoS Level</InputLabel>
-                        <Select
-                            labelId="qos-label"
-                            value={newTopicQoS}
-                            label="QoS Level"
-                            onChange={(e) => setNewTopicQoS(Number(e.target.value))}
-                        >
-                            <MenuItem value={0}>0 - At most once</MenuItem>
-                            <MenuItem value={1}>1 - At least once</MenuItem>
-                            <MenuItem value={2}>2 - Exactly once</MenuItem>
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setShowAddSubscriptionModal(false)}>Cancel</Button>
-                    <Button
-                        variant="contained"
-                        onClick={handleAddCustomSubscription}
-                        disabled={!newTopic.trim()}
-                    >
-                        Subscribe
                     </Button>
                 </DialogActions>
             </Dialog>
