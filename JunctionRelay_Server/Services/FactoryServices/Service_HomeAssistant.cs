@@ -17,41 +17,160 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using JunctionRelayServer.Models;
+using System.Text.Json;
+using System.Collections.Concurrent;
+
 namespace JunctionRelayServer.Services.FactoryServices
 {
     public class Service_HomeAssistant : IService
     {
-        private string? _url;
-        private string? _apiKey;
+        private static readonly ConcurrentDictionary<int, Service_HomeAssistant> _instances = new();
+        private Model_Service? _service;
 
-        // Constructor accepting configuration from Model_Service
-        public Service_HomeAssistant(string? url, string? apiKey)
+        public bool IsConnected { get; private set; }
+        public Model_Service? GetCurrentService() => _service;
+
+        // Constructor
+        public Service_HomeAssistant()
         {
-            _url = url;
-            _apiKey = apiKey;
+            // No external connections needed - this is a gatekeeper service
         }
 
-        // Implement the ConnectAsync method from IService
+        // Static method to get or create singleton instance for a service
+        public static Service_HomeAssistant GetInstance(Model_Service service)
+        {
+            return _instances.GetOrAdd(service.Id, _ =>
+            {
+                var instance = new Service_HomeAssistant();
+                instance.SetService(service);
+                return instance;
+            });
+        }
+
+        // Set the service configuration dynamically
+        public void SetService(Model_Service service)
+        {
+            if (_service != null && _service.Id == service.Id)
+                return; // Already set
+
+            _service = service ?? throw new ArgumentNullException(nameof(service));
+        }
+
+        // Connect - for HomeAssistant this just validates the service is configured
         public async Task ConnectAsync()
         {
-            if (string.IsNullOrEmpty(_url) || string.IsNullOrEmpty(_apiKey))
+            if (_service == null)
             {
-                throw new InvalidOperationException("Home Assistant URL and API key must be provided.");
+                throw new InvalidOperationException($"[SERVICE_HOMEASSISTANT] Service must be configured before connecting.");
             }
 
-            Console.WriteLine($"Connecting to HomeAssistant at {_url} with API key {_apiKey}");
-            // Simulate async connection (stub for now)
-            await Task.Delay(1000);  // Simulate delay for connection
-            Console.WriteLine("Connected to HomeAssistant.");
+            // Only log if not already connected
+            if (!IsConnected)
+            {
+                IsConnected = true;
+                Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service.Id}] HomeAssistant gatekeeper service activated for '{_service.Name}'");
 
-            // Add actual HomeAssistant connection logic here when needed
+                var sharedJunctions = GetSharedJunctionIds();
+                Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service.Id}] Currently sharing {sharedJunctions.Count} junctions with HomeAssistant");
+            }
+
+            await Task.CompletedTask;
         }
 
-        // Stub method for executing HomeAssistant commands
-        public void Execute()
+        // Check if HomeAssistant access is enabled
+        public bool IsHomeAssistantAccessEnabled()
         {
-            Console.WriteLine("Executing HomeAssistant service logic.");
-            // Simulate some logic here
+            return _service != null && IsConnected && _service.Status == "Active";
+        }
+
+        // Get list of shared junction IDs from the service configuration
+        public List<string> GetSharedJunctionIds()
+        {
+            if (_service?.HomeAssistantSharedJunctions == null)
+                return new List<string>();
+
+            try
+            {
+                var sharedJunctions = JsonSerializer.Deserialize<List<string>>(_service.HomeAssistantSharedJunctions);
+                return sharedJunctions ?? new List<string>();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service?.Id}] Failed to parse shared junctions: {ex.Message}");
+                return new List<string>();
+            }
+        }
+
+        // Check if a specific junction is shared with HomeAssistant
+        public bool IsJunctionShared(string junctionId)
+        {
+            if (!IsHomeAssistantAccessEnabled())
+                return false;
+
+            var sharedJunctions = GetSharedJunctionIds();
+            return sharedJunctions.Contains(junctionId);
+        }
+
+        // Filter junction data for HomeAssistant access
+        public List<T> FilterJunctionsForHomeAssistant<T>(List<T> junctions, Func<T, string> getJunctionId)
+        {
+            if (!IsHomeAssistantAccessEnabled())
+            {
+                Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service?.Id}] HomeAssistant access not enabled - returning empty list");
+                return new List<T>();
+            }
+
+            var sharedJunctionIds = GetSharedJunctionIds();
+            if (sharedJunctionIds.Count == 0)
+            {
+                Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service?.Id}] No junctions shared - returning empty list");
+                return new List<T>();
+            }
+
+            var filteredJunctions = junctions.Where(j => sharedJunctionIds.Contains(getJunctionId(j))).ToList();
+            Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service?.Id}] Filtered {junctions.Count} junctions down to {filteredJunctions.Count} for HomeAssistant");
+
+            return filteredJunctions;
+        }
+
+        // Get service status for API responses
+        public object GetServiceStatus()
+        {
+            var sharedJunctions = GetSharedJunctionIds();
+
+            return new
+            {
+                ServiceName = _service?.Name ?? "Unknown",
+                ServiceId = _service?.Id ?? 0,
+                IsEnabled = IsHomeAssistantAccessEnabled(),
+                SharedJunctionCount = sharedJunctions.Count,
+                SharedJunctionIds = sharedJunctions,
+                LastUpdated = DateTime.UtcNow
+            };
+        }
+
+        // Disconnect - just cleanup
+        public async Task DisconnectAsync()
+        {
+            IsConnected = false;
+            Console.WriteLine($"[SERVICE_HOMEASSISTANT][{_service?.Id}] HomeAssistant gatekeeper service disconnected");
+            await Task.CompletedTask;
+        }
+
+        // Clean up singleton instance
+        public static void RemoveInstance(int serviceId)
+        {
+            _instances.TryRemove(serviceId, out _);
+        }
+
+        // No resources to dispose for this service
+        public void Dispose()
+        {
+            if (_service != null)
+            {
+                RemoveInstance(_service.Id);
+            }
         }
     }
 }

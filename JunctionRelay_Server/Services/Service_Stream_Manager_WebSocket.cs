@@ -256,13 +256,19 @@ namespace JunctionRelayServer.Services
                     return;
                 }
 
-                // Check if target device is connected via WebSocket
+                // FIXED: Ensure connection exists (either existing or create new)
                 string deviceMacToConnect = isGatewayMode ? gatewayDestination! : device.UniqueIdentifier!;
-                if (!_webSocketDeviceManager.IsDeviceConnected(deviceMacToConnect))
+
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] Ensuring WebSocket connection to {deviceMacToConnect}...");
+                bool connectionReady = await _webSocketDeviceManager.EnsureConnectionAsync(deviceMacToConnect, cts.Token);
+
+                if (!connectionReady)
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] Device {deviceMacToConnect} is not connected via WebSocket.");
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] Failed to establish WebSocket connection to {deviceMacToConnect}.");
                     return;
                 }
+
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] ✅ WebSocket connection ready for {deviceMacToConnect}");
 
                 // Create WebSocket sender
                 var webSocketSender = new Service_Send_Data_WebSocket(
@@ -519,11 +525,19 @@ namespace JunctionRelayServer.Services
                 {
                     try
                     {
-                        // Check if WebSocket connection is still active
+                        // FIXED: Check if WebSocket connection is still active, try to reconnect if needed
                         if (!_webSocketDeviceManager.IsDeviceConnected(info.DeviceMac))
                         {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] WebSocket connection lost for {info.DeviceMac}. Stopping stream.");
-                            break;
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] WebSocket connection lost for {info.DeviceMac}. Attempting to reconnect...");
+
+                            bool reconnected = await _webSocketDeviceManager.EnsureConnectionAsync(info.DeviceMac, cts.Token);
+                            if (!reconnected)
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] Failed to reconnect to {info.DeviceMac}. Stopping stream.");
+                                break;
+                            }
+
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_WEBSOCKET] ✅ Reconnected to {info.DeviceMac}. Resuming stream.");
                         }
 
                         if (isFrameMode)

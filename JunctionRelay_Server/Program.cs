@@ -217,8 +217,7 @@ builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_CloudNotifications>();
 
-builder.Services.AddHostedService<Service_Heartbeats>();
-
+// Core singleton services
 builder.Services.AddSingleton<Service_Manager_Connections>();
 builder.Services.AddSingleton<Service_Manager_Polling>();
 builder.Services.AddSingleton<Service_Manager_COM_Ports>();
@@ -234,13 +233,12 @@ builder.Services.AddSingleton<StartupSignals>();
 
 // Register WebSocket services
 builder.Services.AddSingleton<Service_Manager_WebSocket_Devices>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Devices>());
 builder.Services.AddSingleton<Service_Manager_WebSocket_Dashboard>();
 
 // Register SSH services
 builder.Services.AddSingleton<Service_Manager_SSH>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
 
+// Service factory for dynamic service creation
 builder.Services.AddSingleton<Func<Type, Model_Service, IService>>(provider => (serviceType, modelService) =>
 {
     if (serviceType == typeof(Service_MQTT))
@@ -251,7 +249,15 @@ builder.Services.AddSingleton<Func<Type, Model_Service, IService>>(provider => (
     }
     else if (serviceType == typeof(Service_HomeAssistant))
     {
-        return new Service_HomeAssistant(modelService.HomeAssistantAddress, modelService.AccessToken);
+        // Use singleton pattern for HomeAssistant
+        var haInstance = Service_HomeAssistant.GetInstance(modelService);
+        return haInstance;
+    }
+    else if (serviceType == typeof(Service_Grafana))
+    {
+        // Use singleton pattern for Grafana
+        var grafanaInstance = Service_Grafana.GetInstance(modelService);
+        return grafanaInstance;
     }
     throw new Exception($"Service type '{serviceType}' not recognized.");
 });
@@ -313,6 +319,12 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
     };
 });
 
+// HOSTED SERVICES - Service_Startup coordinates the startup sequence
+builder.Services.AddHostedService<Service_Startup>();
+builder.Services.AddHostedService<Service_Heartbeats>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Devices>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
+
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
@@ -338,10 +350,7 @@ app.Lifetime.ApplicationStarted.Register(async () =>
 // Graceful shutdown handler for WebSocket connections
 app.Lifetime.ApplicationStopping.Register(() =>
 {
-    Console.WriteLine("Application stopping - WebSocket service will shut down automatically...");
-    // Note: Service_Manager_WebSocket_Devices is now a BackgroundService that handles
-    // its own cleanup via the Dispose() method when the application stops.
-    // No manual cleanup needed here.
+    Console.WriteLine("Application stopping - Services will shut down automatically...");
 });
 
 builder.WebHost.UseUrls("http://0.0.0.0:7180");

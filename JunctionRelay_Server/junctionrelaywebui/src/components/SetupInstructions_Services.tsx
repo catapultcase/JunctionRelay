@@ -55,6 +55,71 @@ export const SetupInstructions_Services: React.FC<SetupInstructions_ServicesProp
                     </Box>
                 );
 
+            case "HomeAssistant":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            HomeAssistant Integration Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Service Purpose:</strong><br />
+                            This service controls which junctions are accessible to your HomeAssistant integration.
+                            HomeAssistant will call JunctionRelay APIs to get junction data and control junctions.
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. After Creation:</strong><br />
+                            • Configure junction sharing in the service configuration page<br />
+                            • Install the JunctionRelay HomeAssistant integration<br />
+                            • Point the integration to this JunctionRelay instance
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. HomeAssistant Integration:</strong><br />
+                            The HomeAssistant integration will create sensors and switches for shared junctions
+                            with entity IDs like sensor.junctionrelay_junction_1
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> Only junctions marked as shared in this service will be accessible to HomeAssistant
+                        </Typography>
+                    </Box>
+                );
+
+            case "Grafana":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            Grafana Data Source Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Service Purpose:</strong><br />
+                            This service provides data endpoints for Grafana to create dashboards and visualizations.
+                            Grafana will pull data from JunctionRelay using HTTP API calls.
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. Configure Shared Metrics:</strong><br />
+                            After creating the service, configure which data types to share with Grafana:
+                            • Junction states and status data<br />
+                            • Sensor readings and time series data<br />
+                            • System metrics and health information
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. Grafana Setup:</strong><br />
+                            • Install the "API Backend" datasource plugin in Grafana<br />
+                            • Add JunctionRelay as a data source pointing to: [your-junctionrelay-url]/api/grafana<br />
+                            • Create dashboards using the available metrics
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>4. Available Endpoints:</strong><br />
+                            • /api/grafana/junctions - Junction states<br />
+                            • /api/grafana/sensors - Sensor time series data<br />
+                            • /api/grafana/system - System metrics
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> JunctionRelay acts as the data source. No API keys needed on our side -
+                            Grafana connects to us, not the other way around.
+                        </Typography>
+                    </Box>
+                );
+
             case "REST API":
                 return (
                     <Box>

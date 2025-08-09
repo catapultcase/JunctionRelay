@@ -191,6 +191,34 @@ namespace JunctionRelayServer.Services
                    );
                 ");
 
+            // Add missing columns to Services table
+            var columnsToAdd = new[]
+            {
+                ("HomeAssistantSharedJunctions", "TEXT"),
+                ("GrafanaSharedMetrics", "TEXT")
+            };
+
+            foreach (var (columnName, columnType) in columnsToAdd)
+            {
+                try
+                {
+                    var columnExists = _db.ExecuteScalar<int>(@"
+                    SELECT COUNT(*) 
+                    FROM pragma_table_info('Services') 
+                    WHERE name = @columnName", new { columnName }) > 0;
+
+                    if (!columnExists)
+                    {
+                        _db.Execute($"ALTER TABLE Services ADD COLUMN {columnName} {columnType};");
+                        Console.WriteLine($"✅ Added {columnName} column to Services table");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ Failed to add {columnName} column: {ex.Message}");
+                }
+            }
+
             // Create MqttSubscriptions table
             _db.Execute(@"
             CREATE TABLE IF NOT EXISTS MqttSubscriptions(
@@ -704,7 +732,16 @@ namespace JunctionRelayServer.Services
 
 
             // Seed templates
-            await layoutTemplates.InitializeLayoutTemplatesAsync();
+            var existingTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
+            if (existingTemplates == 0)
+            {
+                await layoutTemplates.InitializeLayoutTemplatesAsync();
+                Console.WriteLine("✅ Initialized layout templates");
+            }
+            else
+            {
+                Console.WriteLine($"ℹ️ Skipped layout template initialization - {existingTemplates} templates already exist");
+            }
 
             // Seed settings
             await SeedInitialSettingsAsync();
