@@ -74,8 +74,6 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import TableViewIcon from '@mui/icons-material/TableView';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
 import ArrowRight from '@mui/icons-material/KeyboardArrowRight';
 import CheckIcon from '@mui/icons-material/Check';
 import SyncIcon from '@mui/icons-material/Sync';
@@ -92,7 +90,6 @@ import {
     getDeviceStatusInfo,
     getEnhancedConnModeDisplay,
     getDeviceTypeInfo,
-    getNotificationsStatusInfo,
     getSyncModeInfo
 } from './Devices_Helpers';
 import { useFeatureFlags } from '../hooks/useFeatureFlags';
@@ -121,7 +118,6 @@ const DeviceCard = memo(({
     updateStatuses,
     updatingDevices,
     onNestUnderGateway,
-    onToggleNotifications,
     onSyncModeChange,
     notificationLoading,
     isScanResults,
@@ -140,7 +136,6 @@ const DeviceCard = memo(({
     updateStatuses: Record<number, boolean>,
     updatingDevices: Set<number>,
     onNestUnderGateway: (deviceId: number) => void,
-    onToggleNotifications: (deviceId: number) => void,
     onSyncModeChange: (deviceId: number, mode: string) => void,
     notificationLoading: Set<number>,
     isScanResults?: boolean,
@@ -189,11 +184,6 @@ const DeviceCard = memo(({
         onNestUnderGateway(device.id);
         handleCloseContextMenu();
     }, [device.id, onNestUnderGateway, handleCloseContextMenu]);
-
-    const handleToggleNotifications = useCallback(() => {
-        onToggleNotifications(device.id);
-        handleCloseContextMenu();
-    }, [device.id, onToggleNotifications, handleCloseContextMenu]);
 
     const handleSyncModeClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -388,30 +378,6 @@ const DeviceCard = memo(({
                     gap: viewMode === 'mini' ? 0.5 : 1,
                     mt: 'auto'
                 }}>
-                    {/* Notifications Status - Only for non-scan results */}
-                    {!isScanResults && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {getNotificationsStatusInfo(deviceData).enabled ? (
-                                <NotificationsIcon
-                                    fontSize="small"
-                                    color="success"
-                                    sx={{ opacity: 0.8 }}
-                                />
-                            ) : (
-                                <NotificationsOffIcon
-                                    fontSize="small"
-                                    color="disabled"
-                                    sx={{ opacity: 0.6 }}
-                                />
-                            )}
-                            {viewMode === 'standard' && (
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                    {getNotificationsStatusInfo(deviceData).enabled ? 'Notifications On' : 'Notifications Off'}
-                                </Typography>
-                            )}
-                        </Box>
-                    )}
-
                     {/* Connection Mode - Only show for non-cloud devices and non-scan results */}
                     {!isCloudDevice && !isScanResults && (
                         <Box sx={{
@@ -564,7 +530,6 @@ const DeviceCard = memo(({
                     updateStatuses={updateStatuses}
                     updatingDevices={updatingDevices}
                     onNestUnderGateway={onNestUnderGateway}
-                    onToggleNotifications={onToggleNotifications}
                     onSyncModeChange={onSyncModeChange}
                     notificationLoading={notificationLoading}
                     isScanResults={isScanResults}
@@ -609,24 +574,6 @@ const DeviceCard = memo(({
                             Remove from Gateway
                         </MenuItem>
                     )}
-
-                    {/* Notification toggle option - now handles both enable and disable */}
-                    <MenuItem
-                        onClick={handleToggleNotifications}
-                        disabled={notificationLoading.has(device.id)}
-                    >
-                        {device.pushNotifications ? (
-                            <>
-                                <NotificationsOffIcon sx={{ mr: 1 }} />
-                                {notificationLoading.has(device.id) ? 'Disabling...' : 'Disable Notifications'}
-                            </>
-                        ) : (
-                            <>
-                                <NotificationsIcon sx={{ mr: 1 }} />
-                                {notificationLoading.has(device.id) ? 'Enabling...' : 'Enable Notifications'}
-                            </>
-                        )}
-                    </MenuItem>
 
                     {/* Cloud Sync Mode submenu - Only show for non-cloud devices */}
                     {!isCloudDevice && (
@@ -698,7 +645,6 @@ const DeviceTableRow = memo(({
     updateStatuses,
     updatingDevices,
     onNestUnderGateway,
-    onToggleNotifications,
     onSyncModeChange,
     notificationLoading,
     isScanResults,
@@ -718,7 +664,6 @@ const DeviceTableRow = memo(({
     updateStatuses: Record<number, boolean>,
     updatingDevices: Set<number>,
     onNestUnderGateway: (deviceId: number) => void,
-    onToggleNotifications: (deviceId: number) => void,
     onSyncModeChange: (deviceId: number, mode: string) => void,
     notificationLoading: Set<number>,
     isScanResults?: boolean,
@@ -768,11 +713,6 @@ const DeviceTableRow = memo(({
         onNestUnderGateway(device.id);
         handleCloseContextMenu();
     }, [device.id, onNestUnderGateway, handleCloseContextMenu]);
-
-    const handleToggleNotifications = useCallback(() => {
-        onToggleNotifications(device.id);
-        handleCloseContextMenu();
-    }, [device.id, onToggleNotifications, handleCloseContextMenu]);
 
     const handleSyncModeClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -1141,28 +1081,6 @@ const DeviceTableRow = memo(({
                         sx={{ fontSize: '0.75rem', height: 20 }}
                     />
                 ) : "0";
-            case "notifications":
-                // Don't show notifications for scan results
-                if (isScanResults) return "—";
-
-                const notificationInfo = getNotificationsStatusInfo(device);
-                return (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        {notificationInfo.enabled ? (
-                            <NotificationsIcon
-                                fontSize="small"
-                                color="success"
-                                sx={{ opacity: 0.8 }}
-                            />
-                        ) : (
-                            <NotificationsOffIcon
-                                fontSize="small"
-                                color="disabled"
-                                sx={{ opacity: 0.6 }}
-                            />
-                        )}
-                    </Box>
-                );
             case "syncMode": {
                 // Don't show sync mode for scan results
                 if (isScanResults) return "—";
@@ -1294,8 +1212,6 @@ const DeviceTableRow = memo(({
                                 return { minWidth: 160, width: 'auto' };
                             case "status":
                                 return { minWidth: 100, width: 100 };
-                            case "notifications":
-                                return { minWidth: 80, width: 80 };
                             case "connMode":
                                 return { minWidth: 180, width: 'auto' };
                             case "firmware":
@@ -1365,7 +1281,6 @@ const DeviceTableRow = memo(({
                 updateStatuses={updateStatuses}
                 updatingDevices={updatingDevices}
                 onNestUnderGateway={onNestUnderGateway}
-                onToggleNotifications={onToggleNotifications}
                 onSyncModeChange={onSyncModeChange}
                 notificationLoading={notificationLoading}
                 isScanResults={isScanResults}
@@ -1410,24 +1325,6 @@ const DeviceTableRow = memo(({
                         Remove from Gateway
                     </MenuItem>
                 )}
-
-                {/* Notification toggle option - now handles both enable and disable */}
-                <MenuItem
-                    onClick={handleToggleNotifications}
-                    disabled={notificationLoading.has(device.id)}
-                >
-                    {device.pushNotifications ? (
-                        <>
-                            <NotificationsOffIcon sx={{ mr: 1 }} />
-                            {notificationLoading.has(device.id) ? 'Disabling...' : 'Disable Notifications'}
-                        </>
-                    ) : (
-                        <>
-                            <NotificationsIcon sx={{ mr: 1 }} />
-                            {notificationLoading.has(device.id) ? 'Enabling...' : 'Enable Notifications'}
-                        </>
-                    )}
-                </MenuItem>
 
                 {/* Cloud Sync Mode submenu - Only show for non-cloud devices */}
                 {!isCloudDevice && (
@@ -1487,7 +1384,7 @@ const DeviceTableRow = memo(({
     </>;
 });
 
-// DevicesTable component with column management, gateway nesting, view modes, notifications, and scan results support
+// DevicesTable component with column management, gateway nesting, view modes, and scan results support
 const DevicesTable: React.FC<{
     devices: any[];
     title: string;
@@ -1502,7 +1399,6 @@ const DevicesTable: React.FC<{
     onRefreshIntervalChange?: (interval: number) => void;
     refreshIntervalOptions?: Array<{ value: number; label: string }>;
     isCloudDevicesTable?: boolean;
-    onToggleNotifications?: (deviceId: number) => void;
     onSyncModeChange?: (deviceId: number, mode: string) => void;
     // New scan-specific props
     isScanResults?: boolean;
@@ -1528,7 +1424,6 @@ const DevicesTable: React.FC<{
     onRefreshIntervalChange,
     refreshIntervalOptions,
     isCloudDevicesTable = false,
-    onToggleNotifications,
     onSyncModeChange,
     // New scan-specific props
     isScanResults = false,
@@ -1858,10 +1753,6 @@ const DevicesTable: React.FC<{
                     valueA = a.device.consecutivePingFailures || 0;
                     valueB = b.device.consecutivePingFailures || 0;
                     break;
-                case 'notifications':
-                    valueA = a.device.pushNotifications ? 1 : 0;
-                    valueB = b.device.pushNotifications ? 1 : 0;
-                    break;
                 case 'syncMode':
                     valueA = a.device.syncMode?.toLowerCase() || '';
                     valueB = b.device.syncMode?.toLowerCase() || '';
@@ -1883,56 +1774,10 @@ const DevicesTable: React.FC<{
         return [...hierarchicalDevices].sort(comparator);
     }, [hierarchicalDevices, sortState, isScanResults, deviceDetails]);
 
-    // Handle toggle notifications
-    const handleToggleNotifications = useCallback(async (deviceId: number) => {
-        const device = devices.find(d => d.id === deviceId);
-        if (!device) return;
-
-        try {
-            setNotificationLoading(prev => new Set([...prev, deviceId]));
-            setNotificationError(null);
-
-            // Toggle the current state
-            const newState = !device.pushNotifications;
-            const action = newState ? 'enable' : 'disable';
-
-            const response = await fetch(`/api/cloud-auth/devices/${deviceId}/notifications/${action}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('cloud_proxy_token') || ''}`
-                }
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                console.log(result.message);
-
-                if (onDevicesChange) {
-                    onDevicesChange();
-                } else {
-                    window.location.reload();
-                }
-            } else {
-                const error = await response.json();
-                setNotificationError(error.message || `Failed to ${action} notifications`);
-            }
-        } catch (error) {
-            setNotificationError(`Error ${device.pushNotifications ? 'disabling' : 'enabling'} notifications`);
-            console.error('Error toggling notifications:', error);
-        } finally {
-            setNotificationLoading(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(deviceId);
-                return newSet;
-            });
-        }
-    }, [devices, onDevicesChange]);
-
     // Add the new sync mode change handler
     const handleSyncModeChange = useCallback(async (deviceId: number, mode: string) => {
         try {
-            const response = await fetch(`/api/devices/${deviceId}/sync-mode`, {
+            const response = await fetch(`/api/localdevices/${deviceId}/sync-mode`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ syncMode: mode })
@@ -2122,7 +1967,6 @@ const DevicesTable: React.FC<{
     }, [moveCol]);
 
     // Use passed handlers or default to internal ones
-    const finalToggleNotifications = onToggleNotifications || handleToggleNotifications;
     const finalSyncModeChange = onSyncModeChange || handleSyncModeChange;
 
     // Handle card click for scan results
@@ -2323,8 +2167,6 @@ const DevicesTable: React.FC<{
                                                     return { minWidth: 160, width: 'auto' };
                                                 case "status":
                                                     return { minWidth: 100, width: 100 };
-                                                case "notifications":
-                                                    return { minWidth: 80, width: 80 };
                                                 case "connMode":
                                                     return { minWidth: 180, width: 'auto' };
                                                 case "firmware":
@@ -2395,7 +2237,6 @@ const DevicesTable: React.FC<{
                                             updateStatuses={updateStatuses}
                                             updatingDevices={updatingDevices}
                                             onNestUnderGateway={handleNestUnderGateway}
-                                            onToggleNotifications={finalToggleNotifications}
                                             onSyncModeChange={finalSyncModeChange}
                                             notificationLoading={notificationLoading}
                                             isScanResults={isScanResults}
@@ -2439,7 +2280,6 @@ const DevicesTable: React.FC<{
                                     updateStatuses={updateStatuses}
                                     updatingDevices={updatingDevices}
                                     onNestUnderGateway={handleNestUnderGateway}
-                                    onToggleNotifications={finalToggleNotifications}
                                     onSyncModeChange={finalSyncModeChange}
                                     notificationLoading={notificationLoading}
                                     isScanResults={isScanResults}

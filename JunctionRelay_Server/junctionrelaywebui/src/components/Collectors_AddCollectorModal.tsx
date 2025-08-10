@@ -79,6 +79,7 @@ const AddCollectorModal: React.FC<{
     const collectorTypes = [
         { value: "", name: "Select Collector Type", desc: "Choose a collector type to begin" },
         { value: "Cloudflare", name: "Cloudflare", desc: "CDN & DNS analytics" },
+        { value: "GenericAPI", name: "Generic API", desc: "Process JSON via AccessToken" },
         { value: "Github", name: "GitHub Repository", desc: "Repository statistics" },
         { value: "HomeAssistant", name: "Home Assistant", desc: "Smart home automation" },
         { value: "Host", name: "Host Device", desc: "System monitoring" },
@@ -145,6 +146,7 @@ const AddCollectorModal: React.FC<{
         // URL validation for collectors that need it (excluding SonarrCalendar now)
         if (
             (collector.collectorType === "Cloudflare" ||
+                collector.collectorType === "GenericAPI" ||
                 collector.collectorType === "Github" ||
                 collector.collectorType === "HomeAssistant" ||
                 collector.collectorType === "LibreHardwareMonitor" ||
@@ -159,8 +161,9 @@ const AddCollectorModal: React.FC<{
             return;
         }
 
-        // Access Token validation for collectors that need it (now including SonarrCalendar)
+        // Access Token validation for collectors
         if ((collector.collectorType === "Cloudflare" ||
+            collector.collectorType === "GenericAPI" ||
             collector.collectorType === "Github" ||
             collector.collectorType === "HomeAssistant" ||
             collector.collectorType === "Render" ||
@@ -176,6 +179,7 @@ const AddCollectorModal: React.FC<{
         const urlPattern = /^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i;
         if (
             (collector.collectorType === "Cloudflare" ||
+                collector.collectorType === "GenericAPI" ||
                 collector.collectorType === "Github" ||
                 collector.collectorType === "HomeAssistant" ||
                 collector.collectorType === "LibreHardwareMonitor" ||
@@ -338,6 +342,15 @@ const AddCollectorModal: React.FC<{
                 ...prev,
                 name: "Cloudflare",
                 url: "https://dash.cloudflare.com/account_id/zone_id",
+                accessToken: "",
+                externalAccessToken: false,
+                pollRate: 60000,
+            }));
+        } else if (collector.collectorType === "GenericAPI") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "GenericAPI",
+                url: "https://api.example.com",
                 accessToken: "",
                 externalAccessToken: false,
                 pollRate: 60000,
@@ -608,6 +621,7 @@ const AddCollectorModal: React.FC<{
 
                                             {/* URL field for collectors that need it (excluding SonarrCalendar) */}
                                             {(collector.collectorType === "Cloudflare" ||
+                                                collector.collectorType === "GenericAPI" ||
                                                 collector.collectorType === "Github" ||
                                                 collector.collectorType === "HomeAssistant" ||
                                                 collector.collectorType === "LibreHardwareMonitor" ||
@@ -619,7 +633,8 @@ const AddCollectorModal: React.FC<{
                                                         fullWidth
                                                         size="small"
                                                         label={
-                                                            collector.collectorType === "Github" ? "GitHub Repository URL" :
+                                                            collector.collectorType === "GenericAPI" ? "Generic API URL" :
+                                                                collector.collectorType === "Github" ? "GitHub Repository URL" :
                                                                 collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
                                                                     collector.collectorType === "Render" ? "Render Service URL" :
                                                                         collector.collectorType === "Stripe" ? "Stripe API Base URL" :
@@ -631,6 +646,7 @@ const AddCollectorModal: React.FC<{
                                                         onChange={handleChange}
                                                         required
                                                         placeholder={
+                                                            collector.collectorType === "GenericAPI" ? "https://api.example.com" :
                                                             collector.collectorType === "Github" ? "https://github.com/owner/repo" :
                                                                 collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
                                                                     collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
@@ -673,6 +689,7 @@ const AddCollectorModal: React.FC<{
 
                                             {/* Access Token for other collectors that need it */}
                                             {(collector.collectorType === "Cloudflare" ||
+                                                collector.collectorType === "GenericAPI" ||
                                                 collector.collectorType === "Github" ||
                                                 collector.collectorType === "HomeAssistant" ||
                                                 collector.collectorType === "Render" ||
@@ -682,6 +699,7 @@ const AddCollectorModal: React.FC<{
                                                         fullWidth
                                                         size="small"
                                                         label={
+                                                            collector.collectorType === "GenericAPI" ? "Generic API Access Token" :
                                                             collector.collectorType === "Github" ? "GitHub Personal Access Token" :
                                                                 collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
                                                                     collector.collectorType === "Render" ? "Render API Key" :
@@ -695,6 +713,7 @@ const AddCollectorModal: React.FC<{
                                                         required
                                                         type="password"
                                                         placeholder={
+                                                            collector.collectorType === "GenericAPI" ? "gapi_..." :
                                                             collector.collectorType === "Github" ? "ghp_..." :
                                                                 collector.collectorType === "Cloudflare" ? "cf_api_token..." :
                                                                     collector.collectorType === "Render" ? "rnd_..." :
@@ -736,6 +755,7 @@ const AddCollectorModal: React.FC<{
                                     {/* Security Options Section - Show for collectors that require access tokens (now includes Sonarr and Unraid) */}
                                     {collector.collectorType && (
                                         collector.collectorType === "Cloudflare" ||
+                                        collector.collectorType === "GenericAPI" ||
                                         collector.collectorType === "Github" ||
                                         collector.collectorType === "HomeAssistant" ||
                                         collector.collectorType === "Render" ||

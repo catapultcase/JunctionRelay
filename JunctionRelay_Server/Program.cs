@@ -216,6 +216,7 @@ builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_CloudNotifications>();
+builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 
 // Core singleton services
 builder.Services.AddSingleton<Service_Manager_Connections>();
@@ -269,6 +270,7 @@ builder.Services.AddSingleton<Func<string, Service_Send_Data_COM>>(provider => c
 });
 
 builder.Services.AddTransient<DataCollector_Cloudflare>();
+builder.Services.AddTransient<DataCollector_GenericAPI>();
 builder.Services.AddTransient<DataCollector_Github>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
 builder.Services.AddTransient<DataCollector_Host>();
@@ -287,7 +289,8 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
     var creatorMap = new Dictionary<string, Func<Model_Collector, IDataCollector>>(StringComparer.OrdinalIgnoreCase)
     {
         { "Cloudflare", c => { var i = provider.GetRequiredService<DataCollector_Cloudflare>(); i.ApplyConfiguration(c); return i; } },
-        { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },
+        { "GenericAPI", c => { var i = provider.GetRequiredService<DataCollector_GenericAPI>(); i.ApplyConfiguration(c); return i; } },
+        { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },       
         { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
         { "Host", c => { var i = provider.GetRequiredService<DataCollector_Host>(); i.ApplyConfiguration(c); return i; } },
         { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },

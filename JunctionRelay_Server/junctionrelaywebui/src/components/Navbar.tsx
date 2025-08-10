@@ -391,7 +391,7 @@ const Navbar = () => {
                             >
                                 <Box
                                     component="img"
-                                    src="../JunctionRelay.svg" // replace with actual path (e.g. /assets/logo.svg)
+                                    src="/JunctionRelay.svg"
                                     alt="JunctionRelay"
                                     sx={{
                                         height: 40,

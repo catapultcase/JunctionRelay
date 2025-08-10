@@ -56,7 +56,6 @@ interface Device_ScanResultsProps {
     handleDelete: (e: React.MouseEvent, deviceId: number) => void;
     handleUpdateDevice: (deviceId: number, e: React.MouseEvent) => void;
     navigate: NavigateFunction;
-    handleToggleNotifications: (deviceId: number) => void;
     handleSyncModeChange: (deviceId: number, mode: string) => void;
     handleCardClick: (device: any) => void;
     handleResync: (macAddress?: string, newIpAddress?: string) => void;
@@ -83,7 +82,6 @@ const Device_ScanResults: React.FC<Device_ScanResultsProps> = ({
     handleDelete,
     handleUpdateDevice,
     navigate,
-    handleToggleNotifications,
     handleSyncModeChange,
     handleCardClick,
     handleResync,
@@ -124,7 +122,6 @@ const Device_ScanResults: React.FC<Device_ScanResultsProps> = ({
                             storageKeySuffix="_scan_new"
                             onDevicesChange={() => fetchDevices(false)}
                             isCloudDevicesTable={false}
-                            onToggleNotifications={handleToggleNotifications}
                             onSyncModeChange={handleSyncModeChange}
                             isScanResults={true}
                             scanViewMode={scanNewViewMode}
@@ -148,7 +145,6 @@ const Device_ScanResults: React.FC<Device_ScanResultsProps> = ({
                             storageKeySuffix="_scan_existing"
                             onDevicesChange={() => fetchDevices(false)}
                             isCloudDevicesTable={false}
-                            onToggleNotifications={handleToggleNotifications}
                             onSyncModeChange={handleSyncModeChange}
                             isScanResults={true}
                             scanViewMode={scanExistingViewMode}

@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -373,7 +373,7 @@ const Devices: React.FC = () => {
     const handleRefreshCloudDevices = async () => {
         setRefreshingCloudDevices(true);
         try {
-            const response = await fetch('/api/cloud-auth/devices/refresh', {
+            const response = await fetch('/api/localdevices/refresh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -463,37 +463,7 @@ const Devices: React.FC = () => {
                 return updated;
             });
         }
-    };
-
-    // Notification toggle handler
-    const handleToggleNotifications = useCallback(async (deviceId: number) => {
-        const device = allDevices.find(d => d.id === deviceId);
-        if (!device) return;
-
-        try {
-            const newState = !device.pushNotifications;
-            const action = newState ? 'enable' : 'disable';
-
-            const response = await fetch(`/api/cloud-auth/devices/${deviceId}/notifications/${action}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('cloud_proxy_token') || ''}`
-                }
-            });
-
-            if (response.ok) {
-                showSnackbar(`Notifications ${action}d successfully`, "success");
-                fetchDevices(false);
-            } else {
-                const error = await response.json();
-                showSnackbar(`Failed to ${action} notifications: ${error.message}`, "error");
-            }
-        } catch (error) {
-            console.error('Error toggling notifications:', error);
-            showSnackbar(`Error ${device.pushNotifications ? 'disabling' : 'enabling'} notifications`, "error");
-        }
-    }, [allDevices, fetchDevices]);
+    };    
 
     // Sync mode change handler
     const handleSyncModeChange = useCallback(async (deviceId: number, mode: string) => {
@@ -559,7 +529,6 @@ const Devices: React.FC = () => {
                 handleDelete={handleDelete}
                 handleUpdateDevice={handleUpdateDevice}
                 navigate={navigate}
-                handleToggleNotifications={handleToggleNotifications}
                 handleSyncModeChange={handleSyncModeChange}
                 handleCardClick={handleCardClick}
                 handleResync={handleResync}
@@ -608,7 +577,6 @@ const Devices: React.FC = () => {
                     onRefreshIntervalChange={setRefreshInterval}
                     refreshIntervalOptions={REFRESH_INTERVAL_OPTIONS}
                     isCloudDevicesTable={false}
-                    onToggleNotifications={handleToggleNotifications}
                     onSyncModeChange={handleSyncModeChange}
                 />
             ) : (
@@ -627,7 +595,6 @@ const Devices: React.FC = () => {
                         onRefreshIntervalChange={setRefreshInterval}
                         refreshIntervalOptions={REFRESH_INTERVAL_OPTIONS}
                         isCloudDevicesTable={false}
-                        onToggleNotifications={handleToggleNotifications}
                         onSyncModeChange={handleSyncModeChange}
                     />
 
@@ -645,7 +612,6 @@ const Devices: React.FC = () => {
                         onRefreshIntervalChange={setCloudRefreshInterval}
                         refreshIntervalOptions={CLOUD_REFRESH_INTERVAL_OPTIONS}
                         isCloudDevicesTable={true}
-                        onToggleNotifications={handleToggleNotifications}
                         onSyncModeChange={handleSyncModeChange}
                     />
                 </>

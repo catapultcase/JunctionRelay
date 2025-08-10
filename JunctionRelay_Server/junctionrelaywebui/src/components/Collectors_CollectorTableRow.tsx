@@ -47,7 +47,8 @@ import TvIcon from '@mui/icons-material/Tv';
 const getCollectorTypeInfo = (type: string) => {
     const typeMap: Record < string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
     "Cloudflare": { color: "primary", icon: < CloudIcon fontSize = "small" /> },
-        "Github": { color: "info", icon: < DnsIcon fontSize = "small" /> },
+        "GenericAPI": { color: "info", icon: < DnsIcon fontSize="small" /> },
+        "Github": { color: "info", icon: < DnsIcon fontSize="small" /> },
         "HomeAssistant": { color: "info", icon: < HomeIcon fontSize = "small" /> },
         "Host": { color: "secondary", icon: < ComputerIcon fontSize = "small" /> },
         "LibreHardwareMonitor": { color: "primary", icon: < MemoryIcon fontSize = "small" /> },
