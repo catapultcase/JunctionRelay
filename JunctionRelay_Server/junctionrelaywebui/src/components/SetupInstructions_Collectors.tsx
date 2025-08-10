@@ -305,6 +305,36 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "GenericAPI":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            Generic API Configuration:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. API Endpoint URL:</strong><br />
+                            • Enter the full URL to your JSON API endpoint<br />
+                            • Must return JSON with success/data structure<br />
+                            • Example: https://api.example.com/metrics
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. Access Token:</strong><br />
+                            • API authentication token (if required)<br />
+                            • Sent as X-Collector-Token header<br />
+                            • Leave blank if API doesn't require authentication
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Expected Response Format:</strong><br />
+                            <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>
+                                {`{"success": true, "data": {"metric1": 123, "metric2": "value"}}`}
+                            </code>
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>What it does:</strong> Converts each key-value pair in the "data" object to individual sensors with smart categorization and unit detection.
+                        </Typography>
+                    </Box>
+                );
+
             default:
                 return (
                     <Box>

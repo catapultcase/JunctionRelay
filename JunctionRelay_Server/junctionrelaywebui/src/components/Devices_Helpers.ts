@@ -50,7 +50,6 @@ export const defaultDeviceColumns: DeviceColumn[] = [
     { field: "COMPort", label: "COM Port", align: "left", sortable: true },
     { field: "uniqueIdentifier", label: "MAC / Unique ID", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
-    { field: "notifications", label: "Notifications", align: "center", sortable: true },
     { field: "connMode", label: "Active Connections", align: "left", sortable: true },
     { field: "firmware", label: "Firmware", align: "left", sortable: true },
     { field: "custom", label: "Custom Firmware", align: "left", sortable: true },
@@ -65,7 +64,7 @@ export const defaultDeviceColumns: DeviceColumn[] = [
 // Default visible columns for local devices
 export const defaultLocalDeviceColumns = [
     "actions", "name", "type", "model", "ipAddress", "COMPort", "uniqueIdentifier",
-    "status", "syncMode", "notifications", "connMode", "firmware", "custom",
+    "status", "syncMode", "connMode", "firmware", "custom",
     "heartbeatProtocol", "heartbeatStatus", "lastPinged", "pingLatency",
     "consecutiveFailures"
 ];
@@ -73,7 +72,7 @@ export const defaultLocalDeviceColumns = [
 // Default visible columns for cloud devices (when not unified)
 export const defaultCloudDeviceColumns = [
     "actions", "name", "type", "uniqueIdentifier", "status",
-    "syncMode", "notifications", "heartbeatStatus", "lastPinged"
+    "syncMode", "heartbeatStatus", "lastPinged"
 ];
 
 // Helper function to get heartbeat status info
@@ -303,15 +302,6 @@ export const getDeviceTypeInfo = (device: any): { label: string; color: "primary
         label: "Standalone",
         color: "default",
         icon: null // Will be added in the component
-    };
-};
-
-// Helper function to get notifications status info
-export const getNotificationsStatusInfo = (device: any): { enabled: boolean; color: "success" | "default" } => {
-    const enabled = device.pushNotifications === true || device.pushNotifications === 1;
-    return {
-        enabled,
-        color: enabled ? "success" : "default"
     };
 };
 

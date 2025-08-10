@@ -44,7 +44,6 @@ import Settings_UserManagement from '../components/Settings_UserManagement';
 import Settings_SessionManagement from '../components/Settings_SessionManagement';
 import Settings_Database from '../components/Settings_Database';
 import StreamHistorySettings from '../components/StreamHistorySettings';
-import PushNotificationsSettings from '../components/Settings_PushNotifications';
 import DashboardSettings from '../components/DashboardSettings';
 
 
@@ -674,23 +673,6 @@ const Settings: React.FC = () => {
                             isMobile={isMobile}
                             setFriendlyName={setBackendFriendlyName}
                         />
-                    </AccordionDetails>
-                </Accordion>
-
-                {/* Push Notifications */}
-                <Accordion
-                    expanded={accordionStates.pushNotifications}
-                    onChange={handleAccordionChange('pushNotifications')}
-                    elevation={isMobile ? 1 : 2}
-                >
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <NotificationsIcon sx={{ mr: 1 }} />
-                            <Typography variant="h6">Push Notifications</Typography>
-                        </Box>
-                    </AccordionSummary>
-                    <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
-                        <PushNotificationsSettings showSnackbar={showSnackbar} />
                     </AccordionDetails>
                 </Accordion>
 

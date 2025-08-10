@@ -42,7 +42,9 @@ private:
 
     // Constants
     static const unsigned long JWT_REFRESH_BUFFER = 300000; // 5 minutes in ms
-    static const unsigned long TOKEN_REFRESH_INTERVAL = 25200000; // 7 hours in ms (7 * 60 * 60 * 1000)
+    // static const unsigned long TOKEN_REFRESH_INTERVAL = 25200000; // 7 hours
+    static const unsigned long TOKEN_REFRESH_INTERVAL = 3600000; // 1 hour
+    // static const unsigned long TOKEN_REFRESH_INTERVAL = 180000; // 3 min
 
     void registerDevice();
     void sendHealth();
