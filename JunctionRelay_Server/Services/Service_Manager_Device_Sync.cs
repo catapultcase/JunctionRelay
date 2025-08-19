@@ -693,7 +693,7 @@ namespace JunctionRelayServer.Services
                 await ExecuteI2CDevicesSync(device, request.Approvals, result);
 
                 // Execute sensors sync
-                await ExecuteSensorsSync(device, request.Approvals, result);
+                // await ExecuteSensorsSync(device, request.Approvals, result);
 
                 // Update device's LastUpdated timestamp
                 device.LastUpdated = DateTime.UtcNow;

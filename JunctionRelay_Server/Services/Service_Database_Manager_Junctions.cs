@@ -189,9 +189,9 @@ namespace JunctionRelayServer.Services
                     await _db.ExecuteAsync("DELETE FROM JunctionSensors WHERE JunctionId = @Id", new { Id = id }, transaction);
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionSensors deleted.");
 
-                    // Delete JunctionScreenLayouts first (before deleting JunctionDeviceLinks)
+                    // Delete JunctionScreenLayouts (now using JunctionId directly)
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] Deleting JunctionScreenLayouts...");
-                    await _db.ExecuteAsync("DELETE FROM JunctionScreenLayouts WHERE JunctionDeviceLinkId IN (SELECT Id FROM JunctionDeviceLinks WHERE JunctionId = @Id)", new { Id = id }, transaction);
+                    await _db.ExecuteAsync("DELETE FROM JunctionScreenLayouts WHERE JunctionId = @Id", new { Id = id }, transaction);
                     Console.WriteLine("[SERVICE_DATABASE_MANAGER_JUNCTIONS] JunctionScreenLayouts deleted.");
 
                     // Delete JunctionDeviceLinks
@@ -378,6 +378,7 @@ SELECT last_insert_rowid();
                 {
                     await _db.ExecuteAsync(@"
             INSERT INTO JunctionScreenLayouts (
+                JunctionId,
                 JunctionDeviceLinkId, 
                 DeviceScreenId, 
                 ScreenLayoutId, 
@@ -386,6 +387,7 @@ SELECT last_insert_rowid();
                 OnlySendIfChanged
             )
             VALUES (
+                @JunctionId,
                 @NewLinkId, 
                 @DeviceScreenId, 
                 @ScreenLayoutId, 
@@ -394,6 +396,7 @@ SELECT last_insert_rowid();
                 @OnlySendIfChanged
             );", new
                     {
+                        JunctionId = newJunctionId,
                         NewLinkId = newLinkId,
                         layout.DeviceScreenId,
                         layout.ScreenLayoutId,
@@ -596,7 +599,7 @@ SELECT last_insert_rowid();";
             foreach (var deviceLink in junction.DeviceLinks)
             {
                 deviceLink.JunctionId = newJunctionId;
-                await InsertDeviceLink(deviceLink);
+                await InsertDeviceLink(deviceLink, newJunctionId);
             }
 
             foreach (var collectorLink in junction.CollectorLinks)
@@ -614,7 +617,7 @@ SELECT last_insert_rowid();";
             return junction;
         }
 
-        private async Task InsertDeviceLink(Model_JunctionDeviceLink deviceLink)
+        private async Task InsertDeviceLink(Model_JunctionDeviceLink deviceLink, int junctionId)
         {
             const string deviceLinkSql = @"
     INSERT INTO JunctionDeviceLinks (
@@ -636,6 +639,7 @@ SELECT last_insert_rowid();";
             {
                 await _db.ExecuteAsync(@"
         INSERT INTO JunctionScreenLayouts (
+            JunctionId,
             JunctionDeviceLinkId, 
             DeviceScreenId, 
             ScreenLayoutId, 
@@ -644,6 +648,7 @@ SELECT last_insert_rowid();";
             OnlySendIfChanged
         )
         VALUES (
+            @JunctionId,
             @NewDeviceLinkId, 
             @DeviceScreenId, 
             @ScreenLayoutId, 
@@ -653,6 +658,7 @@ SELECT last_insert_rowid();";
         );",
                 new
                 {
+                    JunctionId = junctionId,
                     NewDeviceLinkId = newDeviceLinkId,
                     layout.DeviceScreenId,
                     layout.ScreenLayoutId,

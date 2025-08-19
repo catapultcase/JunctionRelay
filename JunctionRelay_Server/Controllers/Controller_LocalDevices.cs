@@ -29,34 +29,37 @@ namespace JunctionRelayServer.Controllers
     public class Controller_LocalDevices : ControllerBase
     {
         private readonly Service_Database_Manager_Devices _deviceDb;
-        private readonly Service_Manager_CloudNotifications _cloudNotificationService;
         private readonly Service_Manager_LocalDeviceSync _localDeviceSyncService;
         private readonly Service_CloudSessionStore _cloudSessionStore;
 
         public Controller_LocalDevices(
             Service_Database_Manager_Devices deviceDb,
-            Service_Manager_CloudNotifications cloudNotificationService,
             Service_Manager_LocalDeviceSync localDeviceSyncService,
             Service_CloudSessionStore cloudSessionStore)
         {
             _deviceDb = deviceDb;
-            _cloudNotificationService = cloudNotificationService;
             _localDeviceSyncService = localDeviceSyncService;
             _cloudSessionStore = cloudSessionStore;
-        }        
+        }
 
-        // POST: api/cloud-devices/{deviceId}/sync-mode
+        // POST: api/localdevices/{deviceId}/sync-mode
         [HttpPost("{deviceId}/sync-mode")]
         public async Task<IActionResult> UpdateDeviceSyncMode(int deviceId, [FromBody] UpdateSyncModeRequest request)
         {
             try
             {
-                if (request == null || string.IsNullOrWhiteSpace(request.SyncMode))
+                // Validate request
+                if (request == null)
+                {
+                    return BadRequest(new { message = "Request object is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(request.SyncMode))
                 {
                     return BadRequest(new { message = "Sync mode is required" });
                 }
 
-                // Check if user has cloud authentication
+                // Validate authentication
                 var authHeader = Request.Headers.Authorization.FirstOrDefault();
                 if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
                 {
@@ -78,47 +81,52 @@ namespace JunctionRelayServer.Controllers
                 localDevice.SyncMode = request.SyncMode;
                 await _deviceDb.UpdateDeviceSyncModeAsync(localDevice.Id, request.SyncMode);
 
-                Console.WriteLine($"About to call HandleSyncModeChangeAsync for device {deviceId}, previous: {previousSyncMode}, current: {request.SyncMode}");
-
                 // Handle sync mode change (registration/unregistration)
                 var syncSuccess = await _localDeviceSyncService.HandleSyncModeChangeAsync(
                     localDevice,
                     previousSyncMode);
 
-                Console.WriteLine($"HandleSyncModeChangeAsync completed, result: {syncSuccess}");
-
                 if (syncSuccess)
                 {
-                    return Ok(new
+                    var response = new
                     {
                         success = true,
                         message = $"Sync mode updated to '{request.SyncMode}' for device '{localDevice.Name}'",
                         deviceId = deviceId,
                         syncMode = request.SyncMode,
                         previousSyncMode = previousSyncMode
-                    });
+                    };
+                    return Ok(response);
                 }
                 else
                 {
+                    Console.WriteLine($"[CONTROLLER] ❌ Sync failed, rolling back database changes");
                     // Rollback the database change if cloud sync failed
                     await _deviceDb.UpdateDeviceSyncModeAsync(localDevice.Id, previousSyncMode ?? "local_health");
 
-                    return StatusCode(500, new
+                    var errorResponse = new
                     {
                         success = false,
                         message = "Failed to update sync mode - cloud registration failed",
                         deviceId = deviceId
-                    });
+                    };
+                    return StatusCode(500, errorResponse);
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
+                Console.WriteLine($"[CONTROLLER] ❌ Exception caught: {ex.GetType().Name}");
+                Console.WriteLine($"[CONTROLLER] ❌ Exception message: {ex.Message}");
+                Console.WriteLine($"[CONTROLLER] ❌ Stack trace: {ex.StackTrace}");
+
+                var errorResponse = new
                 {
                     success = false,
                     message = "Failed to update device sync mode",
-                    error = ex.Message
-                });
+                    error = ex.Message,
+                    exceptionType = ex.GetType().Name
+                };
+                return StatusCode(500, errorResponse);
             }
         }
     }

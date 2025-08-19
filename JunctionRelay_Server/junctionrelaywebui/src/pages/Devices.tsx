@@ -468,7 +468,7 @@ const Devices: React.FC = () => {
     // Sync mode change handler
     const handleSyncModeChange = useCallback(async (deviceId: number, mode: string) => {
         try {
-            const response = await fetch(`/api/devices/${deviceId}/sync-mode`, {
+            const response = await fetch(`/api/localdevices/${deviceId}/sync-mode`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ syncMode: mode })

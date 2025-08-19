@@ -108,25 +108,25 @@ const Device_ManagementSection: React.FC<Device_ManagementSectionProps> = ({
 
             {/* Second Row - Cloud Device Management */}
             <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: 'wrap' }}>
-                <Button
-                    variant="contained"
-                    onClick={() => setAddCloudDeviceModalOpen(true)}
-                    startIcon={<CloudIcon />}
-                    size="small"
-                    data-testid="add-cloud-device-button"
-                    sx={{
-                        backgroundColor: '#1976d2',
-                        color: 'white',
-                        '&:hover': {
-                            backgroundColor: '#1565c0',
-                        },
-                        '&:focus': {
-                            backgroundColor: '#1565c0',
-                        }
-                    }}
-                >
-                    Add Cloud Device
-                </Button>
+                {/*<Button*/}
+                {/*    variant="contained"*/}
+                {/*    onClick={() => setAddCloudDeviceModalOpen(true)}*/}
+                {/*    startIcon={<CloudIcon />}*/}
+                {/*    size="small"*/}
+                {/*    data-testid="add-cloud-device-button"*/}
+                {/*    sx={{*/}
+                {/*        backgroundColor: '#1976d2',*/}
+                {/*        color: 'white',*/}
+                {/*        '&:hover': {*/}
+                {/*            backgroundColor: '#1565c0',*/}
+                {/*        },*/}
+                {/*        '&:focus': {*/}
+                {/*            backgroundColor: '#1565c0',*/}
+                {/*        }*/}
+                {/*    }}*/}
+                {/*>*/}
+                {/*    Add Cloud Device*/}
+                {/*</Button>*/}
 
                 <Button
                     variant="outlined"

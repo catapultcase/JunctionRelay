@@ -135,7 +135,7 @@ namespace JunctionRelayServer.Models
 
         // Stream heartbeat configuration
         public bool UseStreamAsHeartbeat { get; set; } = true;
-        public int? StreamHeartbeatThresholdMs { get; set; } = 10000;
+        public int? StreamHeartbeatThresholdMs { get; set; } = 1200000;
 
         // Connection Status Configuration
         public bool ConnectionStatusEnabled { get; set; } = true;

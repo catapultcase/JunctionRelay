@@ -164,7 +164,7 @@ namespace JunctionRelayServer.Controllers
                 await RemoveAssociatedSensorTargets(junctionId, link.DeviceId);
 
                 // 2. Remove all JunctionScreenLayouts for this device link
-                await RemoveAssociatedScreenLayouts(linkId);
+                await RemoveAssociatedScreenLayouts(link.Id);
 
                 // 3. Remove associated JunctionSensors
                 await RemoveAssociatedJunctionSensors(junctionId, link.Id, true);  // true for device
@@ -306,7 +306,7 @@ namespace JunctionRelayServer.Controllers
             {
                 return NotFound($"Device link with ID {linkId} not found for junction {junctionId}.");
             }
-          
+
             var success = await _linkDb.UpdateJunctionLinkFieldsAsync(linkId, updateRequest, isDeviceLink: true);
             if (!success)
             {
@@ -385,7 +385,8 @@ namespace JunctionRelayServer.Controllers
                 return NotFound($"Device link with ID {linkId} not found for junction {junctionId}.");
             }
 
-            // Set the JunctionDeviceLinkId
+            // Ensure required foreign keys are set
+            newScreenLayout.JunctionId = junctionId;               // <-- ensure NOT NULL
             newScreenLayout.JunctionDeviceLinkId = linkId;
 
             // Add the screen layout override
@@ -421,9 +422,11 @@ namespace JunctionRelayServer.Controllers
                 return NotFound($"Screen layout with ID {screenLayoutId} not found for device link {linkId}.");
             }
 
-            // Update the screen layout override
+            // Ensure required foreign keys are set
             updatedScreenLayout.Id = screenLayoutId;
+            updatedScreenLayout.JunctionId = junctionId;           // <-- ensure NOT NULL
             updatedScreenLayout.JunctionDeviceLinkId = linkId;
+
             var success = await _linkDb.UpdateJunctionScreenLayoutAsync(updatedScreenLayout);
             if (!success)
             {

@@ -584,16 +584,16 @@ const BottomActionBarWrapper: React.FC = () => {
                                     window.dispatchEvent(new CustomEvent('bottom-action-add-device'));
                                 },
                                 color: 'primary' as const
-                            },
-                            {
-                                icon: <CloudIcon />,
-                                label: 'Add Cloud Device',
-                                description: 'Register a JunctionRelay cloud device',
-                                onClick: () => {
-                                    window.dispatchEvent(new CustomEvent('bottom-action-add-cloud-device'));
-                                },
-                                color: 'info' as const
                             }
+                            // {
+                            //     icon: <CloudIcon />,
+                            //     label: 'Add Cloud Device',
+                            //     description: 'Register a JunctionRelay cloud device',
+                            //     onClick: () => {
+                            //         window.dispatchEvent(new CustomEvent('bottom-action-add-cloud-device'));
+                            //     },
+                            //     color: 'info' as const
+                            // }
                         ]
                     },
                     rightSecondaryActions: [

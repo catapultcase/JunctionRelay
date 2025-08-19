@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ import Junction_ConfigPanel from '../components/Junction_ConfigPanel';
 import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
 import ScreenSelectionModal from '../components/ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/AvailableSourcesTargetsTable';
-import DeviceScreenLayoutsCard from '../components/DeviceScreenLayoutsCard';
+import DeviceScreenLayoutsCard from '../components/Junction_DeviceScreenLayoutsCard';
 import Junction_Setup_COM from '../components/Junction_Setup_COM';
 
 // Icon imports
@@ -375,7 +375,7 @@ const ConfigureJunction: React.FC = () => {
                 Name: junctionData.name,
                 Type: junctionData.type,
                 Description: junctionData.description || "",
-                RenderingMode: junctionData.renderingMode || "Payload", 
+                RenderingMode: junctionData.renderingMode || "Payload",
                 MQTTBrokerId: selectedMqttBrokerId || null,
                 ShowOnDashboard: junctionData.showOnDashboard,
                 AutoStartOnLaunch: junctionData.autoStartOnLaunch,
@@ -546,6 +546,13 @@ const ConfigureJunction: React.FC = () => {
         setFilteredSensors((prev) =>
             prev.map((s) =>
                 s.Id === sensor.Id ? { ...s, SensorTag: newTag } : s
+            )
+        );
+
+        // Also update the main availableSensors state to ensure DeviceScreenLayoutsCard gets the updated data
+        setAvailableSensors((prev) =>
+            prev.map((s) =>
+                s.Id === sensor.Id ? { ...s, sensorTag: newTag } : s
             )
         );
 
@@ -1104,14 +1111,15 @@ const ConfigureJunction: React.FC = () => {
                         handleSendRateOverrideChange={handleSendRateOverrideChange}
                     />
 
-                        <DeviceScreenLayoutsCard
-                            junctionId={junctionId}
-                            junction={junctionData}
-                            deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
-                            loading={loading}
-                            showSnackbar={showSnackbar}
-                            onJunctionUpdate={(updatedJunction) => setJunctionData(updatedJunction)}
-                        />
+                    <DeviceScreenLayoutsCard
+                        junctionId={junctionId}
+                        junction={junctionData}
+                        deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
+                        loading={loading}
+                        showSnackbar={showSnackbar}
+                        onJunctionUpdate={(updatedJunction) => setJunctionData(updatedJunction)}
+                        availableSensors={availableSensors}
+                    />
 
                     <EnhancedSensorsTable
                         availableSensors={availableSensors}

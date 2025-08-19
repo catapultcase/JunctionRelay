@@ -24,7 +24,6 @@ interface PlacedElement {
     properties: Record<string, any>;
     sensorId?: string;
 }
-
 interface ToolbarProps {
     layout: FrameLayoutConfig;
     elements: PlacedElement[];
@@ -39,9 +38,7 @@ interface ToolbarProps {
     onRedo: () => void;
     onPreview: () => Promise<void>;
     onExport: (format: 'png' | 'json' | 'pdf') => Promise<void>;
-    onClone: () => Promise<void>;
     onPublish: () => Promise<void>;
-    onTemplateApply: (templateId: number) => Promise<void>;
 }
 
 const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
@@ -58,22 +55,11 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     onRedo,
     onPreview,
     onExport,
-    onClone,
     onPublish,
-    onTemplateApply,
 }) => {
     const [showExportMenu, setShowExportMenu] = useState(false);
-    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-    const availableTemplates = [
-        { id: 1, displayName: 'Basic Sensor Grid', layoutType: 'FRAME_SENSOR_GRID', description: 'Simple 2x2 sensor grid' },
-        { id: 2, displayName: 'TV Guide Calendar', layoutType: 'FRAME_CALENDAR', description: 'Calendar with episode listings' },
-        { id: 3, displayName: 'System Dashboard', layoutType: 'FRAME_DASHBOARD', description: 'Multi-widget dashboard' },
-        { id: 4, displayName: 'Chart Display', layoutType: 'FRAME_CHART', description: 'Data visualization frame' },
-    ];
-
-    // Handle action with loading state
     const handleAction = useCallback(async (actionName: string, action: () => Promise<void>) => {
         try {
             setLoadingAction(actionName);
@@ -93,15 +79,6 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         setShowExportMenu(false);
         handleAction(`export-${format}`, () => onExport(format));
     }, [handleAction, onExport]);
-
-    const handleApplyTemplate = useCallback((templateId: number) => {
-        setShowTemplateMenu(false);
-        handleAction('apply-template', () => onTemplateApply(templateId));
-    }, [handleAction, onTemplateApply]);
-
-    const handleClone = useCallback(() => {
-        handleAction('clone', onClone);
-    }, [handleAction, onClone]);
 
     const handlePublish = useCallback(() => {
         handleAction('publish', onPublish);
@@ -147,21 +124,21 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         display: 'inline-flex',
         alignItems: 'center',
         gap: '4px'
-    };
+    } as const;
 
     const primaryButtonStyle = {
         ...buttonStyle,
         background: '#1976d2',
         color: 'white',
         border: '1px solid #1976d2'
-    };
+    } as const;
 
     const disabledButtonStyle = {
         ...buttonStyle,
         background: '#f5f5f5',
         color: '#999',
         cursor: 'not-allowed'
-    };
+    } as const;
 
     return (
         <>
@@ -228,97 +205,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
                 {/* Right Section - Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <div style={{ position: 'relative' }}>
-                        <button
-                            onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-                            disabled={isLoading}
-                            style={isLoading ? disabledButtonStyle : buttonStyle}
-                        >
-                            🎨 Templates
-                        </button>
-
-                        {showTemplateMenu && (
-                            <div style={{
-                                position: 'absolute',
-                                top: '100%',
-                                right: '0',
-                                marginTop: '4px',
-                                width: '320px',
-                                backgroundColor: '#fff',
-                                border: '1px solid #e0e0e0',
-                                borderRadius: '4px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                zIndex: 50
-                            }}>
-                                <div style={{ padding: '12px', borderBottom: '1px solid #e0e0e0' }}>
-                                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#333' }}>Apply Template</div>
-                                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                                        This will replace current layout
-                                    </div>
-                                </div>
-                                <div style={{ maxHeight: '256px', overflowY: 'auto' }}>
-                                    {availableTemplates.map((template) => (
-                                        <button
-                                            key={template.id}
-                                            onClick={() => handleApplyTemplate(template.id)}
-                                            style={{
-                                                width: '100%',
-                                                textAlign: 'left',
-                                                padding: '12px',
-                                                border: 'none',
-                                                background: 'none',
-                                                cursor: 'pointer',
-                                                borderBottom: '1px solid #f0f0f0'
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
-                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                        >
-                                            <div style={{ fontWeight: 500, fontSize: '14px', color: '#333' }}>
-                                                {template.displayName}
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: '#666' }}>
-                                                {template.description}
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: '#999' }}>
-                                                {template.layoutType.replace('FRAME_', '')}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                                <div style={{ padding: '8px', borderTop: '1px solid #e0e0e0' }}>
-                                    <button
-                                        onClick={() => setShowTemplateMenu(false)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '4px 12px',
-                                            fontSize: '12px',
-                                            color: '#666',
-                                            background: 'none',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
-                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {isEditing && (
-                        <button
-                            onClick={handleClone}
-                            disabled={isLoading}
-                            style={isLoading ? disabledButtonStyle : buttonStyle}
-                            title="Clone Layout"
-                        >
-                            {loadingAction === 'clone' ? '⏳' : '📋'} Clone
-                        </button>
-                    )}
-
+                   
                     <div style={{ position: 'relative' }}>
                         <button
                             onClick={() => setShowExportMenu(!showExportMenu)}
@@ -437,7 +324,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                                 ...buttonStyle,
                                 background: '#9c27b0',
                                 color: 'white',
-                                border: '1px solid #9c27b0',
+                                border: '1px solid #9c27b0',   // <-- fixed line
                                 ...(isLoading || isDirty ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
                             }}
                             title="Publish Layout"
@@ -448,18 +335,11 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 </div>
             </div>
 
-            {/* Click outside handlers */}
-            {(showExportMenu || showTemplateMenu) && (
+            {/* Click outside handler for Export menu */}
+            {showExportMenu && (
                 <div
-                    style={{
-                        position: 'fixed',
-                        inset: '0',
-                        zIndex: 40
-                    }}
-                    onClick={() => {
-                        setShowExportMenu(false);
-                        setShowTemplateMenu(false);
-                    }}
+                    style={{ position: 'fixed', inset: '0', zIndex: 40 }}
+                    onClick={() => setShowExportMenu(false)}
                 />
             )}
         </>

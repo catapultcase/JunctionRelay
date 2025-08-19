@@ -25,93 +25,253 @@ namespace JunctionRelayServer.Services
 {
     public class Service_FrameEngine
     {
+        private readonly IWebHostEnvironment _webHostEnvironment;
+
+        public Service_FrameEngine(IWebHostEnvironment webHostEnvironment)
+        {
+            _webHostEnvironment = webHostEnvironment;
+        }
+
         public byte[] RenderFrame(Model_Frame_Layout layout, Dictionary<string, object> sensorData,
             Model_JunctionScreenLayout? screenConfig = null, int? junctionId = null, int? linkId = null, int? screenId = null)
         {
-            // Create surface matching frame dimensions
-            var info = new SKImageInfo(layout.Width, layout.Height);
-            using var surface = SKSurface.Create(info);
-            var canvas = surface.Canvas;
-
-            // Clear canvas with background
-            ApplyBackground(canvas, layout);
-
-            // Render content based on layout type
-            switch (layout.LayoutType.ToUpperInvariant())
+            try
             {
-                case "FRAME_SENSOR_GRID":
-                    RenderSensorGridLayout(canvas, layout, sensorData);
-                    break;
-                case "FRAME_CALENDAR":
-                    RenderCalendarLayout(canvas, layout, sensorData);
-                    break;
-                case "FRAME_DASHBOARD":
-                    RenderDashboardLayout(canvas, layout, sensorData);
-                    break;
-                case "FRAME_CHART":
-                    RenderChartLayout(canvas, layout, sensorData);
-                    break;
-                case "FRAME_QUAD":
-                    RenderQuadLayout(canvas, layout, sensorData);
-                    break;
-                case "FRAME_IMAGE":
-                    RenderImageLayout(canvas, layout, sensorData);
-                    break;
-                default:
-                    RenderDefaultLayout(canvas, layout, sensorData);
-                    break;
+                // Validate input
+                if (layout == null)
+                    throw new ArgumentNullException(nameof(layout));
+
+                sensorData ??= new Dictionary<string, object>();
+
+                // Create surface matching frame dimensions
+                var info = new SKImageInfo(layout.Width, layout.Height);
+                using var surface = SKSurface.Create(info);
+                var canvas = surface.Canvas;
+
+                // Clear canvas and apply background
+                ApplyBackground(canvas, layout);
+
+                // Render content based on layout type
+                switch (layout.LayoutType.ToUpperInvariant())
+                {
+                    case "PRE_RENDERED_IMAGE":
+                        RenderPreRenderedImage(canvas, layout, sensorData);
+                        break;
+                    case "RIVE_MAPPING":
+                        RenderRiveMapping(canvas, layout, sensorData);
+                        break;
+                    default:
+                        RenderDefaultLayout(canvas, layout, sensorData);
+                        break;
+                }
+
+                // Generate PNG frame
+                using var image = surface.Snapshot();
+                using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+                var frameData = data.ToArray();
+
+                // Save to disk if URL access is enabled
+                if (screenConfig?.EnableUrlAccess == true && junctionId.HasValue && linkId.HasValue && screenId.HasValue)
+                {
+                    SaveFrameToFile(frameData, junctionId.Value, linkId.Value, screenId.Value, screenConfig);
+                }
+
+                return frameData;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error rendering frame for layout {layout?.Id}: {ex.Message}");
+                return CreateErrorFrame(layout?.Width ?? 792, layout?.Height ?? 272, ex.Message);
+            }
+        }
+
+        private void RenderPreRenderedImage(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
+        {
+            var config = ParseFrameConfig(layout.JsonFrameConfig);
+            var elements = ParseFrameElements(layout.JsonFrameElements);
+
+            // Render title if configured
+            if (GetConfigValue(config, "title.enabled", true))
+            {
+                var titleText = GetConfigValue(config, "title.text", layout.DisplayName ?? "Frame");
+                var titleSize = GetConfigValue(config, "title.fontSize", 24f);
+                var titleColor = GetConfigValue(config, "title.color", "#000000");
+                var titleX = GetConfigValue(config, "title.position.x", 20f);
+                var titleY = GetConfigValue(config, "title.position.y", 40f);
+
+                using var titlePaint = CreateTextPaint(titleSize, titleColor, SKFontStyle.Bold);
+                canvas.DrawText(titleText, titleX, titleY, titlePaint);
             }
 
-            // Generate PNG frame
-            using var image = surface.Snapshot();
-            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-            var frameData = data.ToArray();
-
-            // Save to disk if URL access is enabled
-            if (screenConfig?.EnableUrlAccess == true && junctionId.HasValue && linkId.HasValue && screenId.HasValue)
+            // Render sensor data grid
+            if (sensorData.Any())
             {
-                SaveFrameToFile(frameData, junctionId.Value, linkId.Value, screenId.Value, screenConfig);
+                var gridEnabled = GetConfigValue(config, "sensorGrid.enabled", true);
+                if (gridEnabled)
+                {
+                    var gridX = GetConfigValue(config, "sensorGrid.position.x", 20f);
+                    var gridY = GetConfigValue(config, "sensorGrid.position.y", 80f);
+
+                    using var sensorPaint = CreateTextPaint(14, "#333333");
+                    RenderSensorGrid(canvas, layout, sensorData, sensorPaint, gridX, gridY);
+                }
             }
 
-            return frameData;
+            // Render additional elements from JsonFrameElements
+            RenderFrameElements(canvas, elements, sensorData);
+        }
+
+        private void RenderRiveMapping(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
+        {
+            // For now, render a placeholder since Rive integration would require additional dependencies
+            using var paint = CreateTextPaint(16, "#666666");
+            var text = $"Rive Animation: {layout.RiveFile ?? "No file specified"}";
+            canvas.DrawText(text, 20, layout.Height / 2, paint);
+
+            // Show sensor mappings
+            var config = ParseFrameConfig(layout.JsonFrameConfig);
+            var mappings = GetConfigValue(config, "sensorMappings", new Dictionary<string, object>());
+
+            var y = layout.Height / 2 + 40;
+            foreach (var sensor in sensorData.Take(5))
+            {
+                var mappingText = $"{sensor.Key}: {FormatSensorValue(sensor.Value)}";
+                canvas.DrawText(mappingText, 20, y, paint);
+                y += 25;
+            }
+        }
+
+        private void RenderDefaultLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
+        {
+            // Fallback rendering for unknown layout types
+            using var titlePaint = CreateTextPaint(20, "#000000", SKFontStyle.Bold);
+            canvas.DrawText(layout.DisplayName ?? "Unknown Layout", 20, 40, titlePaint);
+
+            using var textPaint = CreateTextPaint(14, "#666666");
+            canvas.DrawText($"Layout Type: {layout.LayoutType}", 20, 70, textPaint);
+
+            if (sensorData.Any())
+            {
+                RenderSensorGrid(canvas, layout, sensorData, textPaint, 20, 100);
+            }
+        }
+
+        private void RenderFrameElements(SKCanvas canvas, JsonElement? elements, Dictionary<string, object> sensorData)
+        {
+            if (elements == null || elements.Value.ValueKind != JsonValueKind.Array)
+                return;
+
+            foreach (var element in elements.Value.EnumerateArray())
+            {
+                try
+                {
+                    var elementType = element.GetProperty("type").GetString();
+                    switch (elementType?.ToLowerInvariant())
+                    {
+                        case "text":
+                            RenderTextElement(canvas, element, sensorData);
+                            break;
+                        case "sensor":
+                            RenderSensorElement(canvas, element, sensorData);
+                            break;
+                        case "image":
+                            RenderImageElement(canvas, element);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error rendering frame element: {ex.Message}");
+                }
+            }
+        }
+
+        private void RenderTextElement(SKCanvas canvas, JsonElement element, Dictionary<string, object> sensorData)
+        {
+            var text = element.GetProperty("text").GetString() ?? "";
+            var x = element.GetProperty("position").GetProperty("x").GetSingle();
+            var y = element.GetProperty("position").GetProperty("y").GetSingle();
+            var fontSize = element.TryGetProperty("fontSize", out var fontSizeProp) ? fontSizeProp.GetSingle() : 14f;
+            var color = element.TryGetProperty("color", out var colorProp) ? colorProp.GetString() : "#000000";
+
+            // Replace sensor placeholders in text
+            foreach (var sensor in sensorData)
+            {
+                text = text.Replace($"{{{sensor.Key}}}", FormatSensorValue(sensor.Value));
+            }
+
+            using var paint = CreateTextPaint(fontSize, color ?? "#000000");
+            canvas.DrawText(text, x, y, paint);
+        }
+
+        private void RenderSensorElement(SKCanvas canvas, JsonElement element, Dictionary<string, object> sensorData)
+        {
+            var sensorKey = element.GetProperty("sensorKey").GetString() ?? "";
+            var x = element.GetProperty("position").GetProperty("x").GetSingle();
+            var y = element.GetProperty("position").GetProperty("y").GetSingle();
+            var fontSize = element.TryGetProperty("fontSize", out var fontSizeProp) ? fontSizeProp.GetSingle() : 14f;
+            var color = element.TryGetProperty("color", out var colorProp) ? colorProp.GetString() : "#000000";
+
+            if (sensorData.TryGetValue(sensorKey, out var sensorValue))
+            {
+                var text = FormatSensorValue(sensorValue);
+                using var paint = CreateTextPaint(fontSize, color ?? "#000000");
+                canvas.DrawText(text, x, y, paint);
+            }
+        }
+
+        private void RenderImageElement(SKCanvas canvas, JsonElement element)
+        {
+            // Placeholder for image rendering
+            var x = element.GetProperty("position").GetProperty("x").GetSingle();
+            var y = element.GetProperty("position").GetProperty("y").GetSingle();
+            var width = element.TryGetProperty("width", out var widthProp) ? widthProp.GetSingle() : 100f;
+            var height = element.TryGetProperty("height", out var heightProp) ? heightProp.GetSingle() : 100f;
+
+            using var paint = new SKPaint
+            {
+                Color = SKColors.LightGray,
+                Style = SKPaintStyle.Fill
+            };
+            canvas.DrawRect(x, y, width, height, paint);
+
+            using var borderPaint = new SKPaint
+            {
+                Color = SKColors.Gray,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1
+            };
+            canvas.DrawRect(x, y, width, height, borderPaint);
         }
 
         private void SaveFrameToFile(byte[] frameData, int junctionId, int linkId, int screenId, Model_JunctionScreenLayout screenConfig)
         {
-            // Console.WriteLine($"[DEBUG] SaveFrameToFile called: junctionId={junctionId}, linkId={linkId}, screenId={screenId}");
-            // Console.WriteLine($"[DEBUG] EnableUrlAccess={screenConfig.EnableUrlAccess}, UrlPath={screenConfig.UrlPath}");
-
             try
             {
-                // Generate filename
                 var filename = $"junction-{junctionId}-link-{linkId}-screen-{screenId}.png";
                 var framesDirectory = Path.Combine(Directory.GetCurrentDirectory(), "frames");
                 var filePath = Path.Combine(framesDirectory, filename);
-
-                // Console.WriteLine($"[DEBUG] Saving to: {filePath}");
 
                 // Ensure frames directory exists
                 if (!Directory.Exists(framesDirectory))
                 {
                     Directory.CreateDirectory(framesDirectory);
-                    // Console.WriteLine($"[DEBUG] Created frames directory: {framesDirectory}");
                 }
 
                 // Save file
                 File.WriteAllBytes(filePath, frameData);
-                // Console.WriteLine($"[DEBUG] File saved successfully: {filename} ({frameData.Length} bytes)");
 
                 // Update URL path if it's changed
                 if (screenConfig.UrlPath != filename)
                 {
                     screenConfig.UrlPath = filename;
-                    Console.WriteLine($"[DEBUG] Updated UrlPath to: {filename}");
                 }
+
+                Console.WriteLine($"[DEBUG] Frame saved to file: {filename} ({frameData.Length} bytes)");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] SaveFrameToFile failed: {ex.Message}");
-                Console.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"[ERROR] Failed to save frame to file: {ex.Message}");
             }
         }
 
@@ -138,6 +298,7 @@ namespace JunctionRelayServer.Services
 
                 var cutoffTime = DateTime.Now - maxAge;
                 var files = Directory.GetFiles(framesDirectory, "*.png");
+                var deletedCount = 0;
 
                 foreach (var file in files)
                 {
@@ -145,7 +306,13 @@ namespace JunctionRelayServer.Services
                     if (fileInfo.LastWriteTime < cutoffTime)
                     {
                         File.Delete(file);
+                        deletedCount++;
                     }
+                }
+
+                if (deletedCount > 0)
+                {
+                    Console.WriteLine($"Cleaned up {deletedCount} old frame files");
                 }
             }
             catch (Exception ex)
@@ -164,6 +331,26 @@ namespace JunctionRelayServer.Services
             {
                 // TODO: Implement background image rendering
                 // This would involve loading the image and drawing it with proper scaling/positioning
+                Console.WriteLine($"Background image rendering not yet implemented: {layout.BackgroundImageUrl}");
+            }
+
+            // Handle background image data if provided
+            if (layout.BackgroundType == "image" && layout.BackgroundImageData != null && layout.BackgroundImageData.Length > 0)
+            {
+                try
+                {
+                    using var stream = new MemoryStream(layout.BackgroundImageData);
+                    using var bitmap = SKBitmap.Decode(stream);
+                    if (bitmap != null)
+                    {
+                        var destRect = new SKRect(0, 0, layout.Width, layout.Height);
+                        canvas.DrawBitmap(bitmap, destRect);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to render background image from data: {ex.Message}");
+                }
             }
         }
 
@@ -188,312 +375,14 @@ namespace JunctionRelayServer.Services
                     if (rgb?.Length == 3)
                         return new SKColor((byte)rgb[0], (byte)rgb[1], (byte)rgb[2]);
                 }
-                catch { }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"Failed to parse RGB color array: {colorString} - {ex.Message}");
+                }
             }
 
             return SKColors.White; // Default fallback
         }
-
-        #region Layout Renderers
-
-        private void RenderSensorGridLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            using var titlePaint = CreateTextPaint(
-                GetConfigValue(config, "title.fontSize", 24),
-                GetConfigValue(config, "title.color", "#000000"),
-                SKFontStyle.Bold
-            );
-
-            using var textPaint = CreateTextPaint(18, "#000000");
-            using var timestampPaint = CreateTextPaint(14, "#666666");
-
-            // Draw title
-            var titleText = GetConfigValue(config, "title.text", "Sensor Grid");
-            var titleX = GetConfigValue(config, "title.position.x", 20);
-            var titleY = GetConfigValue(config, "title.position.y", 30);
-            canvas.DrawText(titleText, titleX, titleY, titlePaint);
-
-            // Draw timestamp
-            var timestamp = DateTime.Now.ToString("HH:mm:ss");
-            canvas.DrawText($"Updated: {timestamp}", layout.Width - 150, 25, timestampPaint);
-
-            // Render sensor grid
-            RenderSensorGrid(canvas, layout, sensorData, textPaint, 20, titleY + 20);
-        }
-
-        private void RenderCalendarLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            using var titlePaint = CreateTextPaint(
-                GetConfigValue(config, "title.fontSize", 28),
-                GetConfigValue(config, "title.color", "#000000"),
-                SKFontStyle.Bold
-            );
-
-            using var dayHeaderPaint = CreateTextPaint(20, "#000000", SKFontStyle.Bold);
-            using var episodePaint = CreateTextPaint(16, "#333333");
-            using var timePaint = CreateTextPaint(14, "#666666");
-
-            // Draw title
-            var titleText = GetConfigValue(config, "title.text", "TV Guide");
-            var today = DateTime.Now.ToString("MMMM dd, yyyy");
-            canvas.DrawText($"{titleText} - {today}", 20, 35, titlePaint);
-
-            // Calendar configuration
-            var columns = GetConfigValue(config, "calendar.columns", 3);
-            var dayHeaders = GetConfigArray(config, "calendar.dayHeaders", new[] { "Yesterday", "Today", "Tomorrow" });
-            var columnWidth = (layout.Width - 40) / columns;
-
-            // Draw calendar columns
-            for (int col = 0; col < columns && col < dayHeaders.Length; col++)
-            {
-                var x = 20f + (col * columnWidth);
-                var y = 70f;
-
-                // Draw day header
-                canvas.DrawText(dayHeaders[col], x, y, dayHeaderPaint);
-                y += 30;
-
-                // Find episodes for this day
-                var dayKey = dayHeaders[col].ToLowerInvariant();
-                var episodeData = sensorData.FirstOrDefault(kvp =>
-                    kvp.Key.ToLowerInvariant().Contains(dayKey) &&
-                    kvp.Key.ToLowerInvariant().Contains("episode")).Value;
-
-                if (episodeData != null)
-                {
-                    var episodes = ParseEpisodeData(episodeData.ToString());
-                    foreach (var episode in episodes.Take(6)) // Limit for space
-                    {
-                        canvas.DrawText(episode.Time, x, y, timePaint);
-                        canvas.DrawText(episode.Title, x, y + 15, episodePaint);
-                        y += 35;
-                    }
-                }
-            }
-        }
-
-        private void RenderDashboardLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            using var titlePaint = CreateTextPaint(
-                GetConfigValue(config, "title.fontSize", 22),
-                GetConfigValue(config, "title.color", "#000000"),
-                SKFontStyle.Bold
-            );
-
-            using var widgetPaint = CreateTextPaint(16, "#000000");
-            using var borderPaint = new SKPaint
-            {
-                Color = SKColors.LightGray,
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = 1
-            };
-
-            // Draw title
-            var titleText = GetConfigValue(config, "title.text", "System Dashboard");
-            canvas.DrawText(titleText, 20, 25, titlePaint);
-
-            // Widget configuration
-            var enableShadows = GetConfigValue(config, "widgets.enableShadows", true);
-            var cornerRadius = GetConfigValue(config, "widgets.cornerRadius", 8);
-            var padding = GetConfigValue(config, "widgets.padding", 12);
-
-            // Calculate widget grid
-            var rows = layout.Rows ?? 3;
-            var columns = layout.Columns ?? 3;
-            var widgetWidth = (layout.Width - 60 - ((columns - 1) * 10)) / columns;
-            var widgetHeight = (layout.Height - 80 - ((rows - 1) * 10)) / rows;
-
-            // Draw widgets
-            var sensorList = sensorData.ToList();
-            for (int row = 0; row < rows; row++)
-            {
-                for (int col = 0; col < columns; col++)
-                {
-                    var x = 20 + (col * (widgetWidth + 10));
-                    var y = 40 + (row * (widgetHeight + 10));
-
-                    var widgetRect = new SKRect(x, y, x + widgetWidth, y + widgetHeight);
-
-                    // Draw widget background
-                    using var widgetBgPaint = new SKPaint
-                    {
-                        Color = SKColors.White,
-                        Style = SKPaintStyle.Fill
-                    };
-                    canvas.DrawRoundRect(widgetRect, cornerRadius, cornerRadius, widgetBgPaint);
-                    canvas.DrawRoundRect(widgetRect, cornerRadius, cornerRadius, borderPaint);
-
-                    // Draw sensor data in widget
-                    var sensorIndex = (row * columns) + col;
-                    if (sensorIndex < sensorList.Count)
-                    {
-                        var sensor = sensorList[sensorIndex];
-                        canvas.DrawText(sensor.Key, x + padding, y + padding + 16, widgetPaint);
-                        canvas.DrawText(FormatSensorValue(sensor.Value), x + padding, y + padding + 36, widgetPaint);
-                    }
-                }
-            }
-        }
-
-        private void RenderChartLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            using var titlePaint = CreateTextPaint(20, "#000000", SKFontStyle.Bold);
-            using var chartPaint = new SKPaint
-            {
-                Color = SKColor.Parse("#1976d2"),
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = 2,
-                IsAntialias = true
-            };
-
-            // Draw chart title
-            var chartTitle = GetConfigValue(config, "chart.title", "Sensor Data Over Time");
-            canvas.DrawText(chartTitle, 20, 30, titlePaint);
-
-            // Simple line chart placeholder
-            var chartRect = new SKRect(50, 50, layout.Width - 50, layout.Height - 50);
-
-            // Draw chart border
-            using var borderPaint = new SKPaint
-            {
-                Color = SKColors.Gray,
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = 1
-            };
-            canvas.DrawRect(chartRect, borderPaint);
-
-            // Draw simple data visualization
-            if (sensorData.Any())
-            {
-                var values = sensorData.Values.Take(10).Select(v =>
-                {
-                    if (float.TryParse(v?.ToString()?.Replace("°C", "").Replace("%", ""), out float result))
-                        return result;
-                    return 0f;
-                }).ToArray();
-
-                if (values.Length > 1)
-                {
-                    var stepX = chartRect.Width / (values.Length - 1);
-                    var maxValue = values.Max();
-                    var minValue = values.Min();
-                    var range = maxValue - minValue;
-
-                    using var path = new SKPath();
-                    for (int i = 0; i < values.Length; i++)
-                    {
-                        var x = chartRect.Left + (i * stepX);
-                        var normalizedValue = range > 0 ? (values[i] - minValue) / range : 0.5f;
-                        var y = chartRect.Bottom - (normalizedValue * chartRect.Height);
-
-                        if (i == 0)
-                            path.MoveTo(x, y);
-                        else
-                            path.LineTo(x, y);
-                    }
-                    canvas.DrawPath(path, chartPaint);
-                }
-            }
-        }
-
-        private void RenderQuadLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            using var textPaint = CreateTextPaint(16, "#000000");
-            using var dividerPaint = new SKPaint
-            {
-                Color = SKColor.Parse(GetConfigValue(config, "quad.dividerColor", "#CCCCCC")),
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = GetConfigValue(config, "quad.dividerWidth", 2)
-            };
-
-            var padding = GetConfigValue(config, "quad.quadrantPadding", 10);
-            var halfWidth = layout.Width / 2f;
-            var halfHeight = layout.Height / 2f;
-
-            // Draw dividers
-            canvas.DrawLine(halfWidth, 0, halfWidth, layout.Height, dividerPaint);
-            canvas.DrawLine(0, halfHeight, layout.Width, halfHeight, dividerPaint);
-
-            // Draw content in each quadrant
-            var sensorList = sensorData.ToList();
-            var quadrants = new[]
-            {
-                new { x = (float)padding, y = (float)padding, title = "Quadrant 1" },
-                new { x = (float)(halfWidth + padding), y = (float)padding, title = "Quadrant 2" },
-                new { x = (float)padding, y = (float)(halfHeight + padding), title = "Quadrant 3" },
-                new { x = (float)(halfWidth + padding), y = (float)(halfHeight + padding), title = "Quadrant 4" }
-            };
-
-            for (int i = 0; i < quadrants.Length; i++)
-            {
-                var quad = quadrants[i];
-                canvas.DrawText(quad.title, quad.x, quad.y + 20, textPaint);
-
-                // Display sensor data in this quadrant
-                var startIndex = i * (sensorList.Count / 4);
-                var endIndex = Math.Min(startIndex + (sensorList.Count / 4), sensorList.Count);
-
-                var y = quad.y + 40;
-                for (int j = startIndex; j < endIndex; j++)
-                {
-                    var sensor = sensorList[j];
-                    canvas.DrawText($"{sensor.Key}: {FormatSensorValue(sensor.Value)}", quad.x, y, textPaint);
-                    y += 20;
-                }
-            }
-        }
-
-        private void RenderImageLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            var config = ParseFrameConfig(layout.JsonFrameConfig);
-
-            // Apply semi-transparent overlay for text readability
-            var opacity = GetConfigValue(config, "overlay.opacity", 0.8f);
-            using var overlayPaint = new SKPaint
-            {
-                Color = SKColors.Black.WithAlpha((byte)(255 * (1 - opacity))),
-                Style = SKPaintStyle.Fill
-            };
-            canvas.DrawRect(0, 0, layout.Width, layout.Height, overlayPaint);
-
-            // Text with shadow for better visibility
-            var useShadow = GetConfigValue(config, "overlay.textShadow", true);
-            using var textPaint = CreateTextPaint(18, "#FFFFFF");
-            using var shadowPaint = useShadow ? CreateTextPaint(18, "#000000") : null;
-
-            var y = 30f;
-            foreach (var sensor in sensorData.Take(10))
-            {
-                var text = $"{sensor.Key}: {FormatSensorValue(sensor.Value)}";
-
-                if (useShadow && shadowPaint != null)
-                {
-                    canvas.DrawText(text, 22, y + 2, shadowPaint); // Shadow
-                }
-                canvas.DrawText(text, 20, y, textPaint);
-                y += 25;
-            }
-        }
-
-        private void RenderDefaultLayout(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
-        {
-            // Fallback to sensor grid layout
-            RenderSensorGridLayout(canvas, layout, sensorData);
-        }
-
-        #endregion
-
-        #region Helper Methods
 
         private void RenderSensorGrid(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData, SKPaint textPaint, float startX, float startY)
         {
@@ -506,14 +395,14 @@ namespace JunctionRelayServer.Services
                 StrokeWidth = 1
             };
 
-            var tableWidth = layout.Width - (startX * 2);
+            var tableWidth = Math.Min(400, layout.Width - (startX * 2));
             var tableHeight = Math.Min(200, layout.Height - startY - 20);
             var tableRect = new SKRect(startX, startY, startX + tableWidth, startY + tableHeight);
 
             // Draw table background
             using var tableBgPaint = new SKPaint
             {
-                Color = SKColors.White,
+                Color = SKColor.Parse("#F8F9FA"),
                 Style = SKPaintStyle.Fill
             };
             canvas.DrawRect(tableRect, tableBgPaint);
@@ -523,14 +412,17 @@ namespace JunctionRelayServer.Services
             canvas.DrawText("Sensor", startX + 10, startY + 20, headerPaint);
             canvas.DrawText("Value", startX + tableWidth - 150, startY + 20, headerPaint);
 
+            // Draw separator line
+            canvas.DrawLine(startX + 5, startY + 25, startX + tableWidth - 5, startY + 25, borderPaint);
+
             // Draw sensor rows
             var rowHeight = 25f;
-            var currentY = startY + 35;
-            var maxRows = Math.Min(sensorData.Count, (int)((tableHeight - 40) / rowHeight));
+            var currentY = startY + 45;
+            var maxRows = Math.Min(sensorData.Count, (int)((tableHeight - 50) / rowHeight));
 
             foreach (var sensor in sensorData.Take(maxRows))
             {
-                canvas.DrawText(sensor.Key, startX + 10, currentY, textPaint);
+                canvas.DrawText(TruncateText(sensor.Key, 15), startX + 10, currentY, textPaint);
                 canvas.DrawText(FormatSensorValue(sensor.Value), startX + tableWidth - 150, currentY, textPaint);
                 currentY += rowHeight;
             }
@@ -556,8 +448,26 @@ namespace JunctionRelayServer.Services
             {
                 return JsonDocument.Parse(jsonConfig);
             }
-            catch
+            catch (JsonException ex)
             {
+                Console.WriteLine($"Failed to parse frame config JSON: {ex.Message}");
+                return null;
+            }
+        }
+
+        private JsonElement? ParseFrameElements(string? jsonElements)
+        {
+            if (string.IsNullOrEmpty(jsonElements))
+                return null;
+
+            try
+            {
+                var doc = JsonDocument.Parse(jsonElements);
+                return doc.RootElement;
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to parse frame elements JSON: {ex.Message}");
                 return null;
             }
         }
@@ -587,45 +497,22 @@ namespace JunctionRelayServer.Services
                 if (typeof(T) == typeof(bool))
                     return (T)(object)current.GetBoolean();
                 if (typeof(T) == typeof(string))
-                    return (T)(object)current.GetString()!;
-
-                return defaultValue;
-            }
-            catch
-            {
-                return defaultValue;
-            }
-        }
-
-        private string[] GetConfigArray(JsonDocument? config, string path, string[] defaultValue)
-        {
-            if (config == null)
-                return defaultValue;
-
-            try
-            {
-                var parts = path.Split('.');
-                var current = config.RootElement;
-
-                foreach (var part in parts)
+                    return (T)(object)(current.GetString() ?? "");
+                if (typeof(T) == typeof(Dictionary<string, object>))
                 {
-                    if (current.TryGetProperty(part, out var element))
-                        current = element;
-                    else
-                        return defaultValue;
-                }
-
-                if (current.ValueKind == JsonValueKind.Array)
-                {
-                    return current.EnumerateArray()
-                        .Select(e => e.GetString() ?? "")
-                        .ToArray();
+                    var dict = new Dictionary<string, object>();
+                    foreach (var prop in current.EnumerateObject())
+                    {
+                        dict[prop.Name] = prop.Value.ToString();
+                    }
+                    return (T)(object)dict;
                 }
 
                 return defaultValue;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Failed to get config value for path: {path} - {ex.Message}");
                 return defaultValue;
             }
         }
@@ -635,39 +522,35 @@ namespace JunctionRelayServer.Services
             if (value == null) return "N/A";
 
             var valueStr = value.ToString() ?? "";
-            if (valueStr.Length > 20)
-                return valueStr.Substring(0, 17) + "...";
-
-            return valueStr;
+            return TruncateText(valueStr, 20);
         }
 
-        private List<(string Time, string Title)> ParseEpisodeData(string? episodeJson)
+        private string TruncateText(string text, int maxLength)
         {
-            var episodes = new List<(string Time, string Title)>();
+            if (text.Length > maxLength)
+                return text.Substring(0, maxLength - 3) + "...";
+            return text;
+        }
 
-            if (string.IsNullOrEmpty(episodeJson))
-                return episodes;
+        private byte[] CreateErrorFrame(int width, int height, string errorMessage)
+        {
+            var info = new SKImageInfo(width, height);
+            using var surface = SKSurface.Create(info);
+            var canvas = surface.Canvas;
 
-            try
-            {
-                var jsonDoc = JsonDocument.Parse(episodeJson);
-                if (jsonDoc.RootElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var episode in jsonDoc.RootElement.EnumerateArray())
-                    {
-                        var time = episode.GetProperty("airTime").GetString() ?? "";
-                        var series = episode.GetProperty("series").GetString() ?? "";
-                        episodes.Add((time, series));
-                    }
-                }
-            }
-            catch (JsonException)
-            {
-                // Fallback for non-JSON data
-                episodes.Add(("--:--", episodeJson));
-            }
+            // Red background for error
+            canvas.Clear(SKColor.Parse("#FFE6E6"));
 
-            return episodes;
+            // Error text
+            using var paint = CreateTextPaint(16, "#CC0000", SKFontStyle.Bold);
+            canvas.DrawText("Error rendering frame:", 20, 40, paint);
+
+            using var detailPaint = CreateTextPaint(12, "#666666");
+            canvas.DrawText(TruncateText(errorMessage, 50), 20, 70, detailPaint);
+
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
         }
 
         // Simple test method for POC compatibility
@@ -686,23 +569,28 @@ namespace JunctionRelayServer.Services
             var testLayout = new Model_Frame_Layout
             {
                 DisplayName = "Test Frame",
-                LayoutType = "FRAME_SENSOR_GRID",
+                LayoutType = "PRE_RENDERED_IMAGE",
                 Width = 792,
                 Height = 272,
                 BackgroundColor = "#FFFFFF",
+                BackgroundType = "color",
                 JsonFrameConfig = @"{
                     ""title"": {
+                        ""enabled"": true,
                         ""text"": ""Test Frame"",
                         ""fontSize"": 24,
                         ""color"": ""#000000"",
                         ""position"": { ""x"": 20, ""y"": 30 }
+                    },
+                    ""sensorGrid"": {
+                        ""enabled"": true,
+                        ""position"": { ""x"": 20, ""y"": 80 }
                     }
-                }"
+                }",
+                JsonFrameElements = @"[]"
             };
 
             return RenderFrame(testLayout, testSensorData);
         }
-
-        #endregion
     }
 }

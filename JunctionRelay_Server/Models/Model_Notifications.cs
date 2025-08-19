@@ -21,5 +21,18 @@ namespace JunctionRelayServer.Models
 {
     public class Model_Notifications
     {
+        public string Id { get; set; } = string.Empty;
+        public string Type { get; set; } = "info"; // success, error, warning, info
+        public string Message { get; set; } = string.Empty;
+        public string? Title { get; set; }
+        public string Category { get; set; } = "system"; // api, auth, cloud, system
+        public int? Duration { get; set; } // milliseconds, null for default
+        public bool Persistent { get; set; } = false; // if true, user must manually dismiss
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool IsDelivered { get; set; } = false;
+        public DateTime? DeliveredAt { get; set; }
+        public DateTime? ExpiresAt { get; set; }
+        public bool IsExpired => ExpiresAt.HasValue && DateTime.UtcNow > ExpiresAt.Value;
+        public string? StructuredContent { get; set; }
     }
 }
