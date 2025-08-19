@@ -21,6 +21,9 @@ using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Services;
 using JunctionRelayServer.Models;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using JunctionRelayServer.Utils;
+
 
 namespace JunctionRelayServer.Controllers
 {
@@ -32,18 +35,25 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_FrameEngine _frameEngine;
         private readonly Service_Manager_Connections _connectionManager;
         private readonly Service_Database_Manager_JunctionLinks _junctionLinksService;
+        private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly DatabasePathProvider _dbPathProvider;
 
         public Controller_FrameEngine(
             Service_Database_Manager_FrameEngine frameLayoutService,
             Service_FrameEngine frameEngine,
             Service_Manager_Connections connectionManager,
-            Service_Database_Manager_JunctionLinks junctionLinksService)
+            Service_Database_Manager_JunctionLinks junctionLinksService,
+            IWebHostEnvironment webHostEnvironment,
+            DatabasePathProvider dbPathProvider)
         {
             _frameLayoutService = frameLayoutService;
             _frameEngine = frameEngine;
             _connectionManager = connectionManager;
             _junctionLinksService = junctionLinksService;
+            _webHostEnvironment = webHostEnvironment;
+            _dbPathProvider = dbPathProvider;
         }
+
 
         // Get all frame engine layouts
         [HttpGet]
@@ -53,7 +63,6 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayouts = await _frameLayoutService.GetAllFrameLayoutsAsync();
                 var dtos = frameLayouts.Select(MapToFrameLayoutDto).ToList();
-
                 return Ok(dtos);
             }
             catch (Exception ex)
@@ -89,42 +98,40 @@ namespace JunctionRelayServer.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
-                // Validate frame layout type
-                if (!Model_Frame_Layout.GetSupportedFrameTypes().Contains(request.LayoutType, StringComparer.OrdinalIgnoreCase))
-                {
-                    return BadRequest(new { message = $"Invalid frame layout type: {request.LayoutType}" });
-                }
+                var errors = ValidateFrameLayout(request.DisplayName, request.LayoutType, request.BackgroundType, request.Width, request.Height);
 
-                // Create new frame layout
+                if (errors.Count > 0)
+                    return BadRequest(new { message = "Validation failed", errors });
+
                 var newFrameLayout = new Model_Frame_Layout
                 {
-                    DisplayName = request.DisplayName,
-                    Description = request.Description,
-                    LayoutType = request.LayoutType,
-                    Rows = request.Rows,
-                    Columns = request.Columns,
-                    Width = request.Width ?? Model_Frame_Layout.GetRecommendedDimensions(request.LayoutType).Width,
-                    Height = request.Height ?? Model_Frame_Layout.GetRecommendedDimensions(request.LayoutType).Height,
-                    BackgroundColor = request.BackgroundColor,
-                    BackgroundImageUrl = request.BackgroundImageUrl,
+                    DisplayName = request.DisplayName.Trim(),
+                    Description = request.Description?.Trim(),
+                    LayoutType = string.IsNullOrWhiteSpace(request.LayoutType) ? "PRE_RENDERED_IMAGE" : request.LayoutType.ToUpperInvariant(),
+                    Width = request.Width ?? 792,
+                    Height = request.Height ?? 272,
+                    Orientation = string.IsNullOrWhiteSpace(request.Orientation) ? "landscape" : request.Orientation.ToLowerInvariant(),
+                    BackgroundType = string.IsNullOrWhiteSpace(request.BackgroundType) ? "color" : request.BackgroundType.ToLowerInvariant(),
+                    BackgroundColor = request.BackgroundColor ?? "#FFFFFF",
+                    BackgroundImageUrl = request.BackgroundImageUrl?.Trim(),
+                    BackgroundImageData = request.BackgroundImageData,
+                    BackgroundOpacity = Math.Clamp(request.BackgroundOpacity ?? 1.0, 0.0, 1.0),
+                    RiveFile = request.RiveFile?.Trim(),
+                    RiveEmbedInPayload = request.RiveEmbedInPayload,
+                    JsonFrameConfig = SanitizeJson(request.JsonFrameConfig) ?? "{}",
+                    JsonFrameElements = SanitizeJson(request.JsonFrameElements) ?? "[]",
+
+                    // Flags & metadata
                     IsTemplate = false,
                     IsDraft = true,
                     IsPublished = false,
                     Created = DateTime.UtcNow,
-                    CreatedBy = "FrameEngine", // Could be updated to use actual user context
+                    LastModified = DateTime.UtcNow,
+                    CreatedBy = "FrameEngine",
                     Version = "1.0"
                 };
-
-                // Validate the frame layout
-                var validationErrors = newFrameLayout.Validate();
-                if (validationErrors.Any())
-                {
-                    return BadRequest(new { message = "Validation failed", errors = validationErrors });
-                }
 
                 var frameLayoutId = await _frameLayoutService.CreateFrameLayoutAsync(newFrameLayout);
 
@@ -140,54 +147,67 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // Update frame layout
+        // Update frame layout - UPDATED: No embedding during save, just store the flag
         [HttpPut("{id}")]
         public async Task<ActionResult> UpdateFrameLayout(int id, [FromBody] UpdateFrameLayoutRequest request)
         {
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
-                var existingFrameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
-                if (existingFrameLayout == null)
-                {
+                var existing = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (existing == null)
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
-                }
 
-                // Update frame layout properties
-                if (request.DisplayName != null)
-                    existingFrameLayout.DisplayName = request.DisplayName;
+                // Update properties only if provided
+                if (!string.IsNullOrWhiteSpace(request.DisplayName))
+                    existing.DisplayName = request.DisplayName.Trim();
                 if (request.Description != null)
-                    existingFrameLayout.Description = request.Description;
-                if (request.LayoutType != null)
-                    existingFrameLayout.LayoutType = request.LayoutType;
-                if (request.Rows.HasValue)
-                    existingFrameLayout.Rows = request.Rows;
-                if (request.Columns.HasValue)
-                    existingFrameLayout.Columns = request.Columns;
+                    existing.Description = request.Description.Trim();
+                if (!string.IsNullOrWhiteSpace(request.LayoutType))
+                    existing.LayoutType = request.LayoutType.ToUpperInvariant();
                 if (request.Width.HasValue)
-                    existingFrameLayout.Width = request.Width.Value;
+                    existing.Width = request.Width.Value;
                 if (request.Height.HasValue)
-                    existingFrameLayout.Height = request.Height.Value;
+                    existing.Height = request.Height.Value;
+                if (!string.IsNullOrWhiteSpace(request.Orientation))
+                    existing.Orientation = request.Orientation.ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(request.BackgroundType))
+                    existing.BackgroundType = request.BackgroundType.ToLowerInvariant();
                 if (request.BackgroundColor != null)
-                    existingFrameLayout.BackgroundColor = request.BackgroundColor;
+                    existing.BackgroundColor = request.BackgroundColor;
                 if (request.BackgroundImageUrl != null)
-                    existingFrameLayout.BackgroundImageUrl = request.BackgroundImageUrl;
+                    existing.BackgroundImageUrl = request.BackgroundImageUrl.Trim();
+                if (request.BackgroundImageData != null)
+                    existing.BackgroundImageData = request.BackgroundImageData;
+                if (request.BackgroundOpacity.HasValue)
+                    existing.BackgroundOpacity = Math.Clamp(request.BackgroundOpacity.Value, 0.0, 1.0);
+                if (request.RiveFile != null)
+                    existing.RiveFile = request.RiveFile.Trim();
+                if (request.RiveEmbedInPayload.HasValue)
+                    existing.RiveEmbedInPayload = request.RiveEmbedInPayload.Value;
 
-                existingFrameLayout.LastModified = DateTime.UtcNow;
-
-                // Validate the updated frame layout
-                var validationErrors = existingFrameLayout.Validate();
-                if (validationErrors.Any())
+                // Handle JsonFrameConfig - NO embedding during save
+                if (request.JsonFrameConfig != null)
                 {
-                    return BadRequest(new { message = "Validation failed", errors = validationErrors });
+                    var sanitizedConfig = SanitizeJson(request.JsonFrameConfig);
+                    if (sanitizedConfig != null)
+                    {
+                        existing.JsonFrameConfig = sanitizedConfig;
+                    }
                 }
 
-                await _frameLayoutService.UpdateFrameLayoutAsync(existingFrameLayout);
+                if (request.JsonFrameElements != null)
+                    existing.JsonFrameElements = SanitizeJson(request.JsonFrameElements) ?? existing.JsonFrameElements;
 
+                var errors = ValidateFrameLayout(existing.DisplayName, existing.LayoutType, existing.BackgroundType, existing.Width, existing.Height);
+                if (errors.Count > 0)
+                    return BadRequest(new { message = "Validation failed", errors });
+
+                existing.LastModified = DateTime.UtcNow;
+
+                await _frameLayoutService.UpdateFrameLayoutAsync(existing);
                 return Ok(new { message = "Frame layout updated successfully" });
             }
             catch (Exception ex)
@@ -204,18 +224,17 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
-                {
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
-                }
 
-                // Don't allow deletion of templates
                 if (frameLayout.IsTemplate)
-                {
                     return BadRequest(new { message = "Cannot delete template frame layouts" });
-                }
+
+                // Check if layout is in use
+                var isInUse = await IsFrameLayoutInUse(id);
+                if (isInUse)
+                    return BadRequest(new { message = "Cannot delete frame layout as it is currently in use" });
 
                 await _frameLayoutService.DeleteFrameLayoutAsync(id);
-
                 return Ok(new { message = "Frame layout deleted successfully" });
             }
             catch (Exception ex)
@@ -231,17 +250,13 @@ namespace JunctionRelayServer.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
-                var originalFrameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(request.OriginalId);
-                if (originalFrameLayout == null)
-                {
+                var original = await _frameLayoutService.GetFrameLayoutByIdAsync(request.OriginalId);
+                if (original == null)
                     return NotFound(new { message = $"Original frame layout with ID {request.OriginalId} not found" });
-                }
 
-                var clonedLayoutId = await _frameLayoutService.CloneFrameLayoutAsync(request.OriginalId);
+                var clonedLayoutId = await _frameLayoutService.CloneFrameLayoutAsync(request.OriginalId, request.NewName);
 
                 return Ok(new CreateFrameLayoutResponse
                 {
@@ -256,18 +271,218 @@ namespace JunctionRelayServer.Controllers
         }
 
         // Restore all frame engine template layouts
-        [HttpPost("restoreAll")]
+        [HttpPost("restore-templates")]
         public async Task<ActionResult> RestoreAllFrameTemplates()
         {
             try
             {
                 await _frameLayoutService.RestoreDefaultTemplatesAsync();
-
                 return Ok(new { message = "All frame engine templates have been restored or reset to defaults" });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Error restoring frame engine templates", error = ex.Message });
+            }
+        }
+
+        [HttpGet("rive-files")]
+        public ActionResult<IEnumerable<RiveFileInfoDto>> GetRiveFiles()
+        {
+            try
+            {
+                var templatesPath = GetRiveTemplatesPath();
+                var userPath = GetRiveUserPath();
+                Directory.CreateDirectory(userPath);
+
+                // Collect files, user overrides template if same filename
+                var filesByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                if (Directory.Exists(templatesPath))
+                {
+                    foreach (var p in Directory.EnumerateFiles(templatesPath, "*.riv"))
+                        filesByName[Path.GetFileName(p)] = p;
+                }
+
+                foreach (var p in Directory.EnumerateFiles(userPath, "*.riv"))
+                    filesByName[Path.GetFileName(p)] = p;
+
+                var results = filesByName.Select(kvp =>
+                {
+                    var fi = new FileInfo(kvp.Value);
+                    return new RiveFileInfoDto
+                    {
+                        Filename = kvp.Key,
+                        DisplayName = Path.GetFileNameWithoutExtension(kvp.Key),
+                        UploadDate = fi.CreationTime,
+                        FileSize = fi.Length
+                    };
+                })
+                .OrderByDescending(r => r.UploadDate)
+                .ToList();
+
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error retrieving Rive files", error = ex.Message });
+            }
+        }
+
+
+        // Upload new Rive file
+        [HttpPost("upload-rive")]
+        public async Task<ActionResult<RiveUploadResponse>> UploadRiveFile(IFormFile riveFile)
+        {
+            try
+            {
+                if (riveFile == null || riveFile.Length == 0)
+                    return BadRequest(new { message = "No file provided" });
+
+                if (!riveFile.FileName.ToLowerInvariant().EndsWith(".riv"))
+                    return BadRequest(new { message = "File must have .riv extension" });
+
+                // Validate file size (max 50MB)
+                if (riveFile.Length > 50 * 1024 * 1024)
+                    return BadRequest(new { message = "File size exceeds 50MB limit" });
+
+                var uploadsPath = GetRiveUserPath();
+                Directory.CreateDirectory(uploadsPath);
+
+                var originalName = Path.GetFileNameWithoutExtension(riveFile.FileName);
+                var extension = Path.GetExtension(riveFile.FileName);
+                var filename = GenerateUniqueFilename(uploadsPath, originalName, extension);
+                var filePath = Path.Combine(uploadsPath, filename);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                    await riveFile.CopyToAsync(stream);
+
+                return Ok(new RiveUploadResponse
+                {
+                    Filename = filename,
+                    DisplayName = originalName,
+                    FileSize = riveFile.Length,
+                    Message = "Rive file uploaded successfully"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error uploading Rive file", error = ex.Message });
+            }
+        }
+
+        // Delete Rive file
+        [HttpDelete("rive-files/{filename}")]
+        public async Task<ActionResult> DeleteRiveFile(string filename)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".riv", StringComparison.OrdinalIgnoreCase))
+                    return BadRequest(new { message = "Invalid filename" });
+
+                var userPath = GetRiveUserPath();
+                var userFile = Path.Combine(userPath, filename);
+
+                if (System.IO.File.Exists(userFile))
+                {
+                    // Check if file is in use
+                    var frameLayouts = await _frameLayoutService.GetAllFrameLayoutsAsync();
+                    var isInUse = frameLayouts.Any(layout =>
+                        !string.IsNullOrEmpty(layout.RiveFile) &&
+                        layout.RiveFile.Equals(filename, StringComparison.OrdinalIgnoreCase));
+
+                    if (isInUse)
+                        return BadRequest(new { message = "Cannot delete Rive file as it is being used by one or more frame layouts" });
+
+                    System.IO.File.Delete(userFile);
+
+                    return Ok(new { message = "Rive file deleted successfully" });
+                }
+
+                // Protect built-in templates from deletion
+                var templatesPath = GetRiveTemplatesPath();
+                var templateFile = Path.Combine(templatesPath, filename);
+                if (System.IO.File.Exists(templateFile))
+                    return BadRequest(new { message = "Cannot delete built-in template files" });
+
+                return NotFound(new { message = "Rive file not found" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error deleting Rive file", error = ex.Message });
+            }
+        }
+
+        // Serve Rive file content
+        [HttpGet("rive-files/{filename}/content")]
+        public async Task<ActionResult> GetRiveFileContent(string filename)
+        {
+            try
+            {
+                // Add CORS headers for Electron app
+                Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                Response.Headers.Add("Access-Control-Allow-Methods", "GET");
+                Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+
+                if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".riv", StringComparison.OrdinalIgnoreCase))
+                    return BadRequest(new { message = "Invalid filename" });
+
+                // Prefer user override first
+                var userPath = GetRiveUserPath();
+                var userFile = Path.Combine(userPath, filename);
+                if (System.IO.File.Exists(userFile))
+                {
+                    var fileBytes = await System.IO.File.ReadAllBytesAsync(userFile);
+                    return File(fileBytes, "application/octet-stream", filename);
+                }
+
+                // Fallback to built-in templates
+                var templatesPath = GetRiveTemplatesPath();
+                var templateFile = Path.Combine(templatesPath, filename);
+                if (System.IO.File.Exists(templateFile))
+                {
+                    var fileBytes = await System.IO.File.ReadAllBytesAsync(templateFile);
+                    return File(fileBytes, "application/octet-stream", filename);
+                }
+
+                return NotFound(new { message = "Rive file not found" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error serving Rive file", error = ex.Message });
+            }
+        }
+    
+        // UPDATED: Export standalone config with embedded Rive (always embeds regardless of flag)
+        [HttpGet("{id}/export-standalone")]
+        public async Task<ActionResult> ExportStandaloneConfig(int id, [FromQuery] string? filename = null)
+        {
+            try
+            {
+                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (frameLayout == null)
+                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+
+                var config = frameLayout.JsonFrameConfig;
+
+                var exportData = new
+                {
+                    type = "standalone_frame_config",
+                    exportDate = DateTime.UtcNow.ToString("O"),
+                    layoutId = frameLayout.Id,
+                    displayName = frameLayout.DisplayName,
+                    config = config != null ? JsonSerializer.Deserialize<object>(config) : null,
+                    elements = frameLayout.JsonFrameElements != null ? JsonSerializer.Deserialize<object>(frameLayout.JsonFrameElements) : null,
+                    hasEmbeddedRive = !string.IsNullOrEmpty(frameLayout.RiveFile)
+                };
+
+                var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(exportData, new JsonSerializerOptions { WriteIndented = true });
+                var exportFilename = filename ?? $"frame-config-{frameLayout.Id}-standalone.json";
+
+                return File(jsonBytes, "application/json", exportFilename);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error exporting standalone config", error = ex.Message });
             }
         }
 
@@ -279,13 +494,9 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
-                {
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
-                }
 
-                // Generate frame using the new frame engine
                 var frameData = _frameEngine.RenderFrame(frameLayout, request.SensorData ?? new Dictionary<string, object>());
-
                 return File(frameData, "image/png", $"frame-preview-{id}.png");
             }
             catch (Exception ex)
@@ -294,14 +505,13 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // Test frame rendering with sample data using new architecture
+        // Test frame rendering with sample data
         [HttpGet("test-render")]
         public ActionResult TestFrameRender()
         {
             try
             {
                 var frameData = _frameEngine.RenderTestFrame();
-
                 return File(frameData, "image/png", "test-frame.png");
             }
             catch (Exception ex)
@@ -310,7 +520,7 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // Render frame with real sensor data (replacement for POC /sensors endpoint)
+        // Render frame with real sensor data
         [HttpGet("{id}/render")]
         public async Task<ActionResult> RenderFrameWithSensorData(int id, [FromQuery] int? junctionId, [FromQuery] int? linkId, [FromQuery] int? screenId, [FromQuery] int maxSensors = 10)
         {
@@ -318,11 +528,8 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
-                {
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
-                }
 
-                // Get screen configuration if parameters provided
                 Model_JunctionScreenLayout? screenConfig = null;
                 if (linkId.HasValue && screenId.HasValue)
                 {
@@ -330,40 +537,8 @@ namespace JunctionRelayServer.Controllers
                     screenConfig = screenConfigs.FirstOrDefault(sc => sc.DeviceScreenId == screenId.Value);
                 }
 
-                // Get live sensor data from your existing cache
-                var sensorData = new Dictionary<string, object>();
+                var sensorData = await GetSensorData(junctionId, maxSensors);
 
-                if (junctionId.HasValue)
-                {
-                    var sensors = await _connectionManager.GetSensorsByJunctionAsync(junctionId.Value);
-                    foreach (var sensor in sensors.Take(maxSensors))
-                    {
-                        var value = sensor.Value?.ToString() ?? "N/A";
-                        var unit = !string.IsNullOrEmpty(sensor.Unit) ? $" {sensor.Unit}" : "";
-                        sensorData[sensor.SensorTag] = $"{value}{unit}";
-                    }
-                }
-                else
-                {
-                    var allSensors = _connectionManager.GetAllSensors();
-                    foreach (var sensor in allSensors.Take(maxSensors))
-                    {
-                        var value = sensor.Value?.ToString() ?? "N/A";
-                        var unit = !string.IsNullOrEmpty(sensor.Unit) ? $" {sensor.Unit}" : "";
-                        sensorData[sensor.SensorTag] = $"{value}{unit}";
-                    }
-                }
-
-                if (!sensorData.Any())
-                {
-                    // Add dummy data if no sensors available
-                    sensorData["Demo"] = "No live sensors - this is test data";
-                    sensorData["Temperature"] = "22.5°C";
-                    sensorData["Humidity"] = "48%";
-                    sensorData["Pressure"] = "1013.2 hPa";
-                }
-
-                // Generate URL path if enabling URL access for the first time
                 if (screenConfig?.EnableUrlAccess == true && string.IsNullOrEmpty(screenConfig.UrlPath) &&
                     junctionId.HasValue && linkId.HasValue && screenId.HasValue)
                 {
@@ -388,49 +563,26 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
-                {
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
-                }
 
-                // Parse junction/link/screen IDs from request if provided
-                int? junctionId = null, linkId = null, screenId = null;
-                Model_JunctionScreenLayout? screenConfig = null;
+                int? junctionId = null;
+                if (!string.IsNullOrEmpty(request.JunctionId) && int.TryParse(request.JunctionId, out var jId))
+                    junctionId = jId;
 
-                if (!string.IsNullOrEmpty(request.JunctionId))
-                {
-                    junctionId = int.Parse(request.JunctionId);
-                }
+                var sensorData = await GetSensorData(junctionId, request.MaxSensors ?? 10);
 
-                // Note: You might want to add LinkId and ScreenId to SendFrameToDeviceRequest
-                // For now, we'll proceed without screen config
-
-                // Get sensor data
-                var sensorData = new Dictionary<string, object>();
-                if (junctionId.HasValue)
-                {
-                    var sensors = await _connectionManager.GetSensorsByJunctionAsync(junctionId.Value);
-                    foreach (var sensor in sensors.Take(request.MaxSensors ?? 10))
-                    {
-                        var value = sensor.Value?.ToString() ?? "N/A";
-                        var unit = !string.IsNullOrEmpty(sensor.Unit) ? $" {sensor.Unit}" : "";
-                        sensorData[sensor.SensorTag] = $"{value}{unit}";
-                    }
-                }
-
-                // Override sensor data if provided in request
+                // Override with provided sensor data
                 if (request.SensorData != null && request.SensorData.Any())
                 {
                     foreach (var kvp in request.SensorData)
-                    {
                         sensorData[kvp.Key] = kvp.Value;
-                    }
                 }
 
-                // Render frame using new frame engine with screen config
-                var frameData = _frameEngine.RenderFrame(frameLayout, sensorData, screenConfig, junctionId, linkId, screenId);
+                var frameData = _frameEngine.RenderFrame(frameLayout, sensorData);
 
-                // Send to Pi
                 using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(30);
+
                 var content = new ByteArrayContent(frameData);
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
 
@@ -457,22 +609,18 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // Quick render endpoint for backward compatibility (replacement for POC /test)
+        // Quick render endpoint for backward compatibility
         [HttpGet("quick-render/{layoutType}")]
         public async Task<ActionResult> QuickRender(string layoutType)
         {
             try
             {
-                // Find a template of the requested type
                 var templates = await _frameLayoutService.GetFrameLayoutsByTypeAsync(layoutType.ToUpperInvariant());
                 var template = templates.FirstOrDefault(t => t.IsTemplate);
 
                 if (template == null)
-                {
                     return NotFound(new { message = $"No template found for layout type: {layoutType}" });
-                }
 
-                // Use test data
                 var testData = new Dictionary<string, object>
                 {
                     ["Temperature"] = "23.5°C",
@@ -500,16 +648,11 @@ namespace JunctionRelayServer.Controllers
             {
                 var screenConfig = await _junctionLinksService.GetJunctionScreenLayoutByIdAsync(screenConfigId);
                 if (screenConfig == null)
-                {
                     return NotFound(new { message = $"Screen configuration with ID {screenConfigId} not found" });
-                }
 
                 if (!screenConfig.EnableUrlAccess)
-                {
                     return Ok(new { message = "URL access is disabled for this screen configuration", url = "" });
-                }
 
-                // Use provided base URL or construct from request
                 var requestBaseUrl = baseUrl ?? $"{Request.Scheme}://{Request.Host}";
                 var url = Service_FrameEngine.GenerateFrameUrl(requestBaseUrl, screenConfig);
 
@@ -527,14 +670,13 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                // Default to cleaning up files older than 24 hours
                 var maxAge = request?.MaxAgeHours.HasValue == true
                     ? TimeSpan.FromHours(request.MaxAgeHours.Value)
                     : TimeSpan.FromHours(24);
 
-                var framesDirectory = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "frames");
+                var framesDirectory = Path.Combine(Directory.GetCurrentDirectory(), "frames");
 
-                if (!System.IO.Directory.Exists(framesDirectory))
+                if (!Directory.Exists(framesDirectory))
                 {
                     return Ok(new
                     {
@@ -544,22 +686,21 @@ namespace JunctionRelayServer.Controllers
                     });
                 }
 
-                var files = System.IO.Directory.GetFiles(framesDirectory, "*.png");
+                var files = Directory.GetFiles(framesDirectory, "*.png");
                 var cutoffTime = DateTime.Now - maxAge;
                 var deletedFiles = 0;
                 long totalSizeDeleted = 0;
                 var errors = new List<string>();
 
-                // Handle dry run
                 if (request?.DryRun == true)
                 {
                     var filesToDelete = new List<string>();
                     foreach (var filePath in files)
                     {
-                        var fileInfo = new System.IO.FileInfo(filePath);
+                        var fileInfo = new FileInfo(filePath);
                         if (fileInfo.LastWriteTime < cutoffTime)
                         {
-                            filesToDelete.Add(System.IO.Path.GetFileName(filePath));
+                            filesToDelete.Add(Path.GetFileName(filePath));
                             totalSizeDeleted += fileInfo.Length;
                             deletedFiles++;
                         }
@@ -576,14 +717,11 @@ namespace JunctionRelayServer.Controllers
                     });
                 }
 
-                // Delete old files
                 foreach (var filePath in files)
                 {
                     try
                     {
-                        var fileInfo = new System.IO.FileInfo(filePath);
-
-                        // Check if file is older than cutoff time
+                        var fileInfo = new FileInfo(filePath);
                         if (fileInfo.LastWriteTime < cutoffTime)
                         {
                             totalSizeDeleted += fileInfo.Length;
@@ -593,35 +731,29 @@ namespace JunctionRelayServer.Controllers
                     }
                     catch (Exception ex)
                     {
-                        errors.Add($"Failed to delete {System.IO.Path.GetFileName(filePath)}: {ex.Message}");
+                        errors.Add($"Failed to delete {Path.GetFileName(filePath)}: {ex.Message}");
                     }
                 }
 
-                // Optionally clean up frames that are no longer referenced in database
                 if (request?.RemoveUnreferencedFiles == true)
                 {
                     var referencedFiles = new HashSet<string>();
-
-                    // Get all screen configurations with URL paths
                     var allConfigs = await GetAllScreenConfigurationsWithUrlPaths();
                     foreach (var config in allConfigs)
                     {
                         if (!string.IsNullOrEmpty(config.UrlPath))
-                        {
                             referencedFiles.Add(config.UrlPath.ToLowerInvariant());
-                        }
                     }
 
-                    // Delete unreferenced files
-                    var remainingFiles = System.IO.Directory.GetFiles(framesDirectory, "*.png");
+                    var remainingFiles = Directory.GetFiles(framesDirectory, "*.png");
                     foreach (var filePath in remainingFiles)
                     {
                         try
                         {
-                            var fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
+                            var fileName = Path.GetFileName(filePath).ToLowerInvariant();
                             if (!referencedFiles.Contains(fileName))
                             {
-                                var fileInfo = new System.IO.FileInfo(filePath);
+                                var fileInfo = new FileInfo(filePath);
                                 totalSizeDeleted += fileInfo.Length;
                                 System.IO.File.Delete(filePath);
                                 deletedFiles++;
@@ -629,7 +761,7 @@ namespace JunctionRelayServer.Controllers
                         }
                         catch (Exception ex)
                         {
-                            errors.Add($"Failed to delete unreferenced {System.IO.Path.GetFileName(filePath)}: {ex.Message}");
+                            errors.Add($"Failed to delete unreferenced {Path.GetFileName(filePath)}: {ex.Message}");
                         }
                     }
                 }
@@ -651,9 +783,7 @@ namespace JunctionRelayServer.Controllers
             {
                 return StatusCode(500, new { message = "Error during cleanup", error = ex.Message });
             }
-        }
-
-        #region Private Helper Methods
+        }            
 
         private static FrameLayoutDto MapToFrameLayoutDto(Model_Frame_Layout frameLayout)
         {
@@ -663,32 +793,168 @@ namespace JunctionRelayServer.Controllers
                 DisplayName = frameLayout.DisplayName ?? "Unnamed Frame Layout",
                 Description = frameLayout.Description,
                 LayoutType = frameLayout.LayoutType,
-                Rows = frameLayout.Rows,
-                Columns = frameLayout.Columns,
                 IsTemplate = frameLayout.IsTemplate,
+                IsDraft = frameLayout.IsDraft,
+                IsPublished = frameLayout.IsPublished,
                 Width = frameLayout.Width,
                 Height = frameLayout.Height,
+                Orientation = frameLayout.Orientation,
+                BackgroundType = frameLayout.BackgroundType,
                 BackgroundColor = frameLayout.BackgroundColor,
                 BackgroundImageUrl = frameLayout.BackgroundImageUrl,
+                BackgroundOpacity = frameLayout.BackgroundOpacity,
+                RiveFile = frameLayout.RiveFile,
+                RiveEmbedInPayload = frameLayout.RiveEmbedInPayload,
+                JsonFrameConfig = frameLayout.JsonFrameConfig,
+                JsonFrameElements = frameLayout.JsonFrameElements,
                 Created = frameLayout.Created,
                 LastModified = frameLayout.LastModified
             };
         }
 
-        // Helper method to get all screen configurations with URL paths
+        private static List<string> ValidateFrameLayout(
+            string? displayName,
+            string? layoutType,
+            string? backgroundType,
+            int? width,
+            int? height)
+        {
+            var errors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(displayName))
+                errors.Add("DisplayName is required.");
+
+            if (string.IsNullOrWhiteSpace(layoutType))
+                errors.Add("LayoutType is required.");
+            else if (!IsValidLayoutType(layoutType))
+                errors.Add($"Invalid LayoutType: {layoutType}. Valid types are: PRE_RENDERED_IMAGE, RIVE_MAPPING");
+
+            if (!string.IsNullOrWhiteSpace(backgroundType) && !IsValidBackgroundType(backgroundType))
+                errors.Add($"Invalid BackgroundType: {backgroundType}. Valid types are: none, color, image, url, rive");
+
+            if (width.HasValue && width <= 0)
+                errors.Add("Width must be greater than 0.");
+
+            if (height.HasValue && height <= 0)
+                errors.Add("Height must be greater than 0.");
+
+            return errors;
+        }
+
+        private static bool IsValidLayoutType(string layoutType)
+        {
+            var validTypes = new[] { "PRE_RENDERED_IMAGE", "RIVE_MAPPING" };
+            return validTypes.Contains(layoutType.ToUpperInvariant());
+        }
+
+        private static bool IsValidBackgroundType(string backgroundType)
+        {
+            var validTypes = new[] { "none", "color", "image", "url", "rive" };
+            return validTypes.Contains(backgroundType.ToLowerInvariant());
+        }
+
+        private static string? SanitizeJson(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            try
+            {
+                // Parse and reformat to ensure valid JSON
+                var doc = JsonDocument.Parse(json);
+                return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = false });
+            }
+            catch (JsonException)
+            {
+                return null; // Invalid JSON
+            }
+        }
+
+        private string GenerateUniqueFilename(string directory, string baseName, string extension)
+        {
+            var filename = $"{baseName}{extension}";
+            var counter = 1;
+
+            while (System.IO.File.Exists(Path.Combine(directory, filename)))
+            {
+                filename = $"{baseName}_{counter}{extension}";
+                counter++;
+            }
+
+            return filename;
+        }
+
+        private async Task<bool> IsFrameLayoutInUse(int layoutId)
+        {
+            try
+            {
+                // Check if any screen configurations reference this layout
+                var screenConfigs = await GetAllScreenConfigurationsWithUrlPaths();
+                return screenConfigs.Any(config => config.FrameLayoutId == layoutId);
+            }
+            catch
+            {
+                return false; // Assume not in use if we can't check
+            }
+        }
+
+        private async Task<Dictionary<string, object>> GetSensorData(int? junctionId, int maxSensors)
+        {
+            var sensorData = new Dictionary<string, object>();
+
+            if (junctionId.HasValue)
+            {
+                var sensors = await _connectionManager.GetSensorsByJunctionAsync(junctionId.Value);
+                foreach (var sensor in sensors.Take(maxSensors))
+                {
+                    var value = sensor.Value?.ToString() ?? "N/A";
+                    var unit = !string.IsNullOrEmpty(sensor.Unit) ? $" {sensor.Unit}" : "";
+                    sensorData[sensor.SensorTag] = $"{value}{unit}";
+                }
+            }
+            else
+            {
+                var allSensors = _connectionManager.GetAllSensors();
+                foreach (var sensor in allSensors.Take(maxSensors))
+                {
+                    var value = sensor.Value?.ToString() ?? "N/A";
+                    var unit = !string.IsNullOrEmpty(sensor.Unit) ? $" {sensor.Unit}" : "";
+                    sensorData[sensor.SensorTag] = $"{value}{unit}";
+                }
+            }
+
+            // Provide fallback test data if no sensors available
+            if (!sensorData.Any())
+            {
+                sensorData["Demo"] = "No live sensors - this is test data";
+                sensorData["Temperature"] = "22.5°C";
+                sensorData["Humidity"] = "48%";
+                sensorData["Pressure"] = "1013.2 hPa";
+            }
+
+            return sensorData;
+        }
+        private string GetRiveTemplatesPath()
+        {
+            return Path.Combine(_webHostEnvironment.ContentRootPath, "frameengine", "templates");
+        }
+
+        // User-writable Rive storage next to the DB (mapped/persistent)
+        private string GetRiveUserPath()
+        {
+            var dbPath = _dbPathProvider.DbPath;
+            var dataDir = Path.GetDirectoryName(dbPath)
+                          ?? Path.Combine(_webHostEnvironment.ContentRootPath, "data");
+            return Path.Combine(dataDir, "rive"); // e.g. /.../data/rive
+        }
+         
         private async Task<List<Model_JunctionScreenLayout>> GetAllScreenConfigurationsWithUrlPaths()
         {
             try
             {
-                // This is a simplified approach - you might want to optimize this query
-                // by adding a method to your database service to get all configs with URL paths
-                var allConfigs = new List<Model_JunctionScreenLayout>();
-
-                // You would need to implement this in your database service
-                // For now, this is a placeholder that would need to be implemented
-                // based on your specific database structure
-
-                return allConfigs;
+                // This should be implemented to get all screen configurations
+                // For now, return empty list as placeholder
+                return new List<Model_JunctionScreenLayout>();
             }
             catch (Exception ex)
             {
@@ -696,29 +962,37 @@ namespace JunctionRelayServer.Controllers
                 return new List<Model_JunctionScreenLayout>();
             }
         }
-
-        #endregion
     }
 
-    #region DTOs and Request Models
-
+    // DTOs and Request/Response Models
     public class FrameLayoutDto
     {
         public string Id { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public string? Description { get; set; }
         public string LayoutType { get; set; } = string.Empty;
-        public int? Rows { get; set; }
-        public int? Columns { get; set; }
+
         public bool IsTemplate { get; set; }
-        public string? BackgroundColor { get; set; }
-        public string? BackgroundImageUrl { get; set; }
+        public bool IsDraft { get; set; }
+        public bool IsPublished { get; set; }
 
         [Range(1, 10000)]
         public int? Width { get; set; }
 
         [Range(1, 10000)]
         public int? Height { get; set; }
+
+        public string Orientation { get; set; } = "landscape";
+
+        public string BackgroundType { get; set; } = "color";
+        public string? BackgroundColor { get; set; }
+        public string? BackgroundImageUrl { get; set; }
+        public double BackgroundOpacity { get; set; } = 1.0;
+
+        public string? RiveFile { get; set; }
+        public bool RiveEmbedInPayload { get; set; } = true;
+        public string? JsonFrameConfig { get; set; }
+        public string? JsonFrameElements { get; set; }
 
         public DateTime Created { get; set; }
         public DateTime? LastModified { get; set; }
@@ -734,13 +1008,7 @@ namespace JunctionRelayServer.Controllers
         public string? Description { get; set; }
 
         [Required]
-        public string LayoutType { get; set; } = string.Empty;
-
-        [Range(1, 100)]
-        public int? Rows { get; set; } = 2;
-
-        [Range(1, 100)]
-        public int? Columns { get; set; } = 2;
+        public string LayoutType { get; set; } = "PRE_RENDERED_IMAGE";
 
         [Range(1, 10000)]
         public int? Width { get; set; }
@@ -748,8 +1016,19 @@ namespace JunctionRelayServer.Controllers
         [Range(1, 10000)]
         public int? Height { get; set; }
 
-        public string? BackgroundColor { get; set; }
+        public string? Orientation { get; set; } = "landscape";
+
+        public string? BackgroundType { get; set; } = "color";
+        public string? BackgroundColor { get; set; } = "#FFFFFF";
         public string? BackgroundImageUrl { get; set; }
+        public byte[]? BackgroundImageData { get; set; }
+        [Range(0.0, 1.0)]
+        public double? BackgroundOpacity { get; set; } = 1.0;
+
+        public string? RiveFile { get; set; }
+        public bool RiveEmbedInPayload { get; set; } = true;
+        public string? JsonFrameConfig { get; set; }
+        public string? JsonFrameElements { get; set; }
     }
 
     public class UpdateFrameLayoutRequest
@@ -762,26 +1041,34 @@ namespace JunctionRelayServer.Controllers
 
         public string? LayoutType { get; set; }
 
-        [Range(1, 100)]
-        public int? Rows { get; set; }
-
-        [Range(1, 100)]
-        public int? Columns { get; set; }
-
         [Range(1, 10000)]
         public int? Width { get; set; }
 
         [Range(1, 10000)]
         public int? Height { get; set; }
 
+        public string? Orientation { get; set; }
+
+        public string? BackgroundType { get; set; }
         public string? BackgroundColor { get; set; }
         public string? BackgroundImageUrl { get; set; }
+        public byte[]? BackgroundImageData { get; set; }
+        [Range(0.0, 1.0)]
+        public double? BackgroundOpacity { get; set; }
+
+        public string? RiveFile { get; set; }
+        public bool? RiveEmbedInPayload { get; set; }
+        public string? JsonFrameConfig { get; set; }
+        public string? JsonFrameElements { get; set; }
     }
 
     public class CloneFrameLayoutRequest
     {
         [Required]
         public int OriginalId { get; set; }
+
+        [StringLength(100)]
+        public string? NewName { get; set; }
     }
 
     public class CreateFrameLayoutResponse
@@ -806,25 +1093,28 @@ namespace JunctionRelayServer.Controllers
 
     public class CleanupFramesRequest
     {
-        /// <summary>
-        /// Maximum age in hours for files to keep. Files older than this will be deleted.
-        /// Default is 24 hours if not specified.
-        /// </summary>
-        [Range(0.1, 8760)] // Minimum 6 minutes, maximum 1 year
+        [Range(0.1, 8760)]
         public double? MaxAgeHours { get; set; }
 
-        /// <summary>
-        /// If true, also removes frame files that are not referenced by any screen configuration.
-        /// Default is false.
-        /// </summary>
         public bool? RemoveUnreferencedFiles { get; set; }
 
-        /// <summary>
-        /// If true, performs a dry run without actually deleting files.
-        /// Returns what would be deleted. Default is false.
-        /// </summary>
         public bool? DryRun { get; set; }
     }
 
-    #endregion
+    // Rive-specific DTOs
+    public class RiveFileInfoDto
+    {
+        public string Filename { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public DateTime UploadDate { get; set; }
+        public long FileSize { get; set; }
+    }
+
+    public class RiveUploadResponse
+    {
+        public string Filename { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public long FileSize { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
 }

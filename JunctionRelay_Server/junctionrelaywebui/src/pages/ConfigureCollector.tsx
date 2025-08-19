@@ -366,7 +366,17 @@ const ConfigureCollector = () => {
                 sensorOrder: sensor.sensorOrder || 0,
                 lastUpdated: sensor.lastUpdated,
                 mqttTopic: sensor.mqttTopic,
-                mqttQoS: sensor.mqttQoS
+                mqttQoS: sensor.mqttQoS,
+                customAttribute1: sensor.customAttribute1,
+                customAttribute2: sensor.customAttribute2,
+                customAttribute3: sensor.customAttribute3,
+                customAttribute4: sensor.customAttribute4,
+                customAttribute5: sensor.customAttribute5,
+                customAttribute6: sensor.customAttribute6,
+                customAttribute7: sensor.customAttribute7,
+                customAttribute8: sensor.customAttribute8,
+                customAttribute9: sensor.customAttribute9,
+                customAttribute10: sensor.customAttribute10
             }));
 
             setStoredSensors(transformedSensors);
@@ -441,7 +451,17 @@ const ConfigureCollector = () => {
                 sensorOrder: 0,
                 lastUpdated: sensor.lastUpdated,
                 mqttTopic: sensor.mqttTopic,
-                mqttQoS: sensor.mqttQoS
+                mqttQoS: sensor.mqttQoS,
+                customAttribute1: sensor.customAttribute1,
+                customAttribute2: sensor.customAttribute2,
+                customAttribute3: sensor.customAttribute3,
+                customAttribute4: sensor.customAttribute4,
+                customAttribute5: sensor.customAttribute5,
+                customAttribute6: sensor.customAttribute6,
+                customAttribute7: sensor.customAttribute7,
+                customAttribute8: sensor.customAttribute8,
+                customAttribute9: sensor.customAttribute9,
+                customAttribute10: sensor.customAttribute10
             }));
 
             setFetchedSensors(transformedSensors);
@@ -469,15 +489,25 @@ const ConfigureCollector = () => {
                 sensorType: sensor.componentName,
                 value: sensor.value,
                 unit: sensor.unit || "",
-                decimalPlaces: sensor.decimalPlaces || 0,           
+                decimalPlaces: sensor.decimalPlaces || 0,
                 componentName: sensor.componentName || "",
                 lastUpdated: sensor.lastUpdated || new Date().toISOString(),
                 collectorId: Number(id),
                 sensorTag: sensor.sensorTag || sensor.externalId || "",
                 deviceName: sensor.deviceName || "Collector",
                 category: sensor.componentName || "Sensor",
-                mqttTopic: sensor.mqttTopic,
-                mqttQoS: sensor.mqttQoS
+                mqttTopic: sensor.mqttTopic || null,
+                mqttQoS: sensor.mqttQoS || null,
+                customAttribute1: sensor.customAttribute1 || null,
+                customAttribute2: sensor.customAttribute2 || null,
+                customAttribute3: sensor.customAttribute3 || null,
+                customAttribute4: sensor.customAttribute4 || null,
+                customAttribute5: sensor.customAttribute5 || null,
+                customAttribute6: sensor.customAttribute6 || null,
+                customAttribute7: sensor.customAttribute7 || null,
+                customAttribute8: sensor.customAttribute8 || null,
+                customAttribute9: sensor.customAttribute9 || null,
+                customAttribute10: sensor.customAttribute10 || null
             };
 
             const rsp = await fetch(`/api/sensors/collectors/${id}`, {
@@ -531,7 +561,19 @@ const ConfigureCollector = () => {
                     collectorId: Number(id),
                     sensorTag: sensor.sensorTag || sensor.externalId || "",
                     deviceName: sensor.deviceName || "Collector",
-                    category: sensor.componentName || "Sensor"
+                    category: sensor.componentName || "Sensor",
+                    mqttTopic: sensor.mqttTopic || null,
+                    mqttQoS: sensor.mqttQoS || null,
+                    customAttribute1: sensor.customAttribute1 || null,
+                    customAttribute2: sensor.customAttribute2 || null,
+                    customAttribute3: sensor.customAttribute3 || null,
+                    customAttribute4: sensor.customAttribute4 || null,
+                    customAttribute5: sensor.customAttribute5 || null,
+                    customAttribute6: sensor.customAttribute6 || null,
+                    customAttribute7: sensor.customAttribute7 || null,
+                    customAttribute8: sensor.customAttribute8 || null,
+                    customAttribute9: sensor.customAttribute9 || null,
+                    customAttribute10: sensor.customAttribute10 || null
                 };
 
                 try {

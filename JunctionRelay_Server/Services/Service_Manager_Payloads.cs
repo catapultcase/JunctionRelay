@@ -21,6 +21,7 @@ using JunctionRelayServer.Models;
 using System.Text.Json;
 using System.IO.Compression;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 
 namespace JunctionRelayServer.Services
 {
@@ -32,6 +33,7 @@ namespace JunctionRelayServer.Services
         private readonly Service_FrameEngine _frameEngine;
         private readonly Service_Database_Manager_FrameEngine _frameLayoutDb;
         private readonly Service_Database_Manager_JunctionLinks _junctionLinksService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         public Service_Manager_Payloads(
             Service_Database_Manager_Sensors sensorDb,
@@ -39,7 +41,8 @@ namespace JunctionRelayServer.Services
             Service_Database_Manager_Layouts layoutsDb,
             Service_FrameEngine frameEngine,
             Service_Database_Manager_FrameEngine frameLayoutDb,
-            Service_Database_Manager_JunctionLinks junctionLinksService)
+            Service_Database_Manager_JunctionLinks junctionLinksService,
+            IHttpContextAccessor httpContextAccessor)
         {
             _sensorDb = sensorDb;
             _serviceManagerConnections = serviceManagerConnections;
@@ -47,6 +50,7 @@ namespace JunctionRelayServer.Services
             _frameEngine = frameEngine;
             _frameLayoutDb = frameLayoutDb;
             _junctionLinksService = junctionLinksService;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         // Helper method to add properties if they are present (including valid 0 values)
@@ -172,21 +176,12 @@ namespace JunctionRelayServer.Services
                 WriteIndented = false // Remove whitespace for better compression
             });
 
-            // Debug input parameters
-            //Console.WriteLine($"[DEBUG] SerializeWithOptionalPrefix parameters:");
-            //Console.WriteLine($"  - includePrefix: {includePrefix}");
-            //Console.WriteLine($"  - compressPayload: {compressPayload}");
-            //Console.WriteLine($"  - routingHint: '{routingHint}'");
-            //Console.WriteLine($"  - json.Length: {json.Length}");
-
             if (compressPayload)
             {
                 var compressedData = CompressData(json);
                 var originalSize = Encoding.UTF8.GetByteCount(json);
                 var compressedSize = compressedData.Length;
                 var compressionRatio = (1.0 - (double)compressedSize / originalSize) * 100;
-
-                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 🗜️ Compressed {payloadType} payload: {originalSize}→{compressedSize} bytes ({compressionRatio:F1}% reduction)");
 
                 if (includePrefix)
                 {
@@ -196,19 +191,11 @@ namespace JunctionRelayServer.Services
                     var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
                     var prefix = lengthHint + typeField + cleanRoutingHint;
 
-                    // Debug prefix components
-                    //Console.WriteLine($"[DEBUG] Compressed prefix components:");
-                    //Console.WriteLine($"  - lengthHint: '{lengthHint}' (4 chars)");
-                    //Console.WriteLine($"  - typeField: '{typeField}' (2 chars)");
-                    //Console.WriteLine($"  - cleanRoutingHint: '{cleanRoutingHint}' (2 chars)");
-                    //Console.WriteLine($"  - Final prefix: '{prefix}' (8 chars total)");
-
                     var prefixBytes = Encoding.UTF8.GetBytes(prefix);
                     var result = new byte[prefixBytes.Length + compressedData.Length];
                     Array.Copy(prefixBytes, 0, result, 0, prefixBytes.Length);
                     Array.Copy(compressedData, 0, result, prefixBytes.Length, compressedData.Length);
 
-                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added LLLLTTRR prefix '{prefix}' to compressed {payloadType} payload (Type: Gzip, Route: {cleanRoutingHint})");
                     return result;
                 }
                 else
@@ -227,33 +214,10 @@ namespace JunctionRelayServer.Services
                     var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
                     var prefix = lengthHint + typeField + cleanRoutingHint;
 
-                    // Debug prefix components
-                    //Console.WriteLine($"[DEBUG] JSON prefix components:");
-                    //Console.WriteLine($"  - lengthHint: '{lengthHint}' (4 chars)");
-                    //Console.WriteLine($"  - typeField: '{typeField}' (2 chars)");
-                    //Console.WriteLine($"  - cleanRoutingHint: '{cleanRoutingHint}' (2 chars)");
-                    //Console.WriteLine($"  - Final prefix: '{prefix}' (8 chars total)");
-
-                    // Validate prefix format
-                    if (prefix.Length != 8)
-                    {
-                        Console.WriteLine($"[ERROR] Prefix wrong length: {prefix.Length} (expected 8)");
-                    }
-
-                    for (int i = 0; i < prefix.Length; i++)
-                    {
-                        if (!char.IsDigit(prefix[i]))
-                        {
-                            Console.WriteLine($"[ERROR] Non-digit at position {i}: '{prefix[i]}'");
-                        }
-                    }
-
-                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Added LLLLTTRR prefix '{prefix}' to {payloadType} payload (Type: JSON, Route: {cleanRoutingHint})");
                     return prefix + json;
                 }
                 else
                 {
-                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ℹ️ No prefix added to {payloadType} payload");
                     return json;
                 }
             }
@@ -325,6 +289,426 @@ namespace JunctionRelayServer.Services
             AddIfPresent(dictionary, "max_height", template.MaxHeight);
         }
 
+        // Generate Rive configuration payloads for screens
+
+        public async Task<Dictionary<string, object>> GenerateRiveConfigPayloadsAsync(
+            string screenKey,
+            List<Model_Sensor> assignedSensors,
+            Model_Device_Screens screen,
+            Model_JunctionScreenLayout? screenOverride = null,
+            string? junctionType = null,
+            string? gatewayDestination = null,
+            bool compressPayload = false)
+        {
+            var result = new Dictionary<string, object>();
+
+            try
+            {
+                // 1) Get the frame layout for this screen
+                Model_Frame_Layout? frameLayout = null;
+
+                // Check if junction has a specific frame layout override for this screen
+                if (screenOverride?.FrameLayoutId.HasValue == true)
+                {
+                    frameLayout = await _frameLayoutDb.GetFrameLayoutByIdAsync(screenOverride.FrameLayoutId.Value);
+                }
+
+                // Fallback to default Rive layout
+                if (frameLayout == null)
+                {
+                    var riveLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("RIVE_MAPPING");
+                    frameLayout = riveLayouts.FirstOrDefault(f => f.IsTemplate);
+                }
+
+                if (frameLayout == null)
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ No Rive frame layout found for screen {screenKey}");
+                    return result;
+                }
+
+                // 2) Parse JsonFrameConfig and JsonFrameElements
+                object? frameConfig = null;
+                object? frameElements = null;
+
+                if (!string.IsNullOrWhiteSpace(frameLayout.JsonFrameConfig))
+                {
+                    try
+                    {
+                        using var configDoc = JsonDocument.Parse(frameLayout.JsonFrameConfig);
+                        frameConfig = CloneJsonValue(configDoc.RootElement);
+
+                        // UPDATED: Only embed Rive file if RiveEmbedInPayload flag is explicitly true
+                        if (frameLayout.RiveEmbedInPayload && !string.IsNullOrEmpty(frameLayout.RiveFile))
+                        {
+                            frameConfig = await EmbedRiveFileInConfig(frameConfig, frameLayout.RiveFile);
+                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Embedded Rive file '{frameLayout.RiveFile}' in config for {screenKey}");
+                        }
+                        else if (!frameLayout.RiveEmbedInPayload && !string.IsNullOrEmpty(frameLayout.RiveFile))
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ℹ️ Rive file '{frameLayout.RiveFile}' referenced but not embedded for {screenKey} (RiveEmbedInPayload = false)");
+                        }
+                    }
+                    catch (JsonException ex)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Invalid JsonFrameConfig for frame layout {frameLayout.Id}: {ex.Message}");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(frameLayout.JsonFrameElements))
+                {
+                    try
+                    {
+                        using var elementsDoc = JsonDocument.Parse(frameLayout.JsonFrameElements);
+                        frameElements = CloneJsonValue(elementsDoc.RootElement);
+                    }
+                    catch (JsonException ex)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Invalid JsonFrameElements for frame layout {frameLayout.Id}: {ex.Message}");
+                    }
+                }
+
+                // 3) Build the Rive config payload
+                var payloadDict = new Dictionary<string, object>
+                {
+                    ["type"] = "rive_config",
+                    ["screenId"] = screen.ScreenKey
+                };
+
+                // Add frame config if present
+                if (frameConfig != null)
+                {
+                    payloadDict["frameConfig"] = frameConfig;
+                }
+
+                // Add frame elements if present
+                if (frameElements != null)
+                {
+                    payloadDict["frameElements"] = frameElements;
+                }
+
+                // Add metadata about Rive embedding status
+                if (!string.IsNullOrEmpty(frameLayout.RiveFile))
+                {
+                    payloadDict["riveFile"] = frameLayout.RiveFile;
+                    payloadDict["riveEmbedInPayload"] = frameLayout.RiveEmbedInPayload;
+
+                    if (frameLayout.RiveEmbedInPayload)
+                    {
+                        payloadDict["riveDataEmbedded"] = true;
+                    }
+                    else
+                    {
+                        payloadDict["riveDataEmbedded"] = false;
+                        payloadDict["riveFileReference"] = frameLayout.RiveFile;
+                    }
+                }
+
+                // 4) Add gateway destination if applicable
+                if (!string.IsNullOrEmpty(junctionType))
+                {
+                    AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
+                }
+
+                // 5) Serialize with optional prefix and compression
+                string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+
+                // Use screen layout's prefix setting if available
+                bool includePrefix = false;
+                if (screen.ScreenLayoutId.HasValue)
+                {
+                    var screenLayout = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+                    includePrefix = screenLayout?.IncludePrefixConfig == true;
+                }
+
+                object finalPayload = SerializeWithOptionalPrefix(payloadDict, includePrefix, "rive config", compressPayload, routingHint);
+
+                result[screenKey] = finalPayload;
+
+                var embeddedStatus = frameLayout.RiveEmbedInPayload && !string.IsNullOrEmpty(frameLayout.RiveFile) ?
+                    " (with embedded Rive data)" :
+                    (!string.IsNullOrEmpty(frameLayout.RiveFile) ? " (Rive file referenced only)" : "");
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created Rive config payload for {screenKey} using layout {frameLayout.DisplayName}{embeddedStatus}");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Error generating Rive config payload for {screenKey}: {ex.Message}");
+                return result;
+            }
+        }
+
+        // Helper method to embed Rive file data in config (add to Service_Manager_Payloads class)
+        private async Task<object?> EmbedRiveFileInConfig(object? configObject, string riveFileName)
+        {
+            try
+            {
+                if (configObject == null) return null;
+
+                // Convert the config object to a mutable dictionary structure
+                var configJson = JsonSerializer.Serialize(configObject);
+                var configDict = JsonSerializer.Deserialize<Dictionary<string, object>>(configJson);
+
+                if (configDict == null) return configObject;
+
+                // Navigate to frameConfig.rive section or create it
+                if (!configDict.TryGetValue("frameConfig", out var frameConfigObj))
+                {
+                    // Create frameConfig if it doesn't exist
+                    configDict["frameConfig"] = new Dictionary<string, object>();
+                    frameConfigObj = configDict["frameConfig"];
+                }
+
+                // Convert frameConfig to dictionary if it's a JsonElement
+                Dictionary<string, object> frameConfigDict;
+                if (frameConfigObj is JsonElement frameConfigElement)
+                {
+                    var frameConfigJson = frameConfigElement.GetRawText();
+                    frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object>>(frameConfigJson) ?? new Dictionary<string, object>();
+                }
+                else
+                {
+                    frameConfigDict = frameConfigObj as Dictionary<string, object> ?? new Dictionary<string, object>();
+                }
+
+                // Navigate to or create the rive section
+                if (!frameConfigDict.TryGetValue("rive", out var riveObj))
+                {
+                    frameConfigDict["rive"] = new Dictionary<string, object>();
+                    riveObj = frameConfigDict["rive"];
+                }
+
+                // Convert rive to dictionary if it's a JsonElement
+                Dictionary<string, object> riveDict;
+                if (riveObj is JsonElement riveElement)
+                {
+                    var riveJson = riveElement.GetRawText();
+                    riveDict = JsonSerializer.Deserialize<Dictionary<string, object>>(riveJson) ?? new Dictionary<string, object>();
+                }
+                else
+                {
+                    riveDict = riveObj as Dictionary<string, object> ?? new Dictionary<string, object>();
+                }
+
+                // Get the Rive file as base64 and embed it
+                var riveFileData = await GetRiveFileAsBase64(riveFileName);
+                if (!string.IsNullOrEmpty(riveFileData))
+                {
+                    // CHANGED: Use auto-detected server URL
+                    var baseUrl = GetServerBaseUrl();
+                    riveDict["file"] = riveFileName;
+                    riveDict["fileUrl"] = $"{baseUrl}/api/frameengine/rive-files/{riveFileName}/content";
+                    riveDict["embedded"] = false;
+
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Generated Rive URL: {riveDict["fileUrl"]}");
+
+                    // Update the nested structure
+                    frameConfigDict["rive"] = riveDict;
+                    configDict["frameConfig"] = frameConfigDict;
+
+                    // Convert back to the original object structure
+                    return CloneJsonValue(JsonDocument.Parse(JsonSerializer.Serialize(configDict)).RootElement);
+                }
+
+                return configObject; // Return original if embedding fails
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Error embedding Rive file {riveFileName} in config: {ex.Message}");
+                return configObject; // Return original config if embedding fails
+            }
+        }
+
+        private string GetServerBaseUrl()
+        {
+            // Try to get from current HTTP context
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext?.Request != null)
+            {
+                var request = httpContext.Request;
+                var scheme = request.Scheme;
+                var host = request.Host.Value;
+                return $"{scheme}://{host}";
+            }
+
+            // Fallback: auto-detect local IP
+            try
+            {
+                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+                var localIP = host.AddressList
+                    .FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                                          !System.Net.IPAddress.IsLoopback(ip));
+
+                if (localIP != null)
+                {
+                    return $"http://{localIP}:7180"; // Use your actual port
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Could not auto-detect IP: {ex.Message}");
+            }
+
+            // Final fallback
+            return "http://localhost:7180";
+        }
+
+        // Helper method to get Rive file as Base64 (add to Service_Manager_Payloads class)
+        private async Task<string?> GetRiveFileAsBase64(string filename)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".riv", StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                // Check user files first (next to database)
+                var userPath = GetRiveUserPath();
+                var userFile = Path.Combine(userPath, filename);
+                if (File.Exists(userFile))
+                {
+                    var fileBytes = await File.ReadAllBytesAsync(userFile);
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 📁 Found user Rive file: {filename} ({fileBytes.Length} bytes)");
+                    return Convert.ToBase64String(fileBytes);
+                }
+
+                // Fallback to templates
+                var templatesPath = GetRiveTemplatesPath();
+                var templateFile = Path.Combine(templatesPath, filename);
+                if (File.Exists(templateFile))
+                {
+                    var fileBytes = await File.ReadAllBytesAsync(templateFile);
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] 📁 Found template Rive file: {filename} ({fileBytes.Length} bytes)");
+                    return Convert.ToBase64String(fileBytes);
+                }
+
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Rive file not found: {filename}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Error reading Rive file {filename} for Base64 conversion: {ex.Message}");
+                return null;
+            }
+        }
+
+        // Helper method to get Rive templates path (add to Service_Manager_Payloads class)
+        private string GetRiveTemplatesPath()
+        {
+            // This should match the path used in your controller
+            return Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "templates");
+        }
+
+        // Helper method to get user Rive path (add to Service_Manager_Payloads class)  
+        private string GetRiveUserPath()
+        {
+            // This should match the path used in your controller
+            // You may need to inject DatabasePathProvider or use a similar approach
+            var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+            return Path.Combine(dataDir, "rive");
+        }
+
+        // Generate Rive sensor data payloads for screens (NEW)
+        public async Task<Dictionary<string, object>> GenerateRiveSensorPayloadsAsync(
+            string screenKey,
+            List<Model_Sensor> assignedSensors,
+            Model_Device_Screens screen,
+            string? junctionType = null,
+            string? gatewayDestination = null,
+            bool compressPayload = false)
+        {
+            var result = new Dictionary<string, object>();
+
+            try
+            {
+                // 1) Ensure we have assigned sensors to work with
+                if (assignedSensors.Count == 0)
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ No assigned sensors for Rive screen {screenKey}. Skipping payload generation.");
+                    return result;
+                }
+
+                // 2) Build sensor data dictionary from assigned sensors
+                var sensorData = new Dictionary<string, object>();
+
+                // Sort sensors by SensorOrder
+                var sortedSensors = assignedSensors.OrderBy(s => s.SensorOrder).ToList();
+
+                foreach (var sensor in sortedSensors)
+                {
+                    // Get the sensor's latest value from the global cache using OriginalId
+                    var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
+                    if (cachedSensor != null)
+                    {
+                        // Format the sensor value based on decimal places
+                        object formattedValue;
+                        if (double.TryParse(cachedSensor.Value?.ToString(), out double numericValue))
+                        {
+                            // For Rive, send the numeric value directly for animation purposes
+                            formattedValue = Math.Round(numericValue, sensor.DecimalPlaces);
+                        }
+                        else
+                        {
+                            formattedValue = cachedSensor.Value?.ToString() ?? "N/A";
+                        }
+
+                        // Create sensor data object with value, unit, and formatted display
+                        sensorData[sensor.SensorTag] = new
+                        {
+                            value = formattedValue,
+                            unit = cachedSensor.Unit ?? "",
+                            displayValue = formattedValue.ToString() + (!string.IsNullOrEmpty(cachedSensor.Unit) ? $" {cachedSensor.Unit}" : "")
+                        };
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ⚠️ Sensor with OriginalId {sensor.OriginalId} not found in cache for Rive rendering");
+                        sensorData[sensor.SensorTag] = new
+                        {
+                            value = 0,
+                            unit = "",
+                            displayValue = "N/A"
+                        };
+                    }
+                }
+
+                // 3) Create the Rive sensor payload
+                var payloadDict = new Dictionary<string, object>
+                {
+                    ["type"] = "rive_sensor",
+                    ["screenId"] = screen.ScreenKey,
+                    ["sensors"] = sensorData
+                };
+
+                // 4) Add gateway destination if applicable
+                if (!string.IsNullOrEmpty(junctionType))
+                {
+                    AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
+                }
+
+                // 5) Serialize with optional prefix and compression
+                string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
+
+                // Use screen layout's prefix setting if available
+                bool includePrefix = false;
+                if (screen.ScreenLayoutId.HasValue)
+                {
+                    var screenLayout = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
+                    includePrefix = screenLayout?.IncludePrefixSensor == true;
+                }
+
+                object finalPayload = SerializeWithOptionalPrefix(payloadDict, includePrefix, "rive sensor", compressPayload, routingHint);
+
+                result[screenKey] = finalPayload;
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ❌ Error generating Rive sensor payload for {screenKey}: {ex.Message}");
+                return result;
+            }
+        }
+
         // Generate configuration payloads for screens
         public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
             string screenKey,
@@ -349,7 +733,6 @@ namespace JunctionRelayServer.Services
             if (overrideTemplate != null)
             {
                 template = overrideTemplate;
-                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] Using provided template override for screen {screen.ScreenKey}");
             }
             else
             {
@@ -549,19 +932,16 @@ namespace JunctionRelayServer.Services
                 return result;
             }
 
-            //// 3) Get decimal places from template, default to 0 if null
-            //int decimalPlaces = template.DecimalPlaces ?? 0;
-
-            // 4) Create a dictionary to hold the sensor data in the desired structure
+            // 3) Create a dictionary to hold the sensor data in the desired structure
             var sensors = new Dictionary<string, object>();
 
-            // 5) Sort the assigned sensors by SensorOrder before processing
+            // 4) Sort the assigned sensors by SensorOrder before processing
             var sortedSensors = assignedSensors
                 .OrderBy(s => s.SensorOrder)
                 .Take(sensorCount)
                 .ToList();
 
-            // 6) Iterate over the sorted sensors and create the payloads
+            // 5) Iterate over the sorted sensors and create the payloads
             foreach (var sensor in sortedSensors)
             {
                 var sensorData = new List<object>();
@@ -594,7 +974,7 @@ namespace JunctionRelayServer.Services
                 sensors[sensor.SensorTag] = sensorData;
             }
 
-            // 7) Create the final payload object in the desired structure
+            // 6) Create the final payload object in the desired structure
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "sensor",
@@ -602,19 +982,18 @@ namespace JunctionRelayServer.Services
                 ["sensors"] = sensors
             };
 
-            // 8) Add gateway destination if applicable
+            // 7) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // 9) Determine routing hint and serialize with optional prefix and compression
+            // 8) Determine routing hint and serialize with optional prefix and compression
             string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
             object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "sensor", compressPayload, routingHint);
 
-            // 10) Return under the screenId
+            // 9) Return under the screenId
             result[screenId] = finalPayload;
-            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Created sensor payload for {screenId}");
 
             return result;
         }
@@ -653,12 +1032,9 @@ namespace JunctionRelayServer.Services
                 return result;
             }
 
-            // 3) Get decimal places from template, default to 0 if null
-            // int decimalPlaces = template.DecimalPlaces ?? 0;
-
             var sensors = new Dictionary<string, object>();
 
-            // 4) Get the sorted sensors, limit by count
+            // 3) Get the sorted sensors, limit by count
             var sortedSensors = assignedSensors
                 .OrderBy(s => s.SensorOrder)
                 .Take(sensorCount)
@@ -666,7 +1042,7 @@ namespace JunctionRelayServer.Services
 
             int offset = startingYOffset;
 
-            // 5) Process each sensor and build matrix-style payload
+            // 4) Process each sensor and build matrix-style payload
             foreach (var sensor in sortedSensors)
             {
                 var sensorData = new List<object>();
@@ -706,7 +1082,7 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // 6) Create the final payload object
+            // 5) Create the final payload object
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "sensor",
@@ -714,19 +1090,18 @@ namespace JunctionRelayServer.Services
                 ["sensors"] = sensors
             };
 
-            // 7) Add gateway destination if applicable
+            // 6) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // 8) Determine routing hint and serialize with optional prefix and compression
+            // 7) Determine routing hint and serialize with optional prefix and compression
             string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
             object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "matrix sensor", compressPayload, routingHint);
 
-            // 9) Return under the screenId
+            // 8) Return under the screenId
             result[screenId] = finalPayload;
-            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOAD] ✅ Created matrix sensor payload for {screenId}");
 
             return result;
         }
@@ -758,17 +1133,17 @@ namespace JunctionRelayServer.Services
             return result as string ?? throw new InvalidOperationException("Gateway command serialization failed");
         }
 
-        // Generate frame payloads for screens using FrameEngine
+        // Generate frame payloads for screens using FrameEngine (Pre-Rendered Frames Mode)
         public async Task<Dictionary<string, object>> GenerateFramePayloadsAsync(
-    string screenKey,
-    List<Model_Sensor> assignedSensors,
-    Model_Device_Screens screen,
-    Model_JunctionScreenLayout? screenOverride = null,
-    int? junctionId = null, // Add this parameter
-    int? linkId = null, // Add this parameter
-    string? junctionType = null,
-    string? gatewayDestination = null,
-    bool compressPayload = false)
+            string screenKey,
+            List<Model_Sensor> assignedSensors,
+            Model_Device_Screens screen,
+            Model_JunctionScreenLayout? screenOverride = null,
+            int? junctionId = null,
+            int? linkId = null,
+            string? junctionType = null,
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Dictionary<string, object>();
 
@@ -796,10 +1171,10 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
-                // Ultimate fallback to default sensor grid
+                // Ultimate fallback to default PRE_RENDERED_IMAGE layout
                 if (frameLayout == null)
                 {
-                    var defaultFrameLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("FRAME_SENSOR_GRID");
+                    var defaultFrameLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("PRE_RENDERED_IMAGE");
                     frameLayout = defaultFrameLayouts.FirstOrDefault(f => f.IsTemplate);
                 }
 
@@ -858,23 +1233,13 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
-                // 4) Render the frame using FrameEngine with new signature
+                // 4) Render the frame using FrameEngine
                 var frameBytes = _frameEngine.RenderFrame(frameLayout, sensorData, screenConfig, junctionId, linkId, screen.Id);
 
                 // 5) Handle compression and prefix if needed
-                object finalPayload;
-                if (compressPayload)
-                {
-                    // For frames, we could optionally compress the PNG data further
-                    // For now, PNG is already compressed, so we'll use as-is
-                    finalPayload = frameBytes;
-                }
-                else
-                {
-                    finalPayload = frameBytes;
-                }
+                object finalPayload = frameBytes;
 
-                // 6) Add prefix if required (similar to existing logic)
+                // 6) Add prefix if required
                 if (screen.ScreenLayoutId.HasValue)
                 {
                     var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
@@ -908,7 +1273,7 @@ namespace JunctionRelayServer.Services
 
                 result[screenKey] = finalPayload;
 
-                // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Generated frame payload for {screenKey} using layout {frameLayout.DisplayName} ({frameBytes.Length} bytes)");
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS] ✅ Generated frame payload for {screenKey} using layout {frameLayout.DisplayName} ({frameBytes.Length} bytes)");
 
                 return result;
             }
@@ -924,15 +1289,14 @@ namespace JunctionRelayServer.Services
         {
             return screenLayoutType.ToUpperInvariant() switch
             {
-                "MATRIX" => "FRAME_SENSOR_GRID",
-                "DASHBOARD" => "FRAME_DASHBOARD",
-                "CHART" => "FRAME_CHART",
-                "QUAD" => "FRAME_QUAD",
-                "CALENDAR" => "FRAME_CALENDAR",
-                "IMAGE" => "FRAME_IMAGE",
-                _ => "FRAME_SENSOR_GRID" // Default fallback
+                "MATRIX" => "PRE_RENDERED_IMAGE",
+                "DASHBOARD" => "PRE_RENDERED_IMAGE",
+                "CHART" => "PRE_RENDERED_IMAGE",
+                "QUAD" => "PRE_RENDERED_IMAGE",
+                "CALENDAR" => "PRE_RENDERED_IMAGE",
+                "IMAGE" => "PRE_RENDERED_IMAGE",
+                _ => "PRE_RENDERED_IMAGE" // Default fallback for pre-rendered frames
             };
         }
-
     }
 }

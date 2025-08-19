@@ -144,14 +144,23 @@ public class Service_Manager_Polling
     private bool MergeSensors(PollerState existingPoller, List<Model_Sensor>? newSensors, int junctionId)
     {
         bool sensorChanged = false;
+
         if (newSensors != null)
         {
             foreach (var sensor in newSensors)
             {
                 var existingSensor = existingPoller.SelectedSensors
-                    .FirstOrDefault(s => s.ExternalId == sensor.ExternalId && s.JunctionId == junctionId);
+                    .FirstOrDefault(s =>
+                        s.ExternalId == sensor.ExternalId &&
+                        s.JunctionId == junctionId &&
+                        s.CollectorId == sensor.CollectorId // bleed fix
+                    );
+
                 if (existingSensor == null)
                 {
+                    Console.WriteLine($"[SERVICE_MANAGER_POLLING] Adding sensor: ExternalId={sensor.ExternalId}, " +
+                                      $"CollectorId={sensor.CollectorId}, JunctionId={junctionId}, Name={sensor.Name}");
+
                     existingPoller.SelectedSensors.Add(new Model_Sensor
                     {
                         Id = sensor.Id,
@@ -162,7 +171,7 @@ public class Service_Manager_Polling
                         DeviceId = sensor.DeviceId,
                         Name = sensor.Name,
                         Unit = sensor.Unit,
-                        Value = sensor.Value,                        
+                        Value = sensor.Value,
                         DecimalPlaces = sensor.DecimalPlaces,
                         SensorType = sensor.SensorType,
                         DeviceName = sensor.DeviceName,
@@ -170,10 +179,17 @@ public class Service_Manager_Polling
                         Category = sensor.Category,
                         SensorTag = sensor.SensorTag
                     });
+
                     sensorChanged = true;
+                }
+                else
+                {
+                    Console.WriteLine($"[SERVICE_MANAGER_POLLING] Skipping sensor (already exists): ExternalId={sensor.ExternalId}, " +
+                                      $"CollectorId={sensor.CollectorId}, JunctionId={junctionId}");
                 }
             }
         }
+
         return sensorChanged;
     }
 

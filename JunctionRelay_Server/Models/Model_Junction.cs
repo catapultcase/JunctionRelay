@@ -40,6 +40,7 @@ namespace JunctionRelayServer.Models
         public bool AllTargetsAllData { get; set; } = false;
         public bool AllTargetsAllScreens { get; set; } = false;
         public bool CompressPayload { get; set; }
+        public string? Timezone {  get; set; }
 
         // Gateway configuration (only needed when Type = "Gateway")
         public int? GatewayDeviceId { get; set; }

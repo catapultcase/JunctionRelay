@@ -28,9 +28,7 @@ namespace JunctionRelayServer.Services
             _dbManager = dbManager;
         }
 
-        /// <summary>
-        /// Seed or restore all built-in templates
-        /// </summary>
+        // Seed or restore all built-in templates
         public async Task InitializeLayoutTemplatesAsync()
         {
             Console.WriteLine("Initializing built-in layout templates...");
@@ -39,6 +37,7 @@ namespace JunctionRelayServer.Services
             {
         "Template: 2x2 Grid",
         "Template: 2x4 Grid",
+        "Template: 3x4 Grid",
         "Template: Vintage Radio",
         "Template: Chart Plotter",
         "Template: Astro",
@@ -85,6 +84,7 @@ namespace JunctionRelayServer.Services
             {
                 "Template: 2x2 Grid" => BuildGridTemplate(templateName, 2, 2),
                 "Template: 2x4 Grid" => BuildGridTemplate(templateName, 2, 4),
+                "Template: 3x4 Grid" => BuildGridTemplate(templateName, 3, 4),
                 "Template: Vintage Radio" => BuildRadioTemplate(templateName),
                 "Template: Chart Plotter" => BuildPlotterTemplate(templateName),
                 "Template: Astro" => BuildAstroTemplate(templateName),

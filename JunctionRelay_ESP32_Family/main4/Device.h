@@ -2,17 +2,16 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_ADAFRUIT_QTPY_ESP32S3
+#define DEVICE_ADAFRUIT_MATRIX_ESP32S3
 
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
 #include "Helper_Preferences.h"
 #include "Helper_Utils.h"
-#include <Adafruit_NeoPixel.h>
 #include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "QT Py ESP32-S3 N4R2"
+#define DEVICE_MODEL                    "Matrix ESP32-S3"
 #define DEVICE_MANUFACTURER             "Adafruit"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32-S3 Dual Core 240MHz Tensilica processor"
@@ -24,9 +23,9 @@
 #define DEVICE_HAS_ONBOARD_SCREEN       0 
 #define DEVICE_HAS_ONBOARD_LED          0 
 #define DEVICE_HAS_ONBOARD_RGB_LED      0
-#define DEVICE_HAS_EXTERNAL_MATRIX      0
-#define DEVICE_HAS_EXTERNAL_NEOPIXELS   1 
-#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 1
+#define DEVICE_HAS_EXTERNAL_MATRIX      1
+#define DEVICE_HAS_EXTERNAL_NEOPIXELS   0 
+#define DEVICE_HAS_EXTERNAL_I2C_DEVICES 0
 #define DEVICE_HAS_BUTTONS              0
 #define DEVICE_HAS_BATTERY              0
 #define DEVICE_SUPPORTS_ETHERNET        0
@@ -41,20 +40,16 @@
 #define DEVICE_HAS_MICROSD              0
 #define DEVICE_IS_GATEWAY               0
 
-#if DEVICE_HAS_ONBOARD_RGB_LED
-    #define PIN_NEOPIXEL 39
-    #define NUMPIXELS 1
-#endif
+// Matrix configuration
+#define MATRIX_WIDTH 64
+#define MATRIX_HEIGHT 32
 
-#if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    // Default pins - will be overridden by preferences
-    #define DEFAULT_EXTERNAL_PIN_1 35
-    #define DEFAULT_EXTERNAL_PIN_2 0  // Stub for future use
-    
-    // Pixel counts per strip
-    #define EXTERNAL_NUMPIXELS_STRIP_0 128
-    #define EXTERNAL_NUMPIXELS_STRIP_1 8
-#endif
+// Matrix pin definitions (defined in the cpp file)
+extern uint8_t rgbPins[];
+extern uint8_t addrPins[];
+extern uint8_t clockPin;
+extern uint8_t latchPin;
+extern uint8_t oePin;
 
 // Hardware inventory structures
 struct NeoPixelInfo {
@@ -97,14 +92,14 @@ struct HardwareInventory {
     bool isGateway = DEVICE_IS_GATEWAY;
 };
 
-class Device_AdafruitQtPyESP32S3 : public DeviceConfig {
+class Device_AdafruitMatrixESP32S3 : public DeviceConfig {
 public:
-    Device_AdafruitQtPyESP32S3(Manager_Connections* connMgr);
+    Device_AdafruitMatrixESP32S3(Manager_Connections* connMgr);
 
-    // Required begin() method declaration
+    // NEW: Required begin() method declaration
     bool begin() override;
 
-    // Returns hardware inventory
+    // NEW: Returns hardware inventory instead of bool
     HardwareInventory detectHardware();
     
     const char* getName();
@@ -117,20 +112,18 @@ public:
     // Device-specific setup method (called by main.ino)
     void setupDeviceSpecific();
 
-    // I2C methods - calls centralized Manager_I2C scanner
-    std::vector<I2CDeviceInfo> scanI2CDevices();
+    // I2C interface (not used by this device, but required by DeviceConfig)
     TwoWire* getI2CInterface() override;
 
-    // NeoPixel configuration methods
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    void loadNeoPixelPreferences() override;
-    void saveNeoPixelPreferences() override;
-    int getNeoPixelPin(int index = 0) override;
-    void setNeoPixelPin(int pin, int index = 0) override;
-    int getNeoPixelCount(int index = 0) override;
-    void setNeoPixelCount(int count, int index = 0) override;
-    std::vector<NeoPixelInfo> detectNeoPixelPins();
-    #endif
+    // Matrix pin access methods for Manager_Matrix
+    uint8_t* getRGBPins() const;
+    uint8_t* getAddrPins() const;
+    uint8_t getClockPin() const;
+    uint8_t getLatchPin() const;
+    uint8_t getOEPin() const;
+
+    // Legacy test method - can be removed later
+    void testText(const char* text);
 
     // Override runtime getters for device capabilities
     virtual bool hasOnboardScreen() const override { return DEVICE_HAS_ONBOARD_SCREEN; }
@@ -169,32 +162,10 @@ public:
     }
 
 private:
-    #if DEVICE_HAS_ONBOARD_RGB_LED
-    Adafruit_NeoPixel onboardPixel;
-    #endif
-
     Manager_Connections* connMgr;
-
-    // NeoPixel pin and count configuration stored in preferences
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    int externalNeoPixelPin1;
-    int externalNeoPixelPin2;
-    int externalNeoPixelCount1;
-    int externalNeoPixelCount2;
-    #endif
-
-public:
-    // Legacy support - uses pin 1
-    #if DEVICE_HAS_EXTERNAL_NEOPIXELS
-    int getNeoPixelPin() { return getNeoPixelPin(0); }
-    int getNeoPixelNum() { return EXTERNAL_NUMPIXELS_STRIP_0; }
-    #else
-    int getNeoPixelPin() { return -1; }
-    int getNeoPixelNum() { return 0; }
-    #endif
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_AdafruitQtPyESP32S3 Device;
+typedef Device_AdafruitMatrixESP32S3 Device;
 
 #endif // DEVICE_H

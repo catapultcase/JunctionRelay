@@ -210,39 +210,61 @@ public class Service_Database_Manager_JunctionLinks
 
     // Add this method to the existing Service_Database_Manager_JunctionLinks class
 
-    public async Task<List<Model_JunctionScreenLayout>> GetJunctionScreenLayoutsByScreenIdAsync(int screenId)
+    public async Task<List<Model_JunctionScreenLayout>> GetJunctionScreenLayoutsByScreenIdAsync(int junctionId, int screenId)
     {
         try
         {
             const string sql = @"
-                SELECT jsl.*, sl.DisplayName AS TemplateName
-                FROM JunctionScreenLayouts jsl
-                LEFT JOIN ScreenLayouts sl ON jsl.ScreenLayoutId = sl.Id
-                WHERE jsl.DeviceScreenId = @ScreenId";
+            SELECT jsl.*, sl.DisplayName AS TemplateName
+            FROM JunctionScreenLayouts jsl
+            LEFT JOIN ScreenLayouts sl ON jsl.ScreenLayoutId = sl.Id
+            WHERE jsl.JunctionId = @JunctionId
+              AND jsl.DeviceScreenId = @ScreenId";
 
-            var screenLayouts = await _db.QueryAsync<Model_JunctionScreenLayout>(sql, new { ScreenId = screenId });
+            var screenLayouts = await _db.QueryAsync<Model_JunctionScreenLayout>(
+                sql,
+                new { JunctionId = junctionId, ScreenId = screenId }
+            );
+
             return screenLayouts.ToList();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SERVICE_DATABASE_MANAGER_JUNCTION_LINKS] Error getting junction screen layouts by screen ID {screenId}: {ex.Message}");
+            Console.WriteLine($"[SERVICE_DATABASE_MANAGER_JUNCTION_LINKS] Error getting junction screen layouts by junction {junctionId} & screen {screenId}: {ex.Message}");
             return new List<Model_JunctionScreenLayout>();
         }
     }
+
 
 
     // Add a new screen layout override
     public async Task<Model_JunctionScreenLayout> AddJunctionScreenLayoutAsync(Model_JunctionScreenLayout screenLayout)
     {
         var sql = @"
-INSERT INTO JunctionScreenLayouts (
-    JunctionDeviceLinkId, DeviceScreenId, ScreenLayoutId, FrameLayoutId, 
-    TargetPollRate, OnlySendIfChanged, EnableUrlAccess, UrlPath, LastRequested
-) VALUES (
-    @JunctionDeviceLinkId, @DeviceScreenId, @ScreenLayoutId, @FrameLayoutId, 
-    @TargetPollRate, @OnlySendIfChanged, @EnableUrlAccess, @UrlPath, @LastRequested
-);
-SELECT last_insert_rowid();";
+            INSERT INTO JunctionScreenLayouts (
+                JunctionId,
+                JunctionDeviceLinkId,
+                DeviceScreenId,
+                ScreenLayoutId,
+                FrameLayoutId, 
+                TargetPollRate,
+                OnlySendIfChanged,
+                EnableUrlAccess,
+                UrlPath,
+                LastRequested
+            ) VALUES (
+                @JunctionId,
+                @JunctionDeviceLinkId,
+                @DeviceScreenId,
+                @ScreenLayoutId,
+                @FrameLayoutId, 
+                @TargetPollRate,
+                @OnlySendIfChanged,
+                @EnableUrlAccess,
+                @UrlPath,
+                @LastRequested
+            );
+            SELECT last_insert_rowid();";
 
         screenLayout.Id = await _db.ExecuteScalarAsync<int>(sql, screenLayout);
         return screenLayout;

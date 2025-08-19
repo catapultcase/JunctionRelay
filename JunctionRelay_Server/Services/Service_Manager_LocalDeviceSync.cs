@@ -127,6 +127,73 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        // Update device sync mode in cloud
+        public async Task<bool> UpdateDeviceSyncModeAsync(string deviceId, string deviceName, string newSyncMode, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var cloudToken = await _cloudSessionStore.GetValidAccessTokenAsync(cancellationToken);
+                if (string.IsNullOrEmpty(cloudToken))
+                {
+                    Console.WriteLine($"[LOCAL_DEVICE_SYNC] ⚠️ No cloud token available for device sync mode update: {deviceName}");
+                    return false;
+                }
+
+                var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
+                if (string.IsNullOrEmpty(cloudApiUrl))
+                {
+                    throw new InvalidOperationException("Cloud API URL not configured.");
+                }
+
+                var updateUrl = $"{cloudApiUrl}/cloud/local-devices/{deviceId}/sync-mode";
+
+                var updateRequest = new
+                {
+                    syncMode = newSyncMode
+                };
+
+                var jsonContent = JsonSerializer.Serialize(updateRequest);
+                using var request = new HttpRequestMessage(HttpMethod.Put, updateUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
+                request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        Console.WriteLine($"[LOCAL_DEVICE_SYNC] ❌ Unauthorized: Cloud token invalid for device {deviceName}");
+                        return false;
+                    }
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        Console.WriteLine($"[LOCAL_DEVICE_SYNC] ⚠️ Device '{deviceName}' not found in cloud - may need to register first");
+                        return false;
+                    }
+
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Console.WriteLine($"[LOCAL_DEVICE_SYNC] ❌ Failed to update sync mode for device {deviceName}. Status: {response.StatusCode}, Content: {errorContent}");
+                    return false;
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var cloudResponse = JsonSerializer.Deserialize<CloudDeviceRegistrationResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                Console.WriteLine($"[LOCAL_DEVICE_SYNC] ✅ Updated sync mode for device '{deviceName}' to {newSyncMode}");
+                return cloudResponse?.Success == true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LOCAL_DEVICE_SYNC] ❌ Error updating sync mode for device '{deviceName}': {ex.Message}");
+                return false;
+            }
+        }
+
         // Unregister device from cloud
         public async Task<bool> UnregisterDeviceAsync(string deviceId, string deviceName, CancellationToken cancellationToken = default)
         {
@@ -193,7 +260,7 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Handle sync mode changes - auto register/unregister
+        // Handle sync mode changes - auto register/unregister/update
         public async Task<bool> HandleSyncModeChangeAsync(Model_Device device, string? previousSyncMode, CancellationToken cancellationToken = default)
         {
             var currentSyncMode = device.SyncMode;
@@ -202,104 +269,48 @@ namespace JunctionRelayServer.Services
 
             Console.WriteLine($"[LOCAL_DEVICE_SYNC] 🔄 Processing sync mode change for '{deviceName}': {previousSyncMode ?? "null"} → {currentSyncMode ?? "null"}");
 
-            // If moving TO a cloud sync mode FROM non-cloud mode, register
-            if (!IsCloudSyncMode(previousSyncMode) && IsCloudSyncMode(currentSyncMode))
+            var wasCloudMode = IsCloudSyncMode(previousSyncMode);
+            var isCloudMode = IsCloudSyncMode(currentSyncMode);
+
+            // Moving FROM cloud mode TO non-cloud mode - unregister
+            if (wasCloudMode && !isCloudMode)
+            {
+                Console.WriteLine($"[LOCAL_DEVICE_SYNC] 📤 Unregistering '{deviceName}' from cloud (disabled {previousSyncMode})");
+                return await UnregisterDeviceAsync(deviceId, deviceName, cancellationToken);
+            }
+
+            // Moving TO cloud mode FROM non-cloud mode - register
+            if (!wasCloudMode && isCloudMode)
             {
                 Console.WriteLine($"[LOCAL_DEVICE_SYNC] 📥 Registering '{deviceName}' with cloud (enabled {currentSyncMode})");
                 return await RegisterDeviceAsync(deviceId, deviceName, currentSyncMode!, cancellationToken);
             }
 
-            // No cloud registration change needed
+            // Moving FROM one cloud mode TO another cloud mode - update sync mode
+            if (wasCloudMode && isCloudMode && previousSyncMode != currentSyncMode)
+            {
+                Console.WriteLine($"[LOCAL_DEVICE_SYNC] 🔄 Updating '{deviceName}' cloud sync mode: {previousSyncMode} → {currentSyncMode}");
+
+                var updateSuccess = await UpdateDeviceSyncModeAsync(deviceId, deviceName, currentSyncMode!, cancellationToken);
+
+                // If update fails (e.g., device not found), try to register instead
+                if (!updateSuccess)
+                {
+                    Console.WriteLine($"[LOCAL_DEVICE_SYNC] ⚠️ Sync mode update failed for '{deviceName}', attempting registration instead");
+                    return await RegisterDeviceAsync(deviceId, deviceName, currentSyncMode!, cancellationToken);
+                }
+
+                return updateSuccess;
+            }
+
+            // No cloud registration change needed (both non-cloud, or same cloud mode)
             Console.WriteLine($"[LOCAL_DEVICE_SYNC] ℹ️ No cloud registration change needed for '{deviceName}'");
             return true;
-        }        
-
-        // Send health report to cloud (moved from heartbeat service)
-        public async Task<bool> SendHealthReportAsync(List<DeviceHealthReport> healthReports, CancellationToken cancellationToken = default)
-        {
-            if (!healthReports.Any())
-            {
-                return true;
-            }
-
-            try
-            {
-                var cloudToken = await _cloudSessionStore.GetValidAccessTokenAsync(cancellationToken);
-                if (string.IsNullOrEmpty(cloudToken))
-                {
-                    Console.WriteLine("[CLOUD_SYNC] ⚠️ No cloud token available for health reporting");
-                    return false;
-                }
-
-                var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
-                if (string.IsNullOrEmpty(cloudApiUrl))
-                {
-                    throw new InvalidOperationException("Cloud API URL not configured.");
-                }
-
-                var cloudHealthUrl = $"{cloudApiUrl}/cloud/local-devices/health/batch";
-
-                var payload = new
-                {
-                    timestamp = DateTime.UtcNow,
-                    deviceCount = healthReports.Count,
-                    devices = healthReports.Select(hr => new
-                    {
-                        deviceId = hr.DeviceId,
-                        deviceName = hr.DeviceName,
-                        timestamp = hr.Timestamp,
-                        status = hr.Status,
-                        lastPingDurationMs = hr.LastPingDurationMs,
-                        failureCount = hr.FailureCount,
-                        protocol = hr.Protocol
-                    }).ToList()
-                };
-
-                var jsonContent = JsonSerializer.Serialize(payload);
-                using var request = new HttpRequestMessage(HttpMethod.Post, cloudHealthUrl);
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
-                request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.SendAsync(request, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    Console.WriteLine($"[CLOUD_SYNC] ❌ Failed to send health report to cloud: {response.StatusCode} - {errorContent}");
-                    return false;
-                }
-
-                var onlineCount = healthReports.Count(hr => hr.Status == "online");
-                var offlineCount = healthReports.Count(hr => hr.Status == "offline");
-                var syncModes = string.Join(", ", healthReports.Select(hr => hr.SyncMode).Distinct());
-
-                Console.WriteLine($"[CLOUD_SYNC] ☁️ Sent health report to cloud: {healthReports.Count} devices ({onlineCount} online, {offlineCount} offline) [Modes: {syncModes}]");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[CLOUD_SYNC] ❌ Error sending health report to cloud: {ex.Message}");
-                return false;
-            }
         }
 
-        // Check if sync mode requires cloud registration
         private static bool IsCloudSyncMode(string? syncMode)
         {
             return syncMode == "local_health" || syncMode == "local_sync";
         }
-    }
-
-    // Health report data structure (moved from heartbeat service)
-    public class DeviceHealthReport
-    {
-        public string DeviceId { get; set; } = string.Empty;
-        public string DeviceName { get; set; } = string.Empty;
-        public DateTime Timestamp { get; set; }
-        public string Status { get; set; } = string.Empty;
-        public int LastPingDurationMs { get; set; }
-        public int FailureCount { get; set; }
-        public string Protocol { get; set; } = string.Empty;
-        public string SyncMode { get; set; } = string.Empty;
     }
 }

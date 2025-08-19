@@ -89,27 +89,24 @@ namespace JunctionRelayServer.Services
             return results.ToList();
         }
 
-
-
         // Add a new sensor to the database
         public async Task<Model_Sensor> AddSensorAsync(Model_Sensor newSensor)
         {
             newSensor.LastUpdated = DateTime.UtcNow;
-
             var sql = @"
-        INSERT INTO Sensors (
-            Name, SensorType, Value, DecimalPlaces, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
-            MQTTTopic, MQTTServiceId, MQTTQoS
-        )
-        VALUES (
-            @Name, @SensorType, @Value, @DecimalPlaces, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
-            @MQTTTopic, @MQTTServiceId, @MQTTQoS
-        );
-        SELECT last_insert_rowid();";
-
+INSERT INTO Sensors (
+    Name, SensorType, Value, DecimalPlaces, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
+    MQTTTopic, MQTTServiceId, MQTTQoS, Formula, IsMissing, IsStale, IsSelected, IsVisible, SensorOrder, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId,
+    CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8, CustomAttribute9, CustomAttribute10
+)
+VALUES (
+    @Name, @SensorType, @Value, @DecimalPlaces, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
+    @MQTTTopic, @MQTTServiceId, @MQTTQoS, @Formula, @IsMissing, @IsStale, @IsSelected, @IsVisible, @SensorOrder, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId,
+    @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8, @CustomAttribute9, @CustomAttribute10
+);
+SELECT last_insert_rowid();";
             int newId = await _db.ExecuteScalarAsync<int>(sql, newSensor);
             newSensor.Id = newId;
-
             return newSensor;
         }
 
@@ -121,6 +118,27 @@ namespace JunctionRelayServer.Services
         }
 
         // Update a sensor's data in the database
+        public async Task<bool> UpdateSensorValueAsync(int id, Model_Sensor updatedSensor)
+        {
+            var existing = await _db.QuerySingleOrDefaultAsync<Model_Sensor>(
+                "SELECT * FROM Sensors WHERE Id = @Id",
+                new { Id = id }
+            );
+            if (existing == null) return false;
+
+            updatedSensor.LastUpdated = DateTime.UtcNow;
+            updatedSensor.Id = id;
+
+            var sql = @"
+                UPDATE Sensors SET
+                    Value = @Value,                    
+                    LastUpdated = @LastUpdated
+                WHERE Id = @Id;";
+
+            await _db.ExecuteAsync(sql, updatedSensor);
+            return true;
+        }
+
         public async Task<bool> UpdateSensorAsync(int id, Model_Sensor updatedSensor)
         {
             var existing = await _db.QuerySingleOrDefaultAsync<Model_Sensor>(
@@ -142,45 +160,39 @@ namespace JunctionRelayServer.Services
                     Unit = @Unit,
                     DeviceId = @DeviceId,
                     ServiceId = @ServiceId,
-                    CollectorId = @CollectorId,  -- Optional: Update CollectorId
+                    CollectorId = @CollectorId,
                     ExternalId = @ExternalId,
+                    SensorTag = @SensorTag,
+                    Category = @Category,
+                    DeviceName = @DeviceName,
+                    MQTTTopic = @MQTTTopic,
+                    MQTTServiceId = @MQTTServiceId,
+                    MQTTQoS = @MQTTQoS,
+                    Formula = @Formula,
+                    IsMissing = @IsMissing,
+                    IsStale = @IsStale,
+                    IsSelected = @IsSelected,
+                    IsVisible = @IsVisible,
+                    SensorOrder = @SensorOrder,
+                    JunctionId = @JunctionId,
+                    JunctionDeviceLinkId = @JunctionDeviceLinkId,
+                    JunctionCollectorLinkId = @JunctionCollectorLinkId,
+                    CustomAttribute1 = @CustomAttribute1,
+                    CustomAttribute2 = @CustomAttribute2,
+                    CustomAttribute3 = @CustomAttribute3,
+                    CustomAttribute4 = @CustomAttribute4,
+                    CustomAttribute5 = @CustomAttribute5,
+                    CustomAttribute6 = @CustomAttribute6,
+                    CustomAttribute7 = @CustomAttribute7,
+                    CustomAttribute8 = @CustomAttribute8,
+                    CustomAttribute9 = @CustomAttribute9,
+                    CustomAttribute10 = @CustomAttribute10,
                     LastUpdated = @LastUpdated
                 WHERE Id = @Id;";
 
             await _db.ExecuteAsync(sql, updatedSensor);
             return true;
-        }
-
-        public async Task<bool> UpdateJunctionSensorValueAsync(int junctionId, string externalId, string value, DateTime timestamp)
-        {
-            var sql = @"
-        UPDATE JunctionSensors
-        SET Value = @Value,
-            LastUpdated = @LastUpdated
-        WHERE JunctionId = @JunctionId AND ExternalId = @ExternalId";
-
-            var rowsAffected = await _db.ExecuteAsync(sql, new
-            {
-                JunctionId = junctionId,
-                ExternalId = externalId,
-                Value = value,
-                LastUpdated = timestamp
-            });
-
-            return rowsAffected > 0;
-        }
-
-
-        // Check if a sensor exists in the database using ExternalId
-        public async Task<bool> SensorExistsAsync(string externalId)
-        {
-            var existing = await _db.QuerySingleOrDefaultAsync<Model_Sensor>(
-                "SELECT * FROM Sensors WHERE ExternalId = @ExternalId",
-                new { ExternalId = externalId }
-            );
-
-            return existing != null;
-        }
+        }        
 
         // Fetch all sensors for a specific device from the database
         public async Task<List<Model_Sensor>> GetSensorsByDeviceIdAsync(int deviceId)
@@ -201,7 +213,6 @@ namespace JunctionRelayServer.Services
 
             return sensors;
         }
-
 
         // Insert cloned sensors into JunctionSensors table for a specific junction
         public async Task InsertJunctionSensorsAsync(int junctionId, List<Model_Sensor> sensors)
@@ -262,14 +273,6 @@ INSERT INTO JunctionSensors (
             }
         }
 
-
-        public async Task<int?> GetMaxSensorOrderAsync(int junctionId)
-        {
-            var sql = "SELECT MAX(SensorOrder) FROM JunctionSensors WHERE JunctionId = @JunctionId";
-            return await _db.ExecuteScalarAsync<int?>(sql, new { JunctionId = junctionId });
-        }
-
-
         // Remove associated JunctionSensors by source (Device or Collector)
         public async Task RemoveJunctionSensorsBySourceIdAsync(int junctionId, int sourceId, bool isDevice)
         {
@@ -299,7 +302,6 @@ INSERT INTO JunctionSensors (
             // Log how many rows were affected (deleted).
             // Console.WriteLine($"[SERVICE_DATABASE_MANAGER_SENSORS] ✅ Removed {affectedRows} JunctionSensors for source link with ID {sourceId} in junction {junctionId}.");
         }
-
 
         // Update a junction sensor for a device (only IsSelected)
         public async Task<bool> UpdateJunctionSensorForDeviceAsync(int sensorId, bool isSelected)
@@ -338,7 +340,6 @@ INSERT INTO JunctionSensors (
 
             return rowsAffected > 0;
         }
-
 
         public async Task<bool> UpdateJunctionSensorAsync(Model_Sensor updatedSensor)
         {
@@ -389,7 +390,6 @@ INSERT INTO JunctionSensors (
             return rowsAffected > 0;
         }
 
-
         // Get junction sensors by junction and collector link ID
         public async Task<List<Model_Sensor>> GetJunctionSensorsByJunctionCollectorLinkIdAsync(int junctionId, int collectorLinkId)
         {
@@ -422,7 +422,6 @@ INSERT INTO JunctionSensors (
             });
         }
 
-
         public async Task RemoveJunctionSensorTargetAsync(int junctionId, int sensorId, int deviceId)
         {
             const string sql = @"
@@ -451,33 +450,7 @@ INSERT INTO JunctionSensors (
             });
 
             Console.WriteLine($"[SERVICE_DATABASE_MANAGER_SENSORS] Removed {affectedRows} sensor targets for device {deviceId} in junction {junctionId}");
-        }
-
-
-
-        public async Task<List<Model_JunctionSensorTarget>> GetSensorTargetsAsync(int junctionId, int sensorId)
-        {
-            try
-            {
-                const string sql = @"
-            SELECT Id, JunctionId, SensorId, DeviceId, ScreenId, PositionIndex
-            FROM JunctionSensorTargets
-            WHERE JunctionId = @JunctionId AND SensorId = @SensorId;";
-
-                return (await _db.QueryAsync<Model_JunctionSensorTarget>(sql, new
-                {
-                    JunctionId = junctionId,
-                    SensorId = sensorId
-                })).ToList();
-            }
-            catch (Exception ex)
-            {
-                // Log the error
-                Console.Error.WriteLine($"Error in GetSensorTargetsAsync: {ex.Message}");
-                // Return empty list instead of letting the exception propagate
-                return new List<Model_JunctionSensorTarget>();
-            }
-        }
+        }        
 
         public async Task<Dictionary<int, List<Model_JunctionSensorTarget>>> GetAllSensorTargetsForJunctionGroupedAsync(int junctionId)
         {

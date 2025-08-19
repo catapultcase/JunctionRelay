@@ -18,6 +18,9 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// HTTP Context
+builder.Services.AddHttpContextAccessor();
+
 // Register identity and deletion services early
 builder.Services.AddSingleton<Service_BackendIdentity>();
 builder.Services.AddSingleton<Service_DataDeletion>();
@@ -215,7 +218,6 @@ builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
-builder.Services.AddScoped<Service_Manager_CloudNotifications>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 
 // Core singleton services
@@ -231,6 +233,8 @@ builder.Services.AddSingleton<Service_FrameEngine>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
 builder.Services.AddSingleton<Service_Stream_History_Manager>();
 builder.Services.AddSingleton<StartupSignals>();
+builder.Services.AddSingleton<Service_Notifications>();
+builder.Services.AddSingleton<Service_CloudSync>();
 
 // Register WebSocket services
 builder.Services.AddSingleton<Service_Manager_WebSocket_Devices>();
@@ -274,6 +278,8 @@ builder.Services.AddTransient<DataCollector_GenericAPI>();
 builder.Services.AddTransient<DataCollector_Github>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
 builder.Services.AddTransient<DataCollector_Host>();
+builder.Services.AddTransient<DataCollector_iCal>();
+builder.Services.AddTransient<DataCollector_InternetTime>();
 builder.Services.AddTransient<DataCollector_LibreHardwareMonitor>();
 builder.Services.AddTransient<DataCollector_MQTT>();
 builder.Services.AddTransient<DataCollector_NeoPixelColor>();
@@ -281,28 +287,32 @@ builder.Services.AddTransient<DataCollector_RateTester>();
 builder.Services.AddTransient<DataCollector_Render>();
 builder.Services.AddTransient<DataCollector_SonarrCalendar>();
 builder.Services.AddTransient<DataCollector_Stripe>();
+builder.Services.AddTransient<DataCollector_SystemTime>();
 builder.Services.AddTransient<DataCollector_Unraid>();
 builder.Services.AddTransient<DataCollector_UptimeKuma>();
 
 builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 {
     var creatorMap = new Dictionary<string, Func<Model_Collector, IDataCollector>>(StringComparer.OrdinalIgnoreCase)
-    {
-        { "Cloudflare", c => { var i = provider.GetRequiredService<DataCollector_Cloudflare>(); i.ApplyConfiguration(c); return i; } },
-        { "GenericAPI", c => { var i = provider.GetRequiredService<DataCollector_GenericAPI>(); i.ApplyConfiguration(c); return i; } },
-        { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },       
-        { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
-        { "Host", c => { var i = provider.GetRequiredService<DataCollector_Host>(); i.ApplyConfiguration(c); return i; } },
-        { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },
-        { "MQTT", c => { var i = provider.GetRequiredService<DataCollector_MQTT>(); i.ApplyConfiguration(c); return i; } },
-        { "NeoPixelColor", c => { var i = provider.GetRequiredService<DataCollector_NeoPixelColor>(); i.ApplyConfiguration(c); return i; } },
-        { "RateTester", c => { var i = provider.GetRequiredService<DataCollector_RateTester>(); i.ApplyConfiguration(c); return i; } },
-        { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
-        { "SonarrCalendar", c => { var i = provider.GetRequiredService<DataCollector_SonarrCalendar>(); i.ApplyConfiguration(c); return i; } },
-        { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },
-        { "Unraid", c => { var i = provider.GetRequiredService<DataCollector_Unraid>(); i.ApplyConfiguration(c); return i; } },
-        { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
-    };
+        {
+            { "Cloudflare", c => { var i = provider.GetRequiredService<DataCollector_Cloudflare>(); i.ApplyConfiguration(c); return i; } },
+            { "GenericAPI", c => { var i = provider.GetRequiredService<DataCollector_GenericAPI>(); i.ApplyConfiguration(c); return i; } },
+            { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },
+            { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
+            { "Host", c => { var i = provider.GetRequiredService<DataCollector_Host>(); i.ApplyConfiguration(c); return i; } },
+            { "iCal", c => { var i = provider.GetRequiredService<DataCollector_iCal>(); i.ApplyConfiguration(c); return i; } },
+            { "InternetTime", c => { var i = provider.GetRequiredService<DataCollector_InternetTime>(); i.ApplyConfiguration(c); return i; } },
+            { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },
+            { "MQTT", c => { var i = provider.GetRequiredService<DataCollector_MQTT>(); i.ApplyConfiguration(c); return i; } },
+            { "NeoPixelColor", c => { var i = provider.GetRequiredService<DataCollector_NeoPixelColor>(); i.ApplyConfiguration(c); return i; } },
+            { "RateTester", c => { var i = provider.GetRequiredService<DataCollector_RateTester>(); i.ApplyConfiguration(c); return i; } },
+            { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
+            { "SonarrCalendar", c => { var i = provider.GetRequiredService<DataCollector_SonarrCalendar>(); i.ApplyConfiguration(c); return i; } },
+            { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },
+            { "SystemTime", c => { var i = provider.GetRequiredService<DataCollector_SystemTime>(); i.ApplyConfiguration(c); return i; } },
+            { "Unraid", c => { var i = provider.GetRequiredService<DataCollector_Unraid>(); i.ApplyConfiguration(c); return i; } },
+            { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
+        };
 
     var cache = new ConcurrentDictionary<int, IDataCollector>();
     return collector =>

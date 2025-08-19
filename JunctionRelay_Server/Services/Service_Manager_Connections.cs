@@ -77,7 +77,7 @@ namespace JunctionRelayServer.Services
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Sensors>();
-                    await db.UpdateSensorAsync(cached.Id, cached);
+                    await db.UpdateSensorValueAsync(cached.Id, cached);
                 });
             }
         }
@@ -531,16 +531,28 @@ namespace JunctionRelayServer.Services
             return Model_Operation_Result.Ok("Junction started.");
         }
 
-        private async Task HandleStreamingForJunctionType(dynamic streamManager, Model_Junction junction, Service_Database_Manager_Devices deviceDb, List<Model_Sensor> selectedSensorsCopy)
+        private async Task HandleStreamingForJunctionType(
+    dynamic streamManager,
+    Model_Junction junction,
+    Service_Database_Manager_Devices deviceDb,
+    List<Model_Sensor> selectedSensorsCopy)
         {
-            var junctionLinkDb = _scopeFactory.CreateScope().ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
+            var junctionLinkDb = _scopeFactory.CreateScope().ServiceProvider
+                .GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
-            // Check if this is a frame rendering junction
-            bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
+            // Exact-mode checks only
+            bool isFrameMode = junction.RenderingMode != null &&
+                               junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
+            bool isRiveMode = junction.RenderingMode != null &&
+                               junction.RenderingMode.Equals("RiveMapping", StringComparison.OrdinalIgnoreCase);
 
             if (isFrameMode)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Junction {junction.Id} ({junction.Name}) is in Frame rendering mode");
+            }
+            else if (isRiveMode)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎨 Junction {junction.Id} ({junction.Name}) is in Rive mapping mode");
             }
             else
             {
@@ -550,70 +562,86 @@ namespace JunctionRelayServer.Services
             foreach (var link in junction.TargetLinks)
             {
                 var device = await deviceDb.GetDeviceByIdAsync(link.DeviceId);
-                if (device != null)
+                if (device == null) continue;
+
+                int defaultSendRate = device.SendRate ?? 5000;
+                if (link.SendRateOverride.HasValue && link.SendRateOverride.Value > 0 && link.SendRateOverride.Value < defaultSendRate)
+                    defaultSendRate = link.SendRateOverride.Value;
+
+                var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByLinkIdAsync(link.Id);
+                var overrideDict = screenLayoutOverrides.ToDictionary(o => o.DeviceScreenId);
+
+                var screens = junction.DeviceScreens
+                    .Where(screen => screen.DeviceId == device.Id && screen.SupportsConfigPayloads)
+                    .ToList();
+
+                foreach (var screen in screens)
                 {
-                    int defaultSendRate = device.SendRate ?? 5000;
-                    if (link.SendRateOverride.HasValue && link.SendRateOverride.Value > 0 && link.SendRateOverride.Value < defaultSendRate)
-                        defaultSendRate = link.SendRateOverride.Value;
-
-                    var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByLinkIdAsync(link.Id);
-                    var overrideDict = screenLayoutOverrides.ToDictionary(o => o.DeviceScreenId);
-
-                    var screens = junction.DeviceScreens.Where(screen => screen.DeviceId == device.Id && screen.SupportsConfigPayloads).ToList();
-
-                    foreach (var screen in screens)
+                    // Apply screen layout override if exists
+                    if (overrideDict.TryGetValue(screen.Id, out var screenOverride))
                     {
-                        // Apply screen layout override if exists
-                        if (overrideDict.TryGetValue(screen.Id, out var screenOverride))
+                        screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📱 Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+
+                        // For Frame/Rive modes, also log frame layout override
+                        if ((isFrameMode || isRiveMode) && screenOverride.FrameLayoutId.HasValue)
                         {
-                            screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📱 Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
-
-                            // For frame mode, also check for frame layout override
-                            if (isFrameMode && screenOverride.FrameLayoutId.HasValue)
-                            {
-                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Using frame layout override (ID: {screenOverride.FrameLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
-                            }
-                        }
-
-                        var assignedSensors = junction.JunctionSensorTargets
-                            .Where(jst => jst.ScreenId == screen.Id)
-                            .SelectMany(jst => selectedSensorsCopy.Where(s => s.Id == jst.SensorId))
-                            .ToList();
-
-                        if (assignedSensors.Any())
-                        {
-                            var screenKey = $"device_{device.Id}_screen_{screen.Id}";
-
-                            string modeDescription = isFrameMode ? "Frame rendering" : "Payload rendering";
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} mode and send rate of {defaultSendRate}ms.");
-
-                            // Check if this is a Gateway junction and get the current gateway destination
-                            if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
-                                junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
-                                junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
-                            {
-                                // For gateway junctions, get the current destination from the gateway device
-                                string? currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
-                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Current gateway destination for {screenKey}: {currentGatewayDestination ?? "Not available"}");
-
-                                await streamManager.StartStreamingAsync(junction.Id, device.Id, defaultSendRate, screenKey, assignedSensors, screen, junction.Type, currentGatewayDestination);
-                            }
-                            else
-                            {
-                                await streamManager.StartStreamingAsync(junction.Id, device.Id, defaultSendRate, screenKey, assignedSensors, screen);
-                            }
-
-                            await Task.Delay(100);
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ No sensors assigned to Device {device.Name} Screen {screen.DisplayName} - skipping stream");
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Using frame layout override (ID: {screenOverride.FrameLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
                         }
                     }
+
+                    var assignedSensors = junction.JunctionSensorTargets
+                        .Where(jst => jst.ScreenId == screen.Id)
+                        .SelectMany(jst => selectedSensorsCopy.Where(s => s.Id == jst.SensorId))
+                        .ToList();
+
+                    if (!assignedSensors.Any())
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ No sensors assigned to Device {device.Name} Screen {screen.DisplayName} - skipping stream");
+                        continue;
+                    }
+
+                    var screenKey = $"device_{device.Id}_screen_{screen.Id}";
+                    string modeDescription = isFrameMode ? "Frame rendering"
+                                        : isRiveMode ? "Rive mapping"
+                                        : "Payload rendering";
+
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} mode and send rate of {defaultSendRate}ms.");
+
+                    // Gateway junction handling (unchanged)
+                    if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
+                        junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
+                        junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Current gateway destination for {screenKey}: {currentGatewayDestination ?? "Not available"}");
+
+                        await streamManager.StartStreamingAsync(
+                            junction.Id,
+                            device.Id,
+                            defaultSendRate,
+                            screenKey,
+                            assignedSensors,
+                            screen,
+                            junction.Type,
+                            currentGatewayDestination);
+                    }
+                    else
+                    {
+                        await streamManager.StartStreamingAsync(
+                            junction.Id,
+                            device.Id,
+                            defaultSendRate,
+                            screenKey,
+                            assignedSensors,
+                            screen);
+                    }
+
+                    await Task.Delay(100);
                 }
             }
         }
+
 
         private async Task<string?> GetCurrentGatewayDestination(Model_Junction junction, Service_Database_Manager_Devices deviceDb)
         {

@@ -160,6 +160,77 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "iCal":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            iCal Calendar Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Get iCal Feed URL:</strong><br />
+                            • For Google Calendar: Calendar Settings - Integrate calendar - Public URL to this calendar<br />
+                            • For Outlook: Calendar settings - Shared calendars - Publish calendar - ICS link<br />
+                            • For Apple Calendar: Share calendar - Public Calendar - Copy link<br />
+                            • Any standard iCal (.ics) feed URL
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. Example URLs:</strong><br />
+                            • Google: https://calendar.google.com/calendar/ical/[email]/public/basic.ics<br />
+                            • Outlook: https://outlook.live.com/owa/calendar/[id]/[key]/cid-[id]/calendar.ics<br />
+                            • Any other iCal-compatible service
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. What it monitors:</strong><br />
+                            • Creates daily sensors with event information<br />
+                            • JSON format with title, description, location, start/end times<br />
+                            • Supports all-day events and timed events<br />
+                            • Perfect for dashboard widgets showing calendar schedules
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>4. Convenience Sensors:</strong><br />
+                            • <strong>Daily:</strong> 'Yesterday', 'Today', 'Tomorrow', 'Next 7 Days'<br />
+                            • <strong>Current Event:</strong> Shows event happening right now (if any)<br />
+                            • <strong>Next Event:</strong> Shows the next upcoming event<br />
+                            • <strong>Time Until Next Event:</strong> Countdown to next event in minutes + human-readable format
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> The collector creates one sensor per day containing all events for that date, plus 7 convenience sensors. Be sure to enable the cleanup task to remove old daily sensors from the DB.
+                        </Typography>
+                    </Box>
+                );
+
+            case "InternetTime":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            Internet Time Synchronization:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Configuration:</strong><br />
+                            • No URL or credentials required<br />
+                            • Automatically fetches accurate UTC time from multiple internet sources<br />
+                            • Provides network-synchronized time reference
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>What it monitors:</strong><br />
+                            • UTC time in ISO 8601 format<br />
+                            • Unix timestamp (seconds since epoch)<br />
+                            • Human-readable UTC time<br />
+                            • Time source status (Internet/Cached)<br />
+                            • Connection status to time servers
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Features:</strong><br />
+                            • Multiple fallback time APIs for reliability<br />
+                            • Smart caching when network is unavailable<br />
+                            • Automatic failover between time sources
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Use case:</strong> Perfect for systems requiring accurate time synchronization or when comparing against system time for drift detection.
+                        </Typography>
+                    </Box>
+                );
+
             case "LibreHardwareMonitor":
                 return (
                     <Box>
@@ -251,6 +322,38 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
                             <strong>Note:</strong> The collector creates one sensor per day containing all episodes for that date, and 4 convienence sensors for 'Yesterday', 'Today', 'Tomorrow' and 'Next 7 Days'. Be sure to enable the cleanup task to remove old "Day" sensors from the DB.
+                        </Typography>
+                    </Box>
+                );
+
+            case "SystemTime":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            System Time Monitoring:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Configuration:</strong><br />
+                            • No URL or credentials required<br />
+                            • Always available - no network dependency<br />
+                            • Provides local system time reference
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>What it monitors:</strong><br />
+                            • System UTC time in ISO 8601 format<br />
+                            • Unix timestamp (seconds since epoch)<br />
+                            • Human-readable UTC time<br />
+                            • Local time with timezone offset<br />
+                            • System timezone information
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Features:</strong><br />
+                            • Both UTC and local time formats<br />
+                            • Timezone detection and display<br />
+                            • Always reliable (no network required)
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Use case:</strong> Perfect for reliable local time reference, comparing with internet time for drift detection, or when network connectivity is unreliable.
                         </Typography>
                     </Box>
                 );

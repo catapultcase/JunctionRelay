@@ -66,10 +66,14 @@ import PayloadIcon from "@mui/icons-material/Layers";
 import ChartIcon from "@mui/icons-material/BarChart";
 import JunctionIcon from "@mui/icons-material/Hub";
 import StreamIcon from "@mui/icons-material/Stream";
+import LaunchIcon from '@mui/icons-material/Launch';
+import DescriptionIcon from '@mui/icons-material/Description';
 import { useThemeContext } from "../context/ThemeContext";
 import { useAppVersion } from "../hooks/useAppVersion";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 import { useAuth } from "auth/AuthContext";
+import { useNotifications } from "../context/NotificationContext";
+import { sendHealthReport } from "api";
 
 const LOCAL_STORAGE_KEY = "junctionrelay_navbar_collapsed";
 
@@ -81,6 +85,7 @@ const Navbar = () => {
     const { user } = useAuth();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md')); // Hide on tablets and phones
+    const { showSuccess, showError, showInfo, showWarning } = useNotifications();
 
     const [collapsed, setCollapsed] = useState(() => {
         // Always collapsed on mobile
@@ -91,6 +96,7 @@ const Navbar = () => {
     });
 
     const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+    const [linksMenuAnchor, setLinksMenuAnchor] = useState<null | HTMLElement>(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [authMode, setAuthMode] = useState<string>('none');
     const [cloudUser, setCloudUser] = useState<string | null>(null);
@@ -273,6 +279,9 @@ const Navbar = () => {
         const handleAuthChange = () => {
             // Always re-check auth mode when auth changes - no conditions needed
             checkAuthMode();
+
+            // Show notification for auth events
+            // showInfo('Authentication status updated', 'Auth Status', 'auth');
         };
 
         const handleStorageChange = (event: StorageEvent) => {
@@ -290,7 +299,7 @@ const Navbar = () => {
             window.removeEventListener('auth-changed', handleAuthChange);
             window.removeEventListener('storage', handleStorageChange);
         };
-    }, []); // FIXED: Empty dependency array - no need to depend on checkAuthMode
+    }, [showInfo]); // FIXED: Empty dependency array - no need to depend on checkAuthMode
 
     const handleToggleCollapse = () => {
         // Don't allow toggle on mobile or when using mobile nav flag
@@ -309,6 +318,14 @@ const Navbar = () => {
         setUserMenuAnchor(null);
     };
 
+    const handleLinksMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+        setLinksMenuAnchor(event.currentTarget);
+    };
+
+    const handleLinksMenuClose = () => {
+        setLinksMenuAnchor(null);
+    };
+
     const handleMobileMenuToggle = () => {
         setMobileMenuOpen(!mobileMenuOpen);
     };
@@ -318,6 +335,8 @@ const Navbar = () => {
     };
 
     const handleLogout = () => {
+        // Show logout notification
+        // showInfo('Signing out...', 'Authentication', 'auth');
 
         // Clear local auth token
         localStorage.removeItem('junctionrelay_token');
@@ -333,8 +352,29 @@ const Navbar = () => {
         // Close menu
         handleUserMenuClose();
 
+        // Show success notification
+        // showSuccess('Successfully signed out', 'Authentication', 'auth');
+
         // Optionally reload the page to ensure clean state
-        window.location.reload();
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    };
+
+    // Handle health report sending with notifications
+    const handleSendHealthReport = async () => {
+        try {
+            await sendHealthReport();
+            // Success notification is handled by the API function and/or WebSocket
+        } catch (error) {
+            console.error('Health report failed:', error);
+            // Error notification is handled by the API function
+        }
+    };
+
+    // Handle theme change with notification
+    const handleThemeChange = () => {
+        cycleTheme();
     };
 
     const navItems = [
@@ -344,7 +384,7 @@ const Navbar = () => {
         { text: "Devices", path: "/devices", icon: <DevicesIcon /> },
         { text: "Services", path: "/services", icon: <ServiceIcon /> },
         { text: "Collectors", path: "/collectors", icon: <DataObjectIcon /> },
-        // { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
+        { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
         { text: "Payloads", path: "/payloads", icon: <PayloadIcon /> },
     ];
 
@@ -419,7 +459,7 @@ const Navbar = () => {
                                                 href={path}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                data-navbar-link
+                                                data-navbar-link                                                
                                                 sx={{
                                                     borderBottom: "2px solid transparent",
                                                     borderRadius: 0,
@@ -574,7 +614,7 @@ const Navbar = () => {
                                             color: "#ff9800",
                                             padding: "4px",
                                             minWidth: "auto",
-                                            cursor: "default"
+                                            cursor: "pointer"
                                         }}
                                     >
                                         <UpdateIcon fontSize="small" />
@@ -583,13 +623,14 @@ const Navbar = () => {
                                     <Chip
                                         icon={<UpdateIcon />}
                                         label="Update Available"
-                                        size="small"
+                                        size="small"                                    
                                         sx={{
                                             backgroundColor: "#ff9800",
                                             color: "#ffffff",
                                             fontWeight: "bold",
                                             fontSize: "0.75rem",
                                             height: "28px",
+                                            cursor: "pointer",
                                             "& .MuiChip-icon": {
                                                 color: "#ffffff"
                                             }
@@ -657,7 +698,7 @@ const Navbar = () => {
                                     href="https://buymeacoffee.com/catapultcase"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    data-navbar-link
+                                    data-navbar-link                                    
                                     sx={{
                                         color: "#ffffff",
                                         padding: "4px",
@@ -689,100 +730,166 @@ const Navbar = () => {
                             </Tooltip>
                         )}
 
-                        {/* GitHub link - clean without version */}
-                        <Tooltip title="GitHub Repository">
+                        {/* Links Dropdown */}
+                        <Tooltip title="External Links">
                             <IconButton
+                                onClick={handleLinksMenuOpen}
+                                data-navbar-link
+                                sx={{
+                                    color: "#ffffff",
+                                    padding: "4px",
+                                    minWidth: "auto",
+                                    display: shouldShowDrawer ? 'none' : 'flex'
+                                }}
+                            >
+                                <LaunchIcon sx={{ color: "#4caf50" }} fontSize="small" />
+                                {!isCollapsed && (
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            ml: 0.5,
+                                            fontSize: "0.875rem",
+                                            color: "#ffffff !important"
+                                        }}
+                                    >
+                                        Links
+                                    </Box>
+                                )}
+                            </IconButton>
+                        </Tooltip>
+
+                        {/* Links Menu */}
+                        <Menu
+                            anchorEl={linksMenuAnchor}
+                            open={Boolean(linksMenuAnchor)}
+                            onClose={handleLinksMenuClose}
+                            slotProps={{
+                                paper: {
+                                    sx: {
+                                        backgroundColor: '#2a2f35',
+                                        color: '#ffffff',
+                                        minWidth: 180,
+                                        '& .MuiMenuItem-root': {
+                                            color: '#ffffff',
+                                            '&:hover': {
+                                                backgroundColor: '#3a3f45'
+                                            }
+                                        },
+                                        '& .MuiListItemText-primary': {
+                                            color: '#ffffff !important'
+                                        }
+                                    }
+                                }
+                            }}
+                            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+                        >
+                            <MenuItem
+                                component={MuiLink}
+                                href="https://junctionrelay-docs.onrender.com/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ color: '#ffffff', textDecoration: 'none' }}
+                            >
+                                <ListItemIcon>
+                                    <DescriptionIcon sx={{ color: '#ff9800' }} fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="Documentation"
+                                    sx={{
+                                        '& .MuiListItemText-primary': {
+                                            color: '#ffffff !important'
+                                        }
+                                    }}
+                                />
+                            </MenuItem>
+                            <MenuItem
                                 component={MuiLink}
                                 href="https://github.com/catapultcase/JunctionRelay"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    padding: "4px",
-                                    minWidth: "auto",
-                                    display: isMobile ? 'none' : 'flex' // Hide on mobile
-                                }}
+                                sx={{ color: '#ffffff', textDecoration: 'none' }}
                             >
-                                <GitHubIcon sx={{ color: "#9e9e9e" }} fontSize="small" />
-                                {!isCollapsed && (
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            ml: 0.5,
-                                            fontSize: "0.875rem",
-                                            color: "#ffffff !important"
-                                        }}
-                                    >
-                                        GitHub
-                                    </Box>
-                                )}
-                            </IconButton>
-                        </Tooltip>
-
-                        <Tooltip title="catapultcase.com">
-                            <IconButton
+                                <ListItemIcon>
+                                    <GitHubIcon sx={{ color: '#9e9e9e' }} fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="GitHub"
+                                    sx={{
+                                        '& .MuiListItemText-primary': {
+                                            color: '#ffffff !important'
+                                        }
+                                    }}
+                                />
+                            </MenuItem>
+                            <MenuItem
                                 component={MuiLink}
                                 href="https://catapultcase.com/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    padding: "4px",
-                                    minWidth: "auto",
-                                    display: shouldShowDrawer ? 'none' : 'flex' // Hide when using drawer
-                                }}
+                                sx={{ color: '#ffffff', textDecoration: 'none' }}
                             >
-                                <LanguageIcon sx={{ color: "#1976d2" }} fontSize="small" />
-                                {!isCollapsed && (
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            ml: 0.5,
-                                            fontSize: "0.875rem",
-                                            color: "#ffffff !important"
-                                        }}
-                                    >
-                                        catapultcase.com
-                                    </Box>
-                                )}
-                            </IconButton>
-                        </Tooltip>
-
-                        <Tooltip title="junctionrelay.com">
-                            <IconButton
+                                <ListItemIcon>
+                                    <LanguageIcon sx={{ color: '#1976d2' }} fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="catapultcase.com"
+                                    sx={{
+                                        '& .MuiListItemText-primary': {
+                                            color: '#ffffff !important'
+                                        }
+                                    }}
+                                />
+                            </MenuItem>
+                            <MenuItem
                                 component={MuiLink}
                                 href="https://junctionrelay.com/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                data-navbar-link
-                                sx={{
-                                    color: "#ffffff",
-                                    padding: "4px",
-                                    minWidth: "auto",
-                                    display: shouldShowDrawer ? 'none' : 'flex' // Hide when using drawer
-                                }}
+                                sx={{ color: '#ffffff', textDecoration: 'none' }}
                             >
-                                <LanguageIcon sx={{ color: "#388e3c" }} fontSize="small" />
-                                {!isCollapsed && (
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            ml: 0.5,
-                                            fontSize: "0.875rem",
-                                            color: "#ffffff !important"
-                                        }}
-                                    >
-                                        junctionrelay.com
-                                    </Box>
-                                )}
-                            </IconButton>
-                        </Tooltip>
+                                <ListItemIcon>
+                                    <LanguageIcon sx={{ color: '#388e3c' }} fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="junctionrelay.com"
+                                    sx={{
+                                        '& .MuiListItemText-primary': {
+                                            color: '#ffffff !important'
+                                        }
+                                    }}
+                                />
+                            </MenuItem>
+                            {/* Add Health Report option for cloud users */}
+                            {/*{authMode === 'cloud' && isAuthenticated && (*/}
+                            {/*    <>*/}
+                            {/*        <Divider sx={{ borderColor: '#3a3f45', my: 1 }} />*/}
+                            {/*        <MenuItem*/}
+                            {/*            onClick={() => {*/}
+                            {/*                handleLinksMenuClose();*/}
+                            {/*                handleSendHealthReport();*/}
+                            {/*            }}*/}
+                            {/*            sx={{ color: '#ffffff' }}*/}
+                            {/*        >*/}
+                            {/*            <ListItemIcon>*/}
+                            {/*                <CloudSyncIcon sx={{ color: '#4caf50' }} fontSize="small" />*/}
+                            {/*            </ListItemIcon>*/}
+                            {/*            <ListItemText*/}
+                            {/*                primary="Send Health Report"*/}
+                            {/*                sx={{*/}
+                            {/*                    '& .MuiListItemText-primary': {*/}
+                            {/*                        color: '#ffffff !important'*/}
+                            {/*                    }*/}
+                            {/*                }}*/}
+                            {/*            />*/}
+                            {/*        </MenuItem>*/}
+                            {/*    </>*/}
+                            {/*)}*/}
+                        </Menu>
 
                         <Tooltip title="Change Theme">
                             <IconButton
-                                onClick={cycleTheme}
+                                onClick={handleThemeChange}
                                 data-navbar-link
                                 sx={{
                                     color: "#ffffff",
@@ -811,11 +918,20 @@ const Navbar = () => {
                         {authMode === 'cloud' && (
                             <Tooltip title={`Local Backend: ${backendCloudAuth === 'authenticated' ? 'Has Cloud Auth' : backendCloudAuth === 'checking' ? 'Checking...' : 'No Cloud Auth'}`}>
                                 <IconButton
+                                    onClick={() => {
+                                        if (backendCloudAuth === 'authenticated') {
+                                            showSuccess('Backend is authenticated with cloud', 'Cloud Status', 'cloud');
+                                        } else if (backendCloudAuth === 'checking') {
+                                            showInfo('Checking backend cloud authentication...', 'Cloud Status', 'cloud');
+                                        } else {
+                                            showWarning('Backend is not authenticated with cloud', 'Cloud Status', 'cloud');
+                                        }
+                                    }}
                                     sx={{
                                         color: "#ffffff",
                                         padding: "4px",
                                         minWidth: "auto",
-                                        cursor: "default"
+                                        cursor: "pointer"
                                     }}
                                 >
                                     <CloudSyncIcon
@@ -1030,7 +1146,9 @@ const Navbar = () => {
                                         href={path}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        onClick={handleMobileMenuClose}
+                                        onClick={() => {
+                                            handleMobileMenuClose();
+                                        }}
                                         sx={{
                                             color: isCloudTab ? '#64b5f6 !important' : '#ffffff !important',
                                             '&:hover': {
@@ -1094,6 +1212,38 @@ const Navbar = () => {
 
                 {/* Additional Mobile Menu Items */}
                 <List>
+                    {/* Documentation - separate item on mobile */}
+                    <ListItem disablePadding>
+                        <ListItemButton
+                            component={MuiLink}
+                            href="https://junctionrelay-docs.onrender.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                                handleMobileMenuClose();
+                            }}
+                            sx={{
+                                color: '#ffffff !important',
+                                textDecoration: 'none',
+                                '&:hover': {
+                                    backgroundColor: '#3a3f45'
+                                }
+                            }}
+                        >
+                            <ListItemIcon sx={{ color: '#ff9800 !important', minWidth: 40 }}>
+                                <DescriptionIcon />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="Documentation"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        color: 'inherit !important'
+                                    }
+                                }}
+                            />
+                        </ListItemButton>
+                    </ListItem>
+
                     <ListItem disablePadding>
                         <ListItemButton
                             component={Link}
@@ -1123,7 +1273,7 @@ const Navbar = () => {
                     <ListItem disablePadding>
                         <ListItemButton
                             onClick={() => {
-                                cycleTheme();
+                                handleThemeChange();
                                 handleMobileMenuClose();
                             }}
                             sx={{
@@ -1146,6 +1296,36 @@ const Navbar = () => {
                             />
                         </ListItemButton>
                     </ListItem>
+
+                    {/* Add Health Report option for cloud users on mobile */}
+                    {/*{authMode === 'cloud' && isAuthenticated && (*/}
+                    {/*    <ListItem disablePadding>*/}
+                    {/*        <ListItemButton*/}
+                    {/*            onClick={() => {*/}
+                    {/*                handleSendHealthReport();*/}
+                    {/*                handleMobileMenuClose();*/}
+                    {/*            }}*/}
+                    {/*            sx={{*/}
+                    {/*                color: '#4caf50 !important',*/}
+                    {/*                '&:hover': {*/}
+                    {/*                    backgroundColor: '#3a3f45'*/}
+                    {/*                }*/}
+                    {/*            }}*/}
+                    {/*        >*/}
+                    {/*            <ListItemIcon sx={{ color: 'inherit !important', minWidth: 40 }}>*/}
+                    {/*                <CloudSyncIcon />*/}
+                    {/*            </ListItemIcon>*/}
+                    {/*            <ListItemText*/}
+                    {/*                primary="Send Health Report"*/}
+                    {/*                sx={{*/}
+                    {/*                    '& .MuiListItemText-primary': {*/}
+                    {/*                        color: 'inherit !important'*/}
+                    {/*                    }*/}
+                    {/*                }}*/}
+                    {/*            />*/}
+                    {/*        </ListItemButton>*/}
+                    {/*    </ListItem>*/}
+                    {/*)}*/}
 
                     {/* Show license status or buy me a coffee in mobile menu */}
                     {authMode === 'cloud' && isAuthenticated ? (
@@ -1180,7 +1360,9 @@ const Navbar = () => {
                                 href="https://buymeacoffee.com/catapultcase"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={handleMobileMenuClose}
+                                onClick={() => {
+                                    handleMobileMenuClose();
+                                }}
                                 sx={{
                                     color: '#fdd835 !important',
                                     '&:hover': {
@@ -1245,7 +1427,7 @@ const Navbar = () => {
                         </Typography>
                     )}
 
-                    {/* External links */}
+                    {/* External links - GitHub and company sites only */}
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 2 }}>
                         <IconButton
                             component={MuiLink}

@@ -7,7 +7,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-// Forward declaration - FIXED to use Manager_Connections
 class Manager_Connections;
 
 // Matrix dimensions
@@ -24,6 +23,9 @@ class Manager_Connections;
 #else
 #define NUM_ADDR_PINS 4  // Default for 32-height matrix
 #endif
+
+// Maximum number of sensor rows that can have scrolling animation
+#define MAX_SCROLLING_SENSORS 8
 
 class Manager_Matrix : public ScreenDestination {
 public:
@@ -93,6 +95,41 @@ private:
     DisplayMode currentMode;
     unsigned long lastModeChange;
     
+    // Animation configuration
+    enum AnimationType {
+        ANIMATION_NONE,     // Default truncation behavior
+        ANIMATION_SLIDE     // Scrolling text animation
+    };
+    
+    AnimationType currentAnimationType;
+    
+    // Individual sensor scroll states for sliding animation
+    struct SensorScrollState {
+        int offset;
+        unsigned long lastUpdateTime;
+        unsigned long pauseStartTime;
+        bool isPaused;
+        bool needsUpdate;
+        char lastDisplayedText[64];  // Cache last text to detect changes
+        int textWidth;               // Cached text width
+        bool isActive;               // Whether this sensor slot is currently in use
+        int x, y;                   // Position for this sensor
+        int maxWidth;               // Maximum width available for this sensor
+    };
+    
+    SensorScrollState sensorScrollStates[MAX_SCROLLING_SENSORS];
+    
+    // Clock functionality with internal timekeeping
+    struct ClockData {
+        bool isActive;
+        char displayTime[8];      // "HH:MM" for display
+        int hours, minutes;       // Internal time tracking
+        unsigned long lastSecondUpdate;  // For second increments
+        unsigned long lastColonUpdate;   // For colon flashing
+        bool colonVisible;        // Current state of colon visibility
+        int x, y;                // Position for clock display
+    } clockData;
+    
     // Scrolling IP display variables (with anti-flicker)
     struct ScrollState {
         int offset;
@@ -121,6 +158,21 @@ private:
     void updateScrollState(const char* text, int maxWidth);
     void renderScrollingText(const char* text, int x, int y, int maxWidth);
     void setDisplayMode(DisplayMode mode);
+    
+    // New sensor scrolling methods
+    void initializeSensorScrollStates();
+    void resetSensorScrollState(int sensorIndex);
+    void updateSensorScrollState(int sensorIndex, const char* text, int x, int y, int maxWidth);
+    void renderSensorScrollingText(int sensorIndex);
+    bool shouldUpdateSensorScroll(int sensorIndex);
+    
+    // Clock helper methods
+    bool isTimeFormat(const char* text);
+    void extractTimeFromText(const char* text, char* timeBuffer, size_t bufferSize);
+    void setInternalClock(int hours, int minutes);
+    void updateInternalClock();
+    void displayClock(int x, int y);
+    void updateClockColon();
     
     // Thread-safe matrix operations
     bool acquireMatrix(const char* caller = "unknown");

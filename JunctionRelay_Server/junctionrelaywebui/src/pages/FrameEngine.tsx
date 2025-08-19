@@ -87,8 +87,6 @@ interface FrameLayoutListItem {
     displayName: string;
     description?: string;
     layoutType: string;
-    rows?: number;
-    columns?: number;
 }
 
 interface FrameEngineColumn {
@@ -235,11 +233,6 @@ const FrameLayoutCard = memo(({
                                     <strong>Description:</strong> {frameLayout.description}
                                 </Typography>
                             )}
-                            {frameLayout.rows && frameLayout.columns && (
-                                <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                    <strong>Size:</strong> {frameLayout.rows}×{frameLayout.columns}
-                                </Typography>
-                            )}
                         </Box>
                     </>
                 )}
@@ -373,8 +366,6 @@ const FrameLayoutTableRow = memo(({
                 );
             case "description":
                 return frameLayout.description || "-";
-            case "dimensions":
-                return frameLayout.rows && frameLayout.columns ? `${frameLayout.rows}×${frameLayout.columns}` : "-";
             case "actions":
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
@@ -475,21 +466,14 @@ const AddFrameLayoutModal: React.FC<{
         displayName: "",
         layoutType: "",
         description: "",
-        rows: 2,
-        columns: 2
     });
     const [error, setError] = useState<string>("");
 
     // Frame layout type options for dropdown
     const frameLayoutTypes = [
         { value: "", name: "Select Frame Layout Type", desc: "Choose a frame layout type to begin" },
-        { value: "FRAME_SENSOR_GRID", name: "Sensor Grid", desc: "Grid-based sensor data display" },
-        { value: "FRAME_CALENDAR", name: "Calendar View", desc: "TV Guide style calendar layout" },
-        { value: "FRAME_DASHBOARD", name: "Dashboard", desc: "Multi-widget dashboard layout" },
-        { value: "FRAME_CHART", name: "Chart Display", desc: "Data visualization and charts" },
-        { value: "FRAME_QUAD", name: "Quad Layout", desc: "Four-panel display arrangement" },
-        { value: "FRAME_IMAGE", name: "Image Display", desc: "Background image with overlays" },
-        { value: "FRAME_CUSTOM", name: "Custom Frame", desc: "Custom frame layout configuration" }
+        { value: "PRE_RENDERED_IMAGE", name: "Pre-Rendered Image", desc: "Map sensors over an image" },
+        { value: "RIVE_MAPPING", name: "Rive Mapping", desc: "Map sensors over a Rive component" }
     ];
 
     // Reset form when modal opens/closes
@@ -499,8 +483,6 @@ const AddFrameLayoutModal: React.FC<{
                 displayName: "",
                 layoutType: "",
                 description: "",
-                rows: 2,
-                columns: 2
             });
             setError("");
         }
@@ -533,8 +515,6 @@ const AddFrameLayoutModal: React.FC<{
                 displayName: frameLayout.displayName,
                 layoutType: frameLayout.layoutType,
                 description: frameLayout.description,
-                rows: frameLayout.rows,
-                columns: frameLayout.columns
             };
 
             const response = await fetch("/api/frameengine", {
@@ -561,49 +541,17 @@ const AddFrameLayoutModal: React.FC<{
 
     // Set default values based on selected layout type
     useEffect(() => {
-        if (frameLayout.layoutType === "FRAME_SENSOR_GRID") {
+        if (frameLayout.layoutType === "PRE_RENDERED_IMAGE") {
             setFrameLayout((prev: any) => ({
                 ...prev,
-                displayName: "Sensor Grid Frame",
-                description: "Grid-based sensor data display for frame rendering"
+                displayName: "Pre-Rendered Image Layout",
+                description: "Static background image with sensor overlays"
             }));
-        } else if (frameLayout.layoutType === "FRAME_CALENDAR") {
+        } else if (frameLayout.layoutType === "RIVE_MAPPING") {
             setFrameLayout((prev: any) => ({
                 ...prev,
-                displayName: "Calendar Frame",
-                description: "TV Guide style calendar layout with episode listings"
-            }));
-        } else if (frameLayout.layoutType === "FRAME_DASHBOARD") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Dashboard Frame",
-                description: "Multi-widget dashboard layout for comprehensive displays"
-            }));
-        } else if (frameLayout.layoutType === "FRAME_CHART") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Chart Frame",
-                description: "Data visualization and chart display frame"
-            }));
-        } else if (frameLayout.layoutType === "FRAME_QUAD") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Quad Frame",
-                description: "Four-panel display arrangement",
-                rows: 2,
-                columns: 2
-            }));
-        } else if (frameLayout.layoutType === "FRAME_IMAGE") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Image Frame",
-                description: "Background image with data overlays"
-            }));
-        } else if (frameLayout.layoutType === "FRAME_CUSTOM") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Custom Frame",
-                description: "Custom frame layout configuration"
+                displayName: "Rive Mapping Layout",
+                description: "Rive component with sensor overlays"
             }));
         } else {
             setFrameLayout((prev: any) => ({
@@ -613,6 +561,7 @@ const AddFrameLayoutModal: React.FC<{
             }));
         }
     }, [frameLayout.layoutType]);
+
 
     return (
         <Modal open={open} onClose={onClose}>
@@ -766,29 +715,6 @@ const AddFrameLayoutModal: React.FC<{
                                                 multiline
                                                 rows={2}
                                             />
-
-                                            <Box sx={{ display: 'flex', gap: 2 }}>
-                                                <TextField
-                                                    size="small"
-                                                    label="Rows"
-                                                    name="rows"
-                                                    type="number"
-                                                    value={frameLayout.rows}
-                                                    onChange={handleChange}
-                                                    inputProps={{ min: 1, max: 100 }}
-                                                    sx={{ flex: 1 }}
-                                                />
-                                                <TextField
-                                                    size="small"
-                                                    label="Columns"
-                                                    name="columns"
-                                                    type="number"
-                                                    value={frameLayout.columns}
-                                                    onChange={handleChange}
-                                                    inputProps={{ min: 1, max: 100 }}
-                                                    sx={{ flex: 1 }}
-                                                />
-                                            </Box>
                                         </>
                                     )}
                                 </Box>
@@ -1070,7 +996,7 @@ const FrameEngine = () => {
     const handleResetAll = async () => {
         setResetLoading(true);
         try {
-            const response = await fetch("/api/frameengine/restoreAll", {
+            const response = await fetch("/api/frameengine/restore-templates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             });

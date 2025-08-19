@@ -1,0 +1,33 @@
+[Unit]
+Description=JunctionRelay Python Client with Advanced Token Management
+After=network.target time-sync.target
+Wants=network.target time-sync.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/JunctionRelay_Python
+ExecStart=/home/pi/JunctionRelay_Python/junction_relay_env/bin/python /home/pi/JunctionRelay_Python/junctionrelay_python.py
+Restart=always
+RestartSec=10
+
+# Ensure proper time synchronization before starting (important for token timestamps)
+ExecStartPre=/bin/bash -c 'while ! timedatectl show | grep -q "NTPSynchronized=yes"; do sleep 1; done'
+
+# Environment variables
+Environment=PYTHONUNBUFFERED=1
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/JunctionRelay_Python
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

@@ -184,6 +184,8 @@ namespace JunctionRelayServer.Services
                         ExternalAccessToken BOOLEAN DEFAULT 0,
                         HomeAssistantAddress TEXT,
                         HomeAssistantUsername TEXT,
+                        HomeAssistantSharedJunctions TEXT,
+                        GrafanaSharedMetrics, TEXT,
                         MQTTBrokerAddress TEXT,
                         MQTTBrokerPort TEXT,
                         MQTTUsername TEXT,
@@ -191,33 +193,33 @@ namespace JunctionRelayServer.Services
                    );
                 ");
 
-            // Add missing columns to Services table
-            var columnsToAdd = new[]
-            {
-                ("HomeAssistantSharedJunctions", "TEXT"),
-                ("GrafanaSharedMetrics", "TEXT")
-            };
+            //// Add missing columns to Services table
+            //var columnsToAdd = new[]
+            //{
+            //    ("HomeAssistantSharedJunctions", "TEXT"),
+            //    ("GrafanaSharedMetrics", "TEXT")
+            //};
 
-            foreach (var (columnName, columnType) in columnsToAdd)
-            {
-                try
-                {
-                    var columnExists = _db.ExecuteScalar<int>(@"
-                    SELECT COUNT(*) 
-                    FROM pragma_table_info('Services') 
-                    WHERE name = @columnName", new { columnName }) > 0;
+            //foreach (var (columnName, columnType) in columnsToAdd)
+            //{
+            //    try
+            //    {
+            //        var columnExists = _db.ExecuteScalar<int>(@"
+            //        SELECT COUNT(*) 
+            //        FROM pragma_table_info('Services') 
+            //        WHERE name = @columnName", new { columnName }) > 0;
 
-                    if (!columnExists)
-                    {
-                        _db.Execute($"ALTER TABLE Services ADD COLUMN {columnName} {columnType};");
-                        Console.WriteLine($"✅ Added {columnName} column to Services table");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"⚠️ Failed to add {columnName} column: {ex.Message}");
-                }
-            }
+            //        if (!columnExists)
+            //        {
+            //            _db.Execute($"ALTER TABLE Services ADD COLUMN {columnName} {columnType};");
+            //            Console.WriteLine($"✅ Added {columnName} column to Services table");
+            //        }
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        Console.WriteLine($"⚠️ Failed to add {columnName} column: {ex.Message}");
+            //    }
+            //}
 
             // Create MqttSubscriptions table
             _db.Execute(@"
@@ -256,6 +258,7 @@ namespace JunctionRelayServer.Services
             _db.Execute(@"
                CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   JunctionId INTEGER NOT NULL,
                    JunctionDeviceLinkId INTEGER NOT NULL,
                    DeviceScreenId INTEGER NOT NULL,
                    ScreenLayoutId INTEGER,
@@ -270,6 +273,37 @@ namespace JunctionRelayServer.Services
                    FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
                );
             ");
+
+            // Create Notifications table
+            _db.Execute(@"
+                    CREATE TABLE IF NOT EXISTS Notifications (
+                        Id TEXT PRIMARY KEY,
+                        Type TEXT NOT NULL DEFAULT 'info' CHECK(Type IN ('success', 'error', 'warning', 'info')),
+                        Message TEXT NOT NULL,
+                        Title TEXT,
+                        Category TEXT NOT NULL DEFAULT 'system' CHECK(Category IN ('api', 'auth', 'cloud', 'system')),
+                        Duration INTEGER,
+                        Persistent BOOLEAN NOT NULL DEFAULT 0,
+                        CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        IsDelivered BOOLEAN NOT NULL DEFAULT 0,
+                        DeliveredAt DATETIME,
+                        ExpiresAt, DATETIME,
+                        StructuredContent, TEXT
+                    );
+                ");
+
+            // Create indexes for Notifications table
+            _db.Execute(@"
+                    CREATE INDEX IF NOT EXISTS idx_notifications_pending ON Notifications(IsDelivered, CreatedAt);
+                ");
+
+                            _db.Execute(@"
+                    CREATE INDEX IF NOT EXISTS idx_notifications_category ON Notifications(Category);
+                ");
+
+                            _db.Execute(@"
+                    CREATE INDEX IF NOT EXISTS idx_notifications_created ON Notifications(CreatedAt);
+                ");
 
             // Create DeviceI2CDevices table
             _db.Execute(@"
@@ -425,8 +459,6 @@ namespace JunctionRelayServer.Services
                     DisplayName NVARCHAR(100) NOT NULL,
                     Description NVARCHAR(500),
                     LayoutType NVARCHAR(50) NOT NULL,
-                    Rows INTEGER,
-                    Columns INTEGER,
                     IsTemplate BOOLEAN NOT NULL DEFAULT 0,
                     IsDraft BOOLEAN NOT NULL DEFAULT 1,
                     IsPublished BOOLEAN NOT NULL DEFAULT 0,
@@ -442,8 +474,10 @@ namespace JunctionRelayServer.Services
                     Width INTEGER,
                     Height INTEGER,
                     Orientation NVARCHAR(20),
+                    RiveFile NVARCHAR(500),
+                    RiveEmbedInPayload BOOLEAN NOT NULL DEFAULT 1,
                     JsonFrameConfig TEXT,
-                    JsonElementPositions TEXT
+                    JsonFrameElements TEXT
                 );
             ");
 
@@ -743,6 +777,9 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"ℹ️ Skipped layout template initialization - {existingTemplates} templates already exist");
             }
 
+            // Alter tables if needed
+            await ApplySchemaUpdatesAsync();
+
             // Seed settings
             await SeedInitialSettingsAsync();
 
@@ -764,6 +801,17 @@ namespace JunctionRelayServer.Services
                 ("mobile_show_navigation_row", "false", "If true, add a navigation bar to the bottom of the mobile experience"),
                 ("top_bar_show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
                 ("top_bar_show_host_charts", "false", "If true, show the tab for host charts"),
+                // Notification system settings
+                ("notifications_enabled", "true", "Master toggle for the notification system"),
+                ("notifications_api_calls", "true", "Show notifications for API success/error events"),
+                ("notifications_auth_events", "true", "Show notifications for authentication events (login, logout, etc.)"),
+                ("notifications_cloud_sync", "true", "Show notifications for cloud synchronization events"),
+                ("notifications_system", "true", "Show notifications for system events (theme changes, updates, etc.)"),
+                ("notifications_backend_polling", "true", "Enable polling the backend for server-generated notifications"),
+                ("notifications_polling_interval", "15000", "How often to poll for backend notifications (milliseconds)"),
+                ("notifications_duration_success", "6000", "How long success notifications stay visible (milliseconds)"),
+                ("notifications_duration_error", "8000", "How long error notifications stay visible (milliseconds)"),
+                ("notifications_max_concurrent", "5", "Maximum number of notifications to show at once"),
             };
 
             int addedCount = 0;
@@ -790,6 +838,125 @@ namespace JunctionRelayServer.Services
             if (addedCount > 0)
             {
                 Console.WriteLine($"✅ Added {addedCount} missing settings to the database.");
+            }
+        }
+
+        // Add this method to your Service_Database_Initializer class
+
+        private async Task ApplySchemaUpdatesAsync()
+        {
+            Console.WriteLine("[DATABASE] 🔄 Checking for schema updates...");
+            // Define all schema updates in one place
+            var schemaUpdates = new Dictionary<string, (string columnName, string columnType)[]>
+            {
+                // Services table updates
+                ["Services"] = new (string, string)[]
+                {
+            //("HomeAssistantSharedJunctions", "TEXT"),
+            //("GrafanaSharedMetrics", "TEXT")
+                },
+                // Notifications table updates
+                ["Notifications"] = new (string, string)[]
+                {
+            //("ExpiresAt", "DATETIME"), // Add expiration support
+            //("StructuredContent", "TEXT") // Add multi-line notification support
+                },
+                // Devices table updates (if you need any in the future)
+                ["Devices"] = new (string, string)[]
+                {
+                    // Add future device columns here when needed
+                    // ("NewColumn", "TEXT"),
+                },
+                // Add other tables as needed
+                // ["OtherTable"] = new (string, string)[]
+                // {
+                //     ("ColumnName", "DATATYPE"),
+                // }
+            };
+
+            int totalUpdatesApplied = 0;
+
+            foreach (var (tableName, columnsToAdd) in schemaUpdates)
+            {
+                if (columnsToAdd.Length == 0) continue; // Skip empty arrays
+
+                Console.WriteLine($"[DATABASE] 🔍 Checking {tableName} table for missing columns...");
+
+                foreach (var (columnName, columnType) in columnsToAdd)
+                {
+                    try
+                    {
+                        var columnExists = _db.ExecuteScalar<int>(@"
+                    SELECT COUNT(*) 
+                    FROM pragma_table_info(@tableName) 
+                    WHERE name = @columnName",
+                            new { tableName, columnName }) > 0;
+
+                        if (!columnExists)
+                        {
+                            _db.Execute($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType};");
+                            Console.WriteLine($"✅ Added {columnName} column to {tableName} table");
+                            totalUpdatesApplied++;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"ℹ️ Column {columnName} already exists in {tableName} table");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"⚠️ Failed to add {columnName} column to {tableName} table: {ex.Message}");
+                    }
+                }
+            }
+
+            // Also handle index creation here if needed
+            await CreateMissingIndexesAsync();
+
+            if (totalUpdatesApplied > 0)
+            {
+                Console.WriteLine($"[DATABASE] ✅ Applied {totalUpdatesApplied} schema update(s) successfully");
+            }
+            else
+            {
+                Console.WriteLine("[DATABASE] ℹ️ No schema updates needed - database is up to date");
+            }
+        }
+
+        private async Task CreateMissingIndexesAsync()
+        {
+            // Define indexes that should exist
+            var indexesToCreate = new (string indexName, string tableName, string columns)[]
+            {
+        // Notifications table indexes
+        ("idx_notifications_expires_at", "Notifications", "ExpiresAt"),
+        ("idx_notifications_pending_with_expiry", "Notifications", "IsDelivered, ExpiresAt, CreatedAt"),
+
+                // Add other indexes as needed
+                // ("idx_name", "table_name", "column_list"),
+            };
+
+            foreach (var (indexName, tableName, columns) in indexesToCreate)
+            {
+                try
+                {
+                    // Check if index exists
+                    var indexExists = _db.ExecuteScalar<int>(@"
+                SELECT COUNT(*) 
+                FROM sqlite_master 
+                WHERE type = 'index' AND name = @indexName",
+                        new { indexName }) > 0;
+
+                    if (!indexExists)
+                    {
+                        _db.Execute($"CREATE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});");
+                        Console.WriteLine($"✅ Created index {indexName} on {tableName}({columns})");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ Failed to create index {indexName}: {ex.Message}");
+                }
             }
         }
     }

@@ -28,15 +28,15 @@ interface SetupInstructions_FrameEngineProps {
 export const SetupInstructions_FrameEngine: React.FC<SetupInstructions_FrameEngineProps> = ({ layoutType }) => {
     const getInstructions = () => {
         switch (layoutType) {
-            case "FRAME_SENSOR_GRID":
+            case "PRE_RENDERED_IMAGE":
                 return (
                     <Box>
                         <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Sensor Grid Frame:
+                            Pre-Rendered Image:
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Purpose:</strong><br />
-                            Grid-based sensor data display rendered as a complete frame. Perfect for organized sensor dashboards with pixel-perfect control.
+                            Map Sensors on top of an image.
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Use Cases:</strong><br />
@@ -58,15 +58,15 @@ export const SetupInstructions_FrameEngine: React.FC<SetupInstructions_FrameEngi
                     </Box>
                 );
 
-            case "FRAME_CALENDAR":
+            case "RIVE_MAPPING":
                 return (
                     <Box>
                         <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Calendar Frame:
+                            Rive Mapping:
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Purpose:</strong><br />
-                            TV Guide style calendar layout with episode listings and schedule displays. Renders complete calendar frames with perfect typography.
+                            Map Sensors on top of a Rive component.
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Use Cases:</strong><br />
@@ -87,164 +87,7 @@ export const SetupInstructions_FrameEngine: React.FC<SetupInstructions_FrameEngi
                         </Typography>
                     </Box>
                 );
-
-            case "FRAME_DASHBOARD":
-                return (
-                    <Box>
-                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Dashboard Frame:
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Purpose:</strong><br />
-                            Multi-widget dashboard layout for comprehensive displays. Combines multiple data sources into a unified frame.
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Use Cases:</strong><br />
-                            • Executive summary displays<br />
-                            • System monitoring dashboards<br />
-                            • KPI and metrics overview<br />
-                            • Multi-source data aggregation
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Features:</strong><br />
-                            • Flexible widget arrangement<br />
-                            • Mixed content types (sensors, charts, text)<br />
-                            • Custom branding and styling<br />
-                            • Real-time data integration
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            <strong>Best for:</strong> Business intelligence displays, control rooms, executive dashboards
-                        </Typography>
-                    </Box>
-                );
-
-            case "FRAME_CHART":
-                return (
-                    <Box>
-                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Chart Frame:
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Purpose:</strong><br />
-                            Data visualization and chart display frame. Renders charts, graphs, and analytics with high-quality graphics.
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Use Cases:</strong><br />
-                            • Time series data visualization<br />
-                            • Performance metrics and trends<br />
-                            • Statistical analysis displays<br />
-                            • Real-time analytics dashboards
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Features:</strong><br />
-                            • Advanced chart rendering with SkiaSharp<br />
-                            • Multiple chart types (line, bar, pie, scatter)<br />
-                            • Custom colors and styling<br />
-                            • Data point annotations and labels
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            <strong>Best for:</strong> Analytics displays, scientific visualization, business reporting
-                        </Typography>
-                    </Box>
-                );
-
-            case "FRAME_QUAD":
-                return (
-                    <Box>
-                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Quad Frame:
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Purpose:</strong><br />
-                            Four-panel display arrangement rendered as a complete frame. Divides the display into equal quadrants for organized content.
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Use Cases:</strong><br />
-                            • Multi-camera security feeds<br />
-                            • Comparative data displays<br />
-                            • Four-zone monitoring systems<br />
-                            • Split-screen information panels
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Configuration:</strong><br />
-                            • Fixed 2×2 grid structure<br />
-                            • Independent content per quadrant<br />
-                            • Consistent spacing and borders<br />
-                            • Synchronized updates across panels
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            <strong>Best for:</strong> Surveillance systems, comparison views, multi-metric displays
-                        </Typography>
-                    </Box>
-                );
-
-            case "FRAME_IMAGE":
-                return (
-                    <Box>
-                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Image Frame:
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Purpose:</strong><br />
-                            Background image with data overlays. Combines custom imagery with dynamic sensor data for branded displays.
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Use Cases:</strong><br />
-                            • Branded corporate displays<br />
-                            • Custom background dashboards<br />
-                            • Themed information screens<br />
-                            • Logo and branding integration
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Features:</strong><br />
-                            • High-quality background image support<br />
-                            • Transparent text overlays<br />
-                            • Custom positioning and alignment<br />
-                            • Opacity and blending controls
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            <strong>Best for:</strong> Corporate displays, retail signage, branded information systems
-                        </Typography>
-                    </Box>
-                );
-
-            case "FRAME_CUSTOM":
-                return (
-                    <Box>
-                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Custom Frame:
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Purpose:</strong><br />
-                            Custom frame layout configuration. Allows for specialized rendering arrangements not covered by standard frame types.
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Use Cases:</strong><br />
-                            • Unique display requirements<br />
-                            • Prototype and experimental layouts<br />
-                            • Industry-specific visualizations<br />
-                            • Custom graphic compositions
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Features:</strong><br />
-                            • Fully customizable frame structure<br />
-                            • Advanced SkiaSharp graphics capabilities<br />
-                            • Custom element positioning and styling<br />
-                            • Complex visual effects and animations
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                            <strong>Advanced Capabilities:</strong><br />
-                            • Vector graphics and paths<br />
-                            • Custom fonts and typography<br />
-                            • Gradient and pattern fills<br />
-                            • Image manipulation and effects
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            After creating the custom frame layout, configure specific rendering logic and visual elements in the frame configuration page.
-                        </Typography>
-                    </Box>
-                );
-
+            
             default:
                 return (
                     <Box>

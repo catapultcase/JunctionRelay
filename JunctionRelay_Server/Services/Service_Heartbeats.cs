@@ -40,20 +40,8 @@ namespace JunctionRelayServer.Services
         private readonly Service_CloudSessionStore _cloudSessionStore;
         private readonly Service_Manager_WebSocket_Devices _webSocketService;
         private readonly Service_Manager_SSH _sshService;
+        private readonly Service_CloudSync _cloudSyncService;
         private readonly ConcurrentDictionary<int, int> _failureCounts = new();
-
-        // Class to store health report data for batching
-        private class DeviceHealthReport
-        {
-            public string DeviceId { get; set; } = string.Empty;
-            public string DeviceName { get; set; } = string.Empty;
-            public DateTime Timestamp { get; set; }
-            public string Status { get; set; } = string.Empty;
-            public int LastPingDurationMs { get; set; }
-            public int FailureCount { get; set; }
-            public string Protocol { get; set; } = string.Empty;
-            public string SyncMode { get; set; } = string.Empty;
-        }
 
         // Class to store connection status response from device
         private class DeviceConnectionStatusResponse
@@ -74,13 +62,15 @@ namespace JunctionRelayServer.Services
             IHttpClientFactory httpClientFactory,
             Service_CloudSessionStore cloudSessionStore,
             Service_Manager_WebSocket_Devices webSocketService,
-            Service_Manager_SSH sshService)
+            Service_Manager_SSH sshService,
+            Service_CloudSync cloudSyncService)
         {
             _scopeFactory = scopeFactory;
             _httpClientFactory = httpClientFactory;
             _cloudSessionStore = cloudSessionStore;
             _webSocketService = webSocketService;
             _sshService = sshService;
+            _cloudSyncService = cloudSyncService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -128,9 +118,6 @@ namespace JunctionRelayServer.Services
                     var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
                     var devices = await deviceDb.GetAllDevicesAsync().ConfigureAwait(false);
                     var now = DateTime.UtcNow;
-
-                    // List to collect health reports for batch sending
-                    var healthReports = new List<DeviceHealthReport>();
 
                     // 1) Reset in-memory failures and move Offline devices into Testing after grace period
                     foreach (var d in devices)
@@ -185,17 +172,11 @@ namespace JunctionRelayServer.Services
                         .OrderBy(d => d.LastPingAttempt ?? DateTime.MinValue) // Process oldest first
                         .ToList();
 
-                    // 4) Process heartbeat devices sequentially and collect health reports
+                    // 4) Process heartbeat devices sequentially
                     if (heartbeatDevices.Any())
                     {
                         Console.WriteLine($"[HEARTBEATS] 📊 Processing {heartbeatDevices.Count} device(s) sequentially");
-                        await ProcessDevicesSequentiallyAsync(deviceDb, heartbeatDevices, healthReports, stoppingToken).ConfigureAwait(false);
-                    }
-
-                    // 5) Send combined health report to cloud if we have reports to send
-                    if (healthReports.Any())
-                    {
-                        await SendCombinedHealthToCloudAsync(healthReports, stoppingToken).ConfigureAwait(false);
+                        await ProcessDevicesSequentiallyAsync(deviceDb, heartbeatDevices, stoppingToken).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
@@ -318,11 +299,9 @@ namespace JunctionRelayServer.Services
             }
         }
 
-
         private async Task ProcessDevicesSequentiallyAsync(
             Service_Database_Manager_Devices deviceDb,
             List<Model_Device> devices,
-            List<DeviceHealthReport> healthReports,
             CancellationToken stoppingToken)
         {
             foreach (var device in devices)
@@ -333,7 +312,7 @@ namespace JunctionRelayServer.Services
                 // Process each device one at a time, waiting for completion
                 try
                 {
-                    await ProcessDeviceHeartbeatAsync(deviceDb, device, healthReports, stoppingToken).ConfigureAwait(false);
+                    await ProcessDeviceHeartbeatAsync(deviceDb, device, stoppingToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -349,10 +328,9 @@ namespace JunctionRelayServer.Services
         }
 
         private async Task ProcessDeviceHeartbeatAsync(
-    Service_Database_Manager_Devices deviceDb,
-    Model_Device device,
-    List<DeviceHealthReport> healthReports,
-    CancellationToken token)
+            Service_Database_Manager_Devices deviceDb,
+            Model_Device device,
+            CancellationToken token)
         {
             var now = DateTime.UtcNow;
             device.LastPingAttempt = now;
@@ -383,8 +361,8 @@ namespace JunctionRelayServer.Services
                     device.ConsecutivePingFailures = 0;
                     _failureCounts.TryRemove(device.Id, out _);
 
-                    // Add to health reports collection instead of sending immediately
-                    AddToHealthReportsIfApplicable(device, now, success, duration, healthReports);
+                    // Send health report to cloud sync service for batching
+                    await SendHealthReportToCloudSyncServiceAsync(device, now, success, duration);
 
                     // Update status transitions
                     if (!string.Equals(prevHeartbeatStatus, device.LastPingStatus, StringComparison.OrdinalIgnoreCase))
@@ -642,8 +620,8 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // Add to health reports collection instead of sending immediately
-            AddToHealthReportsIfApplicable(device, now, success, duration, healthReports);
+            // Send health report to cloud sync service for batching
+            await SendHealthReportToCloudSyncServiceAsync(device, now, success, duration);
 
             // Traditional heartbeat status update logic
             if (success)
@@ -812,84 +790,34 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Helper method to add device health report to collection if applicable
-        private void AddToHealthReportsIfApplicable(Model_Device device, DateTime timestamp, bool success, int duration, List<DeviceHealthReport> healthReports)
+        // New method to send health report to cloud sync service for batching
+        private async Task SendHealthReportToCloudSyncServiceAsync(Model_Device device, DateTime timestamp, bool success, int duration)
         {
-            // Only add health reports if SyncMode is 'local_health' or 'local_sync'
+            // Only send health reports if SyncMode is 'local_health' or 'local_sync'
             if (string.IsNullOrEmpty(device.SyncMode) ||
                 (device.SyncMode != "local_health" && device.SyncMode != "local_sync"))
             {
                 return; // Skip cloud health reporting for disabled devices
             }
 
-            healthReports.Add(new DeviceHealthReport
-            {
-                DeviceId = device.UniqueIdentifier ?? device.Id.ToString(),
-                DeviceName = device.Name,
-                Timestamp = timestamp,
-                Status = success ? "online" : "offline",
-                LastPingDurationMs = duration,
-                FailureCount = _failureCounts.TryGetValue(device.Id, out var f) ? f : 0,
-                Protocol = device.HeartbeatProtocol?.ToLower() ?? "unknown",
-                SyncMode = device.SyncMode
-            });
-        }
-
-        // New method to send combined health report to cloud
-        private async Task SendCombinedHealthToCloudAsync(List<DeviceHealthReport> healthReports, CancellationToken token)
-        {
             try
             {
-                var cloudToken = await _cloudSessionStore.GetValidAccessTokenAsync(token).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(cloudToken))
-                {
-                    Console.WriteLine("[HEARTBEATS] ⚠️ No cloud token available for health reporting");
-                    return; // No cloud token available
-                }
-
-                var cloudHealthUrl = "https://api.junctionrelay.com/cloud/local-devices/health/batch";
-
-                var payload = new
-                {
-                    timestamp = DateTime.UtcNow,
-                    deviceCount = healthReports.Count,
-                    devices = healthReports.Select(hr => new
+                await _cloudSyncService.AccumulateHealthReportAsync(
+                    device.UniqueIdentifier ?? device.Id.ToString(),
+                    new
                     {
-                        deviceId = hr.DeviceId,
-                        deviceName = hr.DeviceName,
-                        timestamp = hr.Timestamp,
-                        status = hr.Status,
-                        lastPingDurationMs = hr.LastPingDurationMs,
-                        failureCount = hr.FailureCount,
-                        protocol = hr.Protocol
-                    }).ToList()
-                };
-
-                var httpClient = _httpClientFactory.CreateClient();
-                var cloudReq = new HttpRequestMessage(HttpMethod.Post, cloudHealthUrl)
-                {
-                    Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
-                };
-                cloudReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
-
-                var cloudResp = await httpClient.SendAsync(cloudReq, token).ConfigureAwait(false);
-                if (cloudResp.IsSuccessStatusCode)
-                {
-                    var onlineCount = healthReports.Count(hr => hr.Status == "online");
-                    var offlineCount = healthReports.Count(hr => hr.Status == "offline");
-                    var syncModes = string.Join(", ", healthReports.Select(hr => hr.SyncMode).Distinct());
-
-                    Console.WriteLine($"[HEARTBEATS] ☁️ Sent combined health report to cloud: {healthReports.Count} devices ({onlineCount} online, {offlineCount} offline) [Modes: {syncModes}]");
-                }
-                else
-                {
-                    var responseContent = await cloudResp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    Console.WriteLine($"[HEARTBEATS] ❌ Failed to send combined health report to cloud: {cloudResp.StatusCode} - {responseContent}");
-                }
+                        deviceName = device.Name,
+                        timestamp = timestamp,
+                        status = success ? "online" : "offline",
+                        lastPingDurationMs = duration,
+                        failureCount = _failureCounts.TryGetValue(device.Id, out var f) ? f : 0,
+                        protocol = device.HeartbeatProtocol?.ToLower() ?? "unknown",
+                        syncMode = device.SyncMode
+                    });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[HEARTBEATS] ❌ Error sending combined health report to cloud: {ex.Message}");
+                Console.WriteLine($"[HEARTBEATS] ⚠️ Failed to send health report for '{device.Name}' to cloud sync service: {ex.Message}");
             }
         }
 
@@ -904,6 +832,7 @@ namespace JunctionRelayServer.Services
                 var httpStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_HTTP>();
                 var mqttStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_MQTT>();
                 var comStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_COM>();
+                var webSocketStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_WebSocket>();
 
                 var cutoffTime = DateTime.UtcNow.AddMilliseconds(-thresholdMs);
                 var recentEntries = new List<(DateTime lastSent, long latency)>();
@@ -957,6 +886,27 @@ namespace JunctionRelayServer.Services
                 {
                     var comStreams = comStreamManager.GetActiveStreams();
                     foreach (var stream in comStreams)
+                    {
+                        var streamObj = stream.GetType().GetProperties()
+                            .ToDictionary(p => p.Name, p => p.GetValue(stream));
+
+                        if (streamObj.TryGetValue("ScreenId", out var screenIdObj) && screenIdObj is int screenId &&
+                            streamObj.TryGetValue("LastSentTime", out var lastSentTimeObj) && lastSentTimeObj is DateTime lastSentTime &&
+                            streamObj.TryGetValue("Latency", out var latencyObj) && latencyObj is long latency)
+                        {
+                            if (await IsScreenBelongsToDeviceAsync(screenId, deviceId) && lastSentTime > cutoffTime)
+                            {
+                                recentEntries.Add((lastSentTime, latency));
+                            }
+                        }
+                    }
+                }
+
+                // Check WebSocket streams
+                if (webSocketStreamManager != null)
+                {
+                    var webSocketStreams = webSocketStreamManager.GetActiveStreams();
+                    foreach (var stream in webSocketStreams)
                     {
                         var streamObj = stream.GetType().GetProperties()
                             .ToDictionary(p => p.Name, p => p.GetValue(stream));

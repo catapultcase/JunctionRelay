@@ -12,6 +12,7 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/bignum.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
 class JunctionRelay {
 public:
@@ -31,9 +32,11 @@ private:
     String _jwt, _regToken, _sensors;
     String _refreshToken, _deviceId;
     String _cloudBaseUrl = "https://api.junctionrelay.com";
+    String _jwtExpiryString, _refreshTokenExpiryString;
     unsigned long _lastReport;
     unsigned long _lastTokenRefresh = 0;  // Track last refresh attempt
-    unsigned long _jwtExpiresAt = 0;
+    time_t _jwtExpiresAt = 0;             // UTC timestamp
+    time_t _refreshTokenExpiresAt = 0;    // UTC timestamp
     bool _registered;
     Preferences _prefs;
     uint8_t _publicKey[65];      // Uncompressed P-256 public key
@@ -41,10 +44,18 @@ private:
     mbedtls_ctr_drbg_context _ctr_drbg;
 
     // Constants
-    static const unsigned long JWT_REFRESH_BUFFER = 300000; // 5 minutes in ms
-    // static const unsigned long TOKEN_REFRESH_INTERVAL = 25200000; // 7 hours
+    static const unsigned long JWT_REFRESH_BUFFER = 300000; // 5 minutes buffer
     static const unsigned long TOKEN_REFRESH_INTERVAL = 3600000; // 1 hour
-    // static const unsigned long TOKEN_REFRESH_INTERVAL = 180000; // 3 min
+    static const unsigned long REFRESH_TOKEN_ROTATION_THRESHOLD = 86400000; // 24 hours
+
+    // TESTING OVERRIDES - Comment out these lines to use production values
+    #define TESTING_MODE
+    #ifdef TESTING_MODE
+        static const unsigned long TEST_JWT_REFRESH_INTERVAL = 300000; // 5 minutes for testing
+        static const unsigned long TEST_REFRESH_TOKEN_ROTATION_THRESHOLD = 60000; // 1 minute before expiry (17 min trigger)
+        static const unsigned long TEST_JWT_LIFETIME = 6 * 60 * 1000UL; // 6 minutes
+        static const unsigned long TEST_REFRESH_LIFETIME = 18 * 60 * 1000UL; // 18 minutes
+    #endif
 
     void registerDevice();
     void sendHealth();
@@ -57,10 +68,19 @@ private:
     void checkAndRefreshToken();
     bool refreshDeviceToken();
     void handleTokenRefreshFailure();
-    unsigned long parseISODateTime(const String& isoString);
     void saveTokens(const String& refreshToken, const String& deviceId);
     void loadStoredTokens();
     void clearStoredTokens();
+
+    // Refresh token rotation methods
+    void checkAndRotateRefreshToken();
+    bool rotateRefreshToken();
+
+    // Time synchronization and helper methods
+    void initializeTime();
+    void updateTokenExpiry(const String& jwtExpiryStr, const String& refreshExpiryStr);
+    time_t parseISO8601(const String& isoStr);
+    time_t getCurrentTimestamp();
 
     // Manual decompression helper
     bool decompressPublicKey(

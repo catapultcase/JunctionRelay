@@ -22,6 +22,7 @@ namespace JunctionRelayServer.Models
     public class Model_JunctionScreenLayout
     {
         public int Id { get; set; }
+        public int JunctionId { get; set; }
         public int JunctionDeviceLinkId { get; set; }
         public int DeviceScreenId { get; set; }
         public int? ScreenLayoutId { get; set; }
