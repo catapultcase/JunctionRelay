@@ -345,6 +345,7 @@ namespace JunctionRelayServer.Services
                     JsonLayoutConfig TEXT,
                     IncludePrefixConfig BOOL DEFAULT 0,
                     IncludePrefixSensor BOOL DEFAULT 0,
+                    FieldsToSend TEXT,
         
                     -- Status and Metadata
                     IsTemplate BOOLEAN DEFAULT 0,
@@ -477,7 +478,8 @@ namespace JunctionRelayServer.Services
                     RiveFile NVARCHAR(500),
                     RiveEmbedInPayload BOOLEAN NOT NULL DEFAULT 1,
                     JsonFrameConfig TEXT,
-                    JsonFrameElements TEXT
+                    JsonFrameElements TEXT,
+                    FieldsToSend TEXT
                 );
             ");
 
@@ -852,14 +854,14 @@ namespace JunctionRelayServer.Services
                 // Services table updates
                 ["Services"] = new (string, string)[]
                 {
-            //("HomeAssistantSharedJunctions", "TEXT"),
-            //("GrafanaSharedMetrics", "TEXT")
+                    //("HomeAssistantSharedJunctions", "TEXT"),
+                    //("GrafanaSharedMetrics", "TEXT")
                 },
                 // Notifications table updates
                 ["Notifications"] = new (string, string)[]
                 {
-            //("ExpiresAt", "DATETIME"), // Add expiration support
-            //("StructuredContent", "TEXT") // Add multi-line notification support
+                    //("ExpiresAt", "DATETIME"), // Add expiration support
+                    //("StructuredContent", "TEXT") // Add multi-line notification support
                 },
                 // Devices table updates (if you need any in the future)
                 ["Devices"] = new (string, string)[]
@@ -867,31 +869,36 @@ namespace JunctionRelayServer.Services
                     // Add future device columns here when needed
                     // ("NewColumn", "TEXT"),
                 },
+                // FrameLayouts table updates
+                ["FrameLayouts"] = new (string, string)[]
+                {
+                //("FieldsToSend", "TEXT")
+                },
+                // ScreenLayouts table updates
+                ["ScreenLayouts"] = new (string, string)[]
+                {
+                //  ("FieldsToSend", "TEXT")
+                },
                 // Add other tables as needed
                 // ["OtherTable"] = new (string, string)[]
                 // {
                 //     ("ColumnName", "DATATYPE"),
                 // }
             };
-
             int totalUpdatesApplied = 0;
-
             foreach (var (tableName, columnsToAdd) in schemaUpdates)
             {
                 if (columnsToAdd.Length == 0) continue; // Skip empty arrays
-
                 Console.WriteLine($"[DATABASE] 🔍 Checking {tableName} table for missing columns...");
-
                 foreach (var (columnName, columnType) in columnsToAdd)
                 {
                     try
                     {
                         var columnExists = _db.ExecuteScalar<int>(@"
-                    SELECT COUNT(*) 
-                    FROM pragma_table_info(@tableName) 
-                    WHERE name = @columnName",
+            SELECT COUNT(*) 
+            FROM pragma_table_info(@tableName) 
+            WHERE name = @columnName",
                             new { tableName, columnName }) > 0;
-
                         if (!columnExists)
                         {
                             _db.Execute($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType};");
@@ -909,10 +916,8 @@ namespace JunctionRelayServer.Services
                     }
                 }
             }
-
             // Also handle index creation here if needed
             await CreateMissingIndexesAsync();
-
             if (totalUpdatesApplied > 0)
             {
                 Console.WriteLine($"[DATABASE] ✅ Applied {totalUpdatesApplied} schema update(s) successfully");
