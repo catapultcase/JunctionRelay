@@ -34,6 +34,7 @@ import {
     MenuItem,
     TextField,
     FormControlLabel,
+    Checkbox,
     Switch,
     Divider
 } from "@mui/material";
@@ -241,6 +242,11 @@ const ConfigureLayout: React.FC = () => {
     const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
     const [snackbarMessage, setSnackbarMessage] = useState<string>("");
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">("success");
+
+    // Fields to Send
+    // Add this with your other state declarations
+    const [selectedFields, setSelectedFields] = useState<string[]>([]);
+    const [availableFields, setAvailableFields] = useState<string[]>([]);
     
     // Force payloads
     const [payloadJson, setPayloadJson] = useState<string>("");
@@ -380,6 +386,9 @@ const ConfigureLayout: React.FC = () => {
                 setMinHeight(data.minHeight || "");
                 setMaxHeight(data.maxHeight || "");
 
+                // Fields to Send
+                setSelectedFields(data.fieldsToSend ? data.fieldsToSend.split(',') : []);
+
             } catch (err) {
                 showSnackbar("Error fetching layout data.", "error");
             } finally {
@@ -464,8 +473,55 @@ const ConfigureLayout: React.FC = () => {
         minHeight,
         maxHeight,
         previewSensors,
+        selectedFields,
         id
     ]);
+
+    // Model_Sensor fields
+    useEffect(() => {
+
+        const modelSensorFields = [
+            'Id',
+            'OriginalId',
+            'JunctionId',
+            'JunctionDeviceLinkId',
+            'JunctionCollectorLinkId',
+            'SensorOrder',
+            'MQTTServiceId',
+            'MQTTTopic',
+            'MQTTQoS',
+            'SensorType',
+            'ExternalId',
+            'DeviceName',
+            'Name',
+            'ComponentName',
+            'Category',
+            'Unit',
+            'Value',
+            'DecimalPlaces',
+            'SensorTag',
+            'Formula',
+            'LastUpdated',
+            'CustomAttribute1',
+            'CustomAttribute2',
+            'CustomAttribute3',
+            'CustomAttribute4',
+            'CustomAttribute5',
+            'CustomAttribute6',
+            'CustomAttribute7',
+            'CustomAttribute8',
+            'CustomAttribute9',
+            'CustomAttribute10',
+            'IsMissing',
+            'IsStale',
+            'IsSelected',
+            'IsVisible',
+            'DeviceId',
+            'ServiceId',
+            'CollectorId'
+        ];
+        setAvailableFields(modelSensorFields);
+    }, []);
 
     const handleSave = async () => {
         try {
@@ -580,6 +636,9 @@ const ConfigureLayout: React.FC = () => {
                 maxWidth: maxWidth ? parseInt(maxWidth as string) : null,
                 minHeight: minHeight ? parseInt(minHeight as string) : null,
                 maxHeight: maxHeight ? parseInt(maxHeight as string) : null,
+
+                // Fields to Send
+                fieldsToSend: selectedFields.join(',') || null,
             };
 
             // Validate required fields
@@ -1047,6 +1106,7 @@ const ConfigureLayout: React.FC = () => {
                             <Tab icon={<DataObjectIcon fontSize="small" />} label="Data" />
                             <Tab icon={<PhotoIcon fontSize="small" />} label="Media" />
                             <Tab icon={<SpeedIcon fontSize="small" />} label="Performance" />
+                            <Tab icon={<DataObjectIcon fontSize="small" />} label="Fields" />
                             <Tab icon={<DataObjectIcon fontSize="small" />} label="Custom Attributes" />
                         </Tabs>
 
@@ -2101,8 +2161,86 @@ const ConfigureLayout: React.FC = () => {
                                 </Box>
                         </TabPanel>
 
+                            {/* Fields Tab */}
+                            <TabPanel value={currentTab} index={11}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <Typography variant="h6" gutterBottom>Model Sensor Fields</Typography>
+                                    <Typography variant="body2" gutterBottom>
+                                        Select which fields from the Model_Sensor should be included in this layout.
+                                    </Typography>
+
+                                    {availableFields.length > 0 ? (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: '400px', overflowY: 'auto' }}>
+                                            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() => setSelectedFields([...availableFields])}
+                                                    disabled={isTemplate}
+                                                >
+                                                    Select All
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() => setSelectedFields([])}
+                                                    disabled={isTemplate}
+                                                >
+                                                    Clear All
+                                                </Button>
+                                            </Box>
+
+                                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 1 }}>
+                                                {availableFields.map((field) => (
+                                                    <FormControlLabel
+                                                        key={field}
+                                                        control={
+                                                            <Checkbox
+                                                                checked={selectedFields.includes(field)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedFields(prev => [...prev, field]);
+                                                                    } else {
+                                                                        setSelectedFields(prev => prev.filter(f => f !== field));
+                                                                    }
+                                                                }}
+                                                                size="small"
+                                                                disabled={isTemplate}
+                                                            />
+                                                        }
+                                                        label={field}
+                                                        sx={{
+                                                            margin: 0,
+                                                            '& .MuiFormControlLabel-label': {
+                                                                fontSize: '0.875rem'
+                                                            }
+                                                        }}
+                                                    />
+                                                ))}
+                                            </Box>
+
+                                            {selectedFields.length > 0 && (
+                                                <Box sx={{ mt: 2, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                                                    <Typography variant="subtitle2" gutterBottom>
+                                                        Selected Fields ({selectedFields.length}):
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                                                        {selectedFields.join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    ) : (
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+                                            <CircularProgress size={24} />
+                                            <Typography variant="body2" sx={{ marginLeft: 2 }}>Loading sensor fields...</Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+                            </TabPanel>
+
                         {/* Custom Attributes Tab */}
-                        <TabPanel value={currentTab} index={11}>
+                        <TabPanel value={currentTab} index={12}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <Typography variant="h6" gutterBottom>Custom Attributes</Typography>
                                 <Typography variant="body2" gutterBottom>

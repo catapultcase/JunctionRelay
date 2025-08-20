@@ -19,7 +19,21 @@ interface DiscoveredStateMachine {
     inputs: DiscoveredInput[];
 }
 
-// Types for frame layout data structure
+// Enhanced Rive configuration interface
+interface RiveConfiguration {
+    discoveredMachines: DiscoveredStateMachine[];
+    lastDiscoveryUpdate: string;
+    activeStateMachine?: string;
+    globalInputMappings?: Record<string, any>;
+    discoveryMetadata?: {
+        totalInputs: number;
+        inputTypeBreakdown: Record<string, number>;
+        discoveryAttempts: number;
+        lastSuccessfulDiscovery: string;
+    };
+}
+
+// Types for frame layout data structure - UPDATED with riveConfiguration
 interface FrameLayoutConfig {
     id?: number;
     displayName: string;
@@ -39,6 +53,7 @@ interface FrameLayoutConfig {
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
     riveEmbedInPayload?: boolean;
+    riveConfiguration?: RiveConfiguration; // NEW: Store all discovered Rive data
     jsonFrameConfig?: string;
     jsonFrameElements?: string;
     isTemplate: boolean;
@@ -131,6 +146,17 @@ const ConfigureFrame: React.FC = () => {
             backgroundImageUrl: null,
             backgroundOpacity: 1.0,
             riveEmbedInPayload: true,
+            riveConfiguration: {
+                discoveredMachines: [],
+                lastDiscoveryUpdate: '',
+                globalInputMappings: {},
+                discoveryMetadata: {
+                    totalInputs: 0,
+                    inputTypeBreakdown: {},
+                    discoveryAttempts: 0,
+                    lastSuccessfulDiscovery: ''
+                }
+            },
             isTemplate: false,
             isDraft: true,
             isPublished: false,
@@ -347,12 +373,31 @@ const ConfigureFrame: React.FC = () => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Save frame layout to API - SIMPLIFIED VERSION (no backend Rive analysis)
+    // Utility function to generate discovery metadata
+    const generateDiscoveryMetadata = (machines: DiscoveredStateMachine[]) => {
+        const totalInputs = machines.reduce((sum, machine) => sum + machine.inputs.length, 0);
+        const inputTypeBreakdown: Record<string, number> = {};
+
+        machines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                inputTypeBreakdown[input.type] = (inputTypeBreakdown[input.type] || 0) + 1;
+            });
+        });
+
+        return {
+            totalInputs,
+            inputTypeBreakdown,
+            discoveryAttempts: (state.layout.riveConfiguration?.discoveryMetadata?.discoveryAttempts || 0) + 1,
+            lastSuccessfulDiscovery: new Date().toISOString()
+        };
+    };
+
+    // Save frame layout to API - ENHANCED with Rive discovery persistence in JsonFrameConfig
     const saveFrameLayout = async () => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
         try {
-            // Build the streamlined JsonFrameConfig
+            // Build the enhanced JsonFrameConfig with full Rive discovery data
             const frameConfig = {
                 type: "rive_config",
                 screenId: state.layout.id?.toString() || "new",
@@ -373,8 +418,8 @@ const ConfigureFrame: React.FC = () => {
                         opacity: state.layout.backgroundOpacity || 1.0
                     },
 
-                    // Only include rive section if background type is rive or if there's a rive file
-                    ...(state.layout.backgroundType === 'rive' || state.layout.riveFile ? {
+                    // Enhanced Rive section with full discovery data stored in JsonFrameConfig
+                    ...(state.layout.backgroundType === 'rive' || state.layout.riveFile || state.layout.riveConfiguration?.discoveredMachines.length ? {
                         rive: {
                             enabled: state.layout.backgroundType === 'rive',
                             file: state.layout.riveFile || null,
@@ -385,32 +430,65 @@ const ConfigureFrame: React.FC = () => {
                                 alignment: 'center',
                                 autoplay: true,
                                 loop: true
+                            },
+                            // NEW: Store all discovered state machines and inputs in JsonFrameConfig
+                            discovery: {
+                                machines: state.layout.riveConfiguration?.discoveredMachines || [],
+                                lastUpdate: state.layout.riveConfiguration?.lastDiscoveryUpdate || '',
+                                metadata: state.layout.riveConfiguration?.discoveryMetadata || {},
+                                activeStateMachine: state.layout.riveConfiguration?.activeStateMachine || state.layout.riveStateMachine,
+                                globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {}
                             }
                         }
                     } : {})
                 },
 
-                frameElements: state.elements.map((element, index) => ({
-                    id: element.id,
-                    type: element.type,
-                    position: {
-                        x: element.x,
-                        y: element.y,
-                        width: element.width,
-                        height: element.height
-                    },
-                    display: {
-                        visible: element.visible ?? true,
-                        zIndex: element.zIndex || index,
-                        order: index
-                    },
-                    properties: element.properties || {},
-                    ...(element.sensorId ? { sensorId: element.sensorId } : {}),
-                    lastModified: new Date().toISOString()
-                }))
+                // Enhanced frameElements with Rive input connections for sensors
+                frameElements: state.elements.map((element, index) => {
+                    const baseElement = {
+                        id: element.id,
+                        type: element.type,
+                        position: {
+                            x: element.x,
+                            y: element.y,
+                            width: element.width,
+                            height: element.height
+                        },
+                        display: {
+                            visible: element.visible ?? true,
+                            zIndex: element.zIndex || index,
+                            order: index
+                        },
+                        properties: element.properties || {},
+                        ...(element.sensorId ? { sensorId: element.sensorId } : {}),
+                        lastModified: new Date().toISOString()
+                    };
+
+                    // NEW: If this is a sensor element and we have Rive discovery data, include potential mappings
+                    if (element.type === 'sensor' && state.layout.riveConfiguration?.discoveredMachines.length) {
+                        return {
+                            ...baseElement,
+                            riveConnections: {
+                                availableInputs: state.layout.riveConfiguration.discoveredMachines.flatMap(machine =>
+                                    machine.inputs.map(input => ({
+                                        machineName: machine.name,
+                                        inputName: input.name,
+                                        inputType: input.type,
+                                        currentValue: input.currentValue,
+                                        fullKey: `${machine.name}.${input.name}`
+                                    }))
+                                ),
+                                mappedInputs: element.properties.riveMappings || [],
+                                lastMappingUpdate: new Date().toISOString()
+                            }
+                        };
+                    }
+
+                    return baseElement;
+                })
             };
 
-            // Build the simplified JsonFrameElements
+            // Build the enhanced JsonFrameElements
             const frameElements = state.elements.map((element, index) => ({
                 id: element.id,
                 type: element.type,
@@ -430,7 +508,7 @@ const ConfigureFrame: React.FC = () => {
                 lastModified: new Date().toISOString()
             }));
 
-            // Prepare the save data - backend only handles file upload/storage now
+            // Prepare the save data - Rive discovery data is now stored in JsonFrameConfig only
             const saveData = {
                 displayName: state.layout.displayName,
                 description: state.layout.description,
@@ -449,12 +527,16 @@ const ConfigureFrame: React.FC = () => {
                 isTemplate: state.layout.isTemplate,
                 isDraft: state.layout.isDraft,
                 isPublished: state.layout.isPublished,
-                jsonFrameConfig: JSON.stringify(frameConfig),
+                jsonFrameConfig: JSON.stringify(frameConfig), // Discovery data stored here
                 jsonFrameElements: JSON.stringify(frameElements),
                 riveEmbedInPayload: state.layout.riveEmbedInPayload ?? true
             };
 
-            console.log('Saving streamlined frame config:', frameConfig);
+            console.log('Saving enhanced frame config with Rive discovery data in JsonFrameConfig:', {
+                frameConfig,
+                riveDiscoverySection: frameConfig.frameConfig.rive?.discovery,
+                discoveredMachines: state.layout.riveConfiguration?.discoveredMachines.length || 0
+            });
 
             const response = await fetch(`/api/frameengine/${state.layout.id}`, {
                 method: 'PUT',
@@ -467,7 +549,7 @@ const ConfigureFrame: React.FC = () => {
                 throw new Error(errorData.message || 'Failed to save frame layout');
             }
 
-            console.log('Frame layout saved successfully');
+            console.log('Frame layout saved successfully with Rive discovery data in JsonFrameConfig');
             setState(prev => ({ ...prev, isDirty: false, isLoading: false }));
         } catch (error) {
             console.error('Failed to save frame layout:', error);
@@ -479,7 +561,7 @@ const ConfigureFrame: React.FC = () => {
         }
     };
 
-    // Load frame layout from API - SIMPLIFIED (no .meta dependency)
+    // Load frame layout from API - ENHANCED to restore Rive configuration from JsonFrameConfig
     const loadFrameLayout = async (layoutId: number) => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -494,6 +576,32 @@ const ConfigureFrame: React.FC = () => {
 
             // Parse frame config
             const frameConfig = layoutData.jsonFrameConfig ? JSON.parse(layoutData.jsonFrameConfig) : {};
+
+            // Parse Rive configuration from JsonFrameConfig discovery section
+            let riveConfiguration: RiveConfiguration = {
+                discoveredMachines: [],
+                lastDiscoveryUpdate: '',
+                globalInputMappings: {},
+                discoveryMetadata: {
+                    totalInputs: 0,
+                    inputTypeBreakdown: {},
+                    discoveryAttempts: 0,
+                    lastSuccessfulDiscovery: ''
+                }
+            };
+
+            // Restore from JsonFrameConfig.rive.discovery section
+            if (frameConfig.frameConfig?.rive?.discovery) {
+                const discovery = frameConfig.frameConfig.rive.discovery;
+                riveConfiguration = {
+                    discoveredMachines: discovery.machines || [],
+                    lastDiscoveryUpdate: discovery.lastUpdate || '',
+                    activeStateMachine: discovery.activeStateMachine,
+                    globalInputMappings: discovery.globalInputMappings || {},
+                    discoveryMetadata: discovery.metadata || riveConfiguration.discoveryMetadata
+                };
+                console.log('Restored Rive configuration from JsonFrameConfig:', riveConfiguration);
+            }
 
             // Parse and convert elements from nested format to flat format
             let elementPositions: PlacedElement[] = [];
@@ -526,28 +634,29 @@ const ConfigureFrame: React.FC = () => {
                     displayName: layoutData.displayName,
                     description: layoutData.description,
                     layoutType: layoutData.layoutType,
-                    rows: frameConfig.canvas?.grid?.rows || layoutData.rows,
-                    columns: frameConfig.canvas?.grid?.columns || layoutData.columns,
-                    width: frameConfig.canvas?.width || layoutData.width,
-                    height: frameConfig.canvas?.height || layoutData.height,
-                    orientation: frameConfig.canvas?.orientation || layoutData.orientation,
-                    backgroundType: frameConfig.background?.type || layoutData.backgroundType || 'color',
-                    backgroundColor: frameConfig.background?.color || layoutData.backgroundColor,
-                    backgroundImageUrl: frameConfig.background?.imageUrl || layoutData.backgroundImageUrl,
-                    backgroundOpacity: frameConfig.background?.opacity || layoutData.backgroundOpacity,
-                    riveFile: frameConfig.rive?.file || layoutData.riveFile,
-                    riveStateMachine: frameConfig.rive?.stateMachine || layoutData.riveStateMachine,
-                    riveInputs: frameConfig.rive?.inputs || layoutData.riveInputs,
+                    rows: frameConfig.frameConfig?.canvas?.grid?.rows || layoutData.rows,
+                    columns: frameConfig.frameConfig?.canvas?.grid?.columns || layoutData.columns,
+                    width: frameConfig.frameConfig?.canvas?.width || layoutData.width,
+                    height: frameConfig.frameConfig?.canvas?.height || layoutData.height,
+                    orientation: frameConfig.frameConfig?.canvas?.orientation || layoutData.orientation,
+                    backgroundType: frameConfig.frameConfig?.background?.type || layoutData.backgroundType || 'color',
+                    backgroundColor: frameConfig.frameConfig?.background?.color || layoutData.backgroundColor,
+                    backgroundImageUrl: frameConfig.frameConfig?.background?.imageUrl || layoutData.backgroundImageUrl,
+                    backgroundOpacity: frameConfig.frameConfig?.background?.opacity || layoutData.backgroundOpacity,
+                    riveFile: frameConfig.frameConfig?.rive?.file || layoutData.riveFile,
+                    riveStateMachine: frameConfig.frameConfig?.rive?.stateMachine || layoutData.riveStateMachine,
+                    riveInputs: frameConfig.frameConfig?.rive?.inputs || layoutData.riveInputs,
                     riveEmbedInPayload: layoutData.riveEmbedInPayload ?? true,
+                    riveConfiguration: riveConfiguration, // NEW: Restored from JsonFrameConfig
                     jsonFrameConfig: layoutData.jsonFrameConfig,
                     jsonFrameElements: layoutData.jsonFrameElements,
-                    isTemplate: frameConfig.metadata?.isTemplate || layoutData.isTemplate,
-                    isDraft: frameConfig.metadata?.isDraft || layoutData.isDraft,
-                    isPublished: frameConfig.metadata?.isPublished || layoutData.isPublished,
+                    isTemplate: frameConfig.frameConfig?.metadata?.isTemplate || layoutData.isTemplate,
+                    isDraft: frameConfig.frameConfig?.metadata?.isDraft || layoutData.isDraft,
+                    isPublished: frameConfig.frameConfig?.metadata?.isPublished || layoutData.isPublished,
                     created: layoutData.created,
                     lastModified: layoutData.lastModified,
                     createdBy: layoutData.createdBy,
-                    version: frameConfig.version || layoutData.version,
+                    version: frameConfig.frameConfig?.version || layoutData.version,
                 },
                 elements: elementPositions,
                 selectedElementIds: [],
@@ -679,15 +788,40 @@ const ConfigureFrame: React.FC = () => {
     // Rive discovery state - lifted up from Canvas
     const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredStateMachine[]>([]);
 
-    // Handle Rive discovery from Canvas
+    // ENHANCED: Handle Rive discovery from Canvas and persist to layout
     const handleRiveDiscovery = useCallback((machines: DiscoveredStateMachine[]) => {
         console.log('🏗️ ConfigureFrame received Rive discovery:', machines);
         setDiscoveredMachines(machines);
-    }, []);
+
+        // NEW: Automatically update the layout with discovered machines
+        if (machines.length > 0) {
+            const discoveryMetadata = generateDiscoveryMetadata(machines);
+            const updatedRiveConfiguration: RiveConfiguration = {
+                discoveredMachines: machines,
+                lastDiscoveryUpdate: new Date().toISOString(),
+                activeStateMachine: state.layout.riveStateMachine || machines[0]?.name,
+                globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {},
+                discoveryMetadata
+            };
+
+            console.log('📝 Persisting Rive discovery to layout configuration:', updatedRiveConfiguration);
+
+            setState(prev => ({
+                ...prev,
+                layout: {
+                    ...prev.layout,
+                    riveConfiguration: updatedRiveConfiguration
+                },
+                isDirty: true
+            }));
+        }
+    }, [state.layout.riveStateMachine, state.layout.riveConfiguration?.globalInputMappings]);
+
     const generatePreview = async () => {
         try {
             console.log('Generating preview for layout:', state.layout.id);
-            alert('Preview generated!');
+            console.log('Including Rive discovery data:', state.layout.riveConfiguration);
+            alert('Preview generated with Rive discovery data!');
         } catch (error) {
             setState(prev => ({ ...prev, error: 'Failed to generate preview' }));
         }
@@ -706,7 +840,7 @@ const ConfigureFrame: React.FC = () => {
         }));
     }, []);
 
-    // Simple export method for standalone config
+    // Simple export method for standalone config - ENHANCED with Rive discovery data
     const exportStandaloneConfig = async () => {
         try {
             const response = await fetch(`/api/frameengine/${state.layout.id}/export-standalone`);
@@ -725,12 +859,18 @@ const ConfigureFrame: React.FC = () => {
         }
     };
 
-    // Export layout
+    // Export layout - ENHANCED with Rive discovery data
     const handleExport = useCallback(async (format: 'png' | 'json' | 'pdf' | 'standalone') => {
         if (format === 'json') {
             const exportData = {
                 layout: state.layout,
                 elements: state.elements,
+                riveDiscoveryData: {
+                    discoveredMachines: state.layout.riveConfiguration?.discoveredMachines || [],
+                    discoveryMetadata: state.layout.riveConfiguration?.discoveryMetadata,
+                    lastDiscoveryUpdate: state.layout.riveConfiguration?.lastDiscoveryUpdate,
+                    exportNote: 'This export includes complete Rive state machine discovery data'
+                },
                 exportDate: new Date().toISOString(),
                 version: '1.0',
             };
@@ -738,7 +878,7 @@ const ConfigureFrame: React.FC = () => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${state.layout.displayName}.json`;
+            a.download = `${state.layout.displayName}-with-rive-discovery.json`;
             a.click();
             URL.revokeObjectURL(url);
         } else if (format === 'standalone') {
@@ -747,21 +887,6 @@ const ConfigureFrame: React.FC = () => {
             alert(`${format.toUpperCase()} export would be implemented here`);
         }
     }, [state.layout, state.elements]);
-
-    // Clone layout
-    const handleClone = useCallback(async () => {
-        setState(prev => ({
-            ...prev,
-            layout: {
-                ...prev.layout,
-                id: undefined,
-                displayName: `${prev.layout.displayName} (Copy)`,
-                isDraft: true,
-                isPublished: false,
-            },
-            isDirty: true,
-        }));
-    }, []);
 
     // Publish layout
     const handlePublish = useCallback(async () => {
@@ -843,6 +968,29 @@ const ConfigureFrame: React.FC = () => {
                     </button>
                 </div>
             )}
+
+            {/* Debug Info - Show Rive Discovery Status */}
+            {state.layout.riveConfiguration?.discoveredMachines.length ? (
+                <div style={{
+                    backgroundColor: '#e8f5e8',
+                    border: '1px solid #4caf50',
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    borderTop: 'none',
+                    color: '#2e7d32',
+                    padding: '4px 16px',
+                    fontSize: '12px',
+                    flexShrink: 0
+                }}>
+                    🔍 Rive Discovery: {state.layout.riveConfiguration.discoveredMachines.length} state machines,
+                    {state.layout.riveConfiguration.discoveryMetadata?.totalInputs || 0} inputs discovered
+                    {state.layout.riveConfiguration.lastDiscoveryUpdate && (
+                        <span style={{ marginLeft: '8px', color: '#666' }}>
+                            (Last: {new Date(state.layout.riveConfiguration.lastDiscoveryUpdate).toLocaleTimeString()})
+                        </span>
+                    )}
+                </div>
+            ) : null}
 
             {/* Toolbar */}
             <div style={{ flexShrink: 0 }}>

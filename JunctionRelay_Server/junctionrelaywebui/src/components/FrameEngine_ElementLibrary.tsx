@@ -12,9 +12,9 @@ import {
     DragIndicator as DragIcon,
     Sensors as SensorsIcon,
     TextFields as TextIcon,
-    BarChart as ChartIcon,
-    Image as ImageIcon,
-    ViewModule as ContainerIcon,
+    // BarChart as ChartIcon,
+    // Image as ImageIcon,
+    // ViewModule as ContainerIcon,
 } from '@mui/icons-material';
 
 interface PlacedElement {
@@ -41,18 +41,17 @@ interface ElementTemplate {
 }
 
 interface ElementLibraryProps {
-    // Keep these two props only; parent should pass these
     selectedElements: string[];
     onElementAdd: (element: Omit<PlacedElement, 'id'>) => void;
 }
 
 const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
-    selectedElements, // kept for parity; not used here
+    selectedElements,
     onElementAdd,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Elements list ONLY (no tabs). Sensor stays as a regular element template.
+    // Elements list - only sensor and text elements enabled
     const elementTemplates: ElementTemplate[] = [
         {
             id: 'sensor-display',
@@ -93,6 +92,8 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             },
             category: 'basic',
         },
+        // Commented out elements - uncomment when ready to use
+        /*
         {
             id: 'chart-widget',
             name: 'Chart Widget',
@@ -145,6 +146,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             },
             category: 'layout',
         },
+        */
     ];
 
     // Drag start for element templates
@@ -234,7 +236,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                 />
             </Box>
 
-            {/* Elements List (no tabs) */}
+            {/* Elements List */}
             <Box sx={{ flex: 1, overflow: 'hidden' }}>
                 <Box sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
                     {Object.entries(templatesByCategory).map(([category, templates]) => (

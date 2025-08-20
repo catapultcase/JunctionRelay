@@ -35,8 +35,6 @@ import FrameEngine from "pages/FrameEngine";
 import ConfigureFrame from "pages/ConfigureFrame";
 import Payloads from "pages/Payloads";
 import ConfigurePayload from "pages/ConfigurePayload";
-import Testing from "pages/Testing";
-import TestingQuad from "pages/TestingQuad";
 import HostInfo from "pages/HostInfo";
 import HostCharts from "pages/HostCharts";
 import Settings from "pages/Settings";
@@ -756,8 +754,6 @@ const AppRoutes: React.FC = () => {
                     <Route path="/configure-frame/:id" element={<ConfigureFrame />} />
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
-                    <Route path="/testing" element={<Testing />} />
-                    <Route path="/testingquad" element={<TestingQuad />} />
                     <Route path="/hostinfo" element={<HostInfo />} />
                     <Route path="/hostcharts" element={<HostCharts />} />
                     <Route path="/settings" element={<Settings />} />

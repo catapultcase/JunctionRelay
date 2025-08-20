@@ -76,7 +76,8 @@ namespace JunctionRelayServer.Services
                  AllowInteraction, OnClickBehavior, NavigationTarget,
                  DataRefreshIntervalSeconds, CacheData, DataFilterCriteria,
                  BackgroundImageUrl, BackgroundImageId, ImageFit,
-                 LazyLoad, RenderPriority, EnableScrollbars, MinWidth, MaxWidth, MinHeight, MaxHeight)
+                 LazyLoad, RenderPriority, EnableScrollbars, MinWidth, MaxWidth, MinHeight, MaxHeight,
+                 FieldsToSend)
               VALUES 
                 (@DisplayName, @Description, @LayoutType, @CustomLayoutType, @Rows, @Columns, @JsonLayoutConfig, @IncludePrefixConfig, @IncludePrefixSensor,
                  @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
@@ -95,7 +96,8 @@ namespace JunctionRelayServer.Services
                  @AllowInteraction, @OnClickBehavior, @NavigationTarget,
                  @DataRefreshIntervalSeconds, @CacheData, @DataFilterCriteria,
                  @BackgroundImageUrl, @BackgroundImageId, @ImageFit,
-                 @LazyLoad, @RenderPriority, @EnableScrollbars, @MinWidth, @MaxWidth, @MinHeight, @MaxHeight);
+                 @LazyLoad, @RenderPriority, @EnableScrollbars, @MinWidth, @MaxWidth, @MinHeight, @MaxHeight,
+                 @FieldsToSend);
               SELECT last_insert_rowid();
             ";
 
@@ -206,7 +208,8 @@ namespace JunctionRelayServer.Services
                     MinWidth            = @MinWidth,
                     MaxWidth            = @MaxWidth,
                     MinHeight           = @MinHeight,
-                    MaxHeight           = @MaxHeight
+                    MaxHeight           = @MaxHeight,
+                    FieldsToSend        = @FieldsToSend
                   WHERE Id = @Id";
 
 
@@ -290,6 +293,7 @@ namespace JunctionRelayServer.Services
                 template.MaxWidth,
                 template.MinHeight,
                 template.MaxHeight,
+                template.FieldsToSend,
                 Id = id
             });
 
@@ -316,7 +320,7 @@ namespace JunctionRelayServer.Services
             var clone = new Model_Screen_Layout
             {
                 DisplayName = $"{original.DisplayName} (Clone)",
-                IsTemplate = false ,
+                IsTemplate = false,
                 Description = original.Description,
                 LayoutType = original.LayoutType,
                 CustomLayoutType = original.CustomLayoutType,
@@ -417,7 +421,10 @@ namespace JunctionRelayServer.Services
                 MinWidth = original.MinWidth,
                 MaxWidth = original.MaxWidth,
                 MinHeight = original.MinHeight,
-                MaxHeight = original.MaxHeight
+                MaxHeight = original.MaxHeight,
+
+                // Fields to Send
+                FieldsToSend = original.FieldsToSend
             };
 
             // 3. Add the cloned template to the database

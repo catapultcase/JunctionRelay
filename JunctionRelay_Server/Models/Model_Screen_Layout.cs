@@ -132,4 +132,8 @@ public class Model_Screen_Layout
     public int? MaxWidth { get; set; }
     public int? MinHeight { get; set; }
     public int? MaxHeight { get; set; }
+
+
+    // Fields To Send
+    public string? FieldsToSend { get; set; }
 }

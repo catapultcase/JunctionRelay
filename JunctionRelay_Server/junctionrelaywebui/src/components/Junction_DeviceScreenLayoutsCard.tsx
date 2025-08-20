@@ -85,7 +85,7 @@ const cellStyle = {
 
 interface ScreenLayoutConfig {
     id?: number;
-    junctionId?: number; 
+    junctionId?: number;
     deviceScreenId: number;
     screenLayoutId?: number; // For payload mode
     frameLayoutId?: number; // For frameengine & rive mapping modes
@@ -132,6 +132,185 @@ interface SensorTag {
     isConnected: boolean; // Now uses real sensor mapping logic
 }
 
+// NEW: Rive Input interfaces
+interface RiveInput {
+    machineName: string;
+    inputName: string;
+    inputType: 'number' | 'boolean' | 'trigger' | 'unknown';
+    fullKey: string; // "StateMachine.InputName" format
+    currentValue?: any;
+    mappedSensorTags: string[]; // Array of sensor tags mapped to this input
+    isConfigured: boolean; // Whether this input has sensor mappings
+}
+
+interface DiscoveredRiveData {
+    machines: Array<{
+        name: string;
+        inputNames: string[];
+        inputs: Array<{
+            name: string;
+            type: 'number' | 'boolean' | 'trigger' | 'unknown';
+            currentValue?: any;
+        }>;
+    }>;
+    lastUpdate: string;
+    metadata: {
+        totalInputs: number;
+        inputTypeBreakdown: Record<string, number>;
+    };
+}
+
+// NEW: Function to extract Rive inputs from JsonFrameConfig
+const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensors: Sensor[]): RiveInput[] => {
+    const allRiveInputs: RiveInput[] = [];
+    const inputMap = new Map<string, RiveInput>();
+
+    availableLayouts.forEach(layout => {
+        if (!layout.jsonFrameConfig) return;
+
+        try {
+            const frameConfig = JSON.parse(layout.jsonFrameConfig);
+            const riveDiscovery: DiscoveredRiveData = frameConfig.frameConfig?.rive?.discovery;
+
+            if (!riveDiscovery?.machines) return;
+
+            riveDiscovery.machines.forEach(machine => {
+                machine.inputs.forEach(input => {
+                    const fullKey = `${machine.name}.${input.name}`;
+
+                    if (!inputMap.has(fullKey)) {
+                        // Check if any selected sensors are mapped to this input
+                        // Look for sensor tags that match the input name or full key
+                        // Support comma-separated sensor tags with EXACT matching
+                        const mappedSensors = availableSensors.filter(sensor => {
+                            if (!sensor.IsSelected) return false;
+
+                            // Split sensor tag by comma and check each part
+                            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+
+                            return sensorTags.some(tag =>
+                                tag === input.name ||
+                                tag === fullKey
+                            );
+                        });
+
+                        // Get all sensor tags that could map to this input (exact matches only)
+                        const mappedSensorTags: string[] = [];
+                        mappedSensors.forEach(sensor => {
+                            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+                            sensorTags.forEach(tag => {
+                                if (tag === input.name || tag === fullKey) {
+                                    if (!mappedSensorTags.includes(tag)) {
+                                        mappedSensorTags.push(tag);
+                                    }
+                                }
+                            });
+                        });
+
+                        const riveInput: RiveInput = {
+                            machineName: machine.name,
+                            inputName: input.name,
+                            inputType: input.type,
+                            fullKey,
+                            currentValue: input.currentValue,
+                            mappedSensorTags: mappedSensorTags,
+                            isConfigured: mappedSensorTags.length > 0
+                        };
+
+                        inputMap.set(fullKey, riveInput);
+                        allRiveInputs.push(riveInput);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('Error parsing JsonFrameConfig for layout:', layout.displayName, error);
+        }
+    });
+
+    return allRiveInputs;
+};
+
+// NEW: Rive Input Mapping Section Component
+const RiveInputMappingSection: React.FC<{
+    riveInputs: RiveInput[];
+    availableSensors: Sensor[];
+    onInputMappingChange: (inputKey: string, sensorTags: string[]) => void;
+}> = ({ riveInputs, availableSensors, onInputMappingChange }) => {
+
+    if (riveInputs.length === 0) {
+        return (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
+                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Rive Mapping layouts.
+            </Typography>
+        );
+    }
+
+    // Group inputs by state machine
+    const inputsByMachine = riveInputs.reduce((acc, input) => {
+        if (!acc[input.machineName]) {
+            acc[input.machineName] = [];
+        }
+        acc[input.machineName].push(input);
+        return acc;
+    }, {} as Record<string, RiveInput[]>);
+
+    return (
+        <Box sx={{ mt: 2 }}>
+            {Object.entries(inputsByMachine).map(([machineName, inputs]) => (
+                <Box key={machineName} sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                        {machineName}:
+                    </Typography>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Input Name</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Type</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {inputs.map((input) => (
+                                <TableRow key={input.fullKey} hover>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Box display="flex" alignItems="center">
+                                            <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {input.inputName}
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Chip
+                                            size="small"
+                                            label={input.isConfigured ? "Mapped" : "Not Mapped"}
+                                            color={input.isConfigured ? "success" : "error"}
+                                            icon={input.isConfigured ? <CheckCircleIcon /> : <CancelIcon />}
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Chip
+                                            size="small"
+                                            label={input.inputType}
+                                            color={
+                                                input.inputType === 'number' ? 'primary' :
+                                                    input.inputType === 'boolean' ? 'secondary' :
+                                                        input.inputType === 'trigger' ? 'warning' : 'default'
+                                            }
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </Box>
+            ))}
+        </Box>
+    );
+};
+
 const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     junctionId,
     junction,
@@ -139,7 +318,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     loading,
     showSnackbar,
     onJunctionUpdate,
-    availableSensors // New prop
+    availableSensors
 }) => {
     // State for screens, layouts, and configurations
     const [deviceScreens, setDeviceScreens] = useState<{ [deviceId: number]: any[] }>({});
@@ -148,6 +327,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     const [screenConfigs, setScreenConfigs] = useState<{ [key: string]: ScreenLayoutConfig }>({});
     const [loadingState, setLoadingState] = useState<{ [key: string]: boolean }>({});
     const [savingRenderingMode, setSavingRenderingMode] = useState<boolean>(false);
+
+    // NEW: State for Rive input mappings
+    const [riveInputMappings, setRiveInputMappings] = useState<Record<string, string[]>>({});
 
     // Determine rendering mode
     const isFrameEngine = junction?.renderingMode === "FrameEngine";
@@ -174,11 +356,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         link.type === "device" && link.role === "Target"
     );
 
-    // Function to check if a sensor tag is mapped to a selected sensor
+    // Function to check if a sensor tag is mapped to a selected sensor (updated to handle comma-separated tags)
     const isSensorTagMapped = (sensorTag: string): boolean => {
-        return availableSensors.some(sensor =>
-            sensor.IsSelected && sensor.sensorTag === sensorTag
-        );
+        return availableSensors.some(sensor => {
+            if (!sensor.IsSelected) return false;
+
+            // Split sensor tag by comma and check each part for exact match
+            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+            return sensorTags.includes(sensorTag);
+        });
     };
 
     // Get base URL for frame access
@@ -210,18 +396,49 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 element.properties?.sensorTag
             );
 
-            return sensorElements.map(element => ({
-                sensorTag: element.properties.sensorTag!,
-                placeholderSensorLabel: element.properties.placeholderSensorLabel || 'Unknown',
-                showLabel: element.properties.showLabel ?? false,
-                showUnit: element.properties.showUnit ?? false,
-                placeholderValue: element.properties.placeholderValue || '',
-                placeholderUnit: element.properties.placeholderUnit || '',
-                isConnected: isSensorTagMapped(element.properties.sensorTag!) // Use real sensor mapping logic
-            }));
+            return sensorElements.map(element => {
+                const sensorTag = element.properties.sensorTag!;
+                const isConnected = isSensorTagMapped(sensorTag);
+
+                return {
+                    sensorTag: sensorTag,
+                    placeholderSensorLabel: element.properties.placeholderSensorLabel || 'Unknown',
+                    showLabel: element.properties.showLabel ?? false,
+                    showUnit: element.properties.showUnit ?? false,
+                    placeholderValue: element.properties.placeholderValue || '',
+                    placeholderUnit: element.properties.placeholderUnit || '',
+                    isConnected: isConnected
+                };
+            });
         } catch (error) {
             console.error('Error parsing template JSON:', error);
             return [];
+        }
+    };
+
+    // NEW: Calculate Rive inputs when layouts or sensors change
+    const riveInputs = React.useMemo(() => {
+        if (!isRiveMapping) return [];
+        return extractRiveInputsFromTemplates(availableLayouts, availableSensors);
+    }, [availableLayouts, availableSensors, isRiveMapping]);
+
+    // NEW: Handle Rive input mapping changes
+    const handleRiveInputMappingChange = async (inputKey: string, sensorTags: string[]) => {
+        try {
+            // Update local state immediately
+            setRiveInputMappings(prev => ({
+                ...prev,
+                [inputKey]: sensorTags
+            }));
+
+            showSnackbar(
+                `Updated mapping for ${inputKey}: ${sensorTags.length ? sensorTags.join(', ') : 'cleared'}`,
+                "success"
+            );
+
+        } catch (error) {
+            console.error('Error updating Rive input mapping:', error);
+            showSnackbar('Failed to update Rive input mapping', 'error');
         }
     };
 
@@ -365,7 +582,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
             // Create new configuration
             const payload: any = {
-                junctionId, 
+                junctionId,
                 deviceScreenId: screenId,
                 targetPollRate: existingConfig?.targetPollRate,
                 onlySendIfChanged: existingConfig?.onlySendIfChanged ?? true,
@@ -397,7 +614,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 ...prev,
                 [key]: {
                     id: data.id,
-                    junctionId: data.junctionId, 
+                    junctionId: data.junctionId,
                     deviceScreenId: screenId,
                     screenLayoutId: data.screenLayoutId,
                     frameLayoutId: data.frameLayoutId,
@@ -445,7 +662,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const payload = {
-                junctionId, 
+                junctionId,
                 deviceScreenId: screenId,
                 screenLayoutId: existingConfig.screenLayoutId,
                 frameLayoutId: existingConfig.frameLayoutId,
@@ -497,7 +714,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const payload = {
-                junctionId,  
+                junctionId,
                 deviceScreenId: screenId,
                 screenLayoutId: existingConfig.screenLayoutId,
                 frameLayoutId: existingConfig.frameLayoutId,
@@ -1062,6 +1279,27 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                         );
                     })}
                 </Box>
+            )}
+
+            {/* NEW: Rive Input Mapping Section - only show for RiveMapping mode */}
+            {isRiveMapping && (
+                <Paper
+                    variant="outlined"
+                    sx={{ mb: 2, p: { xs: 1, sm: 2 } }}
+                >
+                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                        <SensorsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                        Rive Input Mappings
+                    </Typography>
+
+                    <Box sx={{ p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 1 }}>
+                        <RiveInputMappingSection
+                            riveInputs={riveInputs}
+                            availableSensors={availableSensors}
+                            onInputMappingChange={handleRiveInputMappingChange}
+                        />
+                    </Box>
+                </Paper>
             )}
         </Paper>
     );
