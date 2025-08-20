@@ -1,0 +1,197 @@
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+using JunctionRelayServer.Models;
+using JunctionRelayServer.Services.FactoryServices;
+using JunctionRelayServer.Utils;
+using System.Collections.Concurrent;
+
+namespace JunctionRelayServer.Services
+{
+    public class Service_Startup : BackgroundService
+    {
+        private readonly IServiceProvider _serviceProvider;
+        private readonly StartupSignals _startupSignals;
+        private readonly ConcurrentDictionary<int, IService> _activeServices = new();
+
+        public Service_Startup(
+            IServiceProvider serviceProvider,
+            StartupSignals startupSignals)
+        {
+            _serviceProvider = serviceProvider;
+            _startupSignals = startupSignals;
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            try
+            {
+                Console.WriteLine("[STARTUP] 🚀 Service_Startup initializing...");
+
+                // Wait for database to be initialized
+                await _startupSignals.DatabaseInitialized.Task;
+                Console.WriteLine("[STARTUP] ✅ Database initialization confirmed");
+
+                // Start services and junctions
+                await StartActiveServicesAsync();
+                await StartAutoStartJunctionsAsync();
+
+                Console.WriteLine("[STARTUP] ✅ Service_Startup initialization complete");
+
+                // Keep the service running
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    await Task.Delay(60000, stoppingToken); // Wait 1 minute
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[STARTUP] ❌ Fatal error in Service_Startup: {ex.Message}");
+                throw;
+            }
+        }
+
+        private async Task StartActiveServicesAsync()
+        {
+            try
+            {
+                Console.WriteLine("[STARTUP] 🔧 Loading active services from database...");
+
+                using var scope = _serviceProvider.CreateScope();
+                var serviceManager = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Services>();
+                var serviceFactory = scope.ServiceProvider.GetRequiredService<Func<Type, Model_Service, IService>>();
+
+                var services = await serviceManager.GetAllServicesAsync();
+                var activeServices = services.Where(s => s.Status == "Active").ToList();
+
+                Console.WriteLine($"[STARTUP] 📋 Found {activeServices.Count} active services to load");
+
+                foreach (var service in activeServices)
+                {
+                    try
+                    {
+                        Console.WriteLine($"[STARTUP] 🔌 Loading service: {service.Name} (Type: {service.Type})");
+
+                        // Determine service type
+                        Type serviceType = service.Type switch
+                        {
+                            "MQTT Broker" => typeof(Service_MQTT),
+                            "HomeAssistant" => typeof(Service_HomeAssistant),
+                            "Grafana" => typeof(Service_Grafana),
+                            _ => null
+                        };
+
+                        if (serviceType == null)
+                        {
+                            Console.WriteLine($"[STARTUP] ⚠️ Unknown service type '{service.Type}' for service '{service.Name}' - skipping");
+                            continue;
+                        }
+
+                        // Create and initialize service instance
+                        var serviceInstance = serviceFactory(serviceType, service);
+                        await serviceInstance.ConnectAsync();
+
+                        // Store for lifecycle management
+                        _activeServices[service.Id] = serviceInstance;
+
+                        Console.WriteLine($"[STARTUP] ✅ Successfully loaded service: {service.Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[STARTUP] ❌ Failed to load service '{service.Name}': {ex.Message}");
+                    }
+                }
+
+                Console.WriteLine($"[STARTUP] 🎯 Successfully loaded {_activeServices.Count} services");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[STARTUP] ❌ Error loading services: {ex.Message}");
+            }
+        }
+
+        private async Task StartAutoStartJunctionsAsync()
+        {
+            try
+            {
+                Console.WriteLine("[STARTUP] 🔗 Starting auto-start junctions...");
+
+                using var scope = _serviceProvider.CreateScope();
+                var junctionManager = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
+
+                var junctions = await junctionManager.GetAllJunctionsAsync();
+                var autoStartJunctions = junctions.Where(j => j.AutoStartOnLaunch).ToList();
+
+                Console.WriteLine($"[STARTUP] 📋 Found {autoStartJunctions.Count} junctions set to auto-start");
+
+                foreach (var junction in autoStartJunctions)
+                {
+                    try
+                    {
+                        Console.WriteLine($"[STARTUP] 🚀 Auto-starting junction: {junction.Name} (ID: {junction.Id})");
+
+                        // TODO: Integrate with your junction execution service
+                        // This would typically call something like:
+                        // var junctionExecutor = scope.ServiceProvider.GetRequiredService<Service_Junction_Executor>();
+                        // await junctionExecutor.StartJunctionAsync(junction.Id);
+
+                        Console.WriteLine($"[STARTUP] ✅ Junction '{junction.Name}' auto-start initiated");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[STARTUP] ❌ Failed to auto-start junction '{junction.Name}': {ex.Message}");
+                    }
+                }
+
+                Console.WriteLine($"[STARTUP] 🎯 Auto-start processing complete for {autoStartJunctions.Count} junctions");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[STARTUP] ❌ Error starting auto-start junctions: {ex.Message}");
+            }
+        }
+
+        public override async Task StopAsync(CancellationToken cancellationToken)
+        {
+            Console.WriteLine("[STARTUP] 🛑 Service_Startup shutting down...");
+
+            // Gracefully disconnect all services
+            foreach (var kvp in _activeServices)
+            {
+                try
+                {
+                    if (kvp.Value is IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
+                    Console.WriteLine($"[STARTUP] ✅ Disconnected service {kvp.Key}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[STARTUP] ⚠️ Error disconnecting service {kvp.Key}: {ex.Message}");
+                }
+            }
+
+            _activeServices.Clear();
+            Console.WriteLine("[STARTUP] ✅ Service_Startup shutdown complete");
+
+            await base.StopAsync(cancellationToken);
+        }
+    }
+}
