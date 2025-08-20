@@ -164,7 +164,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = sensorCount,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
 
@@ -199,7 +199,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 4,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
 
@@ -250,7 +250,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 1,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
 
             return template;
@@ -301,7 +301,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 1,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
             // Add the terminal color for Astro layout and animation settings
             var jsonConfig = new Dictionary<string, object>
@@ -355,7 +355,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 4,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
 
@@ -372,7 +372,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 1,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
 
@@ -389,7 +389,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 1,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
 
@@ -406,7 +406,7 @@ namespace JunctionRelayServer.Services
                 PreviewSensors = 1,
                 IncludePrefixConfig = true,
                 IncludePrefixSensor = true,
-                FieldsToSend = "SensorTag,Value,Unit"
+                FieldsToSend = "Value,Unit"
             };
         }
     }

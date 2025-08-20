@@ -499,7 +499,7 @@ const ConfigureLayout: React.FC = () => {
             'Unit',
             'Value',
             'DecimalPlaces',
-            'SensorTag',
+            // 'SensorTag',
             'Formula',
             'LastUpdated',
             'CustomAttribute1',
@@ -2166,7 +2166,7 @@ const ConfigureLayout: React.FC = () => {
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                     <Typography variant="h6" gutterBottom>Model Sensor Fields</Typography>
                                     <Typography variant="body2" gutterBottom>
-                                        Select which fields from the Model_Sensor should be included in this layout.
+                                        Select which fields from the Model_Sensor should be included in this layout. Note that the fields are ALWAYS wrapped with the 'SensorTag' value.
                                     </Typography>
 
                                     {availableFields.length > 0 ? (
