@@ -32,6 +32,7 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Stream_Manager_MQTT _mqttStreamManager;
         private readonly Service_Stream_Manager_COM _comStreamManager;
         private readonly Service_Stream_Manager_WebSocket _webSocketStreamManager;
+        private readonly Service_Stream_Manager_Virtual _virtualStreamManager;
 
         public Controller_Connections(
             Service_Manager_Connections connectionService,
@@ -39,7 +40,8 @@ namespace JunctionRelayServer.Controllers
             Service_Stream_Manager_HTTP httpStreamManager,
             Service_Stream_Manager_MQTT mqttStreamManager,
             Service_Stream_Manager_COM comStreamManager,
-            Service_Stream_Manager_WebSocket webSocketStreamManager)
+            Service_Stream_Manager_WebSocket webSocketStreamManager,
+            Service_Stream_Manager_Virtual virtualStreamManager)
         {
             _connectionService = connectionService;
             _sensorDb = sensorDb;
@@ -47,6 +49,7 @@ namespace JunctionRelayServer.Controllers
             _mqttStreamManager = mqttStreamManager;
             _comStreamManager = comStreamManager;
             _webSocketStreamManager = webSocketStreamManager;
+            _virtualStreamManager = virtualStreamManager;
         }    
 
     [HttpPost("start/{junctionId}")]
@@ -88,20 +91,21 @@ namespace JunctionRelayServer.Controllers
         [HttpGet("streams")]
         public IActionResult GetActiveStreams()
         {
-            // Get active streams from HTTP, MQTT, COM, and WebSocket managers
+            var activeVirtualStreams = _virtualStreamManager.GetActiveStreams();
             var activeHttpStreams = _httpStreamManager.GetActiveStreams();
             var activeMqttStreams = _mqttStreamManager.GetActiveStreams();
             var activeComStreams = _comStreamManager.GetActiveStreams();
             var activeWebSocketStreams = _webSocketStreamManager.GetActiveStreams();
+            
 
-            // Combine all active streams (HTTP, MQTT, COM, WebSocket)
             var allActiveStreams = activeHttpStreams
-                                    .Concat(activeMqttStreams)
-                                    .Concat(activeComStreams)
-                                    .Concat(activeWebSocketStreams)
-                                    .ToList();
+                .Concat(activeVirtualStreams)
+                .Concat(activeMqttStreams)
+                .Concat(activeComStreams)
+                .Concat(activeWebSocketStreams)
+                .ToList();
 
-            return Ok(new { activeStreams = allActiveStreams });  // Return the combined active streams
+            return Ok(new { activeStreams = allActiveStreams });
         }
 
 

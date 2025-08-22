@@ -103,9 +103,9 @@ namespace JunctionRelayServer.Services
             {
                 newDevice.Type = "Cloud Device";
             }
-            else if (newDevice.Type != "Custom")
+            else if (newDevice.Type != "Custom" && newDevice.Type != "Virtual Screen")
             {
-                // Otherwise, determine type based on gateway info (only if not already set to Custom)
+                // Otherwise, determine type based on gateway info (only if not already set to Custom or Virtual Screen)
                 if (newDevice.IsGateway)
                 {
                     newDevice.Type = "Gateway";
@@ -119,7 +119,7 @@ namespace JunctionRelayServer.Services
                     newDevice.Type = "Standalone";
                 }
             }
-            // If Type is already "Custom", we preserve it
+            // If Type is already "Custom" or "Virtual Screen", we preserve it
 
             // Encrypt SSH secrets before storing
             if (!string.IsNullOrEmpty(newDevice.SshPassword))
@@ -203,6 +203,22 @@ SELECT last_insert_rowid();";
                     screen.DeviceId = newId;  // Link screen to the main device
                     await CreateDeviceScreenAsync(screen);  // Create the screen entry in the database
                 }
+            }
+
+            // Automatically create a virtual screen record for Virtual Screen devices
+            if (newDevice.Type == "Virtual Screen")
+            {
+                var virtualScreen = new Model_Device_Screens
+                {
+                    DeviceId = newId,
+                    ScreenKey = "virtual",
+                    DisplayName = "Virtual Screen Display",
+                    ScreenType = "virtual",
+                    SupportsConfigPayloads = true,
+                    SupportsSensorPayloads = true,
+                    UseKeepAlive = false
+                };
+                await CreateDeviceScreenAsync(virtualScreen);
             }
 
             return newDevice;

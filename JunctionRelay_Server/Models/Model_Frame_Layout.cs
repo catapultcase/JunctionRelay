@@ -24,7 +24,7 @@ namespace JunctionRelayServer.Models
         public int Id { get; set; }
         public string? DisplayName { get; set; }
         public string? Description { get; set; }
-        public string LayoutType { get; set; } = "Pre-Rendered Image"; // "Pre-Rendered Image" or "Rive Mapping"
+        public string LayoutType { get; set; } = "Pre-Rendered Image"; // "Pre-Rendered Image" or "Composite Mode"
 
         // Status and Metadata
         public bool IsTemplate { get; set; } = false;
@@ -41,7 +41,7 @@ namespace JunctionRelayServer.Models
         public string Orientation { get; set; } = "landscape"; // "landscape" or "portrait"
 
         // Background Configuration
-        public string BackgroundType { get; set; } = "color"; // "none", "color", "image", "url"
+        public string BackgroundType { get; set; } = "color"; // "none", "color", "image", "rive"
         public string? BackgroundColor { get; set; } = "#FFFFFF";
         public string? BackgroundImageUrl { get; set; }
         public byte[]? BackgroundImageData { get; set; } // For uploaded images
@@ -50,6 +50,13 @@ namespace JunctionRelayServer.Models
         // Rive Configuration
         public string? RiveFile { get; set; }
         public bool RiveEmbedInPayload { get; set; } = true; // Whether to embed Rive file data in config payload
+
+        // Thumbnail Configuration
+        public string? ThumbnailPath { get; set; } // Relative path to thumbnail file (e.g., "frameengine/thumbnails/123.png")
+        public DateTime? ThumbnailGeneratedAt { get; set; } // When thumbnail was last generated
+        public bool HasThumbnail { get; set; } = false; // Quick check if thumbnail exists
+        public string? ThumbnailFormat { get; set; } = "png"; // "png", "jpg", "webp"
+        public bool ThumbnailOverride { get; set; } = false;
 
         // Frame Configuration (JSON)
         public string? JsonFrameConfig { get; set; } // Frame-specific settings (fonts, colors, layout rules, rive state machine mapping etc)

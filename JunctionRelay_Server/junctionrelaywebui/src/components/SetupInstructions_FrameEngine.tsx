@@ -58,11 +58,11 @@ export const SetupInstructions_FrameEngine: React.FC<SetupInstructions_FrameEngi
                     </Box>
                 );
 
-            case "RIVE_MAPPING":
+            case "COMPOSITE_MODE":
                 return (
                     <Box>
                         <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                            Rive Mapping:
+                            Composite Mode:
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Purpose:</strong><br />

@@ -382,6 +382,37 @@ namespace JunctionRelayServer.Services
             };
         }
 
+        public StreamHistoryEntry CreateEntryFromVirtual(Service_StreamInfo_Virtual info)
+        {
+            return new StreamHistoryEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ScreenId = info.ScreenId,
+                DeviceName = info.DeviceName,
+                ScreenName = info.ScreenName,
+                Protocol = info.Protocol,
+                Status = info.Status,
+                Latency = info.Latency,
+                SensorsCount = info.SensorsCount,
+                Rate = info.Rate,
+                ConnectionState = info.Health.ConnectionState,
+                SuccessRate = info.Health.SuccessRate,
+                ConsecutiveFailures = info.Health.ConsecutiveFailures,
+                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
+                AverageLatency = info.Health.AverageLatency,
+                LastErrorMessage = info.Health.LastErrorMessage,
+                ErrorType = info.Health.ErrorType,
+                ProtocolSpecificData = new Dictionary<string, object>
+                {
+                    ["IsVirtual"] = true,
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
+                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O"),
+                    ["PayloadsGenerated"] = info.PayloadsGenerated
+                }
+            };
+        }
+
+
         // Get history for a specific stream
         public StreamHistoryResponse GetStreamHistory(int screenId, DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = true)
         {

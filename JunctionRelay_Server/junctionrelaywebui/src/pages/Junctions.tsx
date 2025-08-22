@@ -37,7 +37,7 @@ import { useFeatureFlags } from "../hooks/useFeatureFlags";
 
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
-import AddJunctionModal from "../components/AddJunctionModal";
+import AddJunctionModal from "../components/Junction_AddJunctionModal";
 
 // Main Junctions Component following Devices page pattern
 const Junctions = () => {

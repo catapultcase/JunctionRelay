@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ import Device_ScanModal from '../components/Device_ScanModal';
 import Device_ManagementSection from '../components/Device_ManagementSection';
 import Device_AddDeviceModal from '../components/Device_AddDeviceModal';
 import Device_AddCustomDeviceModal from '../components/Device_AddCustomDeviceModal';
+import Device_AddVirtualScreenModal from '../components/Device_AddVirtualScreenModal';
 import Device_ScanResults from '../components/Device_ScanResults';
 
 import {
@@ -119,6 +120,7 @@ const Devices: React.FC = () => {
     const [updateStatuses, setUpdateStatuses] = useState<Record<number, boolean>>({});
     const [updatingDevices, setUpdatingDevices] = useState<Set<number>>(new Set());
     const [addCustomDeviceModalOpen, setAddCustomDeviceModalOpen] = useState(false);
+    const [addVirtualScreenModalOpen, setAddVirtualScreenModalOpen] = useState(false);
     const [addCloudDeviceModalOpen, setAddCloudDeviceModalOpen] = useState(false);
     const [refreshingCloudDevices, setRefreshingCloudDevices] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<{ name: string; ipAddress: string } | null>(null);
@@ -181,6 +183,7 @@ const Devices: React.FC = () => {
             fetchComPorts(); // Refresh COM ports when opening modal
             setAddCustomDeviceModalOpen(true);
         };
+        const handleAddVirtualScreen = () => setAddVirtualScreenModalOpen(true);
         const handleAddCloudDevice = () => setAddCloudDeviceModalOpen(true);
         const handleRefresh = () => fetchDevices(false, true);
         const handleSearch = () => setScanModalOpen(true);
@@ -192,6 +195,7 @@ const Devices: React.FC = () => {
         };
 
         window.addEventListener('bottom-action-add-device', handleAddDevice);
+        window.addEventListener('bottom-action-add-virtual-screen', handleAddVirtualScreen);
         window.addEventListener('bottom-action-add-cloud-device', handleAddCloudDevice);
         window.addEventListener('bottom-action-refresh', handleRefresh);
         window.addEventListener('bottom-action-search', handleSearch);
@@ -200,6 +204,7 @@ const Devices: React.FC = () => {
 
         return () => {
             window.removeEventListener('bottom-action-add-device', handleAddDevice);
+            window.removeEventListener('bottom-action-add-virtual-screen', handleAddVirtualScreen);
             window.removeEventListener('bottom-action-add-cloud-device', handleAddCloudDevice);
             window.removeEventListener('bottom-action-refresh', handleRefresh);
             window.removeEventListener('bottom-action-search', handleSearch);
@@ -350,6 +355,14 @@ const Devices: React.FC = () => {
 
     // Device card click handler
     const handleCardClick = (device: any) => {
+        // Check if this is a virtual screen device
+        if (device.type === "Virtual Screen") {
+            // Navigate to virtual screen viewer
+            navigate(`/device/${device.id}/virtual-screen`);
+            return;
+        }
+
+        // Existing logic for other device types
         const ip = device.ipAddress || device.IpAddress;
         const details = deviceDetails[ip] || {};
         const isJunctionRelay = details.firmwareVersion && details.firmwareVersion.includes('JunctionRelay');
@@ -463,7 +476,7 @@ const Devices: React.FC = () => {
                 return updated;
             });
         }
-    };    
+    };
 
     // Sync mode change handler
     const handleSyncModeChange = useCallback(async (deviceId: number, mode: string) => {
@@ -554,6 +567,7 @@ const Devices: React.FC = () => {
                     if (open) fetchComPorts(); // Refresh COM ports when opening modal
                     setAddCustomDeviceModalOpen(open);
                 }}
+                setAddVirtualScreenModalOpen={setAddVirtualScreenModalOpen}
                 checkForUpdates={checkForUpdates}
                 isUnifiedMode={isUnifiedMode}
                 setAddCloudDeviceModalOpen={setAddCloudDeviceModalOpen}
@@ -655,6 +669,12 @@ const Devices: React.FC = () => {
                 onDeviceAdded={fetchDevices}
                 prefilledData={selectedCustomDevice}
                 comPorts={comPorts}
+            />
+
+            <Device_AddVirtualScreenModal
+                open={addVirtualScreenModalOpen}
+                onClose={() => setAddVirtualScreenModalOpen(false)}
+                onDeviceAdded={fetchDevices}
             />
 
             <DeviceRegistrationModal

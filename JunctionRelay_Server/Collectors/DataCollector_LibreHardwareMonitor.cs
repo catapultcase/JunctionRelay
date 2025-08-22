@@ -58,9 +58,9 @@ namespace JunctionRelayServer.Collectors
 
             CollectorId = collector.Id;
 
-            Console.WriteLine(
-                $"[LHM][Config] CollectorId={CollectorId}, Name='{collector.Name}', URL='{_baseUrl}', TokenProvided={(string.IsNullOrEmpty(_accessToken) ? "no" : "yes")}"
-            );
+            // Console.WriteLine(
+            //     $"[LHM][Config] CollectorId={CollectorId}, Name='{collector.Name}', URL='{_baseUrl}', TokenProvided={(string.IsNullOrEmpty(_accessToken) ? "no" : "yes")}"
+            // );
         }
 
 
@@ -72,16 +72,16 @@ namespace JunctionRelayServer.Collectors
             using var client = new HttpClient();
 
             var url = $"{_baseUrl}/data.json";
-            Console.WriteLine($"[LHM][FetchSensors] GET {url}");
+            // Console.WriteLine($"[LHM][FetchSensors] GET {url}");
 
             var response = await client.GetAsync(url, cancellationToken);
-            Console.WriteLine($"[LHM][FetchSensors] HTTP {(int)response.StatusCode} {response.StatusCode}");
+            // Console.WriteLine($"[LHM][FetchSensors] HTTP {(int)response.StatusCode} {response.StatusCode}");
 
             if (!response.IsSuccessStatusCode)
             {
                 string body = string.Empty;
                 try { body = await response.Content.ReadAsStringAsync(cancellationToken); } catch { }
-                Console.WriteLine($"[LHM][FetchSensors][ERROR] Non-success status. Body (first 500): {Trunc(body, 500)}");
+                // Console.WriteLine($"[LHM][FetchSensors][ERROR] Non-success status. Body (first 500): {Trunc(body, 500)}");
                 response.EnsureSuccessStatusCode(); // will throw with status info
             }
 
@@ -89,11 +89,11 @@ namespace JunctionRelayServer.Collectors
             try
             {
                 json = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine($"[LHM][FetchSensors] Received JSON length={json.Length}");
+                // Console.WriteLine($"[LHM][FetchSensors] Received JSON length={json.Length}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LHM][FetchSensors][ERROR] Failed to read body: {ex.Message}");
+                // Console.WriteLine($"[LHM][FetchSensors][ERROR] Failed to read body: {ex.Message}");
                 throw;
             }
 
@@ -104,14 +104,14 @@ namespace JunctionRelayServer.Collectors
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LHM][FetchSensors][ERROR] JSON parse failed: {ex.Message}. Payload head: {Trunc(json, 500)}");
+                // Console.WriteLine($"[LHM][FetchSensors][ERROR] JSON parse failed: {ex.Message}. Payload head: {Trunc(json, 500)}");
                 throw;
             }
 
             var children = jsonData["Children"];
             if (children == null)
             {
-                Console.WriteLine("[LHM][FetchSensors] No 'Children' node found.");
+                // Console.WriteLine("[LHM][FetchSensors] No 'Children' node found.");
                 return sensorReadings;
             }
 
@@ -120,7 +120,7 @@ namespace JunctionRelayServer.Collectors
             {
                 if (hardware == null)
                 {
-                    Console.WriteLine("[LHM][FetchSensors] Skipped null hardware node.");
+                    // Console.WriteLine("[LHM][FetchSensors] Skipped null hardware node.");
                     continue;
                 }
 
@@ -131,7 +131,7 @@ namespace JunctionRelayServer.Collectors
                     continue;
                 }
                 hardwareCount++;
-                Console.WriteLine($"[LHM][FetchSensors] Hardware: {hardwareName}");
+                // Console.WriteLine($"[LHM][FetchSensors] Hardware: {hardwareName}");
 
                 var hardwareChildren = hardware["Children"];
                 if (hardwareChildren != null)
@@ -140,7 +140,7 @@ namespace JunctionRelayServer.Collectors
                     {
                         if (component == null)
                         {
-                            Console.WriteLine($"[LHM][FetchSensors]   Skipped null component under '{hardwareName}'.");
+                            // Console.WriteLine($"[LHM][FetchSensors]   Skipped null component under '{hardwareName}'.");
                             continue;
                         }
 
@@ -151,14 +151,14 @@ namespace JunctionRelayServer.Collectors
                             continue;
                         }
                         componentCount++;
-                        Console.WriteLine($"[LHM][FetchSensors]   Component: {componentName}");
+                        // Console.WriteLine($"[LHM][FetchSensors]   Component: {componentName}");
 
                         sensorCount += ProcessComponents(component, hardwareName, componentName, sensorReadings, collector);
                     }
                 }
             }
 
-            Console.WriteLine($"[LHM][FetchSensors] Done. Hardware={hardwareCount}, Components={componentCount}, SensorsAdded={sensorReadings.Count}, SkippedUnnamedHardware={skippedUnnamedHardware}, SkippedUnnamedComponent={skippedUnnamedComponent}, TraversedSensorNodes={sensorCount}");
+            // Console.WriteLine($"[LHM][FetchSensors] Done. Hardware={hardwareCount}, Components={componentCount}, SensorsAdded={sensorReadings.Count}, SkippedUnnamedHardware={skippedUnnamedHardware}, SkippedUnnamedComponent={skippedUnnamedComponent}, TraversedSensorNodes={sensorCount}");
             return sensorReadings;
         }
 
@@ -166,7 +166,7 @@ namespace JunctionRelayServer.Collectors
         {
             var all = await FetchSensorsAsync(collector, cancellationToken);
             var filtered = all.FindAll(s => selectedSensorIds.Contains(s.ExternalId));
-            Console.WriteLine($"[LHM][FetchSelected] Selected {filtered.Count} of {all.Count} sensors by ExternalId match.");
+            // Console.WriteLine($"[LHM][FetchSelected] Selected {filtered.Count} of {all.Count} sensors by ExternalId match.");
             return filtered;
         }
 
@@ -178,15 +178,15 @@ namespace JunctionRelayServer.Collectors
                 using var client = new HttpClient();
 
                 var url = $"{_baseUrl}/api/";
-                Console.WriteLine($"[LHM][TestConnection] GET {url}");
+                // Console.WriteLine($"[LHM][TestConnection] GET {url}");
 
                 var response = await client.GetAsync(url, cancellationToken);
-                Console.WriteLine($"[LHM][TestConnection] HTTP {(int)response.StatusCode} {response.StatusCode}");
+                // Console.WriteLine($"[LHM][TestConnection] HTTP {(int)response.StatusCode} {response.StatusCode}");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LHM][TestConnection][ERROR] {ex.Message}");
+                // Console.WriteLine($"[LHM][TestConnection][ERROR] {ex.Message}");
                 return false;
             }
         }
@@ -196,9 +196,6 @@ namespace JunctionRelayServer.Collectors
         public Task StopSessionAsync(Model_Collector collector, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public bool IsConnected(Model_Collector collector) => true;
 
-        /// <summary>
-        /// Traverses the component tree and adds sensors. Returns count of sensor nodes traversed (added + skipped).
-        /// </summary>
         private int ProcessComponents(JToken component, string hardwareName, string parentComponentName, List<Model_Sensor> sensorReadings, Model_Collector collector)
         {
             int traversedSensorNodes = 0;
@@ -212,7 +209,7 @@ namespace JunctionRelayServer.Collectors
                 {
                     if (child == null)
                     {
-                        Console.WriteLine($"[LHM][Process] Skipped null child under '{componentName}'.");
+                        // Console.WriteLine($"[LHM][Process] Skipped null child under '{componentName}'.");
                         continue;
                     }
 
@@ -233,7 +230,7 @@ namespace JunctionRelayServer.Collectors
 
                         if (string.IsNullOrEmpty(sensorName) || string.IsNullOrEmpty(sensorType))
                         {
-                            Console.WriteLine($"[LHM][Process] Skipped sensor with missing name/type under '{componentName}'. Raw: Name='{sensorName}', Type='{sensorType}', Id='{sensorId}'");
+                            // Console.WriteLine($"[LHM][Process] Skipped sensor with missing name/type under '{componentName}'. Raw: Name='{sensorName}', Type='{sensorType}', Id='{sensorId}'");
                             continue;
                         }
 
@@ -257,13 +254,13 @@ namespace JunctionRelayServer.Collectors
                         };
 
                         sensorReadings.Add(model);
-                        Console.WriteLine($"[LHM][Process] +Sensor ExternalId='{model.ExternalId}' Name='{model.Name}' Value='{model.Value}{model.Unit}' Component='{model.ComponentName}' Category='{model.Category}'");
+                        // Console.WriteLine($"[LHM][Process] +Sensor ExternalId='{model.ExternalId}' Name='{model.Name}' Value='{model.Value}{model.Unit}' Component='{model.ComponentName}' Category='{model.Category}'");
                     }
                 }
             }
             else
             {
-                Console.WriteLine($"[LHM][Process] No children under component '{componentName}'.");
+                // Console.WriteLine($"[LHM][Process] No children under component '{componentName}'.");
             }
 
             return traversedSensorNodes;

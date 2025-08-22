@@ -486,6 +486,11 @@ namespace JunctionRelayServer.Services
             // Streaming based on junction type
             switch (junction.Type)
             {
+                case "Virtual Junction":
+                    var virtualMgr = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_Virtual>();
+                    await HandleStreamingForJunctionType(virtualMgr, junction, deviceDb, selectedSensorsCopy);
+                    break;
+
                 case "MQTT Junction":
                     var mqtt = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_MQTT>();
                     await HandleStreamingForJunctionType(mqtt, junction, deviceDb, selectedSensorsCopy);
@@ -525,8 +530,7 @@ namespace JunctionRelayServer.Services
             _startedJunctions[junctionId] = junction;
             junction.Status = "Running";
 
-            string finalModeInfo = isFrameMode ? "Frame Engine mode" : "Payload mode";
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Junction {junctionId} ({junction.Name}) started successfully in {finalModeInfo}");
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Junction {junctionId} ({junction.Name}) started successfully");
 
             return Model_Operation_Result.Ok("Junction started.");
         }
@@ -544,7 +548,7 @@ namespace JunctionRelayServer.Services
             bool isFrameMode = junction.RenderingMode != null &&
                                junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
             bool isRiveMode = junction.RenderingMode != null &&
-                               junction.RenderingMode.Equals("RiveMapping", StringComparison.OrdinalIgnoreCase);
+                               junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
 
             if (isFrameMode)
             {
@@ -713,6 +717,10 @@ namespace JunctionRelayServer.Services
             dynamic streamManager;
             switch (junction.Type)
             {
+                case "Virtual Junction":
+                    streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_Virtual>();
+                    break;
+
                 case "MQTT Junction":
                     streamManager = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_MQTT>();
                     break;

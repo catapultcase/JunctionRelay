@@ -240,7 +240,7 @@ const RiveInputMappingSection: React.FC<{
     if (riveInputs.length === 0) {
         return (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Rive Mapping layouts.
+                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Composite Mode layouts.
             </Typography>
         );
     }
@@ -333,7 +333,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
     // Determine rendering mode
     const isFrameEngine = junction?.renderingMode === "FrameEngine";
-    const isRiveMapping = junction?.renderingMode === "RiveMapping";
+    const isRiveMapping = junction?.renderingMode === "CompositeMode";
 
     // Filter layouts based on rendering mode
     const getFilteredLayouts = () => {
@@ -341,8 +341,8 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             // FrameEngine mode - show PRE_RENDERED_IMAGE templates
             return frameLayouts.filter(layout => layout.layoutType === "PRE_RENDERED_IMAGE");
         } else if (isRiveMapping) {
-            // RiveMapping mode - show RIVE_MAPPING templates
-            return frameLayouts.filter(layout => layout.layoutType === "RIVE_MAPPING");
+            // CompositeMode mode - show COMPOSITE_MODE templates
+            return frameLayouts.filter(layout => layout.layoutType === "COMPOSITE_MODE");
         } else {
             // Payload mode - show traditional screen layouts
             return screenLayouts;
@@ -825,7 +825,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 onJunctionUpdate(updatedJunction);
             }
 
-            const modeLabel = newMode === "FrameEngine" ? "FrameEngine - Pre-Rendered Frames" : newMode === "RiveMapping" ? "FrameEngine - Rive Mapping" : "Payload";
+            const modeLabel = newMode === "FrameEngine" ? "FrameEngine - Pre-Rendered Frames" : newMode === "CompositeMode" ? "FrameEngine - Composite Mode" : "Payload";
             showSnackbar(`Switched to ${modeLabel} mode successfully`, "success");
 
             // Refresh screen configurations since they may be different for the new mode
@@ -994,7 +994,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                             >
                                 <MenuItem value="Payload">Standard Payloads</MenuItem>
                                 <MenuItem value="FrameEngine">FrameEngine (Pre-Rendered Frames)</MenuItem>
-                                <MenuItem value="RiveMapping">FrameEngine (Rive Mapping)</MenuItem>
+                                <MenuItem value="CompositeMode">FrameEngine (Composite Mode)</MenuItem>
                             </Select>
                         </FormControl>
                         <Chip
@@ -1018,7 +1018,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                             </>
                         ) : isRiveMapping ? (
                             <>
-                                <strong>FrameEngine (Rive Mapping):</strong> Uses Rive state machines and animations mapped directly to sensors. The receiving device interprets Rive instructions rather than raw frames or payloads, enabling dynamic, vector-based rendering.
+                                <strong>FrameEngine (Composite Mode):</strong> Uses Rive state machines and animations mapped directly to sensors. The receiving device interprets Rive instructions rather than raw frames or payloads, enabling dynamic, vector-based rendering.
                             </>
                         ) : (
                             <>
@@ -1041,7 +1041,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 }}>
                     {(isFrameEngine || isRiveMapping) ? <ImageIcon sx={{ mr: 1 }} /> : <ScreenshotIcon sx={{ mr: 1 }} />}
                     {isRiveMapping
-                        ? "Rive Mapping Configurations"
+                        ? "Composite Mode Configurations"
                         : (isFrameEngine ? "FrameEngine Configurations" : "Screen Layout Overrides")}
                 </Typography>
             </Box>
@@ -1281,7 +1281,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </Box>
             )}
 
-            {/* NEW: Rive Input Mapping Section - only show for RiveMapping mode */}
+            {/* NEW: Rive Input Mapping Section - only show for CompositeMode mode */}
             {isRiveMapping && (
                 <Paper
                     variant="outlined"

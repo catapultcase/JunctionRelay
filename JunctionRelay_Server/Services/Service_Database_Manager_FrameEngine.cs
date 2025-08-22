@@ -43,20 +43,22 @@ namespace JunctionRelayServer.Services
             ValidateFrameLayout(frameLayout);
 
             const string sql = @"
-                INSERT INTO FrameLayouts 
-                  (DisplayName, Description, LayoutType,
-                   IsTemplate, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
-                   BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageData, BackgroundOpacity,
-                   Width, Height, Orientation, RiveFile, RiveEmbedInPayload,
-                   JsonFrameConfig, JsonFrameElements)
-                VALUES 
-                  (@DisplayName, @Description, @LayoutType,
-                   @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
-                   @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageData, @BackgroundOpacity,
-                   @Width, @Height, @Orientation, @RiveFile, @RiveEmbedInPayload,
-                   @JsonFrameConfig, @JsonFrameElements);
-                SELECT last_insert_rowid();
-            ";
+        INSERT INTO FrameLayouts 
+          (DisplayName, Description, LayoutType,
+           IsTemplate, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
+           BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageData, BackgroundOpacity,
+           Width, Height, Orientation, RiveFile, RiveEmbedInPayload,
+           JsonFrameConfig, JsonFrameElements,
+           HasThumbnail, ThumbnailPath, ThumbnailGeneratedAt, ThumbnailFormat)
+        VALUES 
+          (@DisplayName, @Description, @LayoutType,
+           @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
+           @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageData, @BackgroundOpacity,
+           @Width, @Height, @Orientation, @RiveFile, @RiveEmbedInPayload,
+           @JsonFrameConfig, @JsonFrameElements,
+           @HasThumbnail, @ThumbnailPath, @ThumbnailGeneratedAt, @ThumbnailFormat);
+        SELECT last_insert_rowid();
+    ";
 
             if (frameLayout.Created == default)
                 frameLayout.Created = DateTime.UtcNow;
@@ -80,30 +82,34 @@ namespace JunctionRelayServer.Services
             frameLayout.LastModified = DateTime.UtcNow;
 
             const string sql = @"
-                UPDATE FrameLayouts
-                SET 
-                  DisplayName           = @DisplayName,
-                  Description           = @Description,
-                  LayoutType            = @LayoutType,
-                  IsTemplate            = @IsTemplate,
-                  IsDraft               = @IsDraft,
-                  IsPublished           = @IsPublished,
-                  LastModified          = @LastModified,
-                  CreatedBy             = @CreatedBy,
-                  Version               = @Version,
-                  BackgroundType        = @BackgroundType,
-                  BackgroundColor       = @BackgroundColor,
-                  BackgroundImageUrl    = @BackgroundImageUrl,
-                  BackgroundImageData   = @BackgroundImageData,
-                  BackgroundOpacity     = @BackgroundOpacity,
-                  Width                 = @Width,
-                  Height                = @Height,
-                  Orientation           = @Orientation,
-                  RiveFile              = @RiveFile,
-                  RiveEmbedInPayload    = @RiveEmbedInPayload,
-                  JsonFrameConfig       = @JsonFrameConfig,
-                  JsonFrameElements     = @JsonFrameElements
-                WHERE Id = @Id";
+        UPDATE FrameLayouts
+        SET 
+          DisplayName           = @DisplayName,
+          Description           = @Description,
+          LayoutType            = @LayoutType,
+          IsTemplate            = @IsTemplate,
+          IsDraft               = @IsDraft,
+          IsPublished           = @IsPublished,
+          LastModified          = @LastModified,
+          CreatedBy             = @CreatedBy,
+          Version               = @Version,
+          BackgroundType        = @BackgroundType,
+          BackgroundColor       = @BackgroundColor,
+          BackgroundImageUrl    = @BackgroundImageUrl,
+          BackgroundImageData   = @BackgroundImageData,
+          BackgroundOpacity     = @BackgroundOpacity,
+          Width                 = @Width,
+          Height                = @Height,
+          Orientation           = @Orientation,
+          RiveFile              = @RiveFile,
+          RiveEmbedInPayload    = @RiveEmbedInPayload,
+          JsonFrameConfig       = @JsonFrameConfig,
+          JsonFrameElements     = @JsonFrameElements,
+          HasThumbnail          = @HasThumbnail,
+          ThumbnailPath         = @ThumbnailPath,
+          ThumbnailGeneratedAt  = @ThumbnailGeneratedAt,
+          ThumbnailFormat       = @ThumbnailFormat
+        WHERE Id = @Id";
 
             var affected = await _db.ExecuteAsync(sql, frameLayout);
             return affected > 0;
@@ -316,15 +322,16 @@ namespace JunctionRelayServer.Services
                     // Rive settings - keep default true for templates
                     RiveEmbedInPayload = false,
 
-                    // Minimal JSON placeholders
-                    JsonFrameConfig = @"{""version"":""1.0"",""lastConfigUpdate"":""2025-08-18T02:05:52.236Z"",""canvas"":{""width"":792,""height"":272,""orientation"":""landscape"",""layoutType"":""PRE_RENDERED_IMAGE"",""grid"":{""enabled"":false,""rows"":null,""columns"":null,""snapToGrid"":false,""gridSize"":20}},""background"":{""type"":""color"",""color"":""#FFFFFF"",""imageUrl"":null,""hasImageData"":false,""opacity"":1,""imageSettings"":null},""rive"":{""enabled"":false,""file"":null,""inputs"":{},""settings"":null},""rendering"":{""quality"":""high"",""antialiasing"":true,""pixelRatio"":1,""colorProfile"":""sRGB""},""metadata"":{""name"":""Pre-Rendered Image (Template)"",""description"":""Static image background with optional sensor/text overlays"",""isTemplate"":true,""isDraft"":false,""isPublished"":true,""tags"":[],""category"":""custom""},""elements"":{""count"":2,""types"":[""sensor"",""text""],""hasSensors"":true,""hasInteractive"":false,""bounds"":{""minX"":160.05906040268457,""minY"":91.82890625,""maxX"":526.5538461538462,""maxY"":168.04315095427853}},""export"":{""formats"":[""png"",""json"",""pdf""],""defaultFormat"":""png"",""pngSettings"":{""dpi"":150,""transparent"":false,""compression"":""medium""},""pdfSettings"":{""orientation"":""landscape"",""margins"":{""top"":0,""right"":0,""bottom"":0,""left"":0},""printOptimized"":true}},""extensions"":{""animations"":{""enabled"":false,""transitions"":[]},""interactivity"":{""enabled"":false,""hotspots"":[]},""dataBinding"":{""enabled"":true,""refreshRate"":5000,""dataSources"":[]}}}",
-                    JsonFrameElements = @"[{""id"":""element_1755477112937_v3oskjykx"",""type"":""sensor"",""position"":{""x"":160.05906040268457,""y"":108.04315095427853,""width"":120,""height"":60},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":12,""showUnit"":true,""showLabel"":true,""backgroundColor"":""#e3f2fd"",""textColor"":""#000000"",""textAlign"":""left"",""sensorTag"":""CPU_Temp"",""placeholderSensorLabel"":""CPU""},""lastModified"":""2025-08-18T00:32:02.320Z""}]"
+                    // Elements
+                    JsonFrameConfig = @"",
+                    JsonFrameElements = @""
+                
                 },
                 new Model_Frame_Layout
                 {
                     DisplayName = "JR Cyber 400x1280",
                     Description = "Vertical UI for JunctionRelay Jr Demo on Waveshare 400x1280 Display",
-                    LayoutType = "RIVE_MAPPING",
+                    LayoutType = "COMPOSITE_MODE",
                     IsTemplate = true,
                     IsDraft = false,
                     IsPublished = true,
@@ -343,15 +350,16 @@ namespace JunctionRelayServer.Services
 
                     RiveFile = "jr_cyber_400x1280.riv",
                     RiveEmbedInPayload = true,
-
-                    JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""4"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-19T19:18:25.983Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#FFFFFF"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_cyber_400x1280.riv"",""stateMachine"":null,""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""State Machine 2"",""inputNames"":[],""inputs"":[]},{""name"":""Sensor1_Bar"",""inputNames"":[""Sensor1_Value""],""inputs"":[{""name"":""Sensor1_Value"",""type"":""number"",""currentValue"":50,""ref"":{""type"":56,""runtimeInput"":{}}}]}],""lastUpdate"":""2025-08-19T19:18:22.133Z"",""metadata"":{""totalInputs"":1,""inputTypeBreakdown"":{""number"":1},""discoveryAttempts"":1,""lastSuccessfulDiscovery"":""2025-08-19T19:18:22.133Z""},""activeStateMachine"":""State Machine 2"",""globalInputMappings"":{}}}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-19T19:18:25.983Z"",""riveConnections"":{""availableInputs"":[{""machineName"":""Sensor1_Bar"",""inputName"":""Sensor1_Value"",""inputType"":""number"",""currentValue"":50,""fullKey"":""Sensor1_Bar.Sensor1_Value""}],""mappedInputs"":[],""lastMappingUpdate"":""2025-08-19T19:18:25.983Z""}},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-19T19:18:25.983Z"",""riveConnections"":{""availableInputs"":[{""machineName"":""Sensor1_Bar"",""inputName"":""Sensor1_Value"",""inputType"":""number"",""currentValue"":50,""fullKey"":""Sensor1_Bar.Sensor1_Value""}],""mappedInputs"":[],""lastMappingUpdate"":""2025-08-19T19:18:25.983Z""}},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-19T19:18:25.983Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-19T19:18:25.983Z""}]}",
-                    JsonFrameElements = @"[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T00:01:26.235Z""}]"
-                },
+                   
+                    // Elements
+                    JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""4"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-21T00:13:55.870Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#FFFFFF"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_cyber_400x1280.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""Signal"",""inputNames"":[],""inputs"":[]},{""name"":""Bar2"",""inputNames"":[""Sensor2_Value""],""inputs"":[{""name"":""Sensor2_Value"",""type"":""number"",""currentValue"":30,""ref"":{""type"":56,""runtimeInput"":{}}}]},{""name"":""Bar1"",""inputNames"":[""Sensor1_Value""],""inputs"":[{""name"":""Sensor1_Value"",""type"":""number"",""currentValue"":40,""ref"":{""type"":56,""runtimeInput"":{}}}]}],""lastUpdate"":""2025-08-21T00:13:52.529Z"",""metadata"":{""totalInputs"":2,""inputTypeBreakdown"":{""number"":2},""discoveryAttempts"":3,""lastSuccessfulDiscovery"":""2025-08-21T00:13:52.529Z""},""activeStateMachine"":""Signal"",""globalInputMappings"":{}},""embedded"":true}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T00:13:55.870Z""}]}",
+                    JsonFrameElements = @"[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T00:13:55.870Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T00:13:55.870Z""}]"
+                                },
                                 new Model_Frame_Layout
                 {
                     DisplayName = "JR Nost 720x1560",
                     Description = "Horizontal UI on Waveshare 720x1560 Display",
-                    LayoutType = "RIVE_MAPPING",
+                    LayoutType = "COMPOSITE_MODE",
                     IsTemplate = true,
                     IsDraft = false,
                     IsPublished = true,
@@ -371,8 +379,8 @@ namespace JunctionRelayServer.Services
                     RiveFile = "jr_nost_720×1560.riv",
                     RiveEmbedInPayload = true,
 
-                    JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""5"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-18T14:52:05.352Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#FFFFFF"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_nost_720×1560.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true}}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-18T14:52:05.352Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-18T14:52:05.352Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T14:52:05.352Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T14:52:05.352Z""}]}",
-                    JsonFrameElements = @"[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T00:01:26.235Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-18T00:01:26.235Z""}]"
+                    JsonFrameConfig = @"",
+                    JsonFrameElements = @""
                 }
             };
         }

@@ -456,10 +456,13 @@ namespace JunctionRelayServer.Services
             // Create FrameLayouts table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS FrameLayouts (
+                    -- Core Properties
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     DisplayName NVARCHAR(100) NOT NULL,
                     Description NVARCHAR(500),
                     LayoutType NVARCHAR(50) NOT NULL,
+    
+                    -- Status and Metadata
                     IsTemplate BOOLEAN NOT NULL DEFAULT 0,
                     IsDraft BOOLEAN NOT NULL DEFAULT 1,
                     IsPublished BOOLEAN NOT NULL DEFAULT 0,
@@ -467,16 +470,31 @@ namespace JunctionRelayServer.Services
                     LastModified DATETIME,
                     CreatedBy NVARCHAR(100),
                     Version NVARCHAR(20),
+    
+                    -- Background Configuration
                     BackgroundType NVARCHAR(20),
                     BackgroundColor NVARCHAR(20),
                     BackgroundImageUrl NVARCHAR(500),
                     BackgroundImageData TEXT,
                     BackgroundOpacity REAL,
+    
+                    -- Frame Dimensions and Orientation
                     Width INTEGER,
                     Height INTEGER,
                     Orientation NVARCHAR(20),
+    
+                    -- Rive Configuration
                     RiveFile NVARCHAR(500),
                     RiveEmbedInPayload BOOLEAN NOT NULL DEFAULT 1,
+    
+                    -- Thumbnail Configuration (NEW FIELDS)
+                    ThumbnailPath NVARCHAR(255),
+                    ThumbnailGeneratedAt DATETIME,
+                    HasThumbnail BOOLEAN NOT NULL DEFAULT 0,
+                    ThumbnailFormat NVARCHAR(10) DEFAULT 'png',
+                    ThumbnailOverride BOOLEAN NOT NULL DEFAULT 0,
+    
+                    -- Frame Configuration (JSON)
                     JsonFrameConfig TEXT,
                     JsonFrameElements TEXT,
                     FieldsToSend TEXT
@@ -873,6 +891,7 @@ namespace JunctionRelayServer.Services
                 ["FrameLayouts"] = new (string, string)[]
                 {
                 //("FieldsToSend", "TEXT")
+                //("ThumbnailOverride", "BOOLEAN")
                 },
                 // ScreenLayouts table updates
                 ["ScreenLayouts"] = new (string, string)[]

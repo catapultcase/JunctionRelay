@@ -26,6 +26,7 @@ import {
 import InfoIcon from '@mui/icons-material/Info';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
+import EmbeddedVirtualScreenViewer from '../pages/VirtualScreenViewer';
 
 interface DeviceInfoPanelProps {
     deviceData: any;
@@ -35,6 +36,7 @@ interface DeviceInfoPanelProps {
     selectedComPort: string;
     setSelectedComPort: (port: string) => void;
     onAutoSave?: (updatedData: any, field: string, immediate?: boolean) => void;
+    deviceId?: string; // Add deviceId prop
 }
 
 const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
@@ -44,7 +46,8 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
     comPorts,
     selectedComPort,
     setSelectedComPort,
-    onAutoSave
+    onAutoSave,
+    deviceId
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -188,6 +191,9 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
         { key: 'supportsMQTT', label: 'Supports MQTT' },
         { key: 'supportsWebSockets', label: 'Supports WebSockets' }
     ];
+
+    // Check if this is a Virtual Screen device
+    const isVirtualScreen = deviceData?.type === 'Virtual Screen';
 
     return (
         <Box>
@@ -457,70 +463,110 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                     </Paper>
                 </Box>
 
-                {/* Right Column - Device Capabilities */}
+                {/* Right Column - Device Capabilities OR Virtual Screen Viewer */}
                 <Box sx={{
                     flex: isMobile ? '1' : '1 1 400px',
                     minWidth: isMobile ? 'auto' : '400px',
                     width: isMobile ? '100%' : 'auto'
                 }}>
-                    <Paper elevation={2} sx={{
-                        p: isMobile ? 2 : 3,
-                        height: '100%',
-                        borderRadius: 2,
-                        overflow: 'hidden'
-                    }}>
-                        <Typography variant="subtitle1" gutterBottom sx={{
+                    {isVirtualScreen ? (
+                        /* Virtual Screen Viewer */
+                        <Paper elevation={2} sx={{
+                            p: 0, // No padding for the viewer
+                            height: '600px', // Fixed height for consistent layout
+                            borderRadius: 2,
+                            overflow: 'hidden',
                             display: 'flex',
-                            alignItems: 'center',
-                            mb: isMobile ? 1.5 : 1,
-                            fontSize: isMobile ? '1rem' : '1.1rem'
+                            flexDirection: 'column'
                         }}>
-                            <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
-                            Device Capabilities
-                        </Typography>
-                        <Box sx={{ mb: 2, overflow: 'auto' }}>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {capFields.map(({ key, label }) => (
-                                    <Box key={key} sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        py: 0.5,
-                                        borderBottom: '1px solid #f0f0f0'
-                                    }}>
-                                        <Typography
-                                            variant="body2"
-                                            sx={{
-                                                fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                fontWeight: 'medium'
-                                            }}
-                                        >
-                                            {label}
-                                        </Typography>
-
-                                        {isCustom ? (
-                                            <Switch
-                                                checked={deviceData[key] || false}
-                                                onChange={handleToggleChange(key)}
-                                                size="small"
-                                                color="primary"
-                                            />
-                                        ) : (
+                            <Box sx={{
+                                p: isMobile ? 2 : 3,
+                                borderBottom: '1px solid #eee',
+                                backgroundColor: 'background.paper'
+                            }}>
+                                <Typography variant="subtitle1" sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    fontSize: isMobile ? '1rem' : '1.1rem',
+                                    margin: 0
+                                }}>
+                                    <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                                    Virtual Screen Preview
+                                </Typography>
+                            </Box>
+                            <Box sx={{
+                                flex: 1,
+                                position: 'relative'
+                            }}>
+                                <EmbeddedVirtualScreenViewer
+                                    deviceId={deviceId || deviceData.id?.toString() || deviceData.uniqueIdentifier || ''}
+                                    deviceData={deviceData} // Pass the device data to avoid API call
+                                    containerHeight={600 - (isMobile ? 68 : 76)} // Account for header
+                                    showControls={true}
+                                />
+                            </Box>
+                        </Paper>
+                    ) : (
+                        /* Device Capabilities */
+                        <Paper elevation={2} sx={{
+                            p: isMobile ? 2 : 3,
+                            height: '100%',
+                            borderRadius: 2,
+                            overflow: 'hidden'
+                        }}>
+                            <Typography variant="subtitle1" gutterBottom sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                mb: isMobile ? 1.5 : 1,
+                                fontSize: isMobile ? '1rem' : '1.1rem'
+                            }}>
+                                <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                                Device Capabilities
+                            </Typography>
+                            <Box sx={{ mb: 2, overflow: 'auto' }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {capFields.map(({ key, label }) => (
+                                        <Box key={key} sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            py: 0.5,
+                                            borderBottom: '1px solid #f0f0f0'
+                                        }}>
                                             <Typography
                                                 variant="body2"
                                                 sx={{
                                                     fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                    color: deviceData[key] ? 'success.main' : 'text.secondary'
+                                                    fontWeight: 'medium'
                                                 }}
                                             >
-                                                {deviceData[key] ? "Yes" : "No"}
+                                                {label}
                                             </Typography>
-                                        )}
-                                    </Box>
-                                ))}
+
+                                            {isCustom ? (
+                                                <Switch
+                                                    checked={deviceData[key] || false}
+                                                    onChange={handleToggleChange(key)}
+                                                    size="small"
+                                                    color="primary"
+                                                />
+                                            ) : (
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                        color: deviceData[key] ? 'success.main' : 'text.secondary'
+                                                    }}
+                                                >
+                                                    {deviceData[key] ? "Yes" : "No"}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    ))}
+                                </Box>
                             </Box>
-                        </Box>
-                    </Paper>
+                        </Paper>
+                    )}
                 </Box>
             </Box>
         </Box>

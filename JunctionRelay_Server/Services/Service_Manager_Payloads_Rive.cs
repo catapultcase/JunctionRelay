@@ -71,7 +71,7 @@ namespace JunctionRelayServer.Services
                 // Fallback to default Rive layout
                 if (frameLayout == null)
                 {
-                    var riveLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("RIVE_MAPPING");
+                    var riveLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("COMPOSITE_MODE");
                     frameLayout = riveLayouts.FirstOrDefault(f => f.IsTemplate);
                 }
 

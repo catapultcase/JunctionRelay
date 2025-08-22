@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import html2canvas from 'html2canvas';
 import FrameEngine_Toolbar from '../components/FrameEngine_Toolbar';
 import FrameEngine_PropertiesPanel from '../components/FrameEngine_PropertiesPanel';
 import FrameEngine_Canvas from '../components/FrameEngine_Canvas';
@@ -126,12 +127,17 @@ interface FrameBuilderState {
     isLoading: boolean;
     isDirty: boolean;
     error: string | null;
+    isSavingThumbnail: boolean; // NEW: Track thumbnail save state
 }
 
 const ConfigureFrame: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const isEditing = Boolean(id);
+    const canvasRef = useRef<HTMLDivElement>(null);
+
+    // Track when we need to generate a thumbnail after the canvas is ready
+    const [pendingThumbnailGeneration, setPendingThumbnailGeneration] = useState(false);
 
     // Main application state
     const [state, setState] = useState<FrameBuilderState>({
@@ -261,7 +267,21 @@ const ConfigureFrame: React.FC = () => {
         isLoading: true,
         isDirty: false,
         error: null,
+        isSavingThumbnail: false,
     });
+
+    // Watch for canvas ref to become available when we have a pending thumbnail
+    useEffect(() => {
+        if (pendingThumbnailGeneration && canvasRef.current && state.layout.id) {
+            console.log('✅ Canvas ref now available, generating thumbnail...');
+            setPendingThumbnailGeneration(false);
+
+            // Small delay to ensure everything is rendered
+            setTimeout(() => {
+                generateAndSaveThumbnail();
+            }, 1500);
+        }
+    }, [pendingThumbnailGeneration, canvasRef.current, state.layout.id]);
 
     // Load the existing frame layout on mount
     useEffect(() => {
@@ -276,6 +296,73 @@ const ConfigureFrame: React.FC = () => {
 
         loadFrameLayout(parseInt(id, 10));
     }, [id]);
+
+    // Thumbnail generation function
+    const generateAndSaveThumbnail = async () => {
+        if (!canvasRef.current) {
+            console.warn('📸 Canvas ref not available for thumbnail generation');
+            return;
+        }
+
+        if (!state.layout.id) {
+            console.warn('📸 Layout ID not available for thumbnail generation');
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, isSavingThumbnail: true }));
+            console.log('🖼️ Generating thumbnail from canvas...');
+            console.log('📋 Canvas ref available:', !!canvasRef.current);
+            console.log('📋 Layout ID available:', state.layout.id);
+
+            // Wait a moment for any animations/renders to settle
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Find the actual canvas element within the ref
+            const canvasElement = canvasRef.current.querySelector('[data-canvas="true"]') ||
+                canvasRef.current.querySelector('.frame-canvas-area') ||
+                canvasRef.current;
+
+            if (!canvasElement) {
+                console.error('❌ Could not find canvas element for thumbnail capture');
+                return;
+            }
+
+            console.log('🎯 Found canvas element for capture:', canvasElement.className || 'no-class');
+
+            // Capture the canvas with html2canvas
+            const canvas = await html2canvas(canvasElement as HTMLElement, {
+                width: 300,
+                height: 200,
+                useCORS: true,
+                allowTaint: true,
+                background: state.layout.backgroundColor || '#FFFFFF'
+            });
+
+            // Convert to base64
+            const dataURL = canvas.toDataURL('image/png', 0.8);
+
+            console.log('📤 Sending thumbnail to backend...');
+
+            // Send to backend
+            const response = await fetch(`/api/frameengine/${state.layout.id}/thumbnail-from-frontend`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageData: dataURL })
+            });
+
+            if (response.ok) {
+                console.log('✅ Thumbnail saved successfully');
+            } else {
+                const errorText = await response.text();
+                console.error('❌ Failed to save thumbnail:', errorText);
+            }
+        } catch (error) {
+            console.error('Error generating thumbnail:', error);
+        } finally {
+            setState(prev => ({ ...prev, isSavingThumbnail: false }));
+        }
+    };
 
     // Add to history for undo/redo
     const addToHistory = useCallback((action: string) => {
@@ -392,12 +479,12 @@ const ConfigureFrame: React.FC = () => {
         };
     };
 
-    // Save frame layout to API - ENHANCED with Rive discovery persistence in JsonFrameConfig
+    // Save frame layout to API with thumbnail generation
     const saveFrameLayout = async () => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
         try {
-            // Build the enhanced JsonFrameConfig with full Rive discovery data
+            // Build the enhanced JsonFrameConfig with Rive discovery data stored ONCE
             const frameConfig = {
                 type: "rive_config",
                 screenId: state.layout.id?.toString() || "new",
@@ -418,12 +505,11 @@ const ConfigureFrame: React.FC = () => {
                         opacity: state.layout.backgroundOpacity || 1.0
                     },
 
-                    // Enhanced Rive section with full discovery data stored in JsonFrameConfig
-                    ...(state.layout.backgroundType === 'rive' || state.layout.riveFile || state.layout.riveConfiguration?.discoveredMachines.length ? {
+                    // Store Rive data ONCE at the layout level
+                    ...(state.layout.backgroundType === 'rive' || state.layout.riveFile ? {
                         rive: {
                             enabled: state.layout.backgroundType === 'rive',
                             file: state.layout.riveFile || null,
-                            stateMachine: state.layout.riveStateMachine || null,
                             inputs: state.layout.riveInputs || {},
                             settings: {
                                 fit: 'cover',
@@ -431,64 +517,49 @@ const ConfigureFrame: React.FC = () => {
                                 autoplay: true,
                                 loop: true
                             },
-                            // NEW: Store all discovered state machines and inputs in JsonFrameConfig
+                            // Store discovery data ONCE here
                             discovery: {
                                 machines: state.layout.riveConfiguration?.discoveredMachines || [],
                                 lastUpdate: state.layout.riveConfiguration?.lastDiscoveryUpdate || '',
                                 metadata: state.layout.riveConfiguration?.discoveryMetadata || {},
                                 activeStateMachine: state.layout.riveConfiguration?.activeStateMachine || state.layout.riveStateMachine,
                                 globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {}
-                            }
+                            },
+                            embedded: state.layout.riveEmbedInPayload ?? true
                         }
                     } : {})
                 },
 
-                // Enhanced frameElements with Rive input connections for sensors
-                frameElements: state.elements.map((element, index) => {
-                    const baseElement = {
-                        id: element.id,
-                        type: element.type,
-                        position: {
-                            x: element.x,
-                            y: element.y,
-                            width: element.width,
-                            height: element.height
-                        },
-                        display: {
-                            visible: element.visible ?? true,
-                            zIndex: element.zIndex || index,
-                            order: index
-                        },
-                        properties: element.properties || {},
-                        ...(element.sensorId ? { sensorId: element.sensorId } : {}),
-                        lastModified: new Date().toISOString()
-                    };
+                // Clean frameElements with minimal Rive connection data
+                frameElements: state.elements.map((element, index) => ({
+                    id: element.id,
+                    type: element.type,
+                    position: {
+                        x: element.x,
+                        y: element.y,
+                        width: element.width,
+                        height: element.height
+                    },
+                    display: {
+                        visible: element.visible ?? true,
+                        zIndex: element.zIndex || index,
+                        order: index
+                    },
+                    properties: element.properties || {},
+                    ...(element.sensorId ? { sensorId: element.sensorId } : {}),
+                    lastModified: new Date().toISOString(),
 
-                    // NEW: If this is a sensor element and we have Rive discovery data, include potential mappings
-                    if (element.type === 'sensor' && state.layout.riveConfiguration?.discoveredMachines.length) {
-                        return {
-                            ...baseElement,
-                            riveConnections: {
-                                availableInputs: state.layout.riveConfiguration.discoveredMachines.flatMap(machine =>
-                                    machine.inputs.map(input => ({
-                                        machineName: machine.name,
-                                        inputName: input.name,
-                                        inputType: input.type,
-                                        currentValue: input.currentValue,
-                                        fullKey: `${machine.name}.${input.name}`
-                                    }))
-                                ),
-                                mappedInputs: element.properties.riveMappings || [],
-                                lastMappingUpdate: new Date().toISOString()
-                            }
-                        };
-                    }
-
-                    return baseElement;
-                })
+                    // ONLY store actual mappings if they exist, not all available inputs
+                    ...(element.type === 'sensor' && element.properties.riveMapping ? {
+                        riveConnections: {
+                            mappedInputs: [element.properties.riveMapping], // Single mapping per sensor
+                            lastMappingUpdate: new Date().toISOString()
+                        }
+                    } : {})
+                }))
             };
 
-            // Build the enhanced JsonFrameElements
+            // Build clean JsonFrameElements without duplication
             const frameElements = state.elements.map((element, index) => ({
                 id: element.id,
                 type: element.type,
@@ -508,7 +579,7 @@ const ConfigureFrame: React.FC = () => {
                 lastModified: new Date().toISOString()
             }));
 
-            // Prepare the save data - Rive discovery data is now stored in JsonFrameConfig only
+            // Prepare the save data
             const saveData = {
                 displayName: state.layout.displayName,
                 description: state.layout.description,
@@ -527,15 +598,15 @@ const ConfigureFrame: React.FC = () => {
                 isTemplate: state.layout.isTemplate,
                 isDraft: state.layout.isDraft,
                 isPublished: state.layout.isPublished,
-                jsonFrameConfig: JSON.stringify(frameConfig), // Discovery data stored here
-                jsonFrameElements: JSON.stringify(frameElements),
+                jsonFrameConfig: JSON.stringify(frameConfig), // Discovery data stored here ONCE
+                jsonFrameElements: JSON.stringify(frameElements), // Clean elements without duplication
                 riveEmbedInPayload: state.layout.riveEmbedInPayload ?? true
             };
 
-            console.log('Saving enhanced frame config with Rive discovery data in JsonFrameConfig:', {
-                frameConfig,
-                riveDiscoverySection: frameConfig.frameConfig.rive?.discovery,
-                discoveredMachines: state.layout.riveConfiguration?.discoveredMachines.length || 0
+            console.log('Saving clean frame config with Rive discovery data stored once:', {
+                riveFile: state.layout.riveFile,
+                discoveredMachines: state.layout.riveConfiguration?.discoveredMachines.length || 0,
+                frameElements: frameElements.length
             });
 
             const response = await fetch(`/api/frameengine/${state.layout.id}`, {
@@ -549,8 +620,24 @@ const ConfigureFrame: React.FC = () => {
                 throw new Error(errorData.message || 'Failed to save frame layout');
             }
 
-            console.log('Frame layout saved successfully with Rive discovery data in JsonFrameConfig');
+            console.log('Frame layout saved successfully with clean Rive data structure');
             setState(prev => ({ ...prev, isDirty: false, isLoading: false }));
+
+            // Generate thumbnail after successful save - use pending flag approach
+            if (state.layout.id) {
+                if (canvasRef.current) {
+                    console.log('✅ Canvas immediately available, generating thumbnail...');
+                    // Small delay to ensure UI has settled after save
+                    setTimeout(() => {
+                        generateAndSaveThumbnail();
+                    }, 1000);
+                } else {
+                    console.log('⏳ Canvas not ready, setting pending thumbnail generation...');
+                    setPendingThumbnailGeneration(true);
+                }
+            } else {
+                console.warn('⚠️ No layout ID available for thumbnail generation');
+            }
         } catch (error) {
             console.error('Failed to save frame layout:', error);
             setState(prev => ({
@@ -859,7 +946,7 @@ const ConfigureFrame: React.FC = () => {
         }
     };
 
-    // Export layout - ENHANCED with Rive discovery data
+    // Export layout - ENHANCED with Rive discovery data and thumbnail capture
     const handleExport = useCallback(async (format: 'png' | 'json' | 'pdf' | 'standalone') => {
         if (format === 'json') {
             const exportData = {
@@ -883,6 +970,46 @@ const ConfigureFrame: React.FC = () => {
             URL.revokeObjectURL(url);
         } else if (format === 'standalone') {
             await exportStandaloneConfig();
+        } else if (format === 'png') {
+            // NEW: Export current canvas as PNG using the same thumbnail capture logic
+            try {
+                if (!canvasRef.current) {
+                    throw new Error('Canvas not available for PNG export');
+                }
+
+                console.log('📸 Exporting canvas as PNG...');
+
+                // Find the actual canvas element within the ref
+                const canvasElement = canvasRef.current.querySelector('[data-canvas="true"]') ||
+                    canvasRef.current.querySelector('.frame-canvas-area') ||
+                    canvasRef.current;
+
+                // Capture at full resolution for export
+                const canvas = await html2canvas(canvasElement as HTMLElement, {
+                    width: state.layout.width,
+                    height: state.layout.height,
+                    useCORS: true,
+                    allowTaint: true,
+                    background: state.layout.backgroundColor || '#FFFFFF'
+                });
+
+                // Convert to blob and download
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${state.layout.displayName}-export.png`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        console.log('✅ PNG export completed');
+                    }
+                }, 'image/png', 0.95);
+
+            } catch (error) {
+                console.error('Failed to export PNG:', error);
+                setState(prev => ({ ...prev, error: 'Failed to export PNG' }));
+            }
         } else {
             alert(`${format.toUpperCase()} export would be implemented here`);
         }
@@ -969,28 +1096,33 @@ const ConfigureFrame: React.FC = () => {
                 </div>
             )}
 
-            {/* Debug Info - Show Rive Discovery Status */}
-            {state.layout.riveConfiguration?.discoveredMachines.length ? (
+            {/* NEW: Thumbnail save status indicator */}
+            {state.isSavingThumbnail && (
                 <div style={{
-                    backgroundColor: '#e8f5e8',
-                    border: '1px solid #4caf50',
+                    backgroundColor: '#e3f2fd',
+                    border: '1px solid #2196f3',
                     borderLeft: 'none',
                     borderRight: 'none',
                     borderTop: 'none',
-                    color: '#2e7d32',
+                    color: '#1565c0',
                     padding: '4px 16px',
                     fontSize: '12px',
-                    flexShrink: 0
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
                 }}>
-                    🔍 Rive Discovery: {state.layout.riveConfiguration.discoveredMachines.length} state machines,
-                    {state.layout.riveConfiguration.discoveryMetadata?.totalInputs || 0} inputs discovered
-                    {state.layout.riveConfiguration.lastDiscoveryUpdate && (
-                        <span style={{ marginLeft: '8px', color: '#666' }}>
-                            (Last: {new Date(state.layout.riveConfiguration.lastDiscoveryUpdate).toLocaleTimeString()})
-                        </span>
-                    )}
+                    <div style={{
+                        width: '12px',
+                        height: '12px',
+                        border: '2px solid #1565c0',
+                        borderTop: '2px solid transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                    }}></div>
+                    📸 Capturing and saving thumbnail...
                 </div>
-            ) : null}
+            )}
 
             {/* Toolbar */}
             <div style={{ flexShrink: 0 }}>
@@ -999,7 +1131,7 @@ const ConfigureFrame: React.FC = () => {
                     elements={state.elements}
                     selectedElements={state.selectedElementIds}
                     isDirty={state.isDirty}
-                    isLoading={state.isLoading}
+                    isLoading={state.isLoading || state.isSavingThumbnail} // Include thumbnail saving state
                     isEditing={isEditing}
                     canUndo={state.historyIndex > 0}
                     canRedo={state.historyIndex < state.history.length - 1}
@@ -1038,14 +1170,18 @@ const ConfigureFrame: React.FC = () => {
                     />
                 </div>
 
-                {/* Canvas Area */}
-                <div style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                }}>
+                {/* Canvas Area - NEW: Added ref for thumbnail capture and data attributes */}
+                <div
+                    ref={canvasRef}
+                    style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden'
+                    }}
+                    data-canvas="true"
+                >
                     <FrameEngine_Canvas
                         layout={state.layout}
                         elements={state.elements}
