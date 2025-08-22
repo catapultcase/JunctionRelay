@@ -1,3 +1,7 @@
+# Windows build artifacts
+/Stash/Github_Releases/publish
+#
+
 # =============================
 # Build results
 # =============================

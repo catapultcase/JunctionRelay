@@ -21,6 +21,75 @@ var builder = WebApplication.CreateBuilder(args);
 // HTTP Context
 builder.Services.AddHttpContextAccessor();
 
+// ============================================================================
+// CENTRALIZED DIRECTORY MANAGEMENT
+// ============================================================================
+
+string GetDataDirectory()
+{
+    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+    {
+        // Windows: Use LocalApplicationData
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "JunctionRelay"
+        );
+    }
+    else
+    {
+        // Linux/Docker: Use environment variable or default
+        var baseDataPath = Environment.GetEnvironmentVariable("JUNCTION_RELAY_DATA_PATH")
+                          ?? "/app/data";
+        return baseDataPath;
+    }
+}
+
+var dataDirectory = GetDataDirectory();
+
+// Ensure the data directory exists and is absolute
+if (!Path.IsPathRooted(dataDirectory))
+{
+    dataDirectory = Path.GetFullPath(dataDirectory);
+}
+
+Directory.CreateDirectory(dataDirectory);
+
+// Create directory provider for dependency injection
+builder.Services.AddSingleton(new DataDirectoryProvider(dataDirectory));
+
+// Define all application directories using centralized data directory
+var dbPath = Path.Combine(dataDirectory, "jr_database.db");
+var keysDirectory = Path.Combine(dataDirectory, "keys");
+var framesPath = Path.Combine(dataDirectory, "frameengine", "frames");
+var firmwareDirectory = Path.Combine(dataDirectory, "firmware");
+var releaseCacheDirectory = Path.Combine(firmwareDirectory, "releases");
+
+// Ensure all directories exist
+Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+Directory.CreateDirectory(keysDirectory);
+Directory.CreateDirectory(framesPath);
+Directory.CreateDirectory(firmwareDirectory);
+Directory.CreateDirectory(releaseCacheDirectory);
+
+Console.WriteLine($"[STARTUP] Data directory:      {dataDirectory}");
+Console.WriteLine($"[STARTUP] Database path:       {dbPath}");
+Console.WriteLine($"[STARTUP] Keys directory:      {keysDirectory}");
+Console.WriteLine($"[STARTUP] Frames directory:    {framesPath}");
+Console.WriteLine($"[STARTUP] Firmware directory:  {firmwareDirectory}");
+Console.WriteLine($"[STARTUP] Release cache:       {releaseCacheDirectory}");
+
+// Handle pending database updates
+var pending = dbPath + ".pending";
+if (File.Exists(pending))
+{
+    File.Copy(pending, dbPath, overwrite: true);
+    File.Delete(pending);
+}
+
+// ============================================================================
+// SERVICE REGISTRATIONS
+// ============================================================================
+
 // Register identity and deletion services early
 builder.Services.AddSingleton<Service_BackendIdentity>();
 builder.Services.AddSingleton<Service_DataDeletion>();
@@ -52,26 +121,11 @@ builder.Services.AddWebSockets(options =>
 // Add HttpClient for cloud functionality
 builder.Services.AddHttpClient();
 
-// Use the service to get database path
-var dbPath = Service_BackendIdentity.GetDatabasePath();
-var dbDirectory = Path.GetDirectoryName(dbPath);
-if (!string.IsNullOrEmpty(dbDirectory) && !Directory.Exists(dbDirectory))
-{
-    Directory.CreateDirectory(dbDirectory);
-}
-
-var pending = dbPath + ".pending";
-if (File.Exists(pending))
-{
-    File.Copy(pending, dbPath, overwrite: true);
-    File.Delete(pending);
-}
-
+// Database configuration
 builder.Services.AddSingleton(new DatabasePathProvider(dbPath));
 builder.Services.AddSingleton<IDbConnection>(_ => new SqliteConnection($"Data Source={dbPath}"));
 
 // Add Data Protection for secrets encryption
-var keysDirectory = !string.IsNullOrEmpty(dbDirectory) ? Path.Combine(dbDirectory, "keys") : "keys";
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory))
     .SetApplicationName("JunctionRelay");
@@ -376,13 +430,7 @@ app.UseWebSockets();
 
 app.UseStaticFiles();
 
-// Configure static file serving for frames folder
-var framesPath = Path.Combine(Directory.GetCurrentDirectory(), "frames");
-if (!Directory.Exists(framesPath))
-{
-    Directory.CreateDirectory(framesPath);
-}
-
+// Configure static file serving for frames folder using centralized path
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(framesPath),
@@ -392,20 +440,24 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseRouting();
-
-// FIXED: Use standard authentication and authorization - REMOVED custom middleware
 app.UseAuthentication();
 app.UseAuthorization();
-
-// REMOVED: Custom JWT middleware that was conflicting
-// app.UseMiddleware<Middleware_JwtAuthentication>();
 
 app.MapControllers();
 app.MapFallbackToFile("index.html");
 
-// Console.WriteLine("JunctionRelay WebSocket Service enabled");
-// Console.WriteLine("Main WebSocket endpoint: /api/device-websocket/connect");
-// Console.WriteLine($"JWT Authentication configured with issuer: {jwtIssuer}");
-// Console.WriteLine("Authentication schemes: Local JWT, Clerk JWT");
-
 app.Run();
+
+// ============================================================================
+// HELPER CLASSES
+// ============================================================================
+
+public class DataDirectoryProvider
+{
+    public string DataDirectory { get; }
+
+    public DataDirectoryProvider(string dataDirectory)
+    {
+        DataDirectory = dataDirectory;
+    }
+}

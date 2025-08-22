@@ -50,27 +50,22 @@ namespace JunctionRelayServer.Services
         private static readonly object _forcedCheckLock = new object();
         private static readonly TimeSpan _forcedCheckCooldown = TimeSpan.FromSeconds(2);
 
-        public Service_Manager_OTA(IHttpClientFactory httpClientFactory, Service_Database_Manager_Devices deviceDbManager, IWebHostEnvironment env)
+        public Service_Manager_OTA(
+            IHttpClientFactory httpClientFactory,
+            Service_Database_Manager_Devices deviceDbManager,
+            IWebHostEnvironment env,
+            DataDirectoryProvider dataDirectoryProvider)
         {
             _httpClientFactory = httpClientFactory;
             _deviceDbManager = deviceDbManager;
             _env = env;
 
-            // Set firmware directory path to the Firmware folder in the application's root
-            _firmwareDirectory = Path.Combine(env.ContentRootPath, "Firmware");
-            _releaseCacheDirectory = Path.Combine(_firmwareDirectory, "Releases");
+            // Set firmware directory paths (directories already created in Program.cs)
+            _firmwareDirectory = Path.Combine(dataDirectoryProvider.DataDirectory, "firmware");
+            _releaseCacheDirectory = Path.Combine(_firmwareDirectory, "releases");
 
-            if (!Directory.Exists(_firmwareDirectory))
-            {
-                Directory.CreateDirectory(_firmwareDirectory);
-                Console.WriteLine($"[OTA] Created firmware cache directory at: {_firmwareDirectory}");
-            }
-
-            if (!Directory.Exists(_releaseCacheDirectory))
-            {
-                Directory.CreateDirectory(_releaseCacheDirectory);
-                Console.WriteLine($"[OTA] Created release cache directory at: {_releaseCacheDirectory}");
-            }
+            Console.WriteLine($"[OTA] Using firmware cache:    {_firmwareDirectory}");
+            Console.WriteLine($"[OTA] Using release cache:     {_releaseCacheDirectory}");
         }
 
         public async Task<Result<object>> CheckForUpdate(int deviceId, bool force = false)
