@@ -139,7 +139,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
     // Get layout type options
     const layoutTypeOptions = [
         { value: 'PRE_RENDERED_IMAGE', label: 'Pre-Rendered Image' },
-        { value: 'RIVE_MAPPING', label: 'Rive Mapping' }
+        { value: 'COMPOSITE_MODE', label: 'Composite Mode' }
     ];
 
     // Handle orientation swap

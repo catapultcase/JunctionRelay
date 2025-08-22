@@ -447,7 +447,7 @@ namespace JunctionRelayServer.Services
 
                 // Determine rendering mode
                 bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-                bool isRiveMode = junction.RenderingMode.Equals("RiveMapping", StringComparison.OrdinalIgnoreCase);
+                bool isRiveMode = junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
 
                 // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
@@ -823,7 +823,7 @@ namespace JunctionRelayServer.Services
                 }
 
                 bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-                bool isRiveMode = junction.RenderingMode.Equals("RiveMapping", StringComparison.OrdinalIgnoreCase);
+                bool isRiveMode = junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
 
                 // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);

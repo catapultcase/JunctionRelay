@@ -47,7 +47,7 @@ import History from '@mui/icons-material/History';
 import { useAutoSave, useAutoSaveWithChangeDetection } from '../hooks/useAutoSave';
 
 // Import sub-components
-import DeviceInfoPanel from '../components/DeviceInfoPanel';
+import DeviceInfoPanel from '../components/Device_InfoPanel';
 import DeviceSyncModal from '../components/Device_SyncModal';
 import EditModeModal from '../components/Device_EditModeModal';
 import DeviceHeartbeatPanel from '../components/DeviceHeartbeatPanel';
@@ -623,6 +623,7 @@ const ConfigureDevice: React.FC = () => {
                     selectedComPort={selectedComPort}
                     setSelectedComPort={setSelectedComPort}
                     onAutoSave={handleAutoSave}
+                    deviceId={id}
                 />
             )
         },
@@ -1203,6 +1204,7 @@ const ConfigureDevice: React.FC = () => {
                             selectedComPort={selectedComPort}
                             setSelectedComPort={setSelectedComPort}
                             onAutoSave={handleAutoSave}
+                            deviceId={id}
                         />
                     </TabPanel>
 

@@ -31,6 +31,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import ComputerIcon from '@mui/icons-material/Computer';
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ScreenshotMonitorIcon from '@mui/icons-material/ScreenshotMonitor';
 
 interface Device_ManagementSectionProps {
     isMobile: boolean;
@@ -38,6 +39,7 @@ interface Device_ManagementSectionProps {
     buttonColor: "primary" | "secondary";
     setScanModalOpen: (open: boolean) => void;
     setAddCustomDeviceModalOpen: (open: boolean) => void;
+    setAddVirtualScreenModalOpen: (open: boolean) => void;
     checkForUpdates: () => Promise<void>;
     isUnifiedMode: boolean;
     setAddCloudDeviceModalOpen: (open: boolean) => void;
@@ -51,6 +53,7 @@ const Device_ManagementSection: React.FC<Device_ManagementSectionProps> = ({
     buttonColor,
     setScanModalOpen,
     setAddCustomDeviceModalOpen,
+    setAddVirtualScreenModalOpen,
     checkForUpdates,
     isUnifiedMode,
     setAddCloudDeviceModalOpen,
@@ -93,6 +96,18 @@ const Device_ManagementSection: React.FC<Device_ManagementSectionProps> = ({
                     data-testid="add-custom-local-device-button"
                 >
                     Add Custom Local Device
+                </Button>
+
+                {/* Create Virtual Screen Button */}
+                <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={() => setAddVirtualScreenModalOpen(true)}
+                    startIcon={<ScreenshotMonitorIcon />}
+                    size="small"
+                    data-testid="add-virtual-screen-button"
+                >
+                    Create Virtual Screen
                 </Button>
 
                 {/* Check for Firmware Updates Button */}

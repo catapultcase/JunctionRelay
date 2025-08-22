@@ -808,7 +808,10 @@ namespace JunctionRelayServer.Controllers
                 JsonFrameConfig = frameLayout.JsonFrameConfig,
                 JsonFrameElements = frameLayout.JsonFrameElements,
                 Created = frameLayout.Created,
-                LastModified = frameLayout.LastModified
+                LastModified = frameLayout.LastModified,
+                HasThumbnail = frameLayout.HasThumbnail,
+                ThumbnailPath = frameLayout.ThumbnailPath,
+                ThumbnailGeneratedAt = frameLayout.ThumbnailGeneratedAt
             };
         }
 
@@ -827,7 +830,7 @@ namespace JunctionRelayServer.Controllers
             if (string.IsNullOrWhiteSpace(layoutType))
                 errors.Add("LayoutType is required.");
             else if (!IsValidLayoutType(layoutType))
-                errors.Add($"Invalid LayoutType: {layoutType}. Valid types are: PRE_RENDERED_IMAGE, RIVE_MAPPING");
+                errors.Add($"Invalid LayoutType: {layoutType}. Valid types are: PRE_RENDERED_IMAGE, COMPOSITE_MODE");
 
             if (!string.IsNullOrWhiteSpace(backgroundType) && !IsValidBackgroundType(backgroundType))
                 errors.Add($"Invalid BackgroundType: {backgroundType}. Valid types are: none, color, image, url, rive");
@@ -843,7 +846,7 @@ namespace JunctionRelayServer.Controllers
 
         private static bool IsValidLayoutType(string layoutType)
         {
-            var validTypes = new[] { "PRE_RENDERED_IMAGE", "RIVE_MAPPING" };
+            var validTypes = new[] { "PRE_RENDERED_IMAGE", "COMPOSITE_MODE" };
             return validTypes.Contains(layoutType.ToUpperInvariant());
         }
 
@@ -962,6 +965,160 @@ namespace JunctionRelayServer.Controllers
                 return new List<Model_JunctionScreenLayout>();
             }
         }
+
+        // THUMBNAILS        
+
+        // Process thumbnail from frontend (html2canvas)
+        [HttpPost("{id}/thumbnail-from-frontend")]
+        public async Task<ActionResult> ProcessThumbnailFromFrontend(int id, [FromBody] ThumbnailFromFrontendRequest request)
+        {
+            try
+            {
+                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (frameLayout == null)
+                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+
+                // Process the base64 image data
+                var thumbnailData = await _frameEngine.ProcessThumbnailFromFrontend(request.ImageData);
+
+                // Save thumbnail to file system
+                var thumbnailPath = await SaveThumbnailToFile(id, thumbnailData, "png");
+
+                // Update database record
+                frameLayout.ThumbnailPath = thumbnailPath;
+                frameLayout.ThumbnailGeneratedAt = DateTime.UtcNow;
+                frameLayout.HasThumbnail = true;
+                frameLayout.ThumbnailFormat = "png";
+                await _frameLayoutService.UpdateFrameLayoutAsync(frameLayout);
+
+                return Ok(new
+                {
+                    message = "Thumbnail processed successfully",
+                    thumbnailPath = thumbnailPath,
+                    size = thumbnailData.Length
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error processing thumbnail", error = ex.Message });
+            }
+        }
+
+        // Get thumbnail image
+        [HttpGet("{id}/thumbnail")]
+        public async Task<ActionResult> GetThumbnail(int id)
+        {
+            try
+            {
+                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (frameLayout == null)
+                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+
+                if (!frameLayout.HasThumbnail || string.IsNullOrEmpty(frameLayout.ThumbnailPath))
+                    return NotFound(new { message = "No thumbnail available for this frame layout" });
+
+                var thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
+                if (!System.IO.File.Exists(thumbnailPath))
+                {
+                    // File missing, update database
+                    frameLayout.HasThumbnail = false;
+                    frameLayout.ThumbnailPath = null;
+                    await _frameLayoutService.UpdateFrameLayoutAsync(frameLayout);
+                    return NotFound(new { message = "Thumbnail file not found" });
+                }
+
+                var fileBytes = await System.IO.File.ReadAllBytesAsync(thumbnailPath);
+                var contentType = frameLayout.ThumbnailFormat switch
+                {
+                    "jpg" or "jpeg" => "image/jpeg",
+                    "webp" => "image/webp",
+                    _ => "image/png"
+                };
+
+                return File(fileBytes, contentType, $"thumbnail-{id}.{frameLayout.ThumbnailFormat}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error retrieving thumbnail", error = ex.Message });
+            }
+        }
+
+        // Delete thumbnail
+        [HttpDelete("{id}/thumbnail")]
+        public async Task<ActionResult> DeleteThumbnail(int id)
+        {
+            try
+            {
+                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (frameLayout == null)
+                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+
+                if (frameLayout.HasThumbnail && !string.IsNullOrEmpty(frameLayout.ThumbnailPath))
+                {
+                    await DeleteThumbnailFile(frameLayout.ThumbnailPath);
+                }
+
+                // Update database
+                frameLayout.HasThumbnail = false;
+                frameLayout.ThumbnailPath = null;
+                frameLayout.ThumbnailGeneratedAt = null;
+                await _frameLayoutService.UpdateFrameLayoutAsync(frameLayout);
+
+                return Ok(new { message = "Thumbnail deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error deleting thumbnail", error = ex.Message });
+            }
+        }
+
+        private string GetThumbnailsPath()
+        {
+            var dbPath = _dbPathProvider.DbPath;
+            var dataDir = Path.GetDirectoryName(dbPath)
+                          ?? Path.Combine(_webHostEnvironment.ContentRootPath, "data");
+            return Path.Combine(dataDir, "frameengine", "thumbnails");
+        }
+
+        private async Task<string> SaveThumbnailToFile(int layoutId, byte[] thumbnailData, string format)
+        {
+            var thumbnailsDir = GetThumbnailsPath();
+            Directory.CreateDirectory(thumbnailsDir);
+
+            var filename = $"{layoutId}.{format}";
+            var fullPath = Path.Combine(thumbnailsDir, filename);
+
+            await System.IO.File.WriteAllBytesAsync(fullPath, thumbnailData);
+
+            // Return relative path for database storage
+            return Path.Combine("frameengine", "thumbnails", filename).Replace("\\", "/");
+        }
+
+        private string GetFullThumbnailPath(string relativePath)
+        {
+            var dbPath = _dbPathProvider.DbPath;
+            var dataDir = Path.GetDirectoryName(dbPath)
+                          ?? Path.Combine(_webHostEnvironment.ContentRootPath, "data");
+            return Path.Combine(dataDir, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
+        }
+
+        private async Task DeleteThumbnailFile(string relativePath)
+        {
+            try
+            {
+                var fullPath = GetFullThumbnailPath(relativePath);
+                if (System.IO.File.Exists(fullPath))
+                {
+                    System.IO.File.Delete(fullPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to delete thumbnail file {relativePath}: {ex.Message}");
+            }
+        }
+
+
     }
 
     // DTOs and Request/Response Models
@@ -996,6 +1153,9 @@ namespace JunctionRelayServer.Controllers
 
         public DateTime Created { get; set; }
         public DateTime? LastModified { get; set; }
+        public bool HasThumbnail { get; set; }
+        public string? ThumbnailPath { get; set; }
+        public DateTime? ThumbnailGeneratedAt { get; set; }
     }
 
     public class CreateFrameLayoutRequest
@@ -1116,5 +1276,20 @@ namespace JunctionRelayServer.Controllers
         public string DisplayName { get; set; } = string.Empty;
         public long FileSize { get; set; }
         public string Message { get; set; } = string.Empty;
+    }
+
+    public class GenerateThumbnailRequest
+    {
+        [Range(50, 1000)]
+        public int? Width { get; set; } = 300;
+
+        [Range(50, 1000)]
+        public int? Height { get; set; } = 200;
+    }
+
+    public class ThumbnailFromFrontendRequest
+    {
+        [Required]
+        public string ImageData { get; set; } = string.Empty;
     }
 }

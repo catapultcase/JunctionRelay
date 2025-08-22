@@ -55,6 +55,7 @@ const JUNCTION_TYPES = [
     "COM Junction",
     "HTTP Junction",
     "MQTT Junction",
+    "Virtual Junction",
     "WebSocket Junction",
     "Gateway Junction (COM to ESP:NOW)",
     "Gateway Junction (HTTP to ESP:NOW)",

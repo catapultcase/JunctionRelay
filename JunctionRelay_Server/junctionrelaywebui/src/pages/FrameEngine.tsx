@@ -74,11 +74,13 @@ import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AppsIcon from '@mui/icons-material/Apps';
 import ImageIcon from '@mui/icons-material/Image';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
+import FrameEngine_Gallery from '../components/FrameEngine_Gallery';
 import { useTheme, useMediaQuery } from "@mui/material";
 
 // Types
-type ViewMode = 'table' | 'standard' | 'mini';
+type ViewMode = 'gallery' | 'table' | 'standard' | 'mini';
 type SortDirection = 'asc' | 'desc';
 
 interface FrameLayoutListItem {
@@ -87,6 +89,11 @@ interface FrameLayoutListItem {
     displayName: string;
     description?: string;
     layoutType: string;
+    width?: number;
+    height?: number;
+    hasThumbnail?: boolean;
+    thumbnailPath?: string;
+    thumbnailGeneratedAt?: string;
 }
 
 interface FrameEngineColumn {
@@ -109,14 +116,17 @@ const defaultFrameEngineColumns: FrameEngineColumn[] = [
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "description", label: "Description", align: "left", sortable: true },
     { field: "dimensions", label: "Dimensions", align: "center", sortable: false },
+    { field: "thumbnail", label: "Thumbnail", align: "center", sortable: true },
 ];
 
 // Default visible columns
-const defaultVisibleColumns = ["name", "template", "type", "description", "dimensions", "actions"];
+const defaultVisibleColumns = ["name", "template", "type", "description", "dimensions", "thumbnail", "actions"];
 
 // Helper function to get frame layout type info with colors and icons
 const getFrameLayoutTypeInfo = (type: string) => {
     const typeMap: Record<string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
+        "PRE_RENDERED_IMAGE": { color: "primary", icon: <ImageIcon fontSize="small" /> },
+        "COMPOSITE_MODE": { color: "secondary", icon: <ExtensionIcon fontSize="small" /> },
         "FRAME_SENSOR_GRID": { color: "primary", icon: <GridOnIcon fontSize="small" /> },
         "FRAME_CALENDAR": { color: "secondary", icon: <CalendarTodayIcon fontSize="small" /> },
         "FRAME_DASHBOARD": { color: "info", icon: <DashboardIcon fontSize="small" /> },
@@ -366,6 +376,27 @@ const FrameLayoutTableRow = memo(({
                 );
             case "description":
                 return frameLayout.description || "-";
+            case "dimensions":
+                return frameLayout.width && frameLayout.height
+                    ? `${frameLayout.width}×${frameLayout.height}`
+                    : "-";
+            case "thumbnail":
+                return frameLayout.hasThumbnail ? (
+                    <Chip
+                        icon={<ImageIcon />}
+                        label="Available"
+                        color="success"
+                        size="small"
+                        sx={{ fontSize: '0.7rem', height: 20 }}
+                    />
+                ) : (
+                    <Chip
+                        label="None"
+                        color="default"
+                        size="small"
+                        sx={{ fontSize: '0.7rem', height: 20 }}
+                    />
+                );
             case "actions":
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
@@ -425,6 +456,8 @@ const FrameLayoutTableRow = memo(({
                             return { minWidth: 200, width: 'auto' };
                         case "dimensions":
                             return { minWidth: 100, width: 100 };
+                        case "thumbnail":
+                            return { minWidth: 100, width: 100 };
                         case "actions":
                             return { minWidth: 140, width: 140 };
                         default:
@@ -473,7 +506,7 @@ const AddFrameLayoutModal: React.FC<{
     const frameLayoutTypes = [
         { value: "", name: "Select Frame Layout Type", desc: "Choose a frame layout type to begin" },
         { value: "PRE_RENDERED_IMAGE", name: "Pre-Rendered Image", desc: "Map sensors over an image" },
-        { value: "RIVE_MAPPING", name: "Rive Mapping", desc: "Map sensors over a Rive component" }
+        { value: "COMPOSITE_MODE", name: "Composite Mode", desc: "Map sensors over a Rive component" }
     ];
 
     // Reset form when modal opens/closes
@@ -547,10 +580,10 @@ const AddFrameLayoutModal: React.FC<{
                 displayName: "Pre-Rendered Image Layout",
                 description: "Static background image with sensor overlays"
             }));
-        } else if (frameLayout.layoutType === "RIVE_MAPPING") {
+        } else if (frameLayout.layoutType === "COMPOSITE_MODE") {
             setFrameLayout((prev: any) => ({
                 ...prev,
-                displayName: "Rive Mapping Layout",
+                displayName: "Composite Mode Layout",
                 description: "Rive component with sensor overlays"
             }));
         } else {
@@ -561,7 +594,6 @@ const AddFrameLayoutModal: React.FC<{
             }));
         }
     }, [frameLayout.layoutType]);
-
 
     return (
         <Modal open={open} onClose={onClose}>
@@ -753,17 +785,6 @@ const AddFrameLayoutModal: React.FC<{
                                     disabled={loading || !frameLayout.layoutType}
                                     sx={{ width: { xs: '100%', sm: 'auto' } }}
                                 >
-                                    {loading && !configureAfterAdd ? "Adding..." : "Add Frame Layout"}
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleAddFrameLayout(true)}
-                                    size="small"
-                                    color="secondary"
-                                    startIcon={<EditIcon />}
-                                    disabled={loading || !frameLayout.layoutType}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
                                     {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
                                 </Button>
                                 <Button
@@ -796,7 +817,7 @@ const FrameEngine = () => {
     // View mode and table management state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
         const stored = localStorage.getItem(STORAGE_KEY_FRAMEENGINE_VIEW_MODE);
-        return (stored as ViewMode) || 'table';
+        return (stored as ViewMode) || 'gallery';  // Default to gallery view
     });
 
     const [visibleCols, setVisibleCols] = useState<string[]>(() => {
@@ -943,6 +964,11 @@ const FrameEngine = () => {
                 case 'isTemplate':
                     valueA = a.isTemplate ? 1 : 0;
                     valueB = b.isTemplate ? 1 : 0;
+                    break;
+                case 'thumbnail':
+                case 'hasThumbnail':
+                    valueA = a.hasThumbnail ? 1 : 0;
+                    valueB = b.hasThumbnail ? 1 : 0;
                     break;
                 default:
                     valueA = a[orderBy as keyof FrameLayoutListItem] || '';
@@ -1142,6 +1168,12 @@ const FrameEngine = () => {
                             aria-label="view mode"
                             size="small"
                         >
+                            <ToggleButton value="gallery" aria-label="gallery view">
+                                <PhotoLibraryIcon />
+                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
+                                    Gallery
+                                </Typography>
+                            </ToggleButton>
                             <ToggleButton value="table" aria-label="table view">
                                 <TableViewIcon />
                                 <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
@@ -1235,6 +1267,14 @@ const FrameEngine = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'center', padding: 3 }}>
                     <CircularProgress size={24} />
                 </Box>
+            ) : viewMode === 'gallery' ? (
+                /* Gallery View */
+                <FrameEngine_Gallery
+                    frameLayouts={sortedFrameLayouts}
+                    onDelete={handleDelete}
+                    onEdit={handleEdit}
+                    onClone={handleClone}
+                />
             ) : viewMode === 'table' ? (
                 /* Table View */
                 <TableContainer component={Paper} sx={{ mb: 4 }}>
@@ -1255,6 +1295,8 @@ const FrameEngine = () => {
                                             case "description":
                                                 return { minWidth: 200, width: 'auto' };
                                             case "dimensions":
+                                                return { minWidth: 100, width: 100 };
+                                            case "thumbnail":
                                                 return { minWidth: 100, width: 100 };
                                             case "actions":
                                                 return { minWidth: 140, width: 140 };
@@ -1318,7 +1360,7 @@ const FrameEngine = () => {
                     </Table>
                 </TableContainer>
             ) : (
-                /* Tile Views */
+                /* Tile Views (Standard/Mini) */
                 <Box sx={{
                     display: 'grid',
                     gridTemplateColumns: getGridColumns(),

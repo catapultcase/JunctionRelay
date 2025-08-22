@@ -32,6 +32,8 @@ namespace JunctionRelayServer.Services
             _webHostEnvironment = webHostEnvironment;
         }
 
+        // ORIGINAL SKIASHARP METHODS (for live frame generation)
+
         public byte[] RenderFrame(Model_Frame_Layout layout, Dictionary<string, object> sensorData,
             Model_JunctionScreenLayout? screenConfig = null, int? junctionId = null, int? linkId = null, int? screenId = null)
         {
@@ -57,7 +59,7 @@ namespace JunctionRelayServer.Services
                     case "PRE_RENDERED_IMAGE":
                         RenderPreRenderedImage(canvas, layout, sensorData);
                         break;
-                    case "RIVE_MAPPING":
+                    case "COMPOSITE_MODE":
                         RenderRiveMapping(canvas, layout, sensorData);
                         break;
                     default:
@@ -84,6 +86,85 @@ namespace JunctionRelayServer.Services
                 return CreateErrorFrame(layout?.Width ?? 792, layout?.Height ?? 272, ex.Message);
             }
         }
+
+        // NEW THUMBNAIL METHODS (for frontend html2canvas integration)
+
+        /// <summary>
+        /// Process thumbnail data received from frontend html2canvas
+        /// </summary>
+        public async Task<byte[]> ProcessThumbnailFromFrontend(string base64ImageData)
+        {
+            try
+            {
+                // Remove data URL prefix if present (data:image/png;base64,...)
+                var base64Data = base64ImageData;
+                if (base64Data.Contains(","))
+                {
+                    base64Data = base64Data.Split(',')[1];
+                }
+
+                // Convert base64 to bytes
+                var imageBytes = Convert.FromBase64String(base64Data);
+
+                // Validate image data
+                if (imageBytes.Length == 0)
+                {
+                    throw new ArgumentException("Invalid image data received");
+                }
+
+                return imageBytes;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to process thumbnail data: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Fallback thumbnail generation using SkiaSharp (for cases where frontend isn't available)
+        /// Note: This won't capture live Rive animations, but provides a basic thumbnail
+        /// </summary>
+        public async Task<byte[]> GenerateThumbnailAsync(Model_Frame_Layout layout, int width = 300, int height = 200)
+        {
+            try
+            {
+                if (layout == null)
+                    throw new ArgumentNullException(nameof(layout));
+
+                // Create sample sensor data for thumbnail
+                var sampleSensorData = GenerateSampleSensorData();
+
+                // Create thumbnail-sized surface
+                var info = new SKImageInfo(width, height);
+                using var surface = SKSurface.Create(info);
+                var canvas = surface.Canvas;
+
+                // Scale the layout to fit thumbnail dimensions
+                var scaleX = (float)width / layout.Width;
+                var scaleY = (float)height / layout.Height;
+                var scale = Math.Min(scaleX, scaleY);
+
+                canvas.Scale(scale);
+
+                // Apply background (but skip Rive since we can't capture it server-side)
+                ApplyBackgroundForThumbnail(canvas, layout);
+
+                // Render content with thumbnail-specific styling
+                RenderThumbnailContent(canvas, layout, sampleSensorData, scale);
+
+                // Generate PNG thumbnail
+                using var image = surface.Snapshot();
+                using var data = image.Encode(SKEncodedImageFormat.Png, 85); // Slightly compressed for thumbnails
+                return data.ToArray();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error generating thumbnail for layout {layout?.Id}: {ex.Message}");
+                return CreateErrorThumbnail(width, height, "Thumbnail generation failed");
+            }
+        }
+
+        // ORIGINAL SKIASHARP RENDERING METHODS (unchanged)
 
         private void RenderPreRenderedImage(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
         {
@@ -123,7 +204,7 @@ namespace JunctionRelayServer.Services
 
         private void RenderRiveMapping(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData)
         {
-            // For now, render a placeholder since Rive integration would require additional dependencies
+            // For Rive layouts, show a placeholder since we can't render live Rive server-side
             using var paint = CreateTextPaint(16, "#666666");
             var text = $"Rive Animation: {layout.RiveFile ?? "No file specified"}";
             canvas.DrawText(text, 20, layout.Height / 2, paint);
@@ -132,7 +213,7 @@ namespace JunctionRelayServer.Services
             var config = ParseFrameConfig(layout.JsonFrameConfig);
             var mappings = GetConfigValue(config, "sensorMappings", new Dictionary<string, object>());
 
-            var y = layout.Height / 2 + 40;
+            var y = (float)(layout.Height / 2 + 40);
             foreach (var sensor in sensorData.Take(5))
             {
                 var mappingText = $"{sensor.Key}: {FormatSensorValue(sensor.Value)}";
@@ -155,6 +236,84 @@ namespace JunctionRelayServer.Services
                 RenderSensorGrid(canvas, layout, sensorData, textPaint, 20, 100);
             }
         }
+
+        // NEW THUMBNAIL-SPECIFIC RENDERING METHODS
+
+        private void ApplyBackgroundForThumbnail(SKCanvas canvas, Model_Frame_Layout layout)
+        {
+            var backgroundColor = ParseBackgroundColor(layout.BackgroundColor);
+            canvas.Clear(backgroundColor);
+
+            // Handle regular background image data (skip Rive for thumbnails)
+            if (layout.BackgroundType == "image" && layout.BackgroundImageData != null && layout.BackgroundImageData.Length > 0)
+            {
+                try
+                {
+                    using var stream = new MemoryStream(layout.BackgroundImageData);
+                    using var bitmap = SKBitmap.Decode(stream);
+                    if (bitmap != null)
+                    {
+                        var destRect = new SKRect(0, 0, layout.Width, layout.Height);
+                        canvas.DrawBitmap(bitmap, destRect);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to render background image in thumbnail: {ex.Message}");
+                }
+            }
+
+            // For Rive backgrounds in thumbnails, just show a placeholder
+            if (layout.BackgroundType == "rive")
+            {
+                using var rivePlaceholderPaint = new SKPaint
+                {
+                    Color = SKColor.Parse("#E8F4FD"),
+                    Style = SKPaintStyle.Fill
+                };
+                canvas.DrawRect(0, 0, layout.Width, layout.Height, rivePlaceholderPaint);
+
+                // Add Rive indicator
+                using var textPaint = CreateTextPaint(12, "#666666");
+                var riveText = $"Rive: {Path.GetFileNameWithoutExtension(layout.RiveFile) ?? "Animation"}";
+                canvas.DrawText(riveText, 10, 25, textPaint);
+            }
+        }
+
+        private void RenderThumbnailContent(SKCanvas canvas, Model_Frame_Layout layout, Dictionary<string, object> sensorData, float scale)
+        {
+            // Render a simplified version optimized for thumbnails
+            var config = ParseFrameConfig(layout.JsonFrameConfig);
+            var elements = ParseFrameElements(layout.JsonFrameElements);
+
+            // Title (smaller for thumbnails)
+            if (GetConfigValue(config, "title.enabled", true))
+            {
+                var titleText = GetConfigValue(config, "title.text", layout.DisplayName ?? "Frame");
+                var titleSize = Math.Max(8f, GetConfigValue(config, "title.fontSize", 24f) * 0.6f);
+                var titleColor = GetConfigValue(config, "title.color", "#000000");
+
+                using var titlePaint = CreateTextPaint(titleSize, titleColor, SKFontStyle.Bold);
+                canvas.DrawText(TruncateText(titleText, 25), 10, 20, titlePaint);
+            }
+
+            // Show a few sensors in a compact grid
+            if (sensorData.Any())
+            {
+                using var sensorPaint = CreateTextPaint(8, "#333333");
+                var y = 40f;
+                var maxSensors = 4; // Limit for thumbnail
+
+                foreach (var sensor in sensorData.Take(maxSensors))
+                {
+                    var sensorText = $"{TruncateText(sensor.Key, 8)}: {FormatSensorValue(sensor.Value)}";
+                    canvas.DrawText(sensorText, 10, y, sensorPaint);
+                    y += 12;
+                }
+            }
+        }
+
+        // UTILITY METHODS (unchanged from original)
 
         private void RenderFrameElements(SKCanvas canvas, JsonElement? elements, Dictionary<string, object> sensorData)
         {
@@ -517,6 +676,19 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        private Dictionary<string, object> GenerateSampleSensorData()
+        {
+            return new Dictionary<string, object>
+            {
+                ["Temperature"] = "23.5°C",
+                ["Humidity"] = "45%",
+                ["Pressure"] = "1013.2 hPa",
+                ["Light"] = "750 lux",
+                ["Motion"] = "No motion",
+                ["Battery"] = "98%"
+            };
+        }
+
         private string FormatSensorValue(object? value)
         {
             if (value == null) return "N/A";
@@ -550,6 +722,22 @@ namespace JunctionRelayServer.Services
 
             using var image = surface.Snapshot();
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
+        }
+
+        private byte[] CreateErrorThumbnail(int width, int height, string errorMessage)
+        {
+            var info = new SKImageInfo(width, height);
+            using var surface = SKSurface.Create(info);
+            var canvas = surface.Canvas;
+
+            canvas.Clear(SKColor.Parse("#F0F0F0"));
+
+            using var paint = CreateTextPaint(Math.Max(8f, width / 25f), "#999999");
+            canvas.DrawText("Error", width / 2 - 20, height / 2, paint);
+
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SKEncodedImageFormat.Png, 85);
             return data.ToArray();
         }
 

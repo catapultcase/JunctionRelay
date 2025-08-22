@@ -229,6 +229,7 @@ builder.Services.AddSingleton<Service_Stream_Manager_MQTT>();
 builder.Services.AddSingleton<Service_Stream_Manager_HTTP>();
 builder.Services.AddSingleton<Service_Stream_Manager_WebSocket>();
 builder.Services.AddSingleton<Service_Stream_Manager_COM>();
+builder.Services.AddSingleton<Service_Stream_Manager_Virtual>();
 builder.Services.AddSingleton<Service_FrameEngine>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
 builder.Services.AddSingleton<Service_Stream_History_Manager>();

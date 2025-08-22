@@ -38,6 +38,7 @@ import ConfigurePayload from "pages/ConfigurePayload";
 import HostInfo from "pages/HostInfo";
 import HostCharts from "pages/HostCharts";
 import Settings from "pages/Settings";
+import VirtualScreenViewer from "pages/VirtualScreenViewer";
 import LoginOnly from "components/LoginOnly";
 import { AuthProvider } from "auth/AuthContext";
 import Streams from "pages/Streams";
@@ -55,6 +56,7 @@ import ComputerIcon from '@mui/icons-material/Computer';
 import CloudIcon from '@mui/icons-material/Cloud';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import BugReportIcon from '@mui/icons-material/BugReport';
+import ScreenshotMonitorIcon from '@mui/icons-material/ScreenshotMonitor';
 
 // Enhanced Global Fetch Wrapper - NO FALLBACKS between auth modes
 const originalFetch = window.fetch;
@@ -280,7 +282,8 @@ const BottomActionBarWrapper: React.FC = () => {
     // Don't show on certain pages
     const isDetailPage = location.pathname.includes('/testing') ||
         location.pathname.includes('/hostinfo') ||
-        location.pathname.includes('/hostcharts');
+        location.pathname.includes('/hostcharts') ||
+        location.pathname.includes('/device/') && location.pathname.includes('/virtual-screen');
 
     if (!isMobile || isDetailPage) {
         return null;
@@ -365,8 +368,8 @@ const BottomActionBarWrapper: React.FC = () => {
             setterFunction = setConfigureServiceViewMode;
         } else if (location.pathname.includes('/configure-frame/')) {
             storageKey = 'configure_frame_view_mode';
-            setterFunction = setConfigurePayloadViewMode;        
-        } else if (location.pathname.includes('/configure-frame/')) {
+            setterFunction = setConfigureFrameViewMode;
+        } else if (location.pathname.includes('/configure-payload/')) {
             storageKey = 'configure_payload_view_mode';
             setterFunction = setConfigurePayloadViewMode;
         }
@@ -509,7 +512,7 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: []
                 };
-            
+
             } else if (location.pathname.includes('/configure-payload/')) {
                 return {
                     showBackButton,
@@ -582,6 +585,15 @@ const BottomActionBarWrapper: React.FC = () => {
                                     window.dispatchEvent(new CustomEvent('bottom-action-add-device'));
                                 },
                                 color: 'primary' as const
+                            },
+                            {
+                                icon: <ScreenshotMonitorIcon />,
+                                label: 'Create Virtual Screen',
+                                description: 'Create a virtual display for Rive visualizations',
+                                onClick: () => {
+                                    window.dispatchEvent(new CustomEvent('bottom-action-add-virtual-screen'));
+                                },
+                                color: 'secondary' as const
                             }
                             // {
                             //     icon: <CloudIcon />,
@@ -725,18 +737,26 @@ const BottomActionBarWrapper: React.FC = () => {
 const AppRoutes: React.FC = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const location = useLocation();
+
+    // Check if we're on a virtual screen route
+    const isVirtualScreenRoute = location.pathname.includes('/device/') && location.pathname.includes('/virtual-screen');
 
     return (
         <>
-            <Navbar />
+            {/* Hide navbar for virtual screen viewer */}
+            {!isVirtualScreenRoute && <Navbar />}
             <Container
                 maxWidth={false}
                 sx={{
                     backgroundColor: "background.default",
                     minHeight: "100vh",
-                    paddingTop: { xs: "56px", sm: "64px" },
-                    // Add bottom padding on mobile to account for bottom action bar
-                    paddingBottom: isMobile ? { xs: '84px', sm: '84px' } : 4
+                    // Only add top padding if navbar is visible
+                    paddingTop: isVirtualScreenRoute ? 0 : { xs: "56px", sm: "64px" },
+                    // Add bottom padding on mobile to account for bottom action bar (except virtual screen)
+                    paddingBottom: isMobile && !isVirtualScreenRoute ? { xs: '84px', sm: '84px' } : 4,
+                    // Remove padding for virtual screen full experience
+                    padding: isVirtualScreenRoute ? 0 : undefined
                 }}
             >
                 <Routes>
@@ -754,6 +774,7 @@ const AppRoutes: React.FC = () => {
                     <Route path="/configure-frame/:id" element={<ConfigureFrame />} />
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
+                    <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewer />} />
                     <Route path="/hostinfo" element={<HostInfo />} />
                     <Route path="/hostcharts" element={<HostCharts />} />
                     <Route path="/settings" element={<Settings />} />

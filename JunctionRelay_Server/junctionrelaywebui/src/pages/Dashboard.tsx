@@ -33,7 +33,7 @@ import { useTheme, useMediaQuery } from "@mui/material";
 
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
-import AddJunctionModal from "../components/AddJunctionModal";
+import AddJunctionModal from "../components/Junction_AddJunctionModal";
 import DashboardSettings from '../components/DashboardSettings';
 import ActiveCollectorsCard from '../components/ActiveCollectorsCard';
 import ActiveStreamsCard from '../components/ActiveStreamsCard';

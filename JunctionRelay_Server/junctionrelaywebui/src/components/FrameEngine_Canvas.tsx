@@ -1155,6 +1155,7 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
         return handles.map(handle => (
             <div
                 key={handle}
+                data-skip-thumbnail="true"
                 style={{
                     position: 'absolute',
                     width: '16px',
@@ -1218,6 +1219,7 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
             >
                 {/* Reset View Button */}
                 <button
+                    data-skip-thumbnail="true"
                     onClick={resetView}
                     style={{
                         position: 'absolute',
@@ -1243,6 +1245,8 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
                 </button>
                 <div
                     ref={canvasRef}
+                    data-canvas="true"
+                    className="frame-canvas-area"
                     style={{
                         position: 'relative',
                         border: dropZone.isActive ? '2px dashed #1976d2' : '2px solid #bbb',
@@ -1280,6 +1284,7 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
 
                     {/* Grid overlay for positioning help */}
                     <div
+                        data-skip-thumbnail="true" 
                         style={{
                             position: 'absolute',
                             inset: '0',
