@@ -19,6 +19,7 @@
 
 using JunctionRelayServer.Models;
 using System.Text.Json;
+using System.Threading;
 
 namespace JunctionRelayServer.Services
 {
@@ -27,6 +28,12 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_Devices _deviceDb;
         private readonly IConfiguration _configuration;
         private readonly HttpClient _httpClient;
+
+        // ===== Global cache (single window for everyone) =====
+        private const int CACHE_SECONDS = 60;
+        private static DateTime _cacheExpiryUtc = DateTime.MinValue;
+        private static int _cachedSyncedCount = 0;
+        private static readonly SemaphoreSlim _syncLock = new(1, 1);
 
         public Service_Manager_CloudDevices(
             Service_Database_Manager_Devices deviceDb,
@@ -40,12 +47,30 @@ namespace JunctionRelayServer.Services
 
         public async Task<int> SyncCloudDevicesAsync(string cloudToken)
         {
+            // Fast path: global cache still valid
+            if (DateTime.UtcNow < _cacheExpiryUtc)
+            {
+                // Console.WriteLine("[CLOUD_SYNC][CACHE] ✅ Global hit");
+                return _cachedSyncedCount;
+            }
+
+            await _syncLock.WaitAsync();
             try
             {
-                var cloudDevices = await FetchCloudDevicesAsync(cloudToken);
+                // Double-check after acquiring the lock
+                if (DateTime.UtcNow < _cacheExpiryUtc)
+                {
+                    // Console.WriteLine("[CLOUD_SYNC][CACHE] ✅ Global hit (after lock)");
+                    return _cachedSyncedCount;
+                }
 
+                // Perform real sync
+                var cloudDevices = await FetchCloudDevicesAsync(cloudToken);
                 if (cloudDevices == null)
                 {
+                    // Cache zero to prevent hammering for 60s as well
+                    _cachedSyncedCount = 0;
+                    _cacheExpiryUtc = DateTime.UtcNow.AddSeconds(CACHE_SECONDS);
                     return 0;
                 }
 
@@ -72,16 +97,19 @@ namespace JunctionRelayServer.Services
                     if (success) syncedCount++;
                 }
 
+                // Update global cache
+                _cachedSyncedCount = syncedCount;
+                _cacheExpiryUtc = DateTime.UtcNow.AddSeconds(CACHE_SECONDS);
+
                 return syncedCount;
             }
-            catch (Exception)
+            finally
             {
-                throw;
+                _syncLock.Release();
             }
         }
 
-
-        private async Task<List<CloudDeviceResponse>> FetchCloudDevicesAsync(string cloudToken)
+        public async Task<List<CloudDeviceResponse>> FetchCloudDevicesAsync(string cloudToken)
         {
             var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
             if (string.IsNullOrEmpty(cloudApiUrl))
@@ -89,7 +117,7 @@ namespace JunctionRelayServer.Services
                 throw new InvalidOperationException("Cloud API URL not configured.");
             }
 
-            var devicesUrl = $"{cloudApiUrl}/cloud/devices";
+            var devicesUrl = $"{cloudApiUrl}/cloud-devices";
 
             using var request = new HttpRequestMessage(HttpMethod.Get, devicesUrl);
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cloudToken);
@@ -100,6 +128,7 @@ namespace JunctionRelayServer.Services
             {
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
+                    // Do NOT set cache on 401; surface the error to caller
                     throw new UnauthorizedAccessException("Cloud authentication token is invalid or expired.");
                 }
 
@@ -132,7 +161,6 @@ namespace JunctionRelayServer.Services
         {
             try
             {
-                // Use the cloud database ID directly (no parsing needed)
                 int cloudDeviceId = cloudDevice.Id;
 
                 var existingDevice = existingCloudDevices.FirstOrDefault(d => d.CloudDeviceId == cloudDeviceId);
@@ -148,7 +176,6 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                // Add logging here
                 Console.WriteLine($"Error upserting cloud device: {ex.Message}");
                 return false;
             }
@@ -171,7 +198,6 @@ namespace JunctionRelayServer.Services
                 existingDevice.LastPinged = parsedPinged;
             }
 
-
             existingDevice.LastPingStatus = cloudDevice.LastHealthStatus;
             existingDevice.LastEncryptedSensorData = cloudDevice.LastEncryptedSensorData;
 
@@ -183,7 +209,6 @@ namespace JunctionRelayServer.Services
                 string other => other
             };
 
-            // Safely parse timestamps
             existingDevice.CreatedAt = DateTime.TryParse(cloudDevice.CreatedAt, out var createdAt)
                 ? DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
                 : null;
@@ -199,12 +224,10 @@ namespace JunctionRelayServer.Services
             return await _deviceDb.UpdateDeviceAsync(existingDevice.Id, existingDevice);
         }
 
-
         private async Task<bool> InsertNewCloudDeviceAsync(CloudDeviceResponse cloudDevice, int cloudDeviceId)
         {
             try
             {
-                // Parse values that require DateTime? assignment
                 DateTime? parsedPinged = DateTime.TryParse(cloudDevice.LastUpdated, out var pinged)
                     ? DateTime.SpecifyKind(pinged, DateTimeKind.Utc)
                     : null;
@@ -260,29 +283,7 @@ namespace JunctionRelayServer.Services
                 return false;
             }
         }
-    }
-
-    public class PendingCloudDeviceResponse
-    {
-        public int Id { get; set; }                    // Cloud database ID
-        public string DeviceId { get; set; } = string.Empty;  // MAC address
-        public string Name { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-    }
-
-    public class PendingCloudDevicesApiResponse
-    {
-        public bool Success { get; set; }
-        public List<PendingCloudDeviceResponse> Devices { get; set; } = new();
-    }
-
-    public class RegistrationTokenResponse
-    {
-        public bool Success { get; set; }
-        public string RegistrationToken { get; set; } = string.Empty;
-        public int ExpiresIn { get; set; }
-        public string QrCodeData { get; set; } = string.Empty;
-    }
+    }   
 
     public class CloudDevicesApiResponse
     {
@@ -308,7 +309,6 @@ namespace JunctionRelayServer.Services
         public bool PushNotifications { get; set; }
         public bool ClearAlertsOnHealthy { get; set; }
     }
-
 
     public class CloudDeviceRegistrationResponse
     {

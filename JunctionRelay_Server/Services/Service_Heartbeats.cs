@@ -41,21 +41,8 @@ namespace JunctionRelayServer.Services
         private readonly Service_Manager_WebSocket_Devices _webSocketService;
         private readonly Service_Manager_SSH _sshService;
         private readonly Service_CloudSync _cloudSyncService;
+        private readonly IService_Settings _settingsService;
         private readonly ConcurrentDictionary<int, int> _failureCounts = new();
-
-        // Class to store connection status response from device
-        private class DeviceConnectionStatusResponse
-        {
-            public bool EspNow { get; set; }
-            public bool WifiUp { get; set; }
-            public bool MqttUp { get; set; }
-            public bool EthernetUp { get; set; }
-            public bool WebSocketUp { get; set; }
-            public string? Ip { get; set; }
-            public string? Mac { get; set; }
-            public string? ActiveNetworkType { get; set; }
-            public string? BackendServerIP { get; set; }
-        }
 
         public Service_Heartbeats(
             IServiceScopeFactory scopeFactory,
@@ -63,7 +50,8 @@ namespace JunctionRelayServer.Services
             Service_CloudSessionStore cloudSessionStore,
             Service_Manager_WebSocket_Devices webSocketService,
             Service_Manager_SSH sshService,
-            Service_CloudSync cloudSyncService)
+            Service_CloudSync cloudSyncService,
+            IService_Settings settingsService)
         {
             _scopeFactory = scopeFactory;
             _httpClientFactory = httpClientFactory;
@@ -71,11 +59,12 @@ namespace JunctionRelayServer.Services
             _webSocketService = webSocketService;
             _sshService = sshService;
             _cloudSyncService = cloudSyncService;
+            _settingsService = settingsService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            Console.WriteLine("[HEARTBEATS] ✅ Heartbeat service started (Sequential Mode with Connection Status)");
+            Console.WriteLine("[HEARTBEATS] ✅ Heartbeat service initialized");
 
             // Wait for database to be initialized
             using (var initScope = _scopeFactory.CreateScope())
@@ -100,27 +89,45 @@ namespace JunctionRelayServer.Services
 
                 foreach (var device in allDevices)
                 {
-                    // Set heartbeat status to offline and connection mode to null on startup
-                    device.LastPingStatus = "Offline";
-                    device.ConnMode = null; // Reset connection status on startup
-                    await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
+                    // Set heartbeat status to offline on startup (only for heartbeat-enabled devices)
+                    if (device.HeartbeatEnabled)
+                    {
+                        device.LastPingStatus = "Offline";
+                        await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
+                    }
                 }
 
-                Console.WriteLine($"[HEARTBEATS] ⏳ Set {allDevices.Count} device(s) to Offline heartbeat and null ConnMode on startup");
+                var heartbeatDeviceCount = allDevices.Count(d => d.HeartbeatEnabled);
+                Console.WriteLine($"[HEARTBEATS] ⏳ Set {heartbeatDeviceCount} heartbeat-enabled device(s) to Offline on startup");
             }
+
             bool isFirstRun = true;
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
+                    // Check if heartbeat service is enabled via settings
+                    var serviceEnabled = await _settingsService.GetBoolSettingAsync("service_heartbeats_enabled", true);
+
+                    if (!serviceEnabled)
+                    {
+                        if (isFirstRun)
+                        {
+                            Console.WriteLine("[HEARTBEATS] ⏸️ Heartbeat service is DISABLED via settings - skipping processing");
+                            isFirstRun = false;
+                        }
+                        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
                     using var scope = _scopeFactory.CreateScope();
                     var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
                     var devices = await deviceDb.GetAllDevicesAsync().ConfigureAwait(false);
                     var now = DateTime.UtcNow;
 
-                    // 1) Reset in-memory failures and move Offline devices into Testing after grace period
-                    foreach (var d in devices)
+                    // Reset in-memory failures and move Offline devices into Testing after grace period
+                    foreach (var d in devices.Where(d => d.HeartbeatEnabled))
                     {
                         var max = d.HeartbeatMaxRetryAttempts ?? 0;
                         if (max > 0
@@ -136,10 +143,7 @@ namespace JunctionRelayServer.Services
                         }
                     }
 
-                    // 2) Process Connection Status Checks FIRST (before heartbeats to avoid conflicts)
-                    await ProcessConnectionStatusChecksAsync(deviceDb, devices, now, stoppingToken).ConfigureAwait(false);
-
-                    // 3) Build list of devices due for a heartbeat ping
+                    // Build list of devices due for a heartbeat ping
                     var heartbeatDevices = devices
                         .Where(d => d.HeartbeatEnabled
                                      && (
@@ -172,7 +176,7 @@ namespace JunctionRelayServer.Services
                         .OrderBy(d => d.LastPingAttempt ?? DateTime.MinValue) // Process oldest first
                         .ToList();
 
-                    // 4) Process heartbeat devices sequentially
+                    // Process heartbeat devices sequentially
                     if (heartbeatDevices.Any())
                     {
                         Console.WriteLine($"[HEARTBEATS] 📊 Processing {heartbeatDevices.Count} device(s) sequentially");
@@ -189,114 +193,6 @@ namespace JunctionRelayServer.Services
             }
 
             Console.WriteLine("[HEARTBEATS] ⛔ Heartbeat service stopping...");
-        }
-
-        private async Task ProcessConnectionStatusChecksAsync(
-            Service_Database_Manager_Devices deviceDb,
-            List<Model_Device> devices,
-            DateTime now,
-            CancellationToken stoppingToken)
-        {
-            // Get devices that need connection status checks
-            var connectionStatusDevices = devices
-                .Where(d => d.ConnectionStatusEnabled
-                           && !string.IsNullOrWhiteSpace(d.IPAddress)
-                           && (d.LastConnectionStatusCheck == null
-                               || (now - d.LastConnectionStatusCheck.Value) >= TimeSpan.FromMilliseconds(d.ConnectionStatusIntervalMs ?? 300000)))
-                .OrderBy(d => d.LastConnectionStatusCheck ?? DateTime.MinValue)
-                .ToList();
-
-            if (!connectionStatusDevices.Any())
-                return;
-
-            Console.WriteLine($"[CONNECTION_STATUS] 🔍 Checking connection status for {connectionStatusDevices.Count} device(s) BEFORE heartbeat processing");
-
-            foreach (var device in connectionStatusDevices)
-            {
-                if (stoppingToken.IsCancellationRequested)
-                    break;
-
-                await ProcessDeviceConnectionStatusAsync(deviceDb, device, now, stoppingToken).ConfigureAwait(false);
-
-                // Small delay between connection status checks to avoid overwhelming devices
-                if (!stoppingToken.IsCancellationRequested)
-                {
-                    await Task.Delay(200, stoppingToken).ConfigureAwait(false); // 200ms between checks
-                }
-            }
-
-            // Ensure connection status processing is completely finished before heartbeats start
-            Console.WriteLine($"[CONNECTION_STATUS] ✅ Connection status checks completed for {connectionStatusDevices.Count} device(s)");
-        }
-
-        private async Task ProcessDeviceConnectionStatusAsync(
-            Service_Database_Manager_Devices deviceDb,
-            Model_Device device,
-            DateTime now,
-            CancellationToken stoppingToken)
-        {
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.Timeout = TimeSpan.FromSeconds(5); // Quick timeout for connection status
-
-                var connectionStatusUrl = $"http://{device.IPAddress}/api/connection/status";
-
-                Console.WriteLine($"[CONNECTION_STATUS] 🌐 Checking connection status for '{device.Name}' at {connectionStatusUrl}");
-
-                var response = await httpClient.GetAsync(connectionStatusUrl, stoppingToken).ConfigureAwait(false);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var jsonContent = await response.Content.ReadAsStringAsync(stoppingToken).ConfigureAwait(false);
-                    var connectionStatus = JsonSerializer.Deserialize<DeviceConnectionStatusResponse>(jsonContent, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    if (connectionStatus != null)
-                    {
-                        var activeConnections = new List<string>();
-
-                        if (connectionStatus.EthernetUp) activeConnections.Add("Ethernet");
-                        if (connectionStatus.WifiUp) activeConnections.Add("WiFi");
-                        if (connectionStatus.EspNow) activeConnections.Add("ESP-NOW");
-                        if (connectionStatus.MqttUp) activeConnections.Add("MQTT");
-
-                        string? newConnMode = activeConnections.Any() ? string.Join(",", activeConnections) : null;
-
-                        if (device.ConnMode != newConnMode)
-                        {
-                            device.ConnMode = newConnMode;
-                            Console.WriteLine($"[CONNECTION_STATUS] ✅ Updated '{device.Name}' connection mode: {newConnMode ?? "null"}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[CONNECTION_STATUS] ℹ️ '{device.Name}' connection mode unchanged: {newConnMode ?? "null"}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[CONNECTION_STATUS] ⚠️ Invalid JSON response from '{device.Name}': {jsonContent}");
-                        device.ConnMode = null;
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[CONNECTION_STATUS] ❌ Failed to get connection status from '{device.Name}': {response.StatusCode}");
-                    device.ConnMode = null;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[CONNECTION_STATUS] ⚠️ Error checking connection status for '{device.Name}': {ex.Message}");
-                device.ConnMode = null;
-            }
-            finally
-            {
-                device.LastConnectionStatusCheck = now;
-                await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
-            }
         }
 
         private async Task ProcessDevicesSequentiallyAsync(

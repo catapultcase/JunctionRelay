@@ -63,7 +63,7 @@ namespace JunctionRelayServer.Services
         public async Task HandleDashboardConnectionAsync(WebSocket webSocket, string? clientInfo = null)
         {
             var connectionId = Guid.NewGuid().ToString();
-            Console.WriteLine($"[Dashboard WebSocket] New connection: {connectionId}");
+            // Console.WriteLine($"[Dashboard WebSocket] New connection: {connectionId}");
 
             try
             {
@@ -92,7 +92,7 @@ namespace JunctionRelayServer.Services
             finally
             {
                 _connections.TryRemove(connectionId, out _);
-                Console.WriteLine($"[Dashboard WebSocket] Connection {connectionId} removed");
+                // Console.WriteLine($"[Dashboard WebSocket] Connection {connectionId} removed");
             }
         }
 

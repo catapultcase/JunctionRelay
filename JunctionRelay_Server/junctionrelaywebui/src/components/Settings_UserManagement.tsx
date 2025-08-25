@@ -150,7 +150,7 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
     const fetchAuthStatus = async () => {
         console.log("[AUTH] Fetching auth status...");
         try {
-            const response = await fetch("/api/auth/status");
+            const response = await fetch("/api/unified-auth/status");
             if (response.ok) {
                 const data = await response.json();
                 console.log("[AUTH] Auth status response:", data);
@@ -185,10 +185,10 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
                 return;
             }
 
-            console.log("[CLOUD_AUTH] Making request to /api/cloud-auth/user-info with token...");
+            console.log("[CLOUD_AUTH] Making request to /api/unified-auth/user-info with token...");
 
             // Include Authorization header with the token
-            const response = await fetch("/api/cloud-auth/user-info", {
+            const response = await fetch("/api/unified-auth/user-info", {
                 headers: {
                     'Authorization': `Bearer ${cloudToken}`
                 }
@@ -233,7 +233,13 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
         try {
             setCloudUserLoading(true);
 
-            const response = await fetch("/api/cloud-auth/initiate-login", { method: "POST" });
+            const response = await fetch("/api/unified-auth/login", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    origin: window.location.origin
+                })
+            });
 
             if (!response.ok) {
                 throw new Error("Failed to initiate cloud authentication");
@@ -262,7 +268,7 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
         try {
             const cloudToken = localStorage.getItem('cloud_proxy_token');
 
-            const response = await fetch("/api/cloud-auth/logout", {
+            const response = await fetch("/api/unified-auth/logout", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -300,7 +306,7 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
 
                 // First, try to set the auth mode to cloud
                 console.log("[AUTH] Setting auth mode to cloud first...");
-                const setModeResponse = await fetch("/api/auth/set-mode", {
+                const setModeResponse = await fetch("/api/unified-auth/set-mode", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ mode: 'cloud' })
@@ -324,7 +330,7 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
                 if (cloudToken) {
                     console.log("[AUTH] Validating existing cloud token...");
                     try {
-                        const checkResponse = await fetch("/api/cloud-auth/user-info", {
+                        const checkResponse = await fetch("/api/unified-auth/user-info", {
                             headers: {
                                 'Authorization': `Bearer ${cloudToken}`
                             }
@@ -356,7 +362,7 @@ const Settings_UserManagement: React.FC<UserManagementProps> = ({ showSnackbar }
 
             // For non-cloud modes (none, local), proceed normally
             console.log("[AUTH] Setting auth mode via API...");
-            const response = await fetch("/api/auth/set-mode", {
+            const response = await fetch("/api/unified-auth/set-mode", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ mode: newMode })

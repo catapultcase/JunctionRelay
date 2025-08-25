@@ -58,6 +58,7 @@ import { useNavigate } from "react-router-dom";
 // Icon imports
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
+import UploadIcon from '@mui/icons-material/Upload';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -487,6 +488,8 @@ const FrameLayoutTableRow = memo(({
     );
 });
 
+
+
 // AddFrameLayout Modal Component
 const AddFrameLayoutModal: React.FC<{
     open: boolean,
@@ -841,6 +844,8 @@ const FrameEngine = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
+    const [importLoading, setImportLoading] = useState<boolean>(false);
+
     // Persist states
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY_FRAMEENGINE_VIEW_MODE, viewMode);
@@ -1019,6 +1024,43 @@ const FrameEngine = () => {
         }
     };
 
+    const handleImportPackage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (!file.name.toLowerCase().endsWith('.zip')) {
+            showSnackbar("Please select a ZIP file", "error");
+            return;
+        }
+
+        setImportLoading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append('packageFile', file);
+
+            const response = await fetch('/api/frameengine/import-package', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Import failed');
+            }
+
+            const result = await response.json();
+            await fetchFrameLayouts();
+            showSnackbar(`Frame layout "${result.id}" imported successfully`, "success");
+        } catch (error: any) {
+            showSnackbar(`Import failed: ${error.message}`, "error");
+        } finally {
+            setImportLoading(false);
+            // Clear the input
+            event.target.value = '';
+        }
+    };
+
     const handleResetAll = async () => {
         setResetLoading(true);
         try {
@@ -1142,6 +1184,24 @@ const FrameEngine = () => {
                     >
                         Add Frame Layout
                     </Button>
+
+                    {/* ADD THIS IMPORT BUTTON */}
+                    <Button
+                        variant="outlined"
+                        color="primary"
+                        component="label"
+                        size="small"
+                        startIcon={<UploadIcon />}
+                    >
+                        Import Package
+                        <input
+                            type="file"
+                            hidden
+                            accept=".zip"
+                            onChange={handleImportPackage}
+                        />
+                    </Button>
+
                     <Button
                         variant="outlined"
                         onClick={handleResetAll}

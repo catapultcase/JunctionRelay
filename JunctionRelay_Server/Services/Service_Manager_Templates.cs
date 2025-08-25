@@ -45,11 +45,11 @@ namespace JunctionRelayServer.Services
         "Template: NeoPixel Color Cycle",
         "Template: Charlie Matrix Display",
         "Template: QUAD Static Display",
-        "Template (Offset): 2x2 Grid",
-        "Template (Offset): 2x4 Grid",
-        "Template (Offset): Vintage Radio",
-        "Template (Offset): Chart Plotter",
-        "Template (Offset): Astro",
+        //"Template: (Offset) 2x2 Grid",
+        //"Template: (Offset) 2x4 Grid",
+        //"Template: (Offset) Vintage Radio",
+        //"Template: (Offset) Chart Plotter",
+        //"Template: (Offset) Astro",
     };
 
             var existingTemplates = await _dbManager.GetAllTemplatesAsync();
@@ -92,11 +92,11 @@ namespace JunctionRelayServer.Services
                 "Template: NeoPixel Color Cycle" => BuildNeoPixelTemplate(templateName),
                 "Template: Charlie Matrix Display" => BuildCharlieTemplate(templateName),
                 "Template: QUAD Static Display" => BuildQuadTemplate(templateName),
-                "Template (Offset): 2x2 Grid" => BuildGridOffsetTemplate(templateName, 2, 2),
-                "Template (Offset): 2x4 Grid" => BuildGridOffsetTemplate(templateName, 2, 4),
-                "Template (Offset): Vintage Radio" => BuildRadioOffsetTemplate(templateName),
-                "Template (Offset): Chart Plotter" => BuildPlotterOffsetTemplate(templateName),
-                "Template (Offset): Astro" => BuildAstroOffsetTemplate(templateName),
+                //"Template: (Offset) 2x2 Grid" => BuildGridOffsetTemplate(templateName, 2, 2),
+                //"Template: (Offset) 2x4 Grid" => BuildGridOffsetTemplate(templateName, 2, 4),
+                //"Template: (Offset) Vintage Radio" => BuildRadioOffsetTemplate(templateName),
+                //"Template: (Offset) Chart Plotter" => BuildPlotterOffsetTemplate(templateName),
+                //"Template: (Offset) Astro" => BuildAstroOffsetTemplate(templateName),
                 _ => null
             };
 

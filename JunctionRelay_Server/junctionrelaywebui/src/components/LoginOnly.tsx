@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024�present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,29 +34,60 @@ interface LoginOnlyProps {
     showSnackbar: (message: string, severity?: AlertColor) => void;
 }
 
-// Cloud Auth Service for proxy mode
-class CloudAuthService {
+// Unified Auth Service using new endpoints
+class UnifiedAuthService {
     async initiateLogin(): Promise<{ authUrl?: string; alreadyAuthenticated?: boolean; token?: string; expiresAt?: string }> {
-        const response = await fetch('/api/cloud-auth/initiate-login', {
+        const response = await fetch('/api/unified-auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                redirectUrl: window.location.origin,
                 origin: window.location.origin
             })
         });
 
         if (!response.ok) {
-            throw new Error('Failed to initiate cloud authentication');
+            throw new Error('Failed to initiate authentication');
         }
 
         return response.json();
     }
 
     async validateToken(token: string): Promise<{ valid: boolean; user?: any }> {
-        const response = await fetch('/api/cloud-auth/validate', {
+        const response = await fetch('/api/unified-auth/validate', {
+            method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        return response.json();
+    }
+
+    async getAuthConfig(): Promise<{ authMode: string; isConfigured: boolean; requiresSetup: boolean }> {
+        const response = await fetch('/api/unified-auth/config');
+        if (!response.ok) {
+            throw new Error('Failed to get auth configuration');
+        }
+        return response.json();
+    }
+
+    async getAuthStatus(): Promise<any> {
+        const response = await fetch('/api/unified-auth/status');
+        if (!response.ok) {
+            throw new Error('Failed to get auth status');
+        }
+        return response.json();
+    }
+
+    async setupLocalAuth(username: string, password: string): Promise<any> {
+        const response = await fetch('/api/unified-auth/setup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || 'Setup failed');
+        }
+
         return response.json();
     }
 }
@@ -66,6 +97,7 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
 
     const [authMode, setAuthMode] = useState<AuthMode>('none');
     const [isConfigured, setIsConfigured] = useState<boolean>(false);
+    const [requiresSetup, setRequiresSetup] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
 
     // Local auth setup/login state
@@ -77,10 +109,10 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
     const [loginPassword, setLoginPassword] = useState<string>('');
     const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
-    // Cloud proxy login state
+    // Cloud login state
     const [cloudLoginLoading, setCloudLoginLoading] = useState<boolean>(false);
 
-    const cloudAuth = new CloudAuthService();
+    const unifiedAuth = new UnifiedAuthService();
 
     useEffect(() => {
         fetchAuthStatus();
@@ -104,38 +136,18 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
         }
     };
 
-
     const fetchAuthStatus = async () => {
         try {
-            // Get auth mode first
-            const modeRes = await fetch("/api/auth/mode");
-            if (!modeRes.ok) {
-                console.error("Cannot fetch auth mode");
-                setAuthMode('none');
-                setIsConfigured(true);
-                return;
-            }
-
-            const modeData = await modeRes.json();
-            const currentMode = modeData.mode || 'none';
-            setAuthMode(currentMode);
-
-            // Only check local auth configuration if in local mode
-            if (currentMode === 'local') {
-                const statusRes = await fetch('/api/auth/status');
-                if (statusRes.ok) {
-                    const statusData = await statusRes.json();
-                    setIsConfigured(statusData.isConfigured || false);
-                } else {
-                    setIsConfigured(false);
-                }
-            } else {
-                setIsConfigured(true); // Non-local modes don't need setup
-            }
+            // Get unified auth configuration
+            const config = await unifiedAuth.getAuthConfig();
+            setAuthMode(config.authMode as AuthMode);
+            setIsConfigured(config.isConfigured);
+            setRequiresSetup(config.requiresSetup);
         } catch (err) {
             console.error("Error checking auth status:", err);
             setAuthMode('none');
             setIsConfigured(true);
+            setRequiresSetup(false);
         } finally {
             setLoading(false);
         }
@@ -167,26 +179,13 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
         setSetupLoading(true);
 
         try {
-            const response = await fetch('/api/auth/setup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: setupUsername,
-                    password: setupPassword
-                })
-            });
-
-            if (response.ok) {
-                setSetupUsername('');
-                setSetupPassword('');
-                setSetupConfirmPassword('');
-                await fetchAuthStatus();
-                triggerAuthChange();
-                showSnackbar('Admin account created successfully!', 'success');
-            } else {
-                const data = await response.json();
-                throw new Error(data.message || 'Failed to create admin user');
-            }
+            await unifiedAuth.setupLocalAuth(setupUsername, setupPassword);
+            setSetupUsername('');
+            setSetupPassword('');
+            setSetupConfirmPassword('');
+            await fetchAuthStatus();
+            triggerAuthChange();
+            showSnackbar('Admin account created successfully!', 'success');
         } catch (error: any) {
             showSnackbar(error.message || 'Error creating admin user', 'error');
         } finally {
@@ -219,31 +218,26 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
         }
     };
 
-    // Cloud proxy login
-    const handleCloudProxyLogin = async () => {
+    // Cloud login using unified auth
+    const handleCloudLogin = async () => {
         setCloudLoginLoading(true);
 
         try {
-            console.log('Initiating cloud proxy login...');
-            const response = await cloudAuth.initiateLogin();
+            const response = await unifiedAuth.initiateLogin();
 
-            if (response.alreadyAuthenticated && response.token) {
-                console.log('Already authenticated, using token directly');
-                localStorage.setItem('cloud_proxy_token', response.token);
-                triggerAuthChange();
-                showSnackbar('Already authenticated with JunctionRelay Cloud!', 'success');
-                return;
+            // IMPORTANT: Never accept tokens here. Force Clerk redirect.
+            if (response.token || response.alreadyAuthenticated) {
+                console.warn('[Auth] Ignoring token/alreadyAuthenticated returned from /unified-auth/login');
             }
 
-            if (response.authUrl) {
-                console.log('Redirecting to cloud authentication...');
-                showSnackbar('Redirecting to JunctionRelay Cloud...', 'info');
-                window.location.href = response.authUrl;
-            } else {
-                throw new Error('No authUrl returned from cloud');
+            if (!response.authUrl) {
+                throw new Error('No authUrl returned from unified auth');
             }
+
+            showSnackbar('Redirecting to JunctionRelay Cloud...', 'info');
+            window.location.href = response.authUrl;
         } catch (error: any) {
-            console.error('Cloud proxy login error:', error);
+            console.error('Cloud login error:', error);
             showSnackbar(`Cloud login error: ${error.message}`, 'error');
         } finally {
             setCloudLoginLoading(false);
@@ -270,7 +264,7 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
                             <Typography variant="h5">Local Authentication</Typography>
                         </Box>
 
-                        {!isConfigured ? (
+                        {requiresSetup ? (
                             // Setup form
                             <>
                                 <Typography variant="subtitle1" sx={{ mb: 2 }}>
@@ -381,7 +375,7 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
                         <Button
                             fullWidth
                             variant="contained"
-                            onClick={handleCloudProxyLogin}
+                            onClick={handleCloudLogin}
                             disabled={cloudLoginLoading}
                             startIcon={cloudLoginLoading ? <CircularProgress size={20} /> : <CloudIcon />}
                         >

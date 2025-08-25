@@ -64,8 +64,8 @@ namespace JunctionRelayServer.Services
             _firmwareDirectory = Path.Combine(dataDirectoryProvider.DataDirectory, "firmware");
             _releaseCacheDirectory = Path.Combine(_firmwareDirectory, "releases");
 
-            Console.WriteLine($"[OTA] Using firmware cache:    {_firmwareDirectory}");
-            Console.WriteLine($"[OTA] Using release cache:     {_releaseCacheDirectory}");
+            // Console.WriteLine($"[OTA] Using firmware cache:    {_firmwareDirectory}");
+            // Console.WriteLine($"[OTA] Using release cache:     {_releaseCacheDirectory}");
         }
 
         public async Task<Result<object>> CheckForUpdate(int deviceId, bool force = false)
@@ -133,7 +133,7 @@ namespace JunctionRelayServer.Services
                     if (releases != null)
                     {
                         // Cache exists - search within it
-                        Console.WriteLine($"[OTA CACHE] Cache exists with {releases.Count} releases");
+                        // Console.WriteLine($"[OTA CACHE] Cache exists with {releases.Count} releases");
                         targetRelease = FindReleaseForTarget(releases, normalizedTarget);
 
                         if (targetRelease == null)
@@ -1320,7 +1320,7 @@ namespace JunctionRelayServer.Services
                     return null;
                 }
 
-                Console.WriteLine($"[OTA CACHE] Using cached data with {cachedData.Releases.Count} releases");
+                // Console.WriteLine($"[OTA CACHE] Using cached data with {cachedData.Releases.Count} releases");
                 return cachedData.Releases;
             }
             catch (Exception ex)
@@ -1375,7 +1375,7 @@ namespace JunctionRelayServer.Services
                 {
                     if (asset.Name != null && asset.Name.Contains(targetFirmware, StringComparison.OrdinalIgnoreCase))
                     {
-                        Console.WriteLine($"[OTA CACHE] Found matching asset: {asset.Name} for target: {targetFirmware}");
+                        // Console.WriteLine($"[OTA CACHE] Found matching asset: {asset.Name} for target: {targetFirmware}");
                         return release;
                     }
                 }

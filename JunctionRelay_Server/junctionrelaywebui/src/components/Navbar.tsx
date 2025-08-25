@@ -84,210 +84,126 @@ const Navbar = () => {
     const flags = useFeatureFlags();
     const { user } = useAuth();
     const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('md')); // Hide on tablets and phones
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { showSuccess, showError, showInfo, showWarning } = useNotifications();
 
     const [collapsed, setCollapsed] = useState(() => {
-        // Always collapsed on mobile
         if (isMobile) return true;
-
         const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-        return stored === "true" || stored === null; // Default to collapsed if no stored preference
+        return stored === "true" || stored === null;
     });
 
     const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
     const [linksMenuAnchor, setLinksMenuAnchor] = useState<null | HTMLElement>(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    // SIMPLIFIED STATE - everything comes from unified status calls
     const [authMode, setAuthMode] = useState<string>('none');
-    const [cloudUser, setCloudUser] = useState<string | null>(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [licenseStatus, setLicenseStatus] = useState<string>('Cloud');
+    const [authStatus, setAuthStatus] = useState({
+        isAuthenticated: false,
+        user: null as string | null,
+        hasValidLicense: false,
+        licenseType: 'Cloud' as string,
+        backendAuthenticated: false
+    });
     const [useMobileNav, setUseMobileNav] = useState(false);
-    const [backendCloudAuth, setBackendCloudAuth] = useState<'authenticated' | 'unauthenticated' | 'checking'>('checking');
+
+    // Check mobile navigation flag
+    const checkMobileNavFlag = useCallback(async () => {
+        try {
+            const flagsResponse = await fetch('/api/settings/flags');
+            if (flagsResponse.ok) {
+                const flagsData = await flagsResponse.json();
+                setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
+            }
+        } catch (error) {
+            console.warn('Could not fetch mobile navigation flag:', error);
+        }
+    }, []);
+
+    const checkAuthStatus = useCallback(async () => {
+        try {
+            console.log('[NAVBAR] Checking unified auth status...');
+
+            const response = await fetch('/api/unified-auth/status');
+            if (!response.ok) {
+                console.warn('[NAVBAR] Failed to get unified auth status');
+                setAuthMode('none');
+                setAuthStatus({
+                    isAuthenticated: false,
+                    user: null,
+                    hasValidLicense: false,
+                    licenseType: 'Cloud',
+                    backendAuthenticated: false
+                });
+                return;
+            }
+
+            const statusData = await response.json();
+            console.log('[NAVBAR] Unified auth status:', statusData);
+
+            // Set mode from server
+            setAuthMode(statusData.authMode || 'none');
+
+            // Update state
+            setAuthStatus({
+                isAuthenticated: statusData.isAuthenticated || false,
+                user: statusData.user || statusData.currentUser || null,
+                hasValidLicense: statusData.hasValidLicense || false,
+                licenseType: statusData.licenseType ||
+                    (statusData.authMode === 'local' ? 'Local' : 'Cloud'),
+                backendAuthenticated: statusData.backendAuthenticated ??
+                    statusData.isAuthenticated ?? false
+            });
+
+            // Check mobile nav flag (keep your existing logic)
+            await checkMobileNavFlag();
+        } catch (error) {
+            console.error('[NAVBAR] Error checking unified auth status:', error);
+            setAuthMode('none');
+            setAuthStatus({
+                isAuthenticated: false,
+                user: null,
+                hasValidLicense: false,
+                licenseType: 'Cloud',
+                backendAuthenticated: false
+            });
+        }
+    }, [checkMobileNavFlag]);
+
 
     // Listen for dynamic flag changes
     useEffect(() => {
-        const handleFlagsChanged = async () => {
-            try {
-                const flagsResponse = await fetch('/api/settings/flags');
-                if (flagsResponse.ok) {
-                    const flagsData = await flagsResponse.json();
-                    setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
-                }
-            } catch (error) {
-                console.warn('Could not fetch updated mobile navigation flag:', error);
-            }
-        };
-
-        // Listen for settings changes
+        const handleFlagsChanged = checkMobileNavFlag;
         window.addEventListener('settings-changed', handleFlagsChanged);
         window.addEventListener('flags-changed', handleFlagsChanged);
-
         return () => {
             window.removeEventListener('settings-changed', handleFlagsChanged);
             window.removeEventListener('flags-changed', handleFlagsChanged);
         };
-    }, []);
+    }, [checkMobileNavFlag]);
 
     // Force collapsed state on mobile OR when mobile nav flag is enabled
     const isCollapsed = isMobile || collapsed || useMobileNav;
     const shouldShowDrawer = isMobile || useMobileNav;
 
-    // FIXED: Removed checkAuthMode from useCallback dependencies that could cause loops
-    const checkAuthMode = useCallback(async () => {
-        try {
-            const modeResponse = await fetch('/api/auth/mode');
-            if (modeResponse.ok) {
-                const modeData = await modeResponse.json();
-                const currentAuthMode = modeData.mode || 'none';
-                setAuthMode(currentAuthMode);
-
-                // Check mobile navigation flag
-                try {
-                    const flagsResponse = await fetch('/api/settings/flags');
-                    if (flagsResponse.ok) {
-                        const flagsData = await flagsResponse.json();
-                        setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
-                    }
-                } catch (error) {
-                    console.warn('Could not fetch mobile navigation flag:', error);
-                }
-
-                // Determine authentication status based on mode
-                if (currentAuthMode === 'none') {
-                    setIsAuthenticated(false);
-                    setCloudUser(null);
-                    setLicenseStatus('Cloud');
-                    // No need to make any more API calls for 'none' mode
-                    return;
-                } else if (currentAuthMode === 'local') {
-                    // For local auth, check if we have a user from AuthContext
-                    setIsAuthenticated(!!user);
-                    setCloudUser(null);
-                    setLicenseStatus('Cloud');
-                    // No need to make cloud API calls for 'local' mode
-                    return;
-                } else if (currentAuthMode === 'cloud') {
-                    // For cloud auth, check proxy token and cloud user
-                    const proxyToken = localStorage.getItem('cloud_proxy_token');
-                    const storedCloudUser = localStorage.getItem('junctionrelay_cloud_user');
-
-                    if (proxyToken && storedCloudUser) {
-                        setCloudUser(storedCloudUser);
-                        setIsAuthenticated(true);
-
-                        // Only make user-info call for authenticated cloud users
-                        try {
-                            const userInfoResponse = await fetch('/api/cloud-auth/user-info', {
-                                headers: {
-                                    'Authorization': `Bearer ${proxyToken}`
-                                }
-                            });
-
-                            if (userInfoResponse.ok) {
-                                const userInfoData = await userInfoResponse.json();
-
-                                // Check hasValidLicense field like the Settings component does
-                                const hasValidLicense = userInfoData.hasValidLicense;
-                                setLicenseStatus(hasValidLicense ? 'Pro' : 'Cloud');
-                            } else {
-                                console.warn('User info endpoint returned:', userInfoResponse.status);
-                                setLicenseStatus('Cloud');
-                            }
-                        } catch (error) {
-                            console.error('Error fetching user info:', error);
-                            setLicenseStatus('Cloud');
-                        }
-                    } else {
-                        setCloudUser(null);
-                        setIsAuthenticated(false);
-                        setLicenseStatus('Cloud');
-                    }
-                }
-            } else {
-                // Fallback to 'none' if we can't determine auth mode
-                setAuthMode('none');
-                setIsAuthenticated(false);
-                setCloudUser(null);
-                setLicenseStatus('Cloud');
-            }
-        } catch (error) {
-            console.error('Error checking auth mode:', error);
-            setAuthMode('none');
-            setIsAuthenticated(false);
-            setCloudUser(null);
-            setLicenseStatus('Cloud');
-        }
-    }, []); // FIXED: Empty dependency array to prevent infinite loops
-
-    // Check backend cloud auth status
-    const checkBackendCloudAuth = useCallback(async () => {
-        if (authMode !== 'cloud') {
-            setBackendCloudAuth('unauthenticated');
-            return;
-        }
-        try {
-            const response = await fetch('/api/cloud-auth/backendstatus');
-            if (response.ok) {
-                const data = await response.json();
-                setBackendCloudAuth(data.isAuthenticated ? 'authenticated' : 'unauthenticated');
-            } else {
-                setBackendCloudAuth('unauthenticated');
-            }
-        } catch (error) {
-            console.error('Error checking backend cloud auth status:', error);
-            setBackendCloudAuth('unauthenticated');
-        }
-    }, [authMode]);
-
-    // FIXED: Add this effect for periodic status checking - ONLY for cloud mode
+    // Check auth status on mount and when user changes
     useEffect(() => {
-        // Only run when in cloud mode
-        if (authMode !== 'cloud') {
-            setBackendCloudAuth('unauthenticated');
-            return;
-        }
+        checkAuthStatus();
+    }, [user, checkAuthStatus]);
 
-        // Initial check
-        checkBackendCloudAuth();
-
-        // Set up interval for periodic checks (every minute) - only in cloud mode
-        const interval = setInterval(checkBackendCloudAuth, 60000);
-
-        // Listen for auth events to check immediately
-        const handleAuthEvent = () => {
-            setTimeout(checkBackendCloudAuth, 1000); // Small delay to let auth changes settle
-        };
-
-        window.addEventListener('auth-changed', handleAuthEvent);
-        window.addEventListener('storage', handleAuthEvent);
-
-        return () => {
-            clearInterval(interval);
-            window.removeEventListener('auth-changed', handleAuthEvent);
-            window.removeEventListener('storage', handleAuthEvent);
-        };
-    }, [authMode, checkBackendCloudAuth]); // FIXED: Keep necessary dependencies
-
-    // FIXED: Check auth mode and user status - only depend on user, not checkAuthMode
-    useEffect(() => {
-        checkAuthMode();
-    }, [user]); // FIXED: Only re-run when user changes, not when checkAuthMode changes
-
-    // FIXED: Listen for auth changes - remove checkAuthMode dependency
+    // Listen for auth changes - simplified
     useEffect(() => {
         const handleAuthChange = () => {
-            // Always re-check auth mode when auth changes - no conditions needed
-            checkAuthMode();
-
-            // Show notification for auth events
-            // showInfo('Authentication status updated', 'Auth Status', 'auth');
+            console.log('[NAVBAR] Auth change event detected');
+            checkAuthStatus();
         };
 
         const handleStorageChange = (event: StorageEvent) => {
             if (event.key === 'cloud_proxy_token' ||
                 event.key === 'junctionrelay_cloud_user' ||
                 event.key === 'junctionrelay_token') {
+                console.log('[NAVBAR] Storage change detected for auth token');
                 handleAuthChange();
             }
         };
@@ -299,12 +215,13 @@ const Navbar = () => {
             window.removeEventListener('auth-changed', handleAuthChange);
             window.removeEventListener('storage', handleStorageChange);
         };
-    }, [showInfo]); // FIXED: Empty dependency array - no need to depend on checkAuthMode
+    }, [checkAuthStatus]);
+
+    // REMOVED: All the individual polling intervals and complex auth checking
+    // Now we just have one simple status check that calls the right endpoint
 
     const handleToggleCollapse = () => {
-        // Don't allow toggle on mobile or when using mobile nav flag
         if (isMobile || useMobileNav) return;
-
         const newState = !collapsed;
         setCollapsed(newState);
         localStorage.setItem(LOCAL_STORAGE_KEY, newState.toString());
@@ -335,44 +252,25 @@ const Navbar = () => {
     };
 
     const handleLogout = () => {
-        // Show logout notification
-        // showInfo('Signing out...', 'Authentication', 'auth');
-
-        // Clear local auth token
         localStorage.removeItem('junctionrelay_token');
-
-        // Clear cloud auth tokens
         localStorage.removeItem('cloud_proxy_token');
         localStorage.removeItem('junctionrelay_cloud_token');
         localStorage.removeItem('junctionrelay_cloud_user');
-
-        // Dispatch auth change event to trigger re-authentication
         window.dispatchEvent(new CustomEvent('auth-changed'));
-
-        // Close menu
         handleUserMenuClose();
-
-        // Show success notification
-        // showSuccess('Successfully signed out', 'Authentication', 'auth');
-
-        // Optionally reload the page to ensure clean state
         setTimeout(() => {
             window.location.reload();
         }, 1000);
     };
 
-    // Handle health report sending with notifications
     const handleSendHealthReport = async () => {
         try {
             await sendHealthReport();
-            // Success notification is handled by the API function and/or WebSocket
         } catch (error) {
             console.error('Health report failed:', error);
-            // Error notification is handled by the API function
         }
     };
 
-    // Handle theme change with notification
     const handleThemeChange = () => {
         cycleTheme();
     };
@@ -392,8 +290,8 @@ const Navbar = () => {
         navItems.push({ text: "Host Charts", path: "/hostcharts", icon: <ChartIcon /> });
     }
 
-    // Add Cloud Dashboard for cloud authenticated users - moved to last
-    if (authMode === 'cloud' && isAuthenticated) {
+    // Add Cloud Dashboard for cloud authenticated users
+    if (authMode === 'cloud' && authStatus.isAuthenticated) {
         navItems.push({ text: "Cloud Dashboard", path: "https://dashboard.junctionrelay.com/", icon: <CloudIcon /> });
     }
 
@@ -420,7 +318,6 @@ const Navbar = () => {
             >
                 <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        {/* Show JR logo only on desktop */}
                         {!shouldShowDrawer && (
                             <MuiLink
                                 component={Link}
@@ -443,11 +340,9 @@ const Navbar = () => {
                             </MuiLink>
                         )}
 
-                        {/* Desktop Navigation */}
                         {!shouldShowDrawer && (
                             <Box sx={{ display: "flex", gap: 2 }}>
                                 {navItems.map(({ text, path }) => {
-                                    // Handle external links for Cloud Dashboard
                                     const isExternal = path.startsWith('http');
                                     const isCloudTab = text === "Cloud Dashboard";
 
@@ -459,14 +354,13 @@ const Navbar = () => {
                                                 href={path}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                data-navbar-link                                                
+                                                data-navbar-link
                                                 sx={{
                                                     borderBottom: "2px solid transparent",
                                                     borderRadius: 0,
                                                     fontWeight: 400,
                                                     textTransform: "none",
                                                     transition: "color 0.3s, border-bottom-color 0.3s",
-                                                    // Direct color styling based on isCloudTab
                                                     ...(isCloudTab ? {
                                                         color: "#64b5f6 !important",
                                                         "&:hover": {
@@ -550,7 +444,6 @@ const Navbar = () => {
                             </Box>
                         )}
 
-                        {/* Mobile Menu Button */}
                         {shouldShowDrawer && (
                             <Button
                                 onClick={handleMobileMenuToggle}
@@ -564,17 +457,9 @@ const Navbar = () => {
                                 <MenuIcon />
                                 <Typography variant="body2" sx={{ color: "#ffffff !important" }}>
                                     {(() => {
-                                        // Check main nav items first
                                         const navItem = navItems.find(item => item.path === location.pathname);
                                         if (navItem) return navItem.text;
-
-                                        // Handle special cases not in navItems
                                         if (location.pathname === '/settings') return 'Settings';
-
-                                        // Add more special cases as needed
-                                        // if (location.pathname === '/profile') return 'Profile';
-
-                                        // Fallback to Menu
                                         return 'Menu';
                                     })()}
                                 </Typography>
@@ -583,12 +468,11 @@ const Navbar = () => {
                     </Box>
 
                     <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        {/* Version display - show for ALL users when flag is enabled */}
                         {flags?.top_bar_show_current_version === 'true' && version && (
                             <Tooltip title={`Current Version: ${version}`}>
                                 <Box
                                     sx={{
-                                        display: "flex !important", // Force display
+                                        display: "flex !important",
                                         alignItems: "center",
                                         color: "#ffffff",
                                         fontSize: "0.875rem",
@@ -596,8 +480,8 @@ const Navbar = () => {
                                         padding: "4px 8px",
                                         borderRadius: "4px",
                                         backgroundColor: "rgba(255,255,255,0.1)",
-                                        visibility: "visible !important", // Force visibility
-                                        opacity: 1 // Ensure opacity
+                                        visibility: "visible !important",
+                                        opacity: 1
                                     }}
                                 >
                                     v{version}
@@ -605,7 +489,6 @@ const Navbar = () => {
                             </Tooltip>
                         )}
 
-                        {/* Show upgrade notification when version is outdated - ONLY for cloud users */}
                         {authMode === 'cloud' && isOutdated && version && latest && (
                             <Tooltip title={`Update available: ${latest} (current: ${version})`}>
                                 {isCollapsed ? (
@@ -623,7 +506,7 @@ const Navbar = () => {
                                     <Chip
                                         icon={<UpdateIcon />}
                                         label="Update Available"
-                                        size="small"                                    
+                                        size="small"
                                         sx={{
                                             backgroundColor: "#ff9800",
                                             color: "#ffffff",
@@ -640,7 +523,6 @@ const Navbar = () => {
                             </Tooltip>
                         )}
 
-                        {/* Only show collapse/expand button on desktop when NOT using mobile nav flag */}
                         {!isMobile && !useMobileNav && (
                             <Tooltip title={collapsed ? "Expand" : "Collapse"}>
                                 <IconButton
@@ -656,21 +538,20 @@ const Navbar = () => {
                             </Tooltip>
                         )}
 
-                        {/* Show "Buy me a coffee" for non-cloud users or license status for cloud users */}
-                        {authMode === 'cloud' && isAuthenticated ? (
-                            <Tooltip title={`Current License: ${licenseStatus} License`}>
+                        {authMode === 'cloud' && authStatus.isAuthenticated ? (
+                            <Tooltip title={`Current License: ${authStatus.licenseType} License`}>
                                 <IconButton
                                     sx={{
                                         color: "#ffffff",
                                         padding: "4px",
                                         minWidth: "auto",
                                         cursor: "default",
-                                        display: shouldShowDrawer ? 'none' : 'flex' // Hide when using drawer
+                                        display: shouldShowDrawer ? 'none' : 'flex'
                                     }}
                                 >
                                     <StarIcon
                                         sx={{
-                                            color: licenseStatus === 'Pro' ? "#4caf50" : "#2196f3",
+                                            color: authStatus.hasValidLicense ? "#4caf50" : "#2196f3",
                                             filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.7))"
                                         }}
                                         fontSize="small"
@@ -681,12 +562,12 @@ const Navbar = () => {
                                             sx={{
                                                 ml: 0.5,
                                                 fontSize: "0.875rem",
-                                                color: licenseStatus === 'Pro' ? "#4caf50" : "#2196f3",
+                                                color: authStatus.hasValidLicense ? "#4caf50" : "#2196f3",
                                                 textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
                                                 fontWeight: "bold"
                                             }}
                                         >
-                                            {licenseStatus} License
+                                            {authStatus.licenseType} License
                                         </Box>
                                     )}
                                 </IconButton>
@@ -698,12 +579,12 @@ const Navbar = () => {
                                     href="https://buymeacoffee.com/catapultcase"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    data-navbar-link                                    
+                                    data-navbar-link
                                     sx={{
                                         color: "#ffffff",
                                         padding: "4px",
                                         minWidth: "auto",
-                                        display: shouldShowDrawer ? 'none' : 'flex' // Hide when using drawer
+                                        display: shouldShowDrawer ? 'none' : 'flex'
                                     }}
                                 >
                                     <LocalCafeIcon
@@ -730,7 +611,6 @@ const Navbar = () => {
                             </Tooltip>
                         )}
 
-                        {/* Links Dropdown */}
                         <Tooltip title="External Links">
                             <IconButton
                                 onClick={handleLinksMenuOpen}
@@ -758,7 +638,6 @@ const Navbar = () => {
                             </IconButton>
                         </Tooltip>
 
-                        {/* Links Menu */}
                         <Menu
                             anchorEl={linksMenuAnchor}
                             open={Boolean(linksMenuAnchor)}
@@ -860,31 +739,6 @@ const Navbar = () => {
                                     }}
                                 />
                             </MenuItem>
-                            {/* Add Health Report option for cloud users */}
-                            {/*{authMode === 'cloud' && isAuthenticated && (*/}
-                            {/*    <>*/}
-                            {/*        <Divider sx={{ borderColor: '#3a3f45', my: 1 }} />*/}
-                            {/*        <MenuItem*/}
-                            {/*            onClick={() => {*/}
-                            {/*                handleLinksMenuClose();*/}
-                            {/*                handleSendHealthReport();*/}
-                            {/*            }}*/}
-                            {/*            sx={{ color: '#ffffff' }}*/}
-                            {/*        >*/}
-                            {/*            <ListItemIcon>*/}
-                            {/*                <CloudSyncIcon sx={{ color: '#4caf50' }} fontSize="small" />*/}
-                            {/*            </ListItemIcon>*/}
-                            {/*            <ListItemText*/}
-                            {/*                primary="Send Health Report"*/}
-                            {/*                sx={{*/}
-                            {/*                    '& .MuiListItemText-primary': {*/}
-                            {/*                        color: '#ffffff !important'*/}
-                            {/*                    }*/}
-                            {/*                }}*/}
-                            {/*            />*/}
-                            {/*        </MenuItem>*/}
-                            {/*    </>*/}
-                            {/*)}*/}
                         </Menu>
 
                         <Tooltip title="Change Theme">
@@ -914,49 +768,29 @@ const Navbar = () => {
                             </IconButton>
                         </Tooltip>
 
-                        {/* Only show backend auth status when in cloud mode */}
                         {authMode === 'cloud' && (
-                            <Tooltip title={`Local Backend: ${backendCloudAuth === 'authenticated' ? 'Has Cloud Auth' : backendCloudAuth === 'checking' ? 'Checking...' : 'No Cloud Auth'}`}>
-                                <IconButton
-                                    onClick={() => {
-                                        if (backendCloudAuth === 'authenticated') {
-                                            showSuccess('Backend is authenticated with cloud', 'Cloud Status', 'cloud');
-                                        } else if (backendCloudAuth === 'checking') {
-                                            showInfo('Checking backend cloud authentication...', 'Cloud Status', 'cloud');
-                                        } else {
-                                            showWarning('Backend is not authenticated with cloud', 'Cloud Status', 'cloud');
-                                        }
-                                    }}
-                                    sx={{
-                                        color: "#ffffff",
-                                        padding: "4px",
-                                        minWidth: "auto",
-                                        cursor: "pointer"
-                                    }}
-                                >
-                                    <CloudSyncIcon
-                                        sx={{
-                                            color: backendCloudAuth === 'authenticated' ? "#4caf50" : backendCloudAuth === 'checking' ? "#ff9800" : "#f44336",
-                                            filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.7))"
-                                        }}
-                                        fontSize="small"
-                                    />
-                                    {!isCollapsed && (
-                                        <Box
-                                            component="span"
-                                            sx={{
-                                                ml: 0.5,
-                                                fontSize: "0.875rem",
-                                                color: backendCloudAuth === 'authenticated' ? "#4caf50" : backendCloudAuth === 'checking' ? "#ff9800" : "#f44336",
-                                                textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
-                                                fontWeight: "bold"
-                                            }}
-                                        >
-                                            {backendCloudAuth === 'authenticated' ? 'Backend Authenticated' : backendCloudAuth === 'checking' ? 'Checking...' : 'Backend Unauthenticated'}
-                                        </Box>
-                                    )}
-                                </IconButton>
-                            </Tooltip>
+                        <Tooltip
+                            title={`Local Backend: ${
+                            authStatus.backendAuthenticated ? 'Has Cloud Auth' : 'No Cloud Auth'
+                            }`}
+                        >
+                            <IconButton
+                            sx={{
+                                color: "#ffffff",
+                                padding: "4px",
+                                minWidth: "auto",
+                                cursor: "pointer"
+                            }}
+                            >
+                            <CloudSyncIcon
+                                sx={{
+                                color: authStatus.backendAuthenticated ? "#4caf50" : "#f44336",
+                                filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.7))"
+                                }}
+                                fontSize="small"
+                            />
+                            </IconButton>
+                        </Tooltip>
                         )}
 
                         <Tooltip title="Settings">
@@ -968,7 +802,6 @@ const Navbar = () => {
                                     color: "#ffffff",
                                     padding: "4px",
                                     minWidth: "auto"
-                                    // Settings icon is always visible - no display condition
                                 }}
                             >
                                 <SettingsIcon sx={{ color: "#9c27b0" }} />
@@ -988,8 +821,7 @@ const Navbar = () => {
                             </IconButton>
                         </Tooltip>
 
-                        {/* Show user avatar based on auth mode */}
-                        {authMode === 'local' && user && isAuthenticated && (
+                        {authMode === 'local' && authStatus.user && authStatus.isAuthenticated && (
                             <>
                                 <Tooltip title="Local user - click for menu">
                                     <IconButton
@@ -1004,7 +836,7 @@ const Navbar = () => {
                                         </Avatar>
                                         {!isCollapsed && (
                                             <Typography variant="body2" sx={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 500, ml: 1 }}>
-                                                {user.username}
+                                                {authStatus.user}
                                             </Typography>
                                         )}
                                     </IconButton>
@@ -1012,7 +844,7 @@ const Navbar = () => {
                             </>
                         )}
 
-                        {authMode === 'cloud' && cloudUser && isAuthenticated && (
+                        {authMode === 'cloud' && authStatus.user && authStatus.isAuthenticated && (
                             <>
                                 <Tooltip title="JunctionRelay Cloud user - click for menu">
                                     <IconButton
@@ -1027,7 +859,7 @@ const Navbar = () => {
                                         </Avatar>
                                         {!isCollapsed && (
                                             <Typography variant="body2" sx={{ color: '#ffffff', fontSize: '0.875rem', fontWeight: 500, ml: 1 }}>
-                                                {cloudUser}
+                                                {authStatus.user}
                                             </Typography>
                                         )}
                                     </IconButton>
@@ -1035,8 +867,7 @@ const Navbar = () => {
                             </>
                         )}
 
-                        {/* User Menu */}
-                        {isAuthenticated && (
+                        {authStatus.isAuthenticated && (
                             <Menu
                                 anchorEl={userMenuAnchor}
                                 open={Boolean(userMenuAnchor)}
@@ -1081,25 +912,24 @@ const Navbar = () => {
                 </Toolbar>
             </AppBar>
 
-            {/* Mobile Navigation Drawer */}
+            {/* Mobile Navigation Drawer - Same as before but using simplified auth state */}
             <Drawer
                 anchor="left"
                 open={mobileMenuOpen}
                 onClose={handleMobileMenuClose}
                 sx={{
                     '& .MuiDrawer-paper': {
-                        backgroundColor: '#1b1f23', // Always dark like navbar
+                        backgroundColor: '#1b1f23',
                         color: '#ffffff',
                         width: 280,
                         paddingTop: 2
                     },
                     '& .MuiBackdrop-root': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)' // Consistent backdrop
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)'
                     }
                 }}
             >
                 <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    {/* JR Logo in mobile drawer */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <MuiLink
                             component={Link}
@@ -1119,7 +949,6 @@ const Navbar = () => {
                                     borderRadius: "0%"
                                 }}
                             />
-
                         </MuiLink>
                         <Typography variant="h6" sx={{ color: '#ffffff !important', fontWeight: 'bold' }}>
                             Navigation
@@ -1210,9 +1039,7 @@ const Navbar = () => {
 
                 <Divider sx={{ borderColor: '#3a3f45', my: 2 }} />
 
-                {/* Additional Mobile Menu Items */}
                 <List>
-                    {/* Documentation - separate item on mobile */}
                     <ListItem disablePadding>
                         <ListItemButton
                             component={MuiLink}
@@ -1297,42 +1124,11 @@ const Navbar = () => {
                         </ListItemButton>
                     </ListItem>
 
-                    {/* Add Health Report option for cloud users on mobile */}
-                    {/*{authMode === 'cloud' && isAuthenticated && (*/}
-                    {/*    <ListItem disablePadding>*/}
-                    {/*        <ListItemButton*/}
-                    {/*            onClick={() => {*/}
-                    {/*                handleSendHealthReport();*/}
-                    {/*                handleMobileMenuClose();*/}
-                    {/*            }}*/}
-                    {/*            sx={{*/}
-                    {/*                color: '#4caf50 !important',*/}
-                    {/*                '&:hover': {*/}
-                    {/*                    backgroundColor: '#3a3f45'*/}
-                    {/*                }*/}
-                    {/*            }}*/}
-                    {/*        >*/}
-                    {/*            <ListItemIcon sx={{ color: 'inherit !important', minWidth: 40 }}>*/}
-                    {/*                <CloudSyncIcon />*/}
-                    {/*            </ListItemIcon>*/}
-                    {/*            <ListItemText*/}
-                    {/*                primary="Send Health Report"*/}
-                    {/*                sx={{*/}
-                    {/*                    '& .MuiListItemText-primary': {*/}
-                    {/*                        color: 'inherit !important'*/}
-                    {/*                    }*/}
-                    {/*                }}*/}
-                    {/*            />*/}
-                    {/*        </ListItemButton>*/}
-                    {/*    </ListItem>*/}
-                    {/*)}*/}
-
-                    {/* Show license status or buy me a coffee in mobile menu */}
-                    {authMode === 'cloud' && isAuthenticated ? (
+                    {authMode === 'cloud' && authStatus.isAuthenticated ? (
                         <ListItem disablePadding>
                             <ListItemButton
                                 sx={{
-                                    color: `${licenseStatus === 'Pro' ? '#4caf50' : '#2196f3'} !important`,
+                                    color: `${authStatus.hasValidLicense ? '#4caf50' : '#2196f3'} !important`,
                                     cursor: 'default',
                                     '&:hover': {
                                         backgroundColor: 'transparent'
@@ -1343,7 +1139,7 @@ const Navbar = () => {
                                     <StarIcon />
                                 </ListItemIcon>
                                 <ListItemText
-                                    primary={`${licenseStatus} License`}
+                                    primary={`${authStatus.licenseType} License`}
                                     sx={{
                                         '& .MuiListItemText-primary': {
                                             color: 'inherit !important',
@@ -1385,8 +1181,7 @@ const Navbar = () => {
                         </ListItem>
                     )}
 
-                    {/* Sign out option for authenticated users */}
-                    {isAuthenticated && (
+                    {authStatus.isAuthenticated && (
                         <ListItem disablePadding>
                             <ListItemButton
                                 onClick={() => {
@@ -1416,18 +1211,15 @@ const Navbar = () => {
                     )}
                 </List>
 
-                {/* Version info and external links at bottom */}
                 <Box sx={{ mt: 'auto', p: 2 }}>
                     <Divider sx={{ borderColor: '#3a3f45', mb: 2 }} />
 
-                    {/* Show version for ALL users when top_bar_show_current_version is true */}
                     {flags?.top_bar_show_current_version === 'true' && version && (
                         <Typography variant="caption" sx={{ color: '#9e9e9e !important', display: 'block', mb: 1 }}>
                             Version: {version}
                         </Typography>
                     )}
 
-                    {/* External links - GitHub and company sites only */}
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 2 }}>
                         <IconButton
                             component={MuiLink}

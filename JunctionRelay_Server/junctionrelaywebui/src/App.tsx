@@ -72,10 +72,10 @@ const originalFetch = window.fetch;
             let authMode = 'none';
             try {
                 // Use originalFetch to avoid infinite recursion when checking auth mode
-                const modeResponse = await originalFetch('/api/auth/mode');
+                const modeResponse = await originalFetch('/api/unified-auth/config');
                 if (modeResponse.ok) {
-                    const modeData = await modeResponse.json();
-                    authMode = modeData.mode || 'none';
+                    const configData = await modeResponse.json();
+                    authMode = configData.authMode || 'none';
                 }
             } catch (e) {
                 console.warn('Could not determine auth mode, defaulting to none');
@@ -796,15 +796,15 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     const checkAuthStatus = useCallback(async () => {
         try {
             // First check auth mode - this should always be accessible
-            const modeResponse = await originalFetch('/api/auth/mode');
+            const modeResponse = await originalFetch('/api/unified-auth/config');
             if (!modeResponse.ok) {
                 setShowLogin(false);
                 setLoading(false);
                 return;
             }
 
-            const modeData = await modeResponse.json();
-            const authMode = modeData.mode || 'none';
+            const configData = await modeResponse.json();
+            const authMode = configData.authMode || 'none';
 
             // If no authentication required, don't show login
             if (authMode === 'none') {
@@ -823,7 +823,9 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
                 if (localToken) {
                     // Test the local token
                     try {
-                        const response = await fetch('/api/auth/validate');
+                        const response = await fetch('/api/unified-auth/validate', {
+                            method: 'POST'
+                        });
                         if (response.ok) {
                             isAuthenticated = true;
                         }
@@ -837,8 +839,9 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
                 if (proxyToken) {
                     try {
-                        // Validate proxy token with cloud auth controller
-                        const response = await originalFetch('/api/cloud-auth/validate', {
+                        // Validate proxy token with unified auth controller
+                        const response = await originalFetch('/api/unified-auth/validate', {
+                            method: 'POST',
                             headers: { 'Authorization': `Bearer ${proxyToken}` }
                         });
                         if (response.ok) {

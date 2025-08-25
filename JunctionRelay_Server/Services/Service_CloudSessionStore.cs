@@ -324,7 +324,7 @@ namespace JunctionRelayServer.Services
 
                     var httpClient = _httpClientFactory.CreateClient();
                     httpClient.Timeout = TimeSpan.FromSeconds(10);
-                    var refreshUrl = $"{cloudApiUrl}/api/auth/refresh";
+                    var refreshUrl = $"{cloudApiUrl}/auth/refresh";
                     var payload = new { refreshToken = currentRefreshToken, backendId = _backendIdentity.GetBackendId() };
                     var jsonContent = JsonSerializer.Serialize(payload);
                     var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");

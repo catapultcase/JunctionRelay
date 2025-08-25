@@ -95,8 +95,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         try {
-            // Validate token and get user info
-            const response = await fetch('/api/cloud-auth/user-info', {
+            // Validate token and get user info using unified auth
+            const response = await fetch('/api/unified-auth/user-info', {
                 headers: { 'Authorization': `Bearer ${proxyToken}` }
             });
 
@@ -145,7 +145,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         try {
-            const validateRes = await fetch('/api/auth/validate', {
+            // Validate token using unified auth
+            const validateRes = await fetch('/api/unified-auth/validate', {
+                method: 'POST',
                 headers: { 'Authorization': `Bearer ${storedToken}` }
             });
 
@@ -174,30 +176,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const checkAuthStatus = async () => {
         try {
-            // 1) Get current auth mode
-            const modeRes = await fetch('/api/auth/mode');
-            if (modeRes.ok) {
-                const modeData = await modeRes.json();
-                const currentMode = modeData.mode || 'none';
+            // Get unified auth configuration
+            const configRes = await fetch('/api/unified-auth/config');
+            if (configRes.ok) {
+                const config = await configRes.json();
+                const currentMode = config.authMode || 'none';
                 setAuthMode(currentMode);
-
-                // 2) Check if authentication is enabled
                 setAuthEnabled(currentMode !== 'none');
+                setIsConfigured(config.isConfigured);
 
-                // 3) Check configuration status for local mode
-                if (currentMode === 'local') {
-                    const statusRes = await fetch('/api/auth/status');
-                    if (statusRes.ok) {
-                        const statusData = await statusRes.json();
-                        setIsConfigured(statusData.isConfigured || false);
-                    } else {
-                        setIsConfigured(false);
-                    }
-                } else {
-                    setIsConfigured(true); // Non-local modes don't need setup
-                }
-
-                // 4) Check authentication based on mode
+                // Check current authentication status
                 let authenticatedUser: AuthUser | null = null;
 
                 if (currentMode === 'local') {
@@ -208,7 +196,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
                 setUser(authenticatedUser);
             } else {
-                // Fallback if mode check fails
+                // Fallback if config check fails
                 setAuthMode('none');
                 setAuthEnabled(false);
                 setIsConfigured(true);
@@ -227,7 +215,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const login = async (username: string, password: string): Promise<boolean> => {
         try {
-            const response = await fetch('/api/auth/login', {
+            // Use unified auth login endpoint
+            const response = await fetch('/api/unified-auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -266,20 +255,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const logout = async () => {
         try {
-            if (user?.authType === 'local' && user?.token) {
-                await fetch('/api/auth/logout', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${user.token}` }
-                }).catch(() => {});
-            } else if (user?.authType === 'cloud' && user?.token) {
-                // No need to pass refreshToken anymore — backend has it
-                await fetch('/api/cloud-auth/logout', {
+            if (user?.token) {
+                // Use unified auth logout endpoint - works for both local and cloud
+                await fetch('/api/unified-auth/logout', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${user.token}`,
                         'Content-Type': 'application/json'
                     }
-                }).catch(() => {});
+                }).catch(() => { });
             }
         } catch (error) {
             console.error('Error during logout:', error);

@@ -28,12 +28,10 @@ namespace JunctionRelayServer.Controllers
     public class Controller_DeviceI2CDevices : ControllerBase
     {
         private readonly Service_Database_Manager_Device_I2CDevices _i2cDeviceDb;
-        private readonly ILogger<Controller_DeviceI2CDevices> _logger;
 
-        public Controller_DeviceI2CDevices(Service_Database_Manager_Device_I2CDevices i2cDeviceDb, ILogger<Controller_DeviceI2CDevices> logger)
+        public Controller_DeviceI2CDevices(Service_Database_Manager_Device_I2CDevices i2cDeviceDb)
         {
             _i2cDeviceDb = i2cDeviceDb;
-            _logger = logger;
         }
 
         // Get all I2C devices for a Device
@@ -54,11 +52,10 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching I2C devices for deviceId {deviceId}.", deviceId);
+                Console.WriteLine($"Error fetching I2C devices for deviceId {deviceId}: {ex}");
                 return StatusCode(500, $"Error fetching I2C devices: {ex.Message}");
             }
         }
-
 
         // Get a specific I2C device by ID
         [HttpGet("{i2cDeviceId}", Name = "GetI2CDeviceById")]
@@ -75,7 +72,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching I2C device with ID {i2cDeviceId}.", i2cDeviceId);
+                Console.WriteLine($"Error fetching I2C device with ID {i2cDeviceId}: {ex}");
                 return StatusCode(500, $"Error fetching I2C device: {ex.Message}");
             }
         }
@@ -100,7 +97,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-
         // Update an existing I2C device
         [HttpPut("{i2cDeviceId}")]
         public async Task<IActionResult> UpdateI2CDevice(int deviceId, int i2cDeviceId, [FromBody] Model_Device_I2CDevice updatedDevice)
@@ -116,7 +112,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating I2C device with ID {i2cDeviceId} for deviceId {deviceId}.", i2cDeviceId, deviceId);
+                Console.WriteLine($"Error updating I2C device with ID {i2cDeviceId} for deviceId {deviceId}: {ex}");
                 return StatusCode(500, $"Error updating I2C device: {ex.Message}");
             }
         }
@@ -136,7 +132,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting I2C device with ID {i2cDeviceId} for deviceId {deviceId}.", i2cDeviceId, deviceId);
+                Console.WriteLine($"Error deleting I2C device with ID {i2cDeviceId} for deviceId {deviceId}: {ex}");
                 return StatusCode(500, $"Error deleting I2C device: {ex.Message}");
             }
         }
@@ -152,7 +148,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching endpoints for I2C device with ID {i2cDeviceId}.", i2cDeviceId);
+                Console.WriteLine($"Error fetching endpoints for I2C device with ID {i2cDeviceId}: {ex}");
                 return StatusCode(500, $"Error fetching endpoints: {ex.Message}");
             }
         }
@@ -170,7 +166,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error adding endpoint to I2C device with ID {i2cDeviceId}.", i2cDeviceId);
+                Console.WriteLine($"Error adding endpoint to I2C device with ID {i2cDeviceId}: {ex}");
                 return StatusCode(500, $"Error adding endpoint: {ex.Message}");
             }
         }
@@ -186,7 +182,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating endpoint {endpointId} for I2C device {i2cDeviceId}.", endpointId, i2cDeviceId);
+                Console.WriteLine($"Error updating endpoint {endpointId} for I2C device {i2cDeviceId}: {ex}");
                 return StatusCode(500, $"Error updating endpoint: {ex.Message}");
             }
         }
@@ -202,7 +198,7 @@ namespace JunctionRelayServer.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting endpoint {endpointId} for I2C device {i2cDeviceId}.", endpointId, i2cDeviceId);
+                Console.WriteLine($"Error deleting endpoint {endpointId} for I2C device {i2cDeviceId}: {ex}");
                 return StatusCode(500, $"Error deleting endpoint: {ex.Message}");
             }
         }

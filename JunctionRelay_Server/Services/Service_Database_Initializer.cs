@@ -809,7 +809,7 @@ namespace JunctionRelayServer.Services
         {
             // Define the default settings
             var defaultSettings = new List<(string Key, string Value, string Description)>
-            {
+{
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
                 ("device_combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
                 ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
@@ -832,6 +832,9 @@ namespace JunctionRelayServer.Services
                 ("notifications_duration_success", "6000", "How long success notifications stay visible (milliseconds)"),
                 ("notifications_duration_error", "8000", "How long error notifications stay visible (milliseconds)"),
                 ("notifications_max_concurrent", "5", "Maximum number of notifications to show at once"),
+                // Service control settings
+                ("service_heartbeats_enabled", "true", "Master toggle for the heartbeat monitoring service"),
+                ("service_connection_status_enabled", "true", "Master toggle for the connection status monitoring service"),
             };
 
             int addedCount = 0;

@@ -140,7 +140,7 @@ namespace JunctionRelayServer.Services
                     return;
                 }
 
-                var cloudHealthUrl = "https://api.junctionrelay.com/cloud/local-devices/health/batch";
+                var cloudHealthUrl = "https://api.junctionrelay.com/local-devices/health/batch";
 
                 var payload = new
                 {
