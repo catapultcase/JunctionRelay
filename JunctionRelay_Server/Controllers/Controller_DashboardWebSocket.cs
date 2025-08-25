@@ -53,7 +53,7 @@ namespace JunctionRelayServer.Controllers
 
                 var fullClientInfo = $"{clientInfo ?? "Dashboard"} from {clientIp} ({userAgent})";
 
-                Console.WriteLine($"[Dashboard WebSocket] Connection request from {fullClientInfo}");
+                // Console.WriteLine($"[Dashboard WebSocket] Connection request from {fullClientInfo}");
 
                 // Accept the WebSocket connection
                 var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
@@ -61,7 +61,7 @@ namespace JunctionRelayServer.Controllers
                 // Handle the connection and wait for it to end
                 await _dashboardWebSocketManager.HandleDashboardConnectionAsync(webSocket, fullClientInfo);
 
-                Console.WriteLine($"[Dashboard WebSocket] Connection ended for {fullClientInfo}");
+                // Console.WriteLine($"[Dashboard WebSocket] Connection ended for {fullClientInfo}");
             }
             catch (Exception ex)
             {

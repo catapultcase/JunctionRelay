@@ -187,17 +187,17 @@ const Streams: React.FC = () => {
 
     // Debug logging - console only
     useEffect(() => {
-        console.log('[STREAMS DEBUG] WebSocket state:', {
-            connectionStatus,
-            isConnected,
-            streamsCount: activeStreams?.length || 0,
-            lastUpdate: lastUpdate > 0 ? new Date(lastUpdate).toISOString() : 'never'
-        });
+        // console.log('[STREAMS DEBUG] WebSocket state:', {
+        //     connectionStatus,
+        //     isConnected,
+        //     streamsCount: activeStreams?.length || 0,
+        //     lastUpdate: lastUpdate > 0 ? new Date(lastUpdate).toISOString() : 'never'
+        // });
     }, [connectionStatus, isConnected, activeStreams, lastUpdate]);
 
     useEffect(() => {
         if (activeStreams && Array.isArray(activeStreams)) {
-            console.log(`[STREAMS DEBUG] Received ${activeStreams.length} streams from WebSocket`);
+            // console.log(`[STREAMS DEBUG] Received ${activeStreams.length} streams from WebSocket`);
 
             if (activeStreams.length > 0) {
                 console.log('[STREAMS DEBUG] First stream sample:', {

@@ -927,93 +927,39 @@ const ConfigureFrame: React.FC = () => {
         }));
     }, []);
 
-    // Simple export method for standalone config - ENHANCED with Rive discovery data
-    const exportStandaloneConfig = async () => {
+    const handleExport = useCallback(async () => {
+        if (!state.layout.id) {
+            setState(prev => ({ ...prev, error: 'No layout ID available for export' }));
+            return;
+        }
+
         try {
+            console.log('📤 Exporting layout as ZIP package...');
+
             const response = await fetch(`/api/frameengine/${state.layout.id}/export-standalone`);
-            if (!response.ok) throw new Error('Failed to export standalone config');
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.message || `Export failed with status ${response.status}`);
+            }
 
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${state.layout.displayName}-standalone.json`;
+            a.download = `${state.layout.displayName}.zip`;
             a.click();
             URL.revokeObjectURL(url);
+
+            console.log('✅ ZIP package export completed');
         } catch (error) {
-            console.error('Failed to export standalone config:', error);
-            setState(prev => ({ ...prev, error: 'Failed to export standalone config' }));
+            console.error('❌ Export failed:', error);
+            setState(prev => ({
+                ...prev,
+                error: `Failed to export layout: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }));
         }
-    };
-
-    // Export layout - ENHANCED with Rive discovery data and thumbnail capture
-    const handleExport = useCallback(async (format: 'png' | 'json' | 'pdf' | 'standalone') => {
-        if (format === 'json') {
-            const exportData = {
-                layout: state.layout,
-                elements: state.elements,
-                riveDiscoveryData: {
-                    discoveredMachines: state.layout.riveConfiguration?.discoveredMachines || [],
-                    discoveryMetadata: state.layout.riveConfiguration?.discoveryMetadata,
-                    lastDiscoveryUpdate: state.layout.riveConfiguration?.lastDiscoveryUpdate,
-                    exportNote: 'This export includes complete Rive state machine discovery data'
-                },
-                exportDate: new Date().toISOString(),
-                version: '1.0',
-            };
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${state.layout.displayName}-with-rive-discovery.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } else if (format === 'standalone') {
-            await exportStandaloneConfig();
-        } else if (format === 'png') {
-            // NEW: Export current canvas as PNG using the same thumbnail capture logic
-            try {
-                if (!canvasRef.current) {
-                    throw new Error('Canvas not available for PNG export');
-                }
-
-                console.log('📸 Exporting canvas as PNG...');
-
-                // Find the actual canvas element within the ref
-                const canvasElement = canvasRef.current.querySelector('[data-canvas="true"]') ||
-                    canvasRef.current.querySelector('.frame-canvas-area') ||
-                    canvasRef.current;
-
-                // Capture at full resolution for export
-                const canvas = await html2canvas(canvasElement as HTMLElement, {
-                    width: state.layout.width,
-                    height: state.layout.height,
-                    useCORS: true,
-                    allowTaint: true,
-                    background: state.layout.backgroundColor || '#FFFFFF'
-                });
-
-                // Convert to blob and download
-                canvas.toBlob((blob) => {
-                    if (blob) {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${state.layout.displayName}-export.png`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        console.log('✅ PNG export completed');
-                    }
-                }, 'image/png', 0.95);
-
-            } catch (error) {
-                console.error('Failed to export PNG:', error);
-                setState(prev => ({ ...prev, error: 'Failed to export PNG' }));
-            }
-        } else {
-            alert(`${format.toUpperCase()} export would be implemented here`);
-        }
-    }, [state.layout, state.elements]);
+    }, [state.layout.id, state.layout.displayName]);   
 
     // Publish layout
     const handlePublish = useCallback(async () => {
@@ -1131,7 +1077,7 @@ const ConfigureFrame: React.FC = () => {
                     elements={state.elements}
                     selectedElements={state.selectedElementIds}
                     isDirty={state.isDirty}
-                    isLoading={state.isLoading || state.isSavingThumbnail} // Include thumbnail saving state
+                    isLoading={state.isLoading || state.isSavingThumbnail}
                     isEditing={isEditing}
                     canUndo={state.historyIndex > 0}
                     canRedo={state.historyIndex < state.history.length - 1}

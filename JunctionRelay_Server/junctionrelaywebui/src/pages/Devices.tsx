@@ -19,30 +19,23 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
-    Button,
     Box,
     Snackbar,
-    Alert,
-    CircularProgress
+    Alert
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useTheme, useMediaQuery } from "@mui/material";
 
-// Icon imports
-import CloudIcon from '@mui/icons-material/Cloud';
-import RefreshIcon from '@mui/icons-material/Refresh';
-
 // Import our components
 import DevicesTable from '../components/Devices_DevicesTable';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
-import PendingDevicesSection from '../components/PendingDevicesSection';
 import { useFeatureFlags } from '../hooks/useFeatureFlags';
-import Device_ScanModal from '../components/Device_ScanModal';
-import Device_ManagementSection from '../components/Device_ManagementSection';
-import Device_AddDeviceModal from '../components/Device_AddDeviceModal';
-import Device_AddCustomDeviceModal from '../components/Device_AddCustomDeviceModal';
-import Device_AddVirtualScreenModal from '../components/Device_AddVirtualScreenModal';
-import Device_ScanResults from '../components/Device_ScanResults';
+import DeviceScanModal from '../components/Device_ScanModal';
+import DeviceManagementSection from '../components/Device_ManagementSection';
+import DeviceAddDeviceModal from '../components/Device_AddDeviceModal';
+import DeviceAddCustomDeviceModal from '../components/Device_AddCustomDeviceModal';
+import DeviceAddVirtualScreenModal from '../components/Device_AddVirtualScreenModal';
+import DeviceScanResults from '../components/Device_ScanResults';
 
 import {
     STORAGE_KEY_REFRESH_INTERVAL,
@@ -177,6 +170,93 @@ const Devices: React.FC = () => {
         }
     }, []);
 
+    // Device card click handler
+    const handleCardClick = useCallback((device: any) => {
+        // Check if this is a virtual screen device
+        if (device.type === "Virtual Screen") {
+            // Navigate to virtual screen viewer
+            navigate(`/device/${device.id}/virtual-screen`);
+            return;
+        }
+
+        // Existing logic for other device types
+        const ip = device.ipAddress || device.IpAddress;
+        const details = deviceDetails[ip] || {};
+        const isJunctionRelay = details.firmwareVersion && details.firmwareVersion.includes('JunctionRelay');
+
+        if (isJunctionRelay) {
+            setSelectedDevice({
+                name: device.instance || device.Instance || device.name || 'Unknown Device',
+                ipAddress: ip
+            });
+        } else {
+            fetchComPorts(); // Refresh COM ports when opening custom device modal
+            setSelectedCustomDevice({
+                name: `Device-${ip}`,
+                ipAddress: ip,
+                macAddress: device.macAddress || device.MacAddress
+            });
+        }
+    }, [navigate, deviceDetails, fetchComPorts]);
+
+    // Fetch devices from API
+    const fetchDevices = useCallback(async (checkUpdates: boolean = false, forceCloudSync: boolean = false) => {
+        try {
+            const skipCloudSync = !forceCloudSync;
+            const response = await fetch(`/api/devices/local-and-cloud?skipCloudSync=${skipCloudSync}`);
+            const data = await response.json();
+            setAllDevices(data);
+
+            if (checkUpdates) {
+                const jrDevices = data.filter((d: any) => d.isJunctionRelayDevice && !d.isGateway);
+                if (jrDevices.length > 0) {
+                    const updates: Record<number, boolean> = {};
+                    for (const device of jrDevices) {
+                        try {
+                            const res = await fetch(`/api/ota/check/${device.id}?force=false`);
+                            if (res.ok) {
+                                const updateInfo = await res.json();
+                                updates[device.id] = updateInfo.is_outdated === true;
+                            } else {
+                                updates[device.id] = false;
+                            }
+                        } catch (err) {
+                            updates[device.id] = false;
+                        }
+                    }
+                    setUpdateStatuses(updates);
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching devices:", err);
+        }
+    }, []);
+
+    // Cloud device refresh handler
+    const handleRefreshCloudDevices = useCallback(async () => {
+        setRefreshingCloudDevices(true);
+        try {
+            const response = await fetch('/api/cloud-devices/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                showSnackbar(`Refreshed ${result.count || 0} cloud devices`, "success");
+                await fetchDevices();
+            } else {
+                const error = await response.json();
+                showSnackbar(`Failed to refresh cloud devices: ${error.message}`, "error");
+            }
+        } catch (error) {
+            console.error("Error refreshing cloud devices:", error);
+            showSnackbar("Error refreshing cloud devices", "error");
+        } finally {
+            setRefreshingCloudDevices(false);
+        }
+    }, [fetchDevices]);
+
     // Bottom action bar event listeners
     useEffect(() => {
         const handleAddDevice = () => {
@@ -211,7 +291,7 @@ const Devices: React.FC = () => {
             window.removeEventListener('bottom-action-view-mode-change', handleViewModeChange as EventListener);
             window.removeEventListener('scan-device-selected', handleScanDeviceSelected as EventListener);
         };
-    }, [fetchComPorts]);
+    }, [fetchComPorts, fetchDevices, handleCardClick]);
 
     // Group scan results by status
     const groupedScanResults = useMemo(() => {
@@ -237,6 +317,24 @@ const Devices: React.FC = () => {
         setSnackbarSeverity(severity);
     };
 
+    // Service setting change handler
+    const handleServiceSettingChange = (setting: string, enabled: boolean) => {
+        console.log(`Service setting ${setting} changed to ${enabled}`);
+
+        // Format the service name properly
+        let serviceName = setting;
+        if (setting === 'service_heartbeats_enabled') {
+            serviceName = 'Heartbeat monitoring';
+        } else if (setting === 'service_connection_status_enabled') {
+            serviceName = 'Connection status monitoring';
+        }
+
+        showSnackbar(
+            `${serviceName} ${enabled ? 'enabled' : 'disabled'}`,
+            "info"
+        );
+    };
+
     // Fetch device details helper
     const fetchDeviceDetails = async (ipAddress: string) => {
         setLoadingDetails(prev => new Set([...prev, ipAddress]));
@@ -256,39 +354,6 @@ const Devices: React.FC = () => {
             });
         }
     };
-
-    // Fetch devices from API
-    const fetchDevices = useCallback(async (checkUpdates: boolean = false, forceCloudSync: boolean = false) => {
-        try {
-            const skipCloudSync = !forceCloudSync;
-            const response = await fetch(`/api/devices?skipCloudSync=${skipCloudSync}`);
-            const data = await response.json();
-            setAllDevices(data);
-
-            if (checkUpdates) {
-                const jrDevices = data.filter((d: any) => d.isJunctionRelayDevice && !d.isGateway);
-                if (jrDevices.length > 0) {
-                    const updates: Record<number, boolean> = {};
-                    for (const device of jrDevices) {
-                        try {
-                            const res = await fetch(`/api/ota/check/${device.id}?force=false`);
-                            if (res.ok) {
-                                const updateInfo = await res.json();
-                                updates[device.id] = updateInfo.is_outdated === true;
-                            } else {
-                                updates[device.id] = false;
-                            }
-                        } catch (err) {
-                            updates[device.id] = false;
-                        }
-                    }
-                    setUpdateStatuses(updates);
-                }
-            }
-        } catch (err) {
-            console.error("Error fetching devices:", err);
-        }
-    }, []);
 
     // Check for firmware updates
     const checkForUpdates = useCallback(async () => {
@@ -350,60 +415,6 @@ const Devices: React.FC = () => {
                 delete updated[deviceKey];
                 return updated;
             });
-        }
-    };
-
-    // Device card click handler
-    const handleCardClick = (device: any) => {
-        // Check if this is a virtual screen device
-        if (device.type === "Virtual Screen") {
-            // Navigate to virtual screen viewer
-            navigate(`/device/${device.id}/virtual-screen`);
-            return;
-        }
-
-        // Existing logic for other device types
-        const ip = device.ipAddress || device.IpAddress;
-        const details = deviceDetails[ip] || {};
-        const isJunctionRelay = details.firmwareVersion && details.firmwareVersion.includes('JunctionRelay');
-
-        if (isJunctionRelay) {
-            setSelectedDevice({
-                name: device.instance || device.Instance || device.name || 'Unknown Device',
-                ipAddress: ip
-            });
-        } else {
-            fetchComPorts(); // Refresh COM ports when opening custom device modal
-            setSelectedCustomDevice({
-                name: `Device-${ip}`,
-                ipAddress: ip,
-                macAddress: device.macAddress || device.MacAddress
-            });
-        }
-    };
-
-    // Cloud device refresh handler
-    const handleRefreshCloudDevices = async () => {
-        setRefreshingCloudDevices(true);
-        try {
-            const response = await fetch('/api/localdevices/refresh', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                showSnackbar(`Refreshed ${result.count || 0} cloud devices`, "success");
-                await fetchDevices();
-            } else {
-                const error = await response.json();
-                showSnackbar(`Failed to refresh cloud devices: ${error.message}`, "error");
-            }
-        } catch (error) {
-            console.error("Error refreshing cloud devices:", error);
-            showSnackbar("Error refreshing cloud devices", "error");
-        } finally {
-            setRefreshingCloudDevices(false);
         }
     };
 
@@ -519,12 +530,12 @@ const Devices: React.FC = () => {
             if (localInterval) clearInterval(localInterval);
             if (cloudInterval) clearInterval(cloudInterval);
         };
-    }, [refreshInterval, cloudRefreshInterval, fetchDevices, fetchComPorts]);
+    }, [refreshInterval, cloudRefreshInterval, fetchDevices, fetchComPorts, handleRefreshCloudDevices]);
 
     return (
         <Box sx={{ padding: 2 }}>
             {/* Scan Results */}
-            <Device_ScanResults
+            <DeviceScanResults
                 scanning={scanning}
                 status={status}
                 scanViewModeNotice={scanViewModeNotice}
@@ -550,15 +561,8 @@ const Devices: React.FC = () => {
                 fetchDevices={fetchDevices}
             />
 
-            {/* Pending Cloud Devices Section */}
-            <PendingDevicesSection
-                onDeviceConfirmed={() => fetchDevices(false)}
-                onError={(message) => showSnackbar(message, "error")}
-                onSuccess={(message) => showSnackbar(message, "success")}
-            />
-
-            {/* Device Management Section */}
-            <Device_ManagementSection
+            {/* Device Management Section (now includes Service Settings) */}
+            <DeviceManagementSection
                 isMobile={isMobile}
                 scanning={scanning}
                 buttonColor={buttonColor}
@@ -569,10 +573,9 @@ const Devices: React.FC = () => {
                 }}
                 setAddVirtualScreenModalOpen={setAddVirtualScreenModalOpen}
                 checkForUpdates={checkForUpdates}
-                isUnifiedMode={isUnifiedMode}
-                setAddCloudDeviceModalOpen={setAddCloudDeviceModalOpen}
                 handleRefreshCloudDevices={handleRefreshCloudDevices}
                 refreshingCloudDevices={refreshingCloudDevices}
+                onServiceSettingChange={handleServiceSettingChange}
             />
 
             {/* Device Tables */}
@@ -632,7 +635,7 @@ const Devices: React.FC = () => {
             )}
 
             {/* Modals */}
-            <Device_ScanModal
+            <DeviceScanModal
                 open={scanModalOpen}
                 onClose={() => setScanModalOpen(false)}
                 onScanStart={(scanType: ScanType, options?: ScanOptions) => {
@@ -652,7 +655,7 @@ const Devices: React.FC = () => {
                 fetchDeviceDetails={fetchDeviceDetails}
             />
 
-            <Device_AddDeviceModal
+            <DeviceAddDeviceModal
                 open={!!selectedDevice}
                 onClose={() => setSelectedDevice(null)}
                 deviceIp={selectedDevice?.ipAddress || ""}
@@ -660,7 +663,7 @@ const Devices: React.FC = () => {
                 onDeviceAdded={fetchDevices}
             />
 
-            <Device_AddCustomDeviceModal
+            <DeviceAddCustomDeviceModal
                 open={addCustomDeviceModalOpen || !!selectedCustomDevice}
                 onClose={() => {
                     setAddCustomDeviceModalOpen(false);
@@ -671,7 +674,7 @@ const Devices: React.FC = () => {
                 comPorts={comPorts}
             />
 
-            <Device_AddVirtualScreenModal
+            <DeviceAddVirtualScreenModal
                 open={addVirtualScreenModalOpen}
                 onClose={() => setAddVirtualScreenModalOpen(false)}
                 onDeviceAdded={fetchDevices}

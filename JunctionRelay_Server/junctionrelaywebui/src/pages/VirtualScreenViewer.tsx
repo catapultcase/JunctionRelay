@@ -43,7 +43,7 @@ import {
 } from '@rive-app/react-canvas';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 
-// Google Fonts loader utility
+// Google Fonts loader utility - EXACT COPY from FrameEngine_Canvas
 const loadGoogleFont = (fontFamily: string) => {
     if (!fontFamily || fontFamily.includes('system') || fontFamily.includes('sans-serif') ||
         document.querySelector(`link[href*="${fontFamily.replace(/\s+/g, '+')}"]`)) {
@@ -115,6 +115,13 @@ interface RiveConfig {
             showUnit?: boolean;
             text?: string;
             textAlign?: string;
+            placeholderSensorLabel?: string;
+            showLabel?: boolean;
+            lineHeight?: string;
+            backgroundColor?: string;
+            color?: string;
+            textShadow?: boolean;
+            textBorder?: boolean;
         };
         riveConnections?: {
             availableInputs: RiveConnection[];
@@ -170,6 +177,306 @@ interface VirtualScreenViewerProps {
     // For standalone mode (will use URL params if not provided)
     isStandalone?: boolean;
 }
+
+// Dynamic Rive Background Component - EXACT COPY from FrameEngine_Canvas
+const RiveBackground: React.FC<{
+    riveFile: string;
+    stateMachine?: string;
+    inputs?: Record<string, any>;
+    width: number;
+    height: number;
+    onRiveDiscovery?: (machines: any[]) => void;
+}> = ({ riveFile, stateMachine, inputs, width, height, onRiveDiscovery }) => {
+    const riveFileUrl = `/api/frameengine/rive-files/${riveFile}/content`;
+    const [discoveredInputs, setDiscoveredInputs] = useState<Record<string, any>>({});
+
+    const { rive, RiveComponent } = useRive({
+        src: riveFileUrl,
+        autoplay: true,
+        layout: new Layout({
+            fit: Fit.Cover,
+            alignment: Alignment.Center
+        }),
+        onLoad: () => {
+            console.log('✅ Rive background loaded:', riveFile);
+        },
+        onLoadError: (error: any) => {
+            console.error('❌ Rive background load error:', error, { riveFile });
+        },
+    });
+
+    // Discovery logic - EXACT COPY from FrameEngine_Canvas
+    useEffect(() => {
+        if (!rive) return;
+
+        let attempts = 0;
+        let stopped = false;
+        const maxAttempts = 20;
+
+        const discoverMachinesAndInputs = () => {
+            if (stopped || !rive) return;
+            attempts++;
+
+            try {
+                const smNames: string[] = Array.isArray(rive.stateMachineNames) ? rive.stateMachineNames : [];
+
+                smNames.forEach((sm) => {
+                    try { rive.play(sm); } catch { }
+                });
+
+                const machines: any[] = smNames.map((smName) => {
+                    const inputs: any[] = [];
+
+                    try {
+                        const rawInputs = rive.stateMachineInputs ? (rive.stateMachineInputs(smName) as any[]) : [];
+
+                        rawInputs.forEach((rawInput) => {
+                            if (rawInput?.name) {
+                                const inputName = String(rawInput.name);
+                                let inputType: string = 'unknown';
+                                let currentValue: any = null;
+                                let hasValue = false;
+
+                                try {
+                                    currentValue = rawInput.value;
+                                    hasValue = true;
+
+                                    if (typeof currentValue === 'number') {
+                                        inputType = 'number';
+                                    } else if (typeof currentValue === 'boolean') {
+                                        inputType = 'boolean';
+                                    }
+                                } catch {
+                                    try {
+                                        if (typeof rawInput.fire === 'function') {
+                                            inputType = 'trigger';
+                                        }
+                                    } catch { }
+                                }
+
+                                inputs.push({
+                                    name: inputName,
+                                    type: inputType,
+                                    currentValue: hasValue ? currentValue : null,
+                                    ref: rawInput
+                                });
+                            }
+                        });
+                    } catch (error) {
+                        console.warn(`Failed to get inputs for state machine "${smName}":`, error);
+                    }
+
+                    return {
+                        name: smName,
+                        inputNames: inputs.map(i => i.name),
+                        inputs
+                    };
+                });
+
+                console.log('🔍 RiveBackground discovered state machines:', machines);
+
+                if (onRiveDiscovery && machines.length > 0) {
+                    onRiveDiscovery(machines);
+                }
+
+                const totalInputs = machines.reduce((sum, m) => sum + m.inputs.length, 0);
+                if (totalInputs === 0 && attempts < maxAttempts) {
+                    setTimeout(discoverMachinesAndInputs, 120 * attempts);
+                }
+
+            } catch (error) {
+                console.error('Error during state machine discovery:', error);
+                if (attempts < maxAttempts) {
+                    setTimeout(discoverMachinesAndInputs, 120 * attempts);
+                }
+            }
+        };
+
+        discoverMachinesAndInputs();
+
+        return () => {
+            stopped = true;
+        };
+    }, [rive, onRiveDiscovery]);
+
+    // Bind input logic - EXACT COPY from FrameEngine_Canvas
+    useEffect(() => {
+        if (!rive || !inputs) return;
+
+        let attempts = 0;
+        let stopped = false;
+        const maxAttempts = 20;
+        const inputRefs: Record<string, any> = {};
+
+        const discoverAndBindInputs = () => {
+            if (stopped || !rive) return;
+            attempts++;
+
+            try {
+                const smNames: string[] = Array.isArray(rive.stateMachineNames) ? rive.stateMachineNames : [];
+
+                smNames.forEach((sm) => {
+                    try { rive.play(sm); } catch { }
+                });
+
+                const newDiscoveredInputs: Record<string, any> = {};
+
+                Object.entries(inputs).forEach(([inputKey, inputValue]) => {
+                    let targetMachine: string;
+                    let inputName: string;
+
+                    if (inputKey.includes('.')) {
+                        const parts = inputKey.split('.');
+                        targetMachine = parts[0];
+                        inputName = parts.slice(1).join('.');
+                    } else {
+                        targetMachine = stateMachine || smNames[0];
+                        inputName = inputKey;
+                    }
+
+                    if (!targetMachine) {
+                        console.warn(`⚠️ No target state machine found for input "${inputKey}"`);
+                        return;
+                    }
+
+                    if (!smNames.includes(targetMachine)) {
+                        console.warn(`⚠️ State machine "${targetMachine}" not found. Available: ${smNames.join(', ')}`);
+                        return;
+                    }
+
+                    console.log(`🔍 Looking for input "${inputName}" in state machine "${targetMachine}"`);
+
+                    const machineInputs = rive.stateMachineInputs
+                        ? (rive.stateMachineInputs(targetMachine) as any[])
+                        : [];
+
+                    const foundInput = machineInputs.find((i) => i?.name === inputName);
+
+                    if (foundInput) {
+                        inputRefs[inputKey] = foundInput;
+
+                        let inputType = 'unknown';
+                        let hasValue = false;
+                        let currentValue: any;
+
+                        try {
+                            currentValue = foundInput.value;
+                            hasValue = true;
+
+                            if (typeof currentValue === 'number') {
+                                inputType = 'number';
+                            } else if (typeof currentValue === 'boolean') {
+                                inputType = 'boolean';
+                            }
+                        } catch {
+                            try {
+                                if (typeof foundInput.fire === 'function') {
+                                    inputType = 'trigger';
+                                }
+                            } catch { }
+                        }
+
+                        newDiscoveredInputs[inputKey] = {
+                            ref: foundInput,
+                            type: inputType,
+                            currentValue: hasValue ? currentValue : null,
+                            stateMachine: targetMachine,
+                            inputName: inputName
+                        };
+
+                        try {
+                            if (inputType === 'trigger') {
+                                if (inputValue && typeof foundInput.fire === 'function') {
+                                    foundInput.fire();
+                                    console.log(`🔥 Fired trigger "${inputName}" in "${targetMachine}"`);
+                                }
+                            } else if (hasValue) {
+                                const newValue = inputType === 'boolean' ? Boolean(inputValue) : Number(inputValue) || 0;
+                                foundInput.value = newValue;
+                                console.log(`✅ Set "${inputName}" in "${targetMachine}" (${inputType}) to:`, newValue);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Error applying input "${inputName}" in "${targetMachine}":`, error);
+                        }
+                    } else {
+                        console.warn(`⚠️ Input "${inputName}" not found in state machine "${targetMachine}"`);
+                        console.log(`Available inputs in "${targetMachine}":`, machineInputs.map(i => i?.name).filter(Boolean));
+                    }
+                });
+
+                setDiscoveredInputs(newDiscoveredInputs);
+
+                const foundCount = Object.keys(newDiscoveredInputs).length;
+                const expectedCount = Object.keys(inputs).length;
+
+                if (foundCount < expectedCount && attempts < maxAttempts) {
+                    setTimeout(discoverAndBindInputs, 120 * attempts);
+                }
+
+            } catch (error) {
+                console.error('Error during input discovery:', error);
+                if (attempts < maxAttempts) {
+                    setTimeout(discoverAndBindInputs, 120 * attempts);
+                }
+            }
+        };
+
+        discoverAndBindInputs();
+
+        return () => {
+            stopped = true;
+            setDiscoveredInputs({});
+        };
+    }, [rive, stateMachine, inputs]);
+
+    // Apply input changes - EXACT COPY from FrameEngine_Canvas
+    useEffect(() => {
+        if (!inputs || Object.keys(discoveredInputs).length === 0) return;
+
+        Object.entries(inputs).forEach(([inputKey, inputValue]) => {
+            const discovered = discoveredInputs[inputKey];
+            if (!discovered || !discovered.ref) return;
+
+            try {
+                if (discovered.type === 'trigger') {
+                    if (inputValue && typeof discovered.ref.fire === 'function') {
+                        discovered.ref.fire();
+                        console.log(`🔥 Fired trigger "${discovered.inputName}" in "${discovered.stateMachine}" via update`);
+                    }
+                } else {
+                    const newValue = discovered.type === 'boolean' ? Boolean(inputValue) : Number(inputValue) || 0;
+                    if (discovered.ref.value !== newValue) {
+                        discovered.ref.value = newValue;
+                        console.log(`🔄 Updated "${discovered.inputName}" in "${discovered.stateMachine}" to:`, newValue);
+                    }
+                }
+            } catch (error) {
+                console.error(`❌ Error updating input "${discovered.inputName}" in "${discovered.stateMachine}":`, error);
+            }
+        });
+    }, [inputs, discoveredInputs]);
+
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 0,
+            }}
+        >
+            <RiveComponent
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'block'
+                }}
+            />
+        </div>
+    );
+};
 
 const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
     deviceId: propDeviceId,
@@ -230,7 +537,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             return;
         }
 
-        // If device data is provided via props (embedded mode), use it instead of API call
         if (providedDeviceData) {
             console.log('[VirtualScreenViewer] Using provided device data:', providedDeviceData);
             setDevice(providedDeviceData);
@@ -280,7 +586,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             return;
         }
 
-        // Find stream for this virtual screen (by device ID or screen ID)
         const matchingStream = streams.find(stream => {
             return stream.screenId === parseInt(deviceId!) ||
                 stream.deviceName === device.name ||
@@ -299,7 +604,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             }
         }
 
-        // Check for sensor data
         streams.forEach(stream => {
             if (stream.lastSentPayloadJson) {
                 try {
@@ -326,12 +630,9 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 
         const container = riveContainerRef.current;
         const containerRect = container.getBoundingClientRect();
-
-        // Get the configured canvas dimensions
         const canvasConfig = getCanvasConfig(riveConfig);
 
         if (isEmbedded) {
-            // Embedded mode: scale to fit container while maintaining aspect ratio
             const containerWidth = containerRect.width;
             const containerHeight = containerRect.height;
 
@@ -342,7 +643,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const scaledWidth = canvasConfig.width * scale;
             const scaledHeight = canvasConfig.height * scale;
 
-            // Center the scaled canvas in the container
             const canvasLeft = (containerWidth - scaledWidth) / 2;
             const canvasTop = (containerHeight - scaledHeight) / 2;
 
@@ -355,12 +655,10 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 scaleY: scale,
             });
         } else {
-            // Standalone mode: use actual canvas size, center in viewport
             const canvasWidth = canvasConfig.width;
             const canvasHeight = canvasConfig.height;
 
             if (isFullscreen) {
-                // In fullscreen, center the canvas in the viewport
                 const canvasLeft = (containerRect.width - canvasWidth) / 2;
                 const canvasTop = (containerRect.height - canvasHeight) / 2;
 
@@ -373,9 +671,8 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     scaleY: 1,
                 });
             } else {
-                // When not fullscreen, account for scroll position and padding
                 const canvasLeft = (containerRect.width - canvasWidth) / 2;
-                const canvasTop = 20; // Top padding
+                const canvasTop = 20;
 
                 setCanvasBounds({
                     left: canvasLeft,
@@ -399,7 +696,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             clearTimeout(timeoutId);
             timeoutId = setTimeout(() => {
                 calculateCanvasBounds();
-            }, 16); // ~60fps
+            }, 16);
         };
 
         const resizeObserver = new ResizeObserver((entries) => {
@@ -407,8 +704,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         });
 
         resizeObserver.observe(riveContainerRef.current);
-
-        // Initial calculation with delay to ensure Rive is rendered
         setTimeout(calculateCanvasBounds, 200);
 
         return () => {
@@ -435,7 +730,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         };
 
         const handleOrientationChange = () => {
-            // Orientation changes need more time
             setTimeout(calculateCanvasBounds, 300);
         };
 
@@ -518,7 +812,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         const discovery = riveConfig?.discovery;
 
         if (discovery) {
-            // Try to build mappings from riveConnections (if available)
             const elements = config.frameElements || [];
             elements.forEach(element => {
                 if (element.properties.sensorTag && element.riveConnections?.availableInputs) {
@@ -561,7 +854,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             return;
         }
 
-        // Expand comma-separated sensor tags AND build/update mappings
         const expandedSensorData: Record<string, any> = {};
         const newMappings: Record<string, string[]> = { ...sensorToRiveMap };
 
@@ -569,15 +861,12 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const sensorTags = sensorKey.split(',').map(tag => tag.trim());
 
             if (sensorTags.length > 1) {
-                // Extract sensor tag and Rive input name from comma-separated key
-                const sensorTag = sensorTags[0]; // e.g., "mem_load"
-                const riveInputName = sensorTags[1]; // e.g., "Sensor2_Value"
+                const sensorTag = sensorTags[0];
+                const riveInputName = sensorTags[1];
 
-                // Try to find the full Rive input key (Machine.Input format)
                 const availableInputKeys = Object.keys(stateMachineInputRefs.current);
                 const fullRiveKey = availableInputKeys.find(key => key.endsWith(`.${riveInputName}`)) || riveInputName;
 
-                // Build the mapping
                 if (!newMappings[sensorTag]) {
                     newMappings[sensorTag] = [];
                 }
@@ -585,24 +874,20 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     newMappings[sensorTag].push(fullRiveKey);
                 }
 
-                // Add to expanded data for both tags
                 expandedSensorData[sensorTag] = sensorData;
                 expandedSensorData[riveInputName] = sensorData;
             } else {
-                // Single tag
                 const tag = sensorTags[0];
                 expandedSensorData[tag] = sensorData;
             }
         });
 
-        // Update the sensor-to-Rive mapping if we found new mappings
         if (Object.keys(newMappings).length > Object.keys(sensorToRiveMap).length) {
             setSensorToRiveMap(newMappings);
         }
 
         setSensorData(expandedSensorData);
 
-        // Update display elements with new sensor values
         setDisplayElements(prev =>
             prev.map(element => {
                 if (element.type === 'sensor' && element.sensorTag) {
@@ -619,7 +904,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             })
         );
 
-        // Update Rive state machine inputs using both old and new mappings
         updateRiveInputsFromSensorData(expandedSensorData, newMappings);
     };
 
@@ -632,7 +916,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         const currentMappings = mappings || sensorToRiveMap;
 
         Object.entries(sensorData).forEach(([sensorTag, data]) => {
-            // Try mapped inputs first (from sensor-to-Rive mapping)
             const riveInputKeys = currentMappings[sensorTag] || [];
 
             riveInputKeys.forEach(riveInputKey => {
@@ -647,7 +930,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 }
             });
 
-            // Also try direct sensor tag matching (fallback)
             const directInputRef = stateMachineInputRefs.current[sensorTag];
             if (directInputRef) {
                 try {
@@ -665,11 +947,10 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         src: riveFileBlob || '',
         autoplay: true,
         layout: new Layout({
-            fit: isEmbedded ? Fit.Contain : Fit.None, // Scale to fit in embedded mode, use actual size in standalone
+            fit: isEmbedded ? Fit.Contain : Fit.None,
             alignment: Alignment.Center
         }),
         onLoad: () => {
-            // Multiple attempts to ensure bounds are calculated after Rive is fully loaded
             setTimeout(() => calculateCanvasBounds(), 100);
             setTimeout(() => calculateCanvasBounds(), 300);
             setTimeout(() => calculateCanvasBounds(), 500);
@@ -699,7 +980,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 
                         inputs.forEach((input: any) => {
                             if (input && input.name) {
-                                // Register both full key and short name (like Electron version)
                                 const fullKey = `${machineName}.${input.name}`;
                                 inputRefs[fullKey] = input;
                                 inputRefs[input.name] = input;
@@ -712,7 +992,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 
                 stateMachineInputRefs.current = inputRefs;
 
-                // Apply any existing sensor data to Rive inputs
                 if (Object.keys(currentSensorData).length > 0) {
                     updateRiveInputsFromSensorData(currentSensorData);
                 }
@@ -746,7 +1025,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
-            // Recalculate bounds after fullscreen state changes with multiple attempts
             setTimeout(() => calculateCanvasBounds(), 100);
             setTimeout(() => calculateCanvasBounds(), 300);
             setTimeout(() => calculateCanvasBounds(), 500);
@@ -756,7 +1034,62 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, [calculateCanvasBounds, isEmbedded]);
 
-    // Render overlay elements with canvas-relative positioning
+    // Load Google Fonts when elements change - EXACT COPY from FrameEngine_Canvas
+    useEffect(() => {
+        const fontsToLoad = new Set<string>();
+
+        displayElements.forEach(element => {
+            const fontFamily = element.properties.fontFamily;
+            if (fontFamily && fontFamily !== 'Inter' && !fontFamily.includes('system')) {
+                fontsToLoad.add(fontFamily);
+            }
+        });
+
+        fontsToLoad.forEach(loadGoogleFont);
+    }, [displayElements]);
+
+    // EXACT COPY of getTextStyles from FrameEngine_Canvas with NO hardcoded shadows
+    const getTextStyles = useCallback((element: DisplayElement, scale: number = 1): React.CSSProperties => {
+        const props = element.properties;
+        const baseSize = Math.max(8, (props.fontSize || 12) * scale);
+        const fontFamily = props.fontFamily || 'Inter, system-ui, -apple-system, sans-serif';
+
+        if (fontFamily && fontFamily !== 'Inter' && !fontFamily.includes('system')) {
+            loadGoogleFont(fontFamily);
+        }
+
+        const styles: React.CSSProperties = {
+            fontSize: baseSize,
+            fontFamily: `"${fontFamily}", system-ui, -apple-system, sans-serif`,
+            fontWeight: props.fontWeight || 'normal',
+            color: props.color || props.textColor || '#000000',
+            textAlign: (props.textAlign || 'center') as any,
+            lineHeight: props.lineHeight || '1.4',
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            padding: `${4 * scale}px`,
+            boxSizing: 'border-box',
+            wordWrap: 'break-word',
+            overflow: 'hidden',
+        };
+
+        // ONLY apply textShadow if explicitly set in properties (not hardcoded)
+        if (props.textShadow === true) {
+            styles.textShadow = '1px 1px 2px rgba(0,0,0,0.3)';
+        }
+
+        // ONLY apply textBorder if explicitly set in properties (not hardcoded)
+        if (props.textBorder === true) {
+            styles.WebkitTextStroke = '1px rgba(0,0,0,0.5)';
+        }
+
+        return styles;
+    }, []);
+
+    // Render overlay elements with canvas-relative positioning - EXACT COPY logic from FrameEngine_Canvas
     const renderOverlayElements = () => {
         if (!riveConfig || !canvasBounds) return null;
 
@@ -769,22 +1102,33 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 const value = sensorData?.value?.toString() || element.properties.placeholderValue || '--';
                 const unit = sensorData?.unit || element.properties.placeholderUnit || '';
                 const showUnit = element.properties.showUnit !== false;
+                const showLabel = element.properties.showLabel !== false; 
+                const label = element.properties.placeholderSensorLabel || ''; 
 
-                content = showUnit && unit ? `${value} ${unit}` : value;
+                let contentParts = [];
+
+                if (showLabel && label) {
+                    contentParts.push(label);
+                }
+
+                contentParts.push(value);
+
+                if (showUnit && unit) {
+                    contentParts.push(unit);
+                }
+
+                content = contentParts.join(' ');
             } else if (element.type === 'text') {
                 content = element.properties.text || '';
             }
 
             const fontSize = element.properties.fontSize || 32;
-
-            // FIX: Use the font from config, fallback to system font instead of hardcoded Orbitron
             const configuredFont = element.properties.fontFamily;
-            const fontFamily = configuredFont || 'system-ui'; // Use system font as fallback
-
+            const fontFamily = configuredFont || 'system-ui';
             const fontWeight = element.properties.fontWeight || '900';
             const textAlign = element.properties.textAlign || 'left';
 
-            // FIX: Load Google Fonts properly - load any non-system font
+            // Load Google Fonts properly - EXACT COPY from FrameEngine_Canvas
             if (fontFamily &&
                 fontFamily !== 'system-ui' &&
                 fontFamily !== 'Arial' &&
@@ -803,37 +1147,47 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const scaledHeight = element.position.height * canvasBounds.scaleY;
             const scaledFontSize = fontSize * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
 
-            // FIX: Build font stack that respects the configured font
+            // Build font stack that respects the configured font - EXACT COPY from FrameEngine_Canvas
             let fontStack;
             if (configuredFont) {
-                // If a specific font is configured, use it with appropriate fallbacks
                 fontStack = `"${configuredFont}", system-ui, -apple-system, sans-serif`;
             } else {
-                // If no font configured, use system defaults
                 fontStack = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            }
+
+            // CRITICAL: Build styles object WITHOUT hardcoded textShadow
+            const elementStyles: React.CSSProperties = {
+                position: 'absolute',
+                left: scaledLeft,
+                top: scaledTop,
+                width: scaledWidth,
+                height: scaledHeight,
+                fontSize: `${scaledFontSize}px`,
+                fontFamily: fontStack,
+                color: textColor,
+                fontWeight: fontWeight,
+                pointerEvents: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: textAlign === 'center' ? 'center' :
+                    textAlign === 'right' ? 'flex-end' : 'flex-start',
+                zIndex: element.properties.zIndex || 10,
+            };
+
+            // ONLY add textShadow if explicitly defined in properties (NO HARDCODING)
+            if (element.properties.textShadow === true) {
+                elementStyles.textShadow = '0 0 6px rgba(0,0,0,0.8)';
+            }
+
+            // ONLY add textBorder if explicitly defined in properties
+            if (element.properties.textBorder === true) {
+                elementStyles.WebkitTextStroke = '1px rgba(0,0,0,0.5)';
             }
 
             return (
                 <div
                     key={element.id}
-                    style={{
-                        position: 'absolute',
-                        left: scaledLeft,
-                        top: scaledTop,
-                        width: scaledWidth,
-                        height: scaledHeight,
-                        fontSize: `${scaledFontSize}px`,
-                        fontFamily: fontStack, // FIX: Use the proper font stack
-                        color: textColor,
-                        fontWeight: fontWeight,
-                        textShadow: '0 0 6px rgba(0,0,0,0.8)',
-                        pointerEvents: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: textAlign === 'center' ? 'center' :
-                            textAlign === 'right' ? 'flex-end' : 'flex-start',
-                        zIndex: element.properties.zIndex || 10,
-                    }}
+                    style={elementStyles}
                 >
                     {content}
                 </div>
@@ -965,7 +1319,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     )}
                 </div>
 
-                {/* Controls in waiting state */}
                 {showControls && (
                     <Box sx={{
                         position: 'absolute',
@@ -1111,7 +1464,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     margin: 0,
                     padding: 0,
                     backgroundColor: canvasConfig.backgroundColor,
-                    overflow: isFullscreen ? 'hidden' : 'auto', // Allow scrolling when not fullscreen
+                    overflow: isFullscreen ? 'hidden' : 'auto',
                     cursor: isFullscreen ? 'none' : 'default',
                 }}
             >
@@ -1150,7 +1503,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 {/* Control buttons - hidden in fullscreen */}
                 {!isFullscreen && showControls && (
                     <>
-                        {/* Back button */}
                         <Fab
                             color="primary"
                             onClick={() => navigate('/devices')}
@@ -1164,7 +1516,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                             <ArrowBack />
                         </Fab>
 
-                        {/* Fullscreen button */}
                         <Fab
                             color="secondary"
                             onClick={toggleFullscreen}
@@ -1178,7 +1529,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                             <Fullscreen />
                         </Fab>
 
-                        {/* Device info */}
                         <Box sx={{
                             position: 'fixed',
                             bottom: 20,

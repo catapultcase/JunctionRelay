@@ -133,9 +133,10 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
         return 'Web Browser';
     };
 
+    // OPTIMIZED: Use unified endpoints only
     const fetchAuthStatus = useCallback(async () => {
         try {
-            const response = await fetch("/api/auth/status");
+            const response = await fetch("/api/unified-auth/status");
             if (response.ok) {
                 const data = await response.json();
                 setAuthStatus(data);
@@ -147,7 +148,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
 
     const fetchTokenInfo = useCallback(async () => {
         try {
-            const response = await fetch("/api/cloud-auth/tokens");
+            const response = await fetch("/api/unified-auth/tokens");
             if (response.ok) {
                 const data = await response.json();
                 setTokenInfo(data);
@@ -163,7 +164,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
 
     const fetchSessions = useCallback(async () => {
         try {
-            const response = await fetch("/api/cloud-auth/sessions");
+            const response = await fetch("/api/unified-auth/sessions");
             if (response.ok) {
                 const data = await response.json();
                 if (data.success && data.sessions) {
@@ -195,7 +196,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
     const revokeSession = useCallback(async (sessionId: string) => {
         setRevoking(true);
         try {
-            const response = await fetch(`/api/cloud-auth/sessions/${encodeURIComponent(sessionId)}`, {
+            const response = await fetch(`/api/unified-auth/sessions/${encodeURIComponent(sessionId)}`, {
                 method: 'DELETE'
             });
 
@@ -219,7 +220,7 @@ const Settings_SessionManagement: React.FC<SessionManagementProps> = ({
     const revokeAllOtherSessions = useCallback(async () => {
         setRevoking(true);
         try {
-            const response = await fetch('/api/cloud-auth/sessions', {
+            const response = await fetch('/api/unified-auth/sessions', {
                 method: 'DELETE'
             });
 

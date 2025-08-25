@@ -68,7 +68,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             const cloudToken = localStorage.getItem('cloud_proxy_token');
             if (!cloudToken) return;
 
-            const response = await fetch("/api/cloud-auth/subscription-status", {
+            const response = await fetch("/api/unified-auth/subscription-status", {
                 headers: {
                     "Authorization": `Bearer ${cloudToken}`
                 }
@@ -121,7 +121,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             };
             console.log("[CHECKOUT] Request body:", requestBody);
 
-            const response = await fetch("/api/cloud-auth/create-checkout", {
+            const response = await fetch("/api/unified-auth/create-checkout", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -137,7 +137,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                 // Clear subscription cache before redirecting to checkout
                 // This ensures fresh data when user returns after subscribing
                 try {
-                    await fetch("/api/cloud-auth/clear-subscription-cache", {
+                    await fetch("/api/unified-auth/clear-subscription-cache", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -180,7 +180,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             setPasswordLoading(true);
             const cloudToken = localStorage.getItem('cloud_proxy_token');
 
-            const response = await fetch("/api/cloud-auth/change-password", {
+            const response = await fetch("/api/unified-auth/change-password", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -266,7 +266,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                     Pro Subscription Benefits
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    Support the JunctionRelay project and access features like cloud device management, android push messages and cloud backup service (coming soon!).
+                    Support the JunctionRelay project and access additional features like expanded cloud device management and the cloud backup service.
                 </Typography>
             </Box>
 

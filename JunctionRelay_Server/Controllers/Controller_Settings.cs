@@ -33,14 +33,12 @@ public class Controller_Settings : ControllerBase
     private readonly IDbConnection _db;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger<Controller_Settings> _logger;
 
-    public Controller_Settings(IDbConnection db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory, ILogger<Controller_Settings> logger)
+    public Controller_Settings(IDbConnection db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory)
     {
         _db = db;
         _env = env;
         _httpClientFactory = httpClientFactory;
-        _logger = logger;
     }
 
     [HttpGet]
@@ -84,40 +82,120 @@ public class Controller_Settings : ControllerBase
         return Ok(new { version });
     }
 
-    // New route for latest version check
+    // New route for latest version check with caching
     [HttpGet("version/latest")]
     public async Task<IActionResult> GetLatestVersion()
     {
         try
         {
-            _logger.LogInformation("[VERSION CHECK] Starting latest version check...");
+            // Console.WriteLine("[VERSION CHECK] Starting latest version check...");
+
+            // Check cache first
+            var cachedResult = await GetCachedVersionResult();
+            if (cachedResult != null)
+            {
+                // Console.WriteLine($"[VERSION CHECK] Returning cached result: {cachedResult.latest_version} from {cachedResult.source}");
+                return Ok(cachedResult);
+            }
+
+            // Console.WriteLine("[VERSION CHECK] No valid cache found, fetching fresh data...");
 
             // Try Docker Hub first
             var dockerResult = await TryGetLatestFromDockerHub();
             if (dockerResult != null)
             {
-                _logger.LogInformation($"[VERSION CHECK] Successfully got latest version from Docker Hub: {dockerResult}");
-                return Ok(new { latest_version = dockerResult, source = "docker_hub" });
+                var result = new { latest_version = dockerResult, source = "docker_hub" };
+                await CacheVersionResult(result);
+                // Console.WriteLine($"[VERSION CHECK] Successfully got latest version from Docker Hub: {dockerResult}");
+                return Ok(result);
             }
 
-            _logger.LogWarning("[VERSION CHECK] Docker Hub failed, falling back to GitHub...");
+            // Console.WriteLine("[VERSION CHECK] Docker Hub failed, falling back to GitHub...");
 
             // Fallback to GitHub
             var githubResult = await TryGetLatestFromGitHub();
             if (githubResult != null)
             {
-                _logger.LogInformation($"[VERSION CHECK] Successfully got latest version from GitHub: {githubResult}");
-                return Ok(new { latest_version = githubResult, source = "github" });
+                var result = new { latest_version = githubResult, source = "github" };
+                await CacheVersionResult(result);
+                // Console.WriteLine($"[VERSION CHECK] Successfully got latest version from GitHub: {githubResult}");
+                return Ok(result);
             }
 
-            _logger.LogError("[VERSION CHECK] Both Docker Hub and GitHub failed");
+            // Console.WriteLine("[VERSION CHECK] Both Docker Hub and GitHub failed");
             return StatusCode(500, new { error = "Failed to fetch latest version from both Docker Hub and GitHub" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[VERSION CHECK] Unexpected error during version check");
+            // Console.WriteLine($"[VERSION CHECK] Unexpected error during version check: {ex}");
             return StatusCode(500, new { error = ex.Message });
         }
+    }
+
+    private async Task<object?> GetCachedVersionResult()
+    {
+        try
+        {
+            var cacheFilePath = GetVersionCacheFilePath();
+
+            if (!System.IO.File.Exists(cacheFilePath))
+                return null;
+
+            var fileInfo = new FileInfo(cacheFilePath);
+            var age = DateTime.UtcNow - fileInfo.LastWriteTimeUtc;
+
+            // Cache expires after 1 hour
+            if (age.TotalHours > 1)
+            {
+                // Console.WriteLine($"[VERSION CACHE] Cache file is {age.TotalHours:F1} hours old, expired");
+                System.IO.File.Delete(cacheFilePath);
+                return null;
+            }
+
+            var cachedContent = await System.IO.File.ReadAllTextAsync(cacheFilePath);
+            var cachedResult = JsonSerializer.Deserialize<object>(cachedContent);
+
+            // Console.WriteLine($"[VERSION CACHE] Found valid cache file, age: {age.TotalMinutes:F1} minutes");
+            return cachedResult;
+        }
+        catch (Exception)
+        {
+            // Console.WriteLine($"[VERSION CACHE] Error reading cache: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task CacheVersionResult(object result)
+    {
+        try
+        {
+            var cacheFilePath = GetVersionCacheFilePath();
+            var cacheDirectory = Path.GetDirectoryName(cacheFilePath);
+
+            if (cacheDirectory != null && !Directory.Exists(cacheDirectory))
+            {
+                Directory.CreateDirectory(cacheDirectory);
+            }
+
+            var jsonContent = JsonSerializer.Serialize(result, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            await System.IO.File.WriteAllTextAsync(cacheFilePath, jsonContent);
+            // Console.WriteLine($"[VERSION CACHE] Cached version result to {cacheFilePath}");
+        }
+        catch (Exception)
+        {
+            // Console.WriteLine($"[VERSION CACHE] Error writing cache: {ex.Message}");
+            // Don't throw - caching failure shouldn't break the API response
+        }
+    }
+
+    private string GetVersionCacheFilePath()
+    {
+        var cacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
+        return Path.Combine(cacheDirectory, "latest_version.json");
     }
 
     private async Task<string?> TryGetLatestFromDockerHub()
@@ -128,7 +206,7 @@ public class Controller_Settings : ControllerBase
             client.DefaultRequestHeaders.Add("User-Agent", "JunctionRelay/1.0");
             client.Timeout = TimeSpan.FromSeconds(10);
 
-            _logger.LogInformation("[VERSION CHECK] Fetching from Docker Hub API...");
+            // Console.WriteLine("[VERSION CHECK] Fetching from Docker Hub API...");
 
             var response = await client.GetAsync(
                 "https://hub.docker.com/v2/repositories/catapultcase/junctionrelay/tags/?page_size=100"
@@ -136,7 +214,7 @@ public class Controller_Settings : ControllerBase
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning($"[VERSION CHECK] Docker Hub API returned {response.StatusCode}");
+                // Console.WriteLine($"[VERSION CHECK] Docker Hub API returned {response.StatusCode}");
                 return null;
             }
 
@@ -148,11 +226,11 @@ public class Controller_Settings : ControllerBase
 
             if (dockerData?.Results == null)
             {
-                _logger.LogWarning("[VERSION CHECK] Docker Hub response was null or had no results");
+                // Console.WriteLine("[VERSION CHECK] Docker Hub response was null or had no results");
                 return null;
             }
 
-            _logger.LogInformation($"[VERSION CHECK] Docker Hub returned {dockerData.Results.Count} tags");
+            // Console.WriteLine($"[VERSION CHECK] Docker Hub returned {dockerData.Results.Count} tags");
 
             // Filter and sort version tags
             var versionTags = dockerData.Results
@@ -165,20 +243,20 @@ public class Controller_Settings : ControllerBase
                 .OrderByDescending(tag => ParseVersion(tag.Name))
                 .ToList();
 
-            _logger.LogInformation($"[VERSION CHECK] Found {versionTags.Count} valid version tags");
+            // Console.WriteLine($"[VERSION CHECK] Found {versionTags.Count} valid version tags");
 
             var latestVersion = versionTags.FirstOrDefault()?.Name;
 
             if (latestVersion != null)
             {
-                _logger.LogInformation($"[VERSION CHECK] Latest Docker Hub version: {latestVersion}");
+                // Console.WriteLine($"[VERSION CHECK] Latest Docker Hub version: {latestVersion}");
             }
 
             return latestVersion;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "[VERSION CHECK] Error fetching from Docker Hub");
+            // Console.WriteLine($"[VERSION CHECK] Error fetching from Docker Hub: {ex}");
             return null;
         }
     }
@@ -191,13 +269,13 @@ public class Controller_Settings : ControllerBase
             client.DefaultRequestHeaders.Add("User-Agent", "JunctionRelay/1.0");
             client.Timeout = TimeSpan.FromSeconds(10);
 
-            _logger.LogInformation("[VERSION CHECK] Fetching from GitHub API...");
+            // Console.WriteLine("[VERSION CHECK] Fetching from GitHub API...");
 
             // Get all tags from GitHub
             var allTagsRes = await client.GetAsync("https://api.github.com/repos/catapultcase/JunctionRelay/tags");
             if (!allTagsRes.IsSuccessStatusCode)
             {
-                _logger.LogWarning($"[VERSION CHECK] GitHub tags API returned {allTagsRes.StatusCode}");
+                // Console.WriteLine($"[VERSION CHECK] GitHub tags API returned {allTagsRes.StatusCode}");
                 return null;
             }
 
@@ -209,11 +287,11 @@ public class Controller_Settings : ControllerBase
 
             if (allTags == null)
             {
-                _logger.LogWarning("[VERSION CHECK] GitHub tags response was null");
+                // Console.WriteLine("[VERSION CHECK] GitHub tags response was null");
                 return null;
             }
 
-            _logger.LogInformation($"[VERSION CHECK] GitHub returned {allTags.Count} tags");
+            // Console.WriteLine($"[VERSION CHECK] GitHub returned {allTags.Count} tags");
 
             // Find semantic version tags and get the latest
             var versionTags = allTags
@@ -222,20 +300,20 @@ public class Controller_Settings : ControllerBase
                 .OrderByDescending(ParseVersion)
                 .ToList();
 
-            _logger.LogInformation($"[VERSION CHECK] Found {versionTags.Count} valid version tags on GitHub");
+            // Console.WriteLine($"[VERSION CHECK] Found {versionTags.Count} valid version tags on GitHub");
 
             var latestVersion = versionTags.FirstOrDefault();
 
             if (latestVersion != null)
             {
-                _logger.LogInformation($"[VERSION CHECK] Latest GitHub version: {latestVersion}");
+                // Console.WriteLine($"[VERSION CHECK] Latest GitHub version: {latestVersion}");
             }
 
             return latestVersion;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "[VERSION CHECK] Error fetching from GitHub");
+            // Console.WriteLine($"[VERSION CHECK] Error fetching from GitHub: {ex}");
             return null;
         }
     }
@@ -292,7 +370,7 @@ public class Controller_Settings : ControllerBase
                 {
                     // Default to 'right' for invalid values
                     flags[setting.Key] = "right";
-                    _logger.LogWarning($"Invalid alignment value '{setting.Value}' for {setting.Key}, defaulting to 'right'");
+                    Console.WriteLine($"Invalid alignment value '{setting.Value}' for {setting.Key}, defaulting to 'right'");
                 }
             }
             // Handle other settings as strings
@@ -358,8 +436,8 @@ public class Controller_Settings : ControllerBase
     }
 }
 
-    // Data models for Docker Hub API
-    public class DockerHubResponse
+// Data models for Docker Hub API
+public class DockerHubResponse
 {
     [JsonPropertyName("results")]
     public List<DockerHubTag> Results { get; set; } = new();
@@ -386,12 +464,10 @@ public class GitHubTag
 public class Controller_Cache : ControllerBase
 {
     private readonly IWebHostEnvironment _env;
-    private readonly ILogger<Controller_Cache> _logger;
 
-    public Controller_Cache(IWebHostEnvironment env, ILogger<Controller_Cache> logger)
+    public Controller_Cache(IWebHostEnvironment env)
     {
         _env = env;
-        _logger = logger;
     }
 
     [HttpGet("status")]
@@ -399,37 +475,65 @@ public class Controller_Cache : ControllerBase
     {
         try
         {
+            var cacheFiles = new List<object>();
+
+            // Check firmware cache directory
             var firmwareDirectory = Path.Combine(_env.ContentRootPath, "Firmware");
             var releaseCacheDirectory = Path.Combine(firmwareDirectory, "Releases");
 
-            if (!Directory.Exists(releaseCacheDirectory))
+            if (Directory.Exists(releaseCacheDirectory))
             {
-                return Ok(new { cacheFiles = new List<object>() });
+                var firmwareCacheFiles = Directory.GetFiles(releaseCacheDirectory, "*.json")
+                    .Select(filePath =>
+                    {
+                        var fileInfo = new FileInfo(filePath);
+                        var age = DateTime.Now - fileInfo.LastWriteTime;
+
+                        return new
+                        {
+                            name = fileInfo.Name,
+                            type = "firmware",
+                            sizeKB = Math.Round(fileInfo.Length / 1024.0, 2),
+                            age = FormatAge(age),
+                            lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            isExpired = age.TotalHours > 24
+                        };
+                    });
+
+                cacheFiles.AddRange(firmwareCacheFiles);
             }
 
-            var cacheFiles = Directory.GetFiles(releaseCacheDirectory, "*.json")
-                .Select(filePath =>
-                {
-                    var fileInfo = new FileInfo(filePath);
-                    var age = DateTime.Now - fileInfo.LastWriteTime;
-
-                    return new
+            // Check version cache directory
+            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
+            if (Directory.Exists(versionCacheDirectory))
+            {
+                var versionCacheFiles = Directory.GetFiles(versionCacheDirectory, "*.json")
+                    .Select(filePath =>
                     {
-                        name = fileInfo.Name,
-                        sizeKB = Math.Round(fileInfo.Length / 1024.0, 2),
-                        age = FormatAge(age),
-                        lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                        isExpired = age.TotalHours > 24
-                    };
-                })
-                .OrderBy(f => f.name)
-                .ToList();
+                        var fileInfo = new FileInfo(filePath);
+                        var age = DateTime.Now - fileInfo.LastWriteTime;
 
-            return Ok(new { cacheFiles });
+                        return new
+                        {
+                            name = fileInfo.Name,
+                            type = "version",
+                            sizeKB = Math.Round(fileInfo.Length / 1024.0, 2),
+                            age = FormatAge(age),
+                            lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            isExpired = age.TotalHours > 1 // Version cache expires after 1 hour
+                        };
+                    });
+
+                cacheFiles.AddRange(versionCacheFiles);
+            }
+
+            var sortedCacheFiles = cacheFiles.OrderBy(f => f.GetType().GetProperty("name")?.GetValue(f)).ToList();
+
+            return Ok(new { cacheFiles = sortedCacheFiles });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting cache status");
+            Console.WriteLine($"Error getting cache status: {ex}");
             return StatusCode(500, new { error = "Failed to get cache status", message = ex.Message });
         }
     }
@@ -439,31 +543,51 @@ public class Controller_Cache : ControllerBase
     {
         try
         {
+            int filesDeleted = 0;
+
+            // Clear firmware cache
             var firmwareDirectory = Path.Combine(_env.ContentRootPath, "Firmware");
             var releaseCacheDirectory = Path.Combine(firmwareDirectory, "Releases");
-
-            int filesDeleted = 0;
 
             if (Directory.Exists(releaseCacheDirectory))
             {
                 var cacheFiles = Directory.GetFiles(releaseCacheDirectory, "*.json");
-
                 foreach (var file in cacheFiles)
                 {
                     try
                     {
                         System.IO.File.Delete(file);
                         filesDeleted++;
-                        _logger.LogInformation($"Deleted cache file: {Path.GetFileName(file)}");
+                        Console.WriteLine($"Deleted firmware cache file: {Path.GetFileName(file)}");
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, $"Failed to delete cache file: {Path.GetFileName(file)}");
+                        Console.WriteLine($"Failed to delete firmware cache file: {Path.GetFileName(file)} - {ex}");
                     }
                 }
             }
 
-            _logger.LogInformation($"Cache cleared. {filesDeleted} files deleted.");
+            // Clear version cache
+            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
+            if (Directory.Exists(versionCacheDirectory))
+            {
+                var versionCacheFiles = Directory.GetFiles(versionCacheDirectory, "*.json");
+                foreach (var file in versionCacheFiles)
+                {
+                    try
+                    {
+                        System.IO.File.Delete(file);
+                        filesDeleted++;
+                        Console.WriteLine($"Deleted version cache file: {Path.GetFileName(file)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to delete version cache file: {Path.GetFileName(file)} - {ex}");
+                    }
+                }
+            }
+
+            Console.WriteLine($"Cache cleared. {filesDeleted} files deleted.");
 
             return Ok(new
             {
@@ -474,7 +598,7 @@ public class Controller_Cache : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error clearing cache");
+            Console.WriteLine($"Error clearing cache: {ex}");
             return StatusCode(500, new { error = "Failed to clear cache", message = ex.Message });
         }
     }
@@ -491,17 +615,26 @@ public class Controller_Cache : ControllerBase
                 return BadRequest(new { error = "Invalid file name. Only JSON cache files can be deleted." });
             }
 
+            // Check both cache directories
             var firmwareDirectory = Path.Combine(_env.ContentRootPath, "Firmware");
             var releaseCacheDirectory = Path.Combine(firmwareDirectory, "Releases");
-            var filePath = Path.Combine(releaseCacheDirectory, fileName);
+            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
 
-            if (!System.IO.File.Exists(filePath))
+            var possiblePaths = new[]
+            {
+                Path.Combine(releaseCacheDirectory, fileName),
+                Path.Combine(versionCacheDirectory, fileName)
+            };
+
+            var filePath = possiblePaths.FirstOrDefault(System.IO.File.Exists);
+
+            if (filePath == null)
             {
                 return NotFound(new { error = "Cache file not found" });
             }
 
             System.IO.File.Delete(filePath);
-            _logger.LogInformation($"Deleted specific cache file: {fileName}");
+            Console.WriteLine($"Deleted specific cache file: {fileName}");
 
             return Ok(new
             {
@@ -511,11 +644,12 @@ public class Controller_Cache : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error deleting cache file: {fileName}");
+            Console.WriteLine($"Error deleting cache file: {fileName} - {ex}");
             return StatusCode(500, new { error = "Failed to delete cache file", message = ex.Message });
         }
-    }
 
+
+    }
 
     private static string FormatAge(TimeSpan age)
     {

@@ -20,7 +20,7 @@
 import React, { useState, useEffect } from "react";
 import {
     Box, Typography, Button, TableContainer, Table, TableHead, TableRow, TableCell, TableBody,
-    Paper, Snackbar, Alert, CircularProgress, Switch, 
+    Paper, Snackbar, Alert, CircularProgress, Switch,
     useMediaQuery, useTheme, List, ListItem, Accordion, AccordionSummary, AccordionDetails,
     Chip
 } from "@mui/material";
@@ -39,10 +39,12 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SecurityIcon from '@mui/icons-material/Security';
+import BackupIcon from '@mui/icons-material/Backup';
 
 import Settings_UserManagement from '../components/Settings_UserManagement';
 import Settings_SessionManagement from '../components/Settings_SessionManagement';
 import Settings_Database from '../components/Settings_Database';
+import Settings_Backups from '../components/Settings_Backups';
 import StreamHistorySettings from '../components/StreamHistorySettings';
 import DashboardSettings from '../components/DashboardSettings';
 
@@ -62,6 +64,13 @@ interface BackupInfo {
     hasEncryptionKeys: boolean;
 }
 
+interface CloudUserInfo {
+    email?: string;
+    userId?: string;
+    hasValidLicense: boolean;
+    message?: string;
+}
+
 interface AccordionState {
     [key: string]: boolean;
 }
@@ -77,6 +86,7 @@ const Settings: React.FC = () => {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
     const [backendFriendlyName, setBackendFriendlyName] = useState<string | null>(null);
+    const [cloudUserInfo, setCloudUserInfo] = useState<CloudUserInfo | null>(null);
 
 
     // Check if Dashboard Settings is dismissed
@@ -95,6 +105,7 @@ const Settings: React.FC = () => {
                 pushNotifications: false,
                 dashboardSettings: false,
                 database: false,
+                cloudBackups: false,
                 cache: false,
                 columns: false,
                 appSettings: true
@@ -107,6 +118,7 @@ const Settings: React.FC = () => {
                 pushNotifications: false,
                 dashboardSettings: false,
                 database: false,
+                cloudBackups: false,
                 cache: false,
                 columns: false,
                 appSettings: true
@@ -159,6 +171,33 @@ const Settings: React.FC = () => {
             setBackupInfo(data);
         } catch (err) {
             console.error("Error loading backup info:", err);
+        }
+    };
+
+    const fetchCloudUserInfo = async () => {
+        try {
+            const cloudToken = localStorage.getItem('cloud_proxy_token');
+            if (!cloudToken) {
+                setCloudUserInfo(null);
+                return;
+            }
+
+            const response = await fetch('/api/unified-auth/user-info', {
+                headers: {
+                    'Authorization': `Bearer ${cloudToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setCloudUserInfo(data);
+            } else {
+                setCloudUserInfo(null);
+            }
+        } catch (error) {
+            console.error('Error fetching cloud user info:', error);
+            setCloudUserInfo(null);
         }
     };
 
@@ -322,6 +361,7 @@ const Settings: React.FC = () => {
     useEffect(() => {
         fetchSettings();
         fetchBackupInfo();
+        fetchCloudUserInfo();
     }, []);
 
     const formatFileSize = (bytes: number): string => {
@@ -676,6 +716,45 @@ const Settings: React.FC = () => {
                     </AccordionDetails>
                 </Accordion>
 
+                {/* Cloud Backups */}
+                <Accordion
+                    expanded={accordionStates.cloudBackups}
+                    onChange={handleAccordionChange('cloudBackups')}
+                    elevation={isMobile ? 1 : 2}
+                >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <BackupIcon sx={{ mr: 1 }} />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="h6">Cloud Backups</Typography>
+                                <Chip
+                                    label={
+                                        cloudUserInfo?.hasValidLicense
+                                            ? "Pro Feature Unlocked"
+                                            : "Requires Pro License"
+                                    }
+                                    size="small"
+                                    color={
+                                        cloudUserInfo?.hasValidLicense
+                                            ? "success" // ✅ green
+                                            : "primary" // ✅ blue
+                                    }
+                                    sx={{ fontFamily: 'monospace' }}
+                                />
+                            </Box>
+                        </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
+                        <Settings_Backups
+                            showSnackbar={showSnackbar}
+                            isMobile={isMobile}
+                            cloudUserInfo={cloudUserInfo}
+                        />
+                    </AccordionDetails>
+                </Accordion>
+
+
+
                 {/* Stream History Settings */}
                 <Accordion
                     expanded={accordionStates.streamHistory}
@@ -753,7 +832,7 @@ const Settings: React.FC = () => {
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <MemoryIcon sx={{ mr: 1 }} />
-                            <Typography variant="h6">Cache Management</Typography>
+                            <Typography variant="h6">Firmware Cache</Typography>
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>

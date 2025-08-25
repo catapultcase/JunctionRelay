@@ -451,38 +451,85 @@ namespace JunctionRelayServer.Controllers
                 return StatusCode(500, new { message = "Error serving Rive file", error = ex.Message });
             }
         }
-    
-        // UPDATED: Export standalone config with embedded Rive (always embeds regardless of flag)
+
+        // Import Template
+
+        [HttpPost("import-package")]
+        public async Task<ActionResult> ImportFrameLayoutPackage(IFormFile packageFile)
+        {
+            try
+            {
+                if (packageFile == null || packageFile.Length == 0)
+                    return BadRequest(new { message = "No file provided" });
+
+                if (!packageFile.FileName.ToLowerInvariant().EndsWith(".zip"))
+                    return BadRequest(new { message = "File must be a ZIP package" });
+
+                // Validate file size (max 100MB)
+                if (packageFile.Length > 100 * 1024 * 1024)
+                    return BadRequest(new { message = "File size exceeds 100MB limit" });
+
+                // Read file data
+                byte[] zipData;
+                using (var memoryStream = new MemoryStream())
+                {
+                    await packageFile.CopyToAsync(memoryStream);
+                    zipData = memoryStream.ToArray();
+                }
+
+                var contentRootPath = _webHostEnvironment.ContentRootPath;
+                var riveUserPath = GetRiveUserPath();
+                var dbPath = _dbPathProvider.DbPath;
+
+                var layoutId = await _frameLayoutService.ImportFrameLayoutPackageAsync(
+                    zipData,
+                    contentRootPath,
+                    riveUserPath,
+                    dbPath);
+
+                return Ok(new
+                {
+                    id = layoutId,
+                    message = "Frame layout package imported successfully"
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error importing frame layout package", error = ex.Message });
+            }
+        }
+
+        // Export template
         [HttpGet("{id}/export-standalone")]
         public async Task<ActionResult> ExportStandaloneConfig(int id, [FromQuery] string? filename = null)
         {
             try
             {
-                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
-                if (frameLayout == null)
-                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+                var riveTemplatesPath = GetRiveTemplatesPath();
+                var riveUserPath = GetRiveUserPath();
+                var dataPath = _dbPathProvider.DbPath; // Pass DB path for thumbnail resolution
 
-                var config = frameLayout.JsonFrameConfig;
+                var (zipData, defaultFilename) = await _frameLayoutService.ExportFrameLayoutPackageAsync(id, riveTemplatesPath, riveUserPath, dataPath, _webHostEnvironment.ContentRootPath);
 
-                var exportData = new
-                {
-                    type = "standalone_frame_config",
-                    exportDate = DateTime.UtcNow.ToString("O"),
-                    layoutId = frameLayout.Id,
-                    displayName = frameLayout.DisplayName,
-                    config = config != null ? JsonSerializer.Deserialize<object>(config) : null,
-                    elements = frameLayout.JsonFrameElements != null ? JsonSerializer.Deserialize<object>(frameLayout.JsonFrameElements) : null,
-                    hasEmbeddedRive = !string.IsNullOrEmpty(frameLayout.RiveFile)
-                };
+                var exportFilename = filename ?? defaultFilename;
 
-                var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(exportData, new JsonSerializerOptions { WriteIndented = true });
-                var exportFilename = filename ?? $"frame-config-{frameLayout.Id}-standalone.json";
-
-                return File(jsonBytes, "application/json", exportFilename);
+                return File(zipData, "application/zip", exportFilename);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error exporting standalone config", error = ex.Message });
+                return StatusCode(500, new { message = "Error exporting frame layout package", error = ex.Message });
             }
         }
 
@@ -948,9 +995,9 @@ namespace JunctionRelayServer.Controllers
             var dbPath = _dbPathProvider.DbPath;
             var dataDir = Path.GetDirectoryName(dbPath)
                           ?? Path.Combine(_webHostEnvironment.ContentRootPath, "data");
-            return Path.Combine(dataDir, "rive"); // e.g. /.../data/rive
+            return Path.Combine(dataDir, "frameengine", "rive");
         }
-         
+
         private async Task<List<Model_JunctionScreenLayout>> GetAllScreenConfigurationsWithUrlPaths()
         {
             try
@@ -1017,7 +1064,22 @@ namespace JunctionRelayServer.Controllers
                 if (!frameLayout.HasThumbnail || string.IsNullOrEmpty(frameLayout.ThumbnailPath))
                     return NotFound(new { message = "No thumbnail available for this frame layout" });
 
-                var thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
+                string thumbnailPath;
+
+                // Handle template thumbnails vs user thumbnails
+                if (frameLayout.IsTemplate)
+                {
+                    // Template thumbnail - serve from application templates folder
+                    var fileName = Path.GetFileName(frameLayout.ThumbnailPath);
+                    var templatesPath = Path.Combine(_webHostEnvironment.ContentRootPath, "frameengine", "templates");
+                    thumbnailPath = Path.Combine(templatesPath, fileName);
+                }
+                else
+                {
+                    // User thumbnail - serve from AppData thumbnails folder
+                    thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
+                }
+
                 if (!System.IO.File.Exists(thumbnailPath))
                 {
                     // File missing, update database

@@ -63,6 +63,7 @@ var keysDirectory = Path.Combine(dataDirectory, "keys");
 var framesPath = Path.Combine(dataDirectory, "frameengine", "frames");
 var firmwareDirectory = Path.Combine(dataDirectory, "firmware");
 var releaseCacheDirectory = Path.Combine(firmwareDirectory, "releases");
+var riveDirectory = Path.Combine(dataDirectory, "frameengine", "rive");
 
 // Ensure all directories exist
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -70,6 +71,7 @@ Directory.CreateDirectory(keysDirectory);
 Directory.CreateDirectory(framesPath);
 Directory.CreateDirectory(firmwareDirectory);
 Directory.CreateDirectory(releaseCacheDirectory);
+Directory.CreateDirectory(riveDirectory);
 
 Console.WriteLine($"[STARTUP] Data directory:      {dataDirectory}");
 Console.WriteLine($"[STARTUP] Database path:       {dbPath}");
@@ -77,6 +79,7 @@ Console.WriteLine($"[STARTUP] Keys directory:      {keysDirectory}");
 Console.WriteLine($"[STARTUP] Frames directory:    {framesPath}");
 Console.WriteLine($"[STARTUP] Firmware directory:  {firmwareDirectory}");
 Console.WriteLine($"[STARTUP] Release cache:       {releaseCacheDirectory}");
+Console.WriteLine($"[STARTUP] Rive directory:      {riveDirectory}");
 
 // Handle pending database updates
 var pending = dbPath + ".pending";
@@ -226,6 +229,11 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddSingleton<IService_Auth, Service_Auth>();
 builder.Services.AddSingleton<IService_Jwt, Service_Jwt>();
 
+// Unified auth
+builder.Services.AddSingleton<IAuthModeService, Service_AuthMode>();
+builder.Services.AddSingleton<ILocalAuthService, Service_LocalAuth>();
+builder.Services.AddSingleton<ICloudAuthService, Service_CloudAuth>();
+
 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 {
     builder.Services.AddSingleton<Service_HostInfo, Service_HostInfo_Windows>();
@@ -275,6 +283,7 @@ builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 
 // Core singleton services
+builder.Services.AddSingleton<IService_Settings, Service_Settings>();
 builder.Services.AddSingleton<Service_Manager_Connections>();
 builder.Services.AddSingleton<Service_Manager_Polling>();
 builder.Services.AddSingleton<Service_Manager_COM_Ports>();
@@ -390,6 +399,7 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 // HOSTED SERVICES - Service_Startup coordinates the startup sequence
 builder.Services.AddHostedService<Service_Startup>();
 builder.Services.AddHostedService<Service_Heartbeats>();
+builder.Services.AddHostedService<Service_Connection_Status>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Devices>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
 
@@ -430,14 +440,20 @@ app.UseWebSockets();
 
 app.UseStaticFiles();
 
-// Configure static file serving for frames folder using centralized path
-app.UseStaticFiles(new StaticFileOptions
+// Internal FrameEngine Templates
+var templatesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "frameengine", "templates");
+if (Directory.Exists(templatesPath))
 {
-    FileProvider = new PhysicalFileProvider(framesPath),
-    RequestPath = "/frames",
-    ServeUnknownFileTypes = true,
-    DefaultContentType = "image/png"
-});
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(templatesPath),
+        RequestPath = "/templates",
+        ServeUnknownFileTypes = true,
+        DefaultContentType = "image/png"
+    });
+
+    Console.WriteLine($"[STARTUP] Templates directory:  {templatesPath}");
+}
 
 app.UseRouting();
 app.UseAuthentication();

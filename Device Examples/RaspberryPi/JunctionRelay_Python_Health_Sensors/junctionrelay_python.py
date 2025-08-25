@@ -339,7 +339,7 @@ class JunctionRelay:
             print("📡 Registering device...")
             
             response = requests.post(
-                f"{self.cloud_base_url}/cloud/devices/register",
+                f"{self.cloud_base_url}/cloud-devices/register",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=30
@@ -414,11 +414,11 @@ class JunctionRelay:
             }
             
             print("📤 Sending refresh token rotation request")
-            print(f"🔗 URL: {self.cloud_base_url}/cloud/devices/refresh-rotate")
+            print(f"🔗 URL: {self.cloud_base_url}/cloud-devices/refresh-rotate")
             print(f"📋 Payload: {json.dumps(payload)}")
             
             response = requests.post(
-                f"{self.cloud_base_url}/cloud/devices/refresh-rotate",
+                f"{self.cloud_base_url}/cloud-devices/refresh-rotate",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=30
@@ -511,11 +511,11 @@ class JunctionRelay:
             }
             
             print("📤 Sending token refresh request")
-            print(f"🔗 URL: {self.cloud_base_url}/cloud/devices/refresh")
+            print(f"🔗 URL: {self.cloud_base_url}/cloud-devices/refresh")
             print(f"📋 Payload: {json.dumps(payload)}")
             
             response = requests.post(
-                f"{self.cloud_base_url}/cloud/devices/refresh",
+                f"{self.cloud_base_url}/cloud-devices/refresh",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=30
@@ -680,7 +680,7 @@ class JunctionRelay:
             
             # Send request
             response = requests.post(
-                f"{self.cloud_base_url}/cloud/devices/health",
+                f"{self.cloud_base_url}/cloud-devices/health",
                 json=payload,
                 headers={
                     "Authorization": f"Bearer {self.jwt}",

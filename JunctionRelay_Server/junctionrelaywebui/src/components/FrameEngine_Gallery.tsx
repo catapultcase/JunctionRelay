@@ -104,6 +104,7 @@ const ThumbnailImage = memo(({
         return (
             <Box
                 sx={{
+                    width: '100%',
                     height: '200px',
                     backgroundColor: 'grey.100',
                     display: 'flex',
@@ -122,7 +123,7 @@ const ThumbnailImage = memo(({
                     <ImageIcon sx={{ fontSize: 48, color: 'grey.400', mb: 1 }} />
                 )}
                 <Typography variant="caption" color="textSecondary" align="center">
-                    {imageError ? 'Failed to load' : 'No thumbnail'}
+                    {imageError ? 'Preview unavailable' : 'Loading preview...'}
                 </Typography>
                 <Typography variant="caption" color="textSecondary" align="center">
                     {frameLayout.width && frameLayout.height
@@ -135,7 +136,12 @@ const ThumbnailImage = memo(({
     }
 
     return (
-        <Box sx={{ position: 'relative', height: '200px' }}>
+        <Box sx={{
+            position: 'relative',
+            width: '100%',
+            height: '200px',
+            overflow: 'hidden'
+        }}>
             {imageLoading && (
                 <Skeleton
                     variant="rectangular"
@@ -148,34 +154,19 @@ const ThumbnailImage = memo(({
                 component="img"
                 height="200"
                 image={thumbnailUrl}
-                alt={`${frameLayout.displayName} thumbnail`}
+                alt={`${frameLayout.displayName} preview`}
                 onLoad={handleImageLoad}
                 onError={handleImageError}
                 sx={{
-                    objectFit: 'contain',
+                    width: '100%',
+                    height: '200px',
+                    objectFit: 'cover', // Changed from 'contain' to 'cover' for consistent sizing
                     backgroundColor: 'grey.50',
                     opacity: imageLoading ? 0 : 1,
                     transition: 'opacity 0.3s ease-in-out'
                 }}
             />
-            {/* Dimensions overlay */}
-            {frameLayout.width && frameLayout.height && !imageLoading && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        bottom: 8,
-                        right: 8,
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                        color: 'white',
-                        px: 1,
-                        py: 0.5,
-                        borderRadius: 1,
-                        fontSize: '0.75rem'
-                    }}
-                >
-                    {frameLayout.width}×{frameLayout.height}
-                </Box>
-            )}
+
         </Box>
     );
 });
@@ -235,7 +226,9 @@ const GalleryCard = memo(({
                 cursor: 'pointer',
                 transition: 'all 0.2s ease-in-out',
                 position: 'relative',
-                height: '320px',
+                height: '420px', // Increased to match FrameXchange
+                width: '100%', // Let grid control width, card fills available space
+                maxWidth: '300px', // Lock maximum width to match thumbnail aspect ratio
                 display: 'flex',
                 flexDirection: 'column',
                 '&:hover': {
@@ -250,73 +243,35 @@ const GalleryCard = memo(({
             }}
             onClick={handleCardClick}
         >
-            {/* Template Badge */}
-            {frameLayout.isTemplate && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: 8,
-                        left: 8,
-                        backgroundColor: 'success.main',
-                        color: 'success.contrastText',
-                        px: 1.5,
-                        py: 0.5,
-                        borderRadius: 2,
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        textTransform: 'uppercase',
-                        boxShadow: 2,
-                        zIndex: 2
-                    }}
-                >
-                    TEMPLATE
-                </Box>
-            )}
 
-            {/* Action Menu Button */}
-            <IconButton
-                className="gallery-actions"
-                size="small"
-                onClick={handleMenuOpen}
-                sx={{
-                    position: 'absolute',
-                    top: frameLayout.isTemplate ? 48 : 8,
-                    right: frameLayout.hasThumbnail ? 80 : 8,
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                    opacity: 0,
-                    transition: 'opacity 0.2s ease-in-out',
-                    zIndex: 2,
-                    '&:hover': {
-                        backgroundColor: 'rgba(255, 255, 255, 1)'
-                    }
-                }}
-            >
-                <MoreVertIcon fontSize="small" />
-            </IconButton>
+
+
 
             {/* Thumbnail */}
             <ThumbnailImage frameLayout={frameLayout} onImageError={handleThumbnailError} />
 
-            {/* Card Content */}
-            <CardContent sx={{ flex: 1, pt: 2, pb: 1.5 }}>
+            {/* Card Content - matching FrameXchange layout */}
+            <CardContent sx={{ flex: 1, pt: 2, pb: 1.5, display: 'flex', flexDirection: 'column' }}>
                 {/* Title */}
-                <Typography
-                    variant="h6"
-                    sx={{
-                        fontSize: '1rem',
-                        fontWeight: 600,
-                        lineHeight: 1.3,
-                        mb: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical'
-                    }}
-                    title={frameLayout.displayName}
-                >
-                    {frameLayout.displayName}
-                </Typography>
+                <Box sx={{ mb: 1 }}>
+                    <Typography
+                        variant="h6"
+                        sx={{
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            lineHeight: 1.3,
+                            mb: 0.5,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical'
+                        }}
+                        title={frameLayout.displayName}
+                    >
+                        {frameLayout.displayName}
+                    </Typography>
+                </Box>
 
                 {/* Description */}
                 {frameLayout.description && (
@@ -330,7 +285,8 @@ const GalleryCard = memo(({
                             display: '-webkit-box',
                             WebkitLineClamp: 2,
                             WebkitBoxOrient: 'vertical',
-                            fontSize: '0.85rem'
+                            fontSize: '0.85rem',
+                            flex: 1
                         }}
                         title={frameLayout.description}
                     >
@@ -338,18 +294,114 @@ const GalleryCard = memo(({
                     </Typography>
                 )}
 
-                {/* Type Chip */}
-                <Box sx={{ mt: 'auto' }}>
-                    <Chip
-                        label={frameLayout.layoutType}
-                        color={typeInfo.color}
-                        size="small"
-                        sx={{ fontSize: '0.7rem', height: 24 }}
-                    />
+                {/* Type Chip, Dimensions, Template Status, and Actions */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 'auto' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Chip
+                            label={frameLayout.layoutType}
+                            color={typeInfo.color}
+                            size="small"
+                            sx={{ fontSize: '0.7rem', height: 24 }}
+                        />
+                        {frameLayout.width && frameLayout.height && (
+                            <Chip
+                                label={`${frameLayout.width}×${frameLayout.height}`}
+                                variant="outlined"
+                                size="small"
+                                sx={{
+                                    fontSize: '0.7rem',
+                                    height: 24,
+                                    color: 'text.secondary',
+                                    borderColor: 'divider'
+                                }}
+                            />
+                        )}
+                        {frameLayout.isTemplate && (
+                            <Chip
+                                label="TEMPLATE"
+                                color="success"
+                                size="small"
+                                sx={{
+                                    fontSize: '0.7rem',
+                                    height: 24,
+                                    fontWeight: 'bold',
+                                    textTransform: 'uppercase'
+                                }}
+                            />
+                        )}
+                    </Box>
+
+                    {/* Action Buttons */}
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
+                        {!frameLayout.isTemplate && (
+                            <Tooltip title="Edit Frame Layout">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEdit(e, frameLayout);
+                                    }}
+                                    sx={{
+                                        color: 'primary.main',
+                                        border: '1px solid',
+                                        borderColor: 'primary.main',
+                                        '&:hover': {
+                                            backgroundColor: 'primary.main',
+                                            color: 'primary.contrastText'
+                                        }
+                                    }}
+                                >
+                                    <EditIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        <Tooltip title="Clone Frame Layout">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClone(e, frameLayout);
+                                }}
+                                sx={{
+                                    color: 'secondary.main',
+                                    border: '1px solid',
+                                    borderColor: 'secondary.main',
+                                    '&:hover': {
+                                        backgroundColor: 'secondary.main',
+                                        color: 'secondary.contrastText'
+                                    }
+                                }}
+                            >
+                                <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        {!frameLayout.isTemplate && (
+                            <Tooltip title="Delete Frame Layout">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDelete(e, frameLayout.id);
+                                    }}
+                                    sx={{
+                                        color: 'error.main',
+                                        border: '1px solid',
+                                        borderColor: 'error.main',
+                                        '&:hover': {
+                                            backgroundColor: 'error.main',
+                                            color: 'error.contrastText'
+                                        }
+                                    }}
+                                >
+                                    <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
                 </Box>
             </CardContent>
 
-            {/* Actions Menu */}
+            {/* Actions Menu - simplified to just handle edge cases if needed */}
             <Menu
                 anchorEl={anchorEl}
                 open={Boolean(anchorEl)}
@@ -357,44 +409,7 @@ const GalleryCard = memo(({
                 transformOrigin={{ horizontal: 'right', vertical: 'top' }}
                 anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
-                {!frameLayout.isTemplate && (
-                    <MenuItem
-                        onClick={(e) => {
-                            handleMenuClose();
-                            onEdit(e, frameLayout);
-                        }}
-                    >
-                        <ListItemIcon>
-                            <EditIcon fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText>Edit</ListItemText>
-                    </MenuItem>
-                )}
-                <MenuItem
-                    onClick={(e) => {
-                        handleMenuClose();
-                        onClone(e, frameLayout);
-                    }}
-                >
-                    <ListItemIcon>
-                        <ContentCopyIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>Clone</ListItemText>
-                </MenuItem>
-                {!frameLayout.isTemplate && (
-                    <MenuItem
-                        onClick={(e) => {
-                            handleMenuClose();
-                            onDelete(e, frameLayout.id);
-                        }}
-                        sx={{ color: 'error.main' }}
-                    >
-                        <ListItemIcon>
-                            <DeleteIcon fontSize="small" color="error" />
-                        </ListItemIcon>
-                        <ListItemText>Delete</ListItemText>
-                    </MenuItem>
-                )}
+                {/* Keep menu for any future additional actions */}
             </Menu>
         </Card>
     );
@@ -433,7 +448,8 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
                     xl: 'repeat(5, 1fr)'
                 },
                 gap: 3,
-                mb: 4
+                mb: 4,
+                justifyItems: 'center' // Center cards in their grid cells
             }}
         >
             {frameLayouts.map((frameLayout) => (

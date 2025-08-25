@@ -219,7 +219,7 @@ bool JunctionRelay::rotateRefreshToken() {
     }
     
     HTTPClient http;
-    String url = _cloudBaseUrl + "/cloud/devices/refresh-rotate";
+    String url = _cloudBaseUrl + "/cloud-devices/refresh-rotate";
     
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
@@ -343,7 +343,7 @@ bool JunctionRelay::refreshDeviceToken() {
     }
     
     HTTPClient http;
-    String url = _cloudBaseUrl + "/cloud/devices/refresh";
+    String url = _cloudBaseUrl + "/cloud-devices/refresh";
     
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
@@ -456,7 +456,7 @@ void JunctionRelay::parseRegistrationToken()
 void JunctionRelay::registerDevice()
 {
     HTTPClient http;
-    http.begin(_cloudBaseUrl + "/cloud/devices/register");
+    http.begin(_cloudBaseUrl + "/cloud-devices/register");
     http.addHeader("Content-Type", "application/json");
 
     uint64_t mac = ESP.getEfuseMac();
@@ -529,7 +529,7 @@ void JunctionRelay::registerDevice()
 void JunctionRelay::sendHealth()
 {
     HTTPClient http;
-    http.begin(_cloudBaseUrl + "/cloud/devices/health");
+    http.begin(_cloudBaseUrl + "/cloud-devices/health");
     http.addHeader("Authorization", "Bearer " + _jwt);
     http.addHeader("Content-Type", "application/json");
 

@@ -67,38 +67,56 @@ namespace JunctionRelayServer.Controllers
         // Update the GetAllDevices method in Controller_Devices.cs
 
         [HttpGet]
-        public async Task<IActionResult> GetAllDevices([FromQuery] bool skipCloudSync = false)
+        public async Task<IActionResult> GetAllDevices()
         {
             try
             {
-                // Only sync cloud devices if not explicitly skipped
+                // Just return devices from DB — no cloud sync attempted
+                var devices = await _deviceDb.GetAllDevicesAsync();
+                return Ok(devices);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to fetch devices: {ex.Message}");
+                return StatusCode(500, "Failed to fetch devices.");
+            }
+        }
+
+        [HttpGet("local-and-cloud")]
+        public async Task<IActionResult> GetLocalAndCloudDevices([FromQuery] bool skipCloudSync = false)
+        {
+            try
+            {
                 if (!skipCloudSync)
                 {
-                    // Check if user has cloud authentication
                     var authHeader = Request.Headers.Authorization.FirstOrDefault();
-                    bool hasCloudAuth = !string.IsNullOrEmpty(authHeader) && authHeader?.StartsWith("Bearer ") == true;
 
-                    // If user is cloud authenticated, sync cloud devices first
-                    if (hasCloudAuth)
+                    // Null-safe "Bearer " check + token extraction
+                    if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
                     {
-                        var cloudToken = authHeader!.Substring("Bearer ".Length);
-                        await _cloudDeviceService.SyncCloudDevicesAsync(cloudToken);
+                        // Avoid substring if token is missing (e.g., "Bearer " only)
+                        if (authHeader.Length > 7)
+                        {
+                            var cloudToken = authHeader.Substring(7).Trim();
+                            if (!string.IsNullOrWhiteSpace(cloudToken))
+                            {
+                                await _cloudDeviceService.SyncCloudDevicesAsync(cloudToken);
+                            }
+                        }
                     }
                 }
 
-                // Return unified device list from local database (includes both local and synced cloud devices)
                 var allDevices = await _deviceDb.GetAllDevicesAsync();
                 return Ok(allDevices);
             }
             catch (Exception ex)
             {
-                // Log error but still return local devices if cloud sync fails
-                // This ensures the page doesn't break if cloud is unavailable
                 Console.WriteLine($"Cloud sync failed: {ex.Message}");
                 var localDevices = await _deviceDb.GetAllDevicesAsync();
                 return Ok(localDevices);
             }
         }
+
 
         [HttpPost]
         public async Task<IActionResult> AddDevice([FromBody] Model_Device newDevice)
