@@ -18,6 +18,7 @@
  */
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using JunctionRelayServer.Interfaces;
 using System.Text.Json;
 
@@ -64,6 +65,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] JsonElement request)
         {
             try
@@ -107,28 +109,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        [HttpPost("validate")]
-        public async Task<IActionResult> ValidateToken()
-        {
-            try
-            {
-                var authMode = await _authModeService.GetCurrentAuthModeAsync();
-
-                return authMode switch
-                {
-                    "local" => await _localAuthService.ValidateTokenAsync(HttpContext),
-                    "cloud" => await _cloudAuthService.ValidateTokenAsync(Request.Headers.Authorization.FirstOrDefault()),
-                    "none" => Ok(new { valid = false, message = "Authentication is disabled" }),
-                    _ => BadRequest(new { message = "Unknown authentication mode" })
-                };
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error validating token: {ex.Message}");
-                return StatusCode(500, new { message = "Error validating token" });
-            }
-        }
-
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
@@ -152,6 +132,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpPost("exchange-code")]
+        [AllowAnonymous]
         public async Task<IActionResult> ExchangeCode([FromBody] JsonElement request)
         {
             try
@@ -173,6 +154,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpGet("callback")]
+        [AllowAnonymous]
         public async Task<IActionResult> OAuthCallback([FromQuery] string code, [FromQuery] string state)
         {
             try
@@ -216,6 +198,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpPost("setup")]
+        [AllowAnonymous]
         public async Task<IActionResult> Setup([FromBody] JsonElement request)
         {
             try
@@ -237,6 +220,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpGet("config")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAuthConfig()
         {
             try
@@ -297,7 +281,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // NEW: Token info endpoint for session management component
         [HttpGet("tokens")]
         public async Task<IActionResult> GetTokenInfo()
         {
@@ -320,7 +303,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // NEW: Sessions endpoint for session management component
         [HttpGet("sessions")]
         public async Task<IActionResult> GetSessions()
         {
@@ -343,7 +325,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // NEW: Revoke session endpoint for session management component
         [HttpDelete("sessions/{sessionId}")]
         public async Task<IActionResult> RevokeSession(string sessionId)
         {
@@ -366,7 +347,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // NEW: Revoke all other sessions endpoint for session management component
         [HttpDelete("sessions")]
         public async Task<IActionResult> RevokeAllOtherSessions()
         {
@@ -387,6 +367,129 @@ namespace JunctionRelayServer.Controllers
                 Console.WriteLine($"Error revoking all sessions: {ex.Message}");
                 return StatusCode(500, new { message = "Error revoking all sessions" });
             }
+        }
+
+        [HttpPost("change-username")]
+        public async Task<IActionResult> ChangeUsername([FromBody] JsonElement request)
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                return authMode switch
+                {
+                    "local" => await _localAuthService.ChangeUsernameAsync(request, HttpContext),
+                    "cloud" => BadRequest(new { message = "Username changes handled through cloud account management" }),
+                    "none" => BadRequest(new { message = "Authentication is disabled" }),
+                    _ => BadRequest(new { message = "Unknown authentication mode" })
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error changing username: {ex.Message}");
+                return StatusCode(500, new { message = "Error changing username" });
+            }
+        }
+
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] JsonElement request)
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                return authMode switch
+                {
+                    "local" => await _localAuthService.ChangePasswordAsync(request, HttpContext),
+                    "cloud" => await _cloudAuthService.ChangePasswordAsync(request, Request.Headers.Authorization.FirstOrDefault()),
+                    "none" => BadRequest(new { message = "Authentication is disabled" }),
+                    _ => BadRequest(new { message = "Unknown authentication mode" })
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error changing password: {ex.Message}");
+                return StatusCode(500, new { message = "Error changing password" });
+            }
+        }
+
+        [HttpDelete("remove-user")]
+        public async Task<IActionResult> RemoveUser()
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                return authMode switch
+                {
+                    "local" => await _localAuthService.RemoveUserAsync(HttpContext),
+                    "cloud" => BadRequest(new { message = "User removal handled through cloud account management" }),
+                    "none" => BadRequest(new { message = "Authentication is disabled" }),
+                    _ => BadRequest(new { message = "Unknown authentication mode" })
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error removing user: {ex.Message}");
+                return StatusCode(500, new { message = "Error removing user" });
+            }
+        }
+
+        [HttpPost("validate")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ValidateToken()
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode == "none")
+                {
+                    return Ok(new { valid = false, message = "Authentication is disabled" });
+                }
+
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return new UnauthorizedObjectResult(new { valid = false, message = "No token provided" });
+                }
+
+                return authMode switch
+                {
+                    "local" => await ValidateLocalTokenDirectly(authHeader),
+                    "cloud" => await _cloudAuthService.ValidateTokenAsync(authHeader),
+                    _ => BadRequest(new { message = "Unknown authentication mode" })
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error validating token: {ex.Message}");
+                return StatusCode(500, new { message = "Error validating token" });
+            }
+        }
+
+        private async Task<IActionResult> ValidateLocalTokenDirectly(string authHeader)
+        {
+            var token = authHeader.Substring("Bearer ".Length);
+            var jwtService = HttpContext.RequestServices.GetRequiredService<IService_Jwt>();
+            var principal = jwtService.ValidateToken(token);
+
+            if (principal == null)
+            {
+                return new UnauthorizedObjectResult(new { valid = false, message = "Token is invalid" });
+            }
+
+            var username = principal.Identity?.Name ?? "unknown";
+            var userId = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown";
+
+            return new OkObjectResult(new
+            {
+                valid = true,
+                username = username,
+                userId = userId,
+                authMode = "local",
+                authType = "Local"
+            });
         }
 
         private async Task<IActionResult> HandleNoneAuthStatus()

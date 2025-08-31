@@ -1048,48 +1048,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         fontsToLoad.forEach(loadGoogleFont);
     }, [displayElements]);
 
-    // EXACT COPY of getTextStyles from FrameEngine_Canvas with NO hardcoded shadows
-    const getTextStyles = useCallback((element: DisplayElement, scale: number = 1): React.CSSProperties => {
-        const props = element.properties;
-        const baseSize = Math.max(8, (props.fontSize || 12) * scale);
-        const fontFamily = props.fontFamily || 'Inter, system-ui, -apple-system, sans-serif';
-
-        if (fontFamily && fontFamily !== 'Inter' && !fontFamily.includes('system')) {
-            loadGoogleFont(fontFamily);
-        }
-
-        const styles: React.CSSProperties = {
-            fontSize: baseSize,
-            fontFamily: `"${fontFamily}", system-ui, -apple-system, sans-serif`,
-            fontWeight: props.fontWeight || 'normal',
-            color: props.color || props.textColor || '#000000',
-            textAlign: (props.textAlign || 'center') as any,
-            lineHeight: props.lineHeight || '1.4',
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            padding: `${4 * scale}px`,
-            boxSizing: 'border-box',
-            wordWrap: 'break-word',
-            overflow: 'hidden',
-        };
-
-        // ONLY apply textShadow if explicitly set in properties (not hardcoded)
-        if (props.textShadow === true) {
-            styles.textShadow = '1px 1px 2px rgba(0,0,0,0.3)';
-        }
-
-        // ONLY apply textBorder if explicitly set in properties (not hardcoded)
-        if (props.textBorder === true) {
-            styles.WebkitTextStroke = '1px rgba(0,0,0,0.5)';
-        }
-
-        return styles;
-    }, []);
-
-    // Render overlay elements with canvas-relative positioning - EXACT COPY logic from FrameEngine_Canvas
+    // Render overlay elements with canvas-relative positioning - PIXEL PERFECT VERSION WITH PADDING
     const renderOverlayElements = () => {
         if (!riveConfig || !canvasBounds) return null;
 
@@ -1102,8 +1061,8 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 const value = sensorData?.value?.toString() || element.properties.placeholderValue || '--';
                 const unit = sensorData?.unit || element.properties.placeholderUnit || '';
                 const showUnit = element.properties.showUnit !== false;
-                const showLabel = element.properties.showLabel !== false; 
-                const label = element.properties.placeholderSensorLabel || ''; 
+                const showLabel = element.properties.showLabel !== false;
+                const label = element.properties.placeholderSensorLabel || '';
 
                 let contentParts = [];
 
@@ -1147,6 +1106,12 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const scaledHeight = element.position.height * canvasBounds.scaleY;
             const scaledFontSize = fontSize * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
 
+            // CRITICAL: Calculate padding exactly like FrameEngine_Canvas
+            // In the builder: padding: `${4 * scale}px`
+            // We need to apply the same 4px base padding, scaled by our viewport scaling
+            const basePadding = 4;
+            const scaledPadding = basePadding * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
+
             // Build font stack that respects the configured font - EXACT COPY from FrameEngine_Canvas
             let fontStack;
             if (configuredFont) {
@@ -1155,7 +1120,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 fontStack = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
             }
 
-            // CRITICAL: Build styles object WITHOUT hardcoded textShadow
+            // CRITICAL: Build styles object WITH padding to match builder
             const elementStyles: React.CSSProperties = {
                 position: 'absolute',
                 left: scaledLeft,
@@ -1168,15 +1133,22 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 fontWeight: fontWeight,
                 pointerEvents: 'none',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: textAlign === 'center' ? 'center' :
+                flexDirection: 'column',
+                alignItems: textAlign === 'center' ? 'center' :
                     textAlign === 'right' ? 'flex-end' : 'flex-start',
+                justifyContent: 'center',
                 zIndex: element.properties.zIndex || 10,
+                // CRITICAL: Add the same padding as FrameEngine_Canvas
+                padding: `${scaledPadding}px`,
+                boxSizing: 'border-box',
+                wordWrap: 'break-word',
+                overflow: 'hidden',
+                lineHeight: element.properties.lineHeight || '1.4',
             };
 
             // ONLY add textShadow if explicitly defined in properties (NO HARDCODING)
             if (element.properties.textShadow === true) {
-                elementStyles.textShadow = '0 0 6px rgba(0,0,0,0.8)';
+                elementStyles.textShadow = '1px 1px 2px rgba(0,0,0,0.3)';
             }
 
             // ONLY add textBorder if explicitly defined in properties

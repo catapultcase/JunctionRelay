@@ -92,6 +92,12 @@ namespace JunctionRelayServer.Services
 
         public async Task<IActionResult> ValidateTokenAsync(HttpContext httpContext)
         {
+            Console.WriteLine($"[AUTH_DEBUG] ValidateTokenAsync called");
+            Console.WriteLine($"[AUTH_DEBUG] User.Identity.IsAuthenticated: {httpContext.User.Identity?.IsAuthenticated}");
+            Console.WriteLine($"[AUTH_DEBUG] User.Identity.Name: {httpContext.User.Identity?.Name}");
+            Console.WriteLine($"[AUTH_DEBUG] User.Identity.AuthenticationType: {httpContext.User.Identity?.AuthenticationType}");
+            Console.WriteLine($"[AUTH_DEBUG] Claims count: {httpContext.User.Claims?.Count()}");
+
             if (!httpContext.User.Identity?.IsAuthenticated ?? true)
             {
                 return new UnauthorizedObjectResult(new { valid = false, message = "Token is invalid" });

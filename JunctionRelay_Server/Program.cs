@@ -153,6 +153,7 @@ builder.Services.AddAuthentication(options =>
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
+
 .AddJwtBearer("Local", options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -263,6 +264,7 @@ builder.Services.AddHttpClient<Service_Manager_Services>(client =>
     client.BaseAddress = new Uri("http://localhost:7180");
 });
 
+builder.Services.AddScoped<Service_Backups>();
 builder.Services.AddScoped<Service_Layout_Templates>();
 builder.Services.AddScoped<Service_Database_Initializer>();
 builder.Services.AddScoped<Service_Database_Manager_Sensors>();

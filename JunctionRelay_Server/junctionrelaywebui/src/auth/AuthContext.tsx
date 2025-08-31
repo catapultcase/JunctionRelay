@@ -131,13 +131,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const storedUsername = localStorage.getItem('junctionrelay_username');
         const storedExpiry = localStorage.getItem('junctionrelay_expiry');
 
+        console.log('[AUTH_DEBUG] checkLocalAuth called');
+        console.log('[AUTH_DEBUG] Stored token exists:', !!storedToken);
+        console.log('[AUTH_DEBUG] Stored username:', storedUsername);
+        console.log('[AUTH_DEBUG] Stored expiry:', storedExpiry);
+        console.log('[AUTH_DEBUG] Token preview:', storedToken?.substring(0, 20) + '...');
+
         if (!storedToken || !storedUsername || !storedExpiry) {
+            console.log('[AUTH_DEBUG] Missing required auth data');
             return null;
         }
 
         const expiryDate = new Date(storedExpiry);
         if (expiryDate <= new Date()) {
-            // Token expired
+            console.log('[AUTH_DEBUG] Token expired');
             localStorage.removeItem('junctionrelay_token');
             localStorage.removeItem('junctionrelay_username');
             localStorage.removeItem('junctionrelay_expiry');
@@ -145,13 +152,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         try {
+            console.log('[AUTH_DEBUG] Validating token with unified auth...');
+
             // Validate token using unified auth
             const validateRes = await fetch('/api/unified-auth/validate', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${storedToken}` }
             });
 
+            console.log('[AUTH_DEBUG] Validation response status:', validateRes.status);
+
             if (validateRes.ok) {
+                const validationData = await validateRes.json();
+                console.log('[AUTH_DEBUG] Validation successful:', validationData);
+
                 return {
                     username: storedUsername,
                     token: storedToken,
@@ -159,6 +173,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     authType: 'local'
                 };
             } else {
+                const errorText = await validateRes.text();
+                console.log('[AUTH_DEBUG] Validation failed:', validateRes.status, errorText);
+
                 // Token is invalid
                 localStorage.removeItem('junctionrelay_token');
                 localStorage.removeItem('junctionrelay_username');
@@ -166,7 +183,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 return null;
             }
         } catch (error) {
-            console.error('Error validating local token:', error);
+            console.error('[AUTH_DEBUG] Error validating local token:', error);
             localStorage.removeItem('junctionrelay_token');
             localStorage.removeItem('junctionrelay_username');
             localStorage.removeItem('junctionrelay_expiry');
