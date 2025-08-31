@@ -686,18 +686,28 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // New method to send health report to cloud sync service for batching
+        // Updated method to send health report to cloud sync service for batching
         private async Task SendHealthReportToCloudSyncServiceAsync(Model_Device device, DateTime timestamp, bool success, int duration)
         {
-            // Only send health reports if SyncMode is 'local_health' or 'local_sync'
-            if (string.IsNullOrEmpty(device.SyncMode) ||
-                (device.SyncMode != "local_health" && device.SyncMode != "local_sync"))
-            {
-                return; // Skip cloud health reporting for disabled devices
-            }
-
             try
             {
+                // Check if auth mode is 'cloud' before attempting cloud operations
+                using var scope = _scopeFactory.CreateScope();
+                var authModeService = scope.ServiceProvider.GetRequiredService<IAuthModeService>();
+                var authMode = await authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return; // Skip cloud health reporting when not in cloud auth mode
+                }
+
+                // Only send health reports if SyncMode is 'local_health' or 'local_sync'
+                if (string.IsNullOrEmpty(device.SyncMode) ||
+                    (device.SyncMode != "local_health" && device.SyncMode != "local_sync"))
+                {
+                    return; // Skip cloud health reporting for disabled devices
+                }
+
                 await _cloudSyncService.AccumulateHealthReportAsync(
                     device.UniqueIdentifier ?? device.Id.ToString(),
                     new

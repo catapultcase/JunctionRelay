@@ -28,10 +28,14 @@ import {
     Switch,
     AlertColor,
     Button,
+    FormControlLabel,
+    Paper,
+    Divider,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import AddIcon from '@mui/icons-material/Add';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useTheme, useMediaQuery } from "@mui/material";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
 
@@ -55,11 +59,98 @@ const Junctions = () => {
     const [importing, setImporting] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Service settings state
+    const [autostartEnabled, setAutostartEnabled] = useState<boolean>(true);
+    const [parallelMode, setParallelMode] = useState<boolean>(false);
+    const [loadingSettings, setLoadingSettings] = useState<boolean>(false);
+
     const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const flags = useFeatureFlags();
     const junctionImportExportEnabled = flags?.junction_import_export !== false;
+
+    // Show snackbar with configurable severity
+    const showSnackbar = useCallback((message: string, severity: AlertColor = "success") => {
+        setSnackMessage(message);
+        setSnackbarSeverity(severity);
+    }, []);
+
+    // Fetch service settings
+    const fetchServiceSettings = useCallback(async () => {
+        try {
+            const response = await fetch('/api/settings/feature-flags');
+            if (response.ok) {
+                const settings = await response.json();
+                setAutostartEnabled(String(settings.junction_autostart_enabled).toLowerCase() === 'true');
+                setParallelMode(String(settings.junction_autostart_parallel).toLowerCase() === 'true');
+            }
+        } catch (error) {
+            console.error('Error fetching service settings:', error);
+        }
+    }, []);
+
+    // Update service setting
+    const updateServiceSetting = useCallback(async (key: string, value: boolean) => {
+        setLoadingSettings(true);
+        try {
+            const response = await fetch('/api/settings/feature-flags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [key]: value.toString() })
+            });
+
+            if (response.ok) {
+                // Format the service name properly for display
+                let serviceName = key;
+                if (key === 'junction_autostart_enabled') {
+                    serviceName = 'Junction auto-start service';
+                } else if (key === 'junction_autostart_parallel') {
+                    serviceName = 'Parallel junction startup';
+                }
+
+                showSnackbar(
+                    `${serviceName} ${value ? 'enabled' : 'disabled'}`,
+                    "info"
+                );
+            } else {
+                const error = await response.json();
+                showSnackbar(`Failed to update setting: ${error.message}`, "error");
+
+                // Revert the local state on error
+                if (key === 'junction_autostart_enabled') {
+                    setAutostartEnabled(!value);
+                } else if (key === 'junction_autostart_parallel') {
+                    setParallelMode(!value);
+                }
+            }
+        } catch (error) {
+            console.error('Error updating service setting:', error);
+            showSnackbar('Error updating service setting', "error");
+
+            // Revert the local state on error
+            if (key === 'junction_autostart_enabled') {
+                setAutostartEnabled(!value);
+            } else if (key === 'junction_autostart_parallel') {
+                setParallelMode(!value);
+            }
+        } finally {
+            setLoadingSettings(false);
+        }
+    }, [showSnackbar]);
+
+    // Service setting change handlers
+    const handleAutostartToggle = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = event.target.checked;
+        setAutostartEnabled(newValue);
+        await updateServiceSetting('junction_autostart_enabled', newValue);
+    }, [updateServiceSetting]);
+
+    const handleParallelModeToggle = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = event.target.checked;
+        setParallelMode(newValue);
+        await updateServiceSetting('junction_autostart_parallel', newValue);
+    }, [updateServiceSetting]);
 
     // NEW: Bottom Action Bar event listeners
     useEffect(() => {
@@ -89,12 +180,6 @@ const Junctions = () => {
     useEffect(() => {
         localStorage.setItem('junctions_detailed_connections', detailedConnections.toString());
     }, [detailedConnections]);
-
-    // Show snackbar with configurable severity
-    const showSnackbar = useCallback((message: string, severity: AlertColor = "success") => {
-        setSnackMessage(message);
-        setSnackbarSeverity(severity);
-    }, []);
 
     // Refresh only junction status - matches Dashboard pattern with smart comparison
     const refreshJunctionsStatus = useCallback(() => {
@@ -165,6 +250,9 @@ const Junctions = () => {
             try {
                 setLoading(true);
 
+                // Fetch service settings first
+                await fetchServiceSettings();
+
                 const junctionsResponse = await fetch("/api/junctions");
                 if (!junctionsResponse.ok) {
                     throw new Error("Failed to fetch junctions");
@@ -201,7 +289,7 @@ const Junctions = () => {
         }, 1000);
 
         return () => clearInterval(intervalId);
-    }, [refreshJunctionsStatus, showSnackbar]);
+    }, [refreshJunctionsStatus, showSnackbar, fetchServiceSettings]);
 
     // Handle updating junction sort order
     const handleUpdateSortOrders = async (updates: { junctionId: number, sortOrder: number }[]) => {
@@ -456,6 +544,57 @@ const Junctions = () => {
                             </Button>
                         )}
                     </Box>
+
+                    {/* Service Settings Section */}
+                    <Paper sx={{ p: 2, mb: 3 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            <SettingsIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                            <Typography variant="h6">
+                                Service Settings
+                            </Typography>
+                            {loadingSettings && (
+                                <CircularProgress size={16} sx={{ ml: 1 }} />
+                            )}
+                        </Box>
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={autostartEnabled}
+                                        onChange={handleAutostartToggle}
+                                        disabled={loadingSettings}
+                                        color="primary"
+                                    />
+                                }
+                                label={
+                                    <Tooltip title="Master toggle for the junction autostart service. If disabled, no junctions will auto-start regardless of their individual AutoStartOnLaunch setting">
+                                        <Typography variant="body2">
+                                            Auto-Start Service
+                                        </Typography>
+                                    </Tooltip>
+                                }
+                            />
+
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={parallelMode}
+                                        onChange={handleParallelModeToggle}
+                                        disabled={loadingSettings || !autostartEnabled}
+                                        color="primary"
+                                    />
+                                }
+                                label={
+                                    <Tooltip title="If enabled, auto-start junctions will be started in parallel during system startup. If disabled, they will be started sequentially with delays between each start">
+                                        <Typography variant="body2">
+                                            Parallel Startup Mode
+                                        </Typography>
+                                    </Tooltip>
+                                }
+                            />
+                        </Box>
+                    </Paper>
                 </>
             )}
 

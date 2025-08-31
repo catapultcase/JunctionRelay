@@ -18,6 +18,7 @@
  */
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using System.Data;
 using System.Reflection;
 using System.Text.Json;
@@ -33,12 +34,14 @@ public class Controller_Settings : ControllerBase
     private readonly IDbConnection _db;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMemoryCache _memoryCache;
 
-    public Controller_Settings(IDbConnection db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory)
+    public Controller_Settings(IDbConnection db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache)
     {
         _db = db;
         _env = env;
         _httpClientFactory = httpClientFactory;
+        _memoryCache = memoryCache;
     }
 
     [HttpGet]
@@ -82,19 +85,18 @@ public class Controller_Settings : ControllerBase
         return Ok(new { version });
     }
 
-    // New route for latest version check with caching
+    // New route for latest version check with in-memory caching
     [HttpGet("version/latest")]
     public async Task<IActionResult> GetLatestVersion()
     {
         try
         {
-            // Console.WriteLine("[VERSION CHECK] Starting latest version check...");
+            const string cacheKey = "latest_version_result";
 
-            // Check cache first
-            var cachedResult = await GetCachedVersionResult();
-            if (cachedResult != null)
+            // Check memory cache first
+            if (_memoryCache.TryGetValue(cacheKey, out var cachedResult))
             {
-                // Console.WriteLine($"[VERSION CHECK] Returning cached result: {cachedResult.latest_version} from {cachedResult.source}");
+                // Console.WriteLine($"[VERSION CHECK] Returning cached result from memory");
                 return Ok(cachedResult);
             }
 
@@ -105,7 +107,10 @@ public class Controller_Settings : ControllerBase
             if (dockerResult != null)
             {
                 var result = new { latest_version = dockerResult, source = "docker_hub" };
-                await CacheVersionResult(result);
+
+                // Cache for 1 hour
+                _memoryCache.Set(cacheKey, result, TimeSpan.FromHours(1));
+
                 // Console.WriteLine($"[VERSION CHECK] Successfully got latest version from Docker Hub: {dockerResult}");
                 return Ok(result);
             }
@@ -117,7 +122,10 @@ public class Controller_Settings : ControllerBase
             if (githubResult != null)
             {
                 var result = new { latest_version = githubResult, source = "github" };
-                await CacheVersionResult(result);
+
+                // Cache for 1 hour
+                _memoryCache.Set(cacheKey, result, TimeSpan.FromHours(1));
+
                 // Console.WriteLine($"[VERSION CHECK] Successfully got latest version from GitHub: {githubResult}");
                 return Ok(result);
             }
@@ -130,72 +138,6 @@ public class Controller_Settings : ControllerBase
             // Console.WriteLine($"[VERSION CHECK] Unexpected error during version check: {ex}");
             return StatusCode(500, new { error = ex.Message });
         }
-    }
-
-    private async Task<object?> GetCachedVersionResult()
-    {
-        try
-        {
-            var cacheFilePath = GetVersionCacheFilePath();
-
-            if (!System.IO.File.Exists(cacheFilePath))
-                return null;
-
-            var fileInfo = new FileInfo(cacheFilePath);
-            var age = DateTime.UtcNow - fileInfo.LastWriteTimeUtc;
-
-            // Cache expires after 1 hour
-            if (age.TotalHours > 1)
-            {
-                // Console.WriteLine($"[VERSION CACHE] Cache file is {age.TotalHours:F1} hours old, expired");
-                System.IO.File.Delete(cacheFilePath);
-                return null;
-            }
-
-            var cachedContent = await System.IO.File.ReadAllTextAsync(cacheFilePath);
-            var cachedResult = JsonSerializer.Deserialize<object>(cachedContent);
-
-            // Console.WriteLine($"[VERSION CACHE] Found valid cache file, age: {age.TotalMinutes:F1} minutes");
-            return cachedResult;
-        }
-        catch (Exception)
-        {
-            // Console.WriteLine($"[VERSION CACHE] Error reading cache: {ex.Message}");
-            return null;
-        }
-    }
-
-    private async Task CacheVersionResult(object result)
-    {
-        try
-        {
-            var cacheFilePath = GetVersionCacheFilePath();
-            var cacheDirectory = Path.GetDirectoryName(cacheFilePath);
-
-            if (cacheDirectory != null && !Directory.Exists(cacheDirectory))
-            {
-                Directory.CreateDirectory(cacheDirectory);
-            }
-
-            var jsonContent = JsonSerializer.Serialize(result, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-
-            await System.IO.File.WriteAllTextAsync(cacheFilePath, jsonContent);
-            // Console.WriteLine($"[VERSION CACHE] Cached version result to {cacheFilePath}");
-        }
-        catch (Exception)
-        {
-            // Console.WriteLine($"[VERSION CACHE] Error writing cache: {ex.Message}");
-            // Don't throw - caching failure shouldn't break the API response
-        }
-    }
-
-    private string GetVersionCacheFilePath()
-    {
-        var cacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
-        return Path.Combine(cacheDirectory, "latest_version.json");
     }
 
     private async Task<string?> TryGetLatestFromDockerHub()
@@ -335,8 +277,6 @@ public class Controller_Settings : ControllerBase
         }
     }
 
-    // Update the GetFeatureFlags method in your Controller_Settings class:
-
     [HttpGet("flags")]
     public async Task<IActionResult> GetFeatureFlags()
     {
@@ -464,10 +404,12 @@ public class GitHubTag
 public class Controller_Cache : ControllerBase
 {
     private readonly IWebHostEnvironment _env;
+    private readonly IMemoryCache _memoryCache;
 
-    public Controller_Cache(IWebHostEnvironment env)
+    public Controller_Cache(IWebHostEnvironment env, IMemoryCache memoryCache)
     {
         _env = env;
+        _memoryCache = memoryCache;
     }
 
     [HttpGet("status")]
@@ -503,29 +445,25 @@ public class Controller_Cache : ControllerBase
                 cacheFiles.AddRange(firmwareCacheFiles);
             }
 
-            // Check version cache directory
-            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
-            if (Directory.Exists(versionCacheDirectory))
+            // Clean up old version cache file if it exists (migration cleanup)
+            CleanupLegacyVersionCache();
+
+            // Add memory cache info for version data
+            var memoryEntries = new List<object>();
+            if (_memoryCache.TryGetValue("latest_version_result", out var versionCache))
             {
-                var versionCacheFiles = Directory.GetFiles(versionCacheDirectory, "*.json")
-                    .Select(filePath =>
-                    {
-                        var fileInfo = new FileInfo(filePath);
-                        var age = DateTime.Now - fileInfo.LastWriteTime;
-
-                        return new
-                        {
-                            name = fileInfo.Name,
-                            type = "version",
-                            sizeKB = Math.Round(fileInfo.Length / 1024.0, 2),
-                            age = FormatAge(age),
-                            lastModified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                            isExpired = age.TotalHours > 1 // Version cache expires after 1 hour
-                        };
-                    });
-
-                cacheFiles.AddRange(versionCacheFiles);
+                memoryEntries.Add(new
+                {
+                    name = "latest_version_result",
+                    type = "memory",
+                    sizeKB = 0.1, // Approximate size for version data
+                    age = "In memory",
+                    lastModified = "N/A",
+                    isExpired = false
+                });
             }
+
+            cacheFiles.AddRange(memoryEntries);
 
             var sortedCacheFiles = cacheFiles.OrderBy(f => f.GetType().GetProperty("name")?.GetValue(f)).ToList();
 
@@ -567,25 +505,12 @@ public class Controller_Cache : ControllerBase
                 }
             }
 
-            // Clear version cache
-            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
-            if (Directory.Exists(versionCacheDirectory))
-            {
-                var versionCacheFiles = Directory.GetFiles(versionCacheDirectory, "*.json");
-                foreach (var file in versionCacheFiles)
-                {
-                    try
-                    {
-                        System.IO.File.Delete(file);
-                        filesDeleted++;
-                        Console.WriteLine($"Deleted version cache file: {Path.GetFileName(file)}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Failed to delete version cache file: {Path.GetFileName(file)} - {ex}");
-                    }
-                }
-            }
+            // Clear memory cache for version data
+            _memoryCache.Remove("latest_version_result");
+            Console.WriteLine("Cleared version data from memory cache");
+
+            // Clean up legacy version cache file if it exists
+            CleanupLegacyVersionCache();
 
             Console.WriteLine($"Cache cleared. {filesDeleted} files deleted.");
 
@@ -593,7 +518,7 @@ public class Controller_Cache : ControllerBase
             {
                 success = true,
                 filesDeleted,
-                message = $"Successfully cleared {filesDeleted} cache file{(filesDeleted != 1 ? "s" : "")}"
+                message = $"Successfully cleared {filesDeleted} cache file{(filesDeleted != 1 ? "s" : "")} and memory cache"
             });
         }
         catch (Exception ex)
@@ -608,6 +533,18 @@ public class Controller_Cache : ControllerBase
     {
         try
         {
+            // Handle memory cache entries
+            if (fileName == "latest_version_result")
+            {
+                _memoryCache.Remove("latest_version_result");
+                Console.WriteLine("Cleared version data from memory cache");
+                return Ok(new
+                {
+                    success = true,
+                    message = "Successfully cleared version data from memory cache"
+                });
+            }
+
             // Sanitize filename to prevent directory traversal
             fileName = Path.GetFileName(fileName);
             if (!fileName.EndsWith(".json"))
@@ -615,15 +552,13 @@ public class Controller_Cache : ControllerBase
                 return BadRequest(new { error = "Invalid file name. Only JSON cache files can be deleted." });
             }
 
-            // Check both cache directories
+            // Check firmware cache directory
             var firmwareDirectory = Path.Combine(_env.ContentRootPath, "Firmware");
             var releaseCacheDirectory = Path.Combine(firmwareDirectory, "Releases");
-            var versionCacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
 
             var possiblePaths = new[]
             {
-                Path.Combine(releaseCacheDirectory, fileName),
-                Path.Combine(versionCacheDirectory, fileName)
+                Path.Combine(releaseCacheDirectory, fileName)
             };
 
             var filePath = possiblePaths.FirstOrDefault(System.IO.File.Exists);
@@ -647,8 +582,33 @@ public class Controller_Cache : ControllerBase
             Console.WriteLine($"Error deleting cache file: {fileName} - {ex}");
             return StatusCode(500, new { error = "Failed to delete cache file", message = ex.Message });
         }
+    }
 
+    private void CleanupLegacyVersionCache()
+    {
+        try
+        {
+            // Clean up old version cache file from previous implementation
+            var legacyVersionCacheFile = Path.Combine(_env.ContentRootPath, "Cache", "latest_version.json");
+            if (System.IO.File.Exists(legacyVersionCacheFile))
+            {
+                System.IO.File.Delete(legacyVersionCacheFile);
+                Console.WriteLine("Cleaned up legacy version cache file");
+            }
 
+            // Remove empty Cache directory if it was only used for version cache
+            var cacheDirectory = Path.Combine(_env.ContentRootPath, "Cache");
+            if (Directory.Exists(cacheDirectory) && !Directory.GetFiles(cacheDirectory).Any() && !Directory.GetDirectories(cacheDirectory).Any())
+            {
+                Directory.Delete(cacheDirectory);
+                Console.WriteLine("Removed empty legacy Cache directory");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during legacy cache cleanup: {ex}");
+            // Don't throw - cleanup failure shouldn't break the main operation
+        }
     }
 
     private static string FormatAge(TimeSpan age)

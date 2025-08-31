@@ -36,6 +36,9 @@ interface BackendInfo {
     keysDirectoryExists: boolean;
     keyFileCount: number;
     hasEncryptionKeys: boolean;
+    frameEngineDirectoryExists: boolean;
+    frameEngineFileCount: number;
+    hasFrameEngineFiles: boolean;
 }
 
 interface BackendIdentity {
@@ -65,6 +68,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
     const [backendIdentity, setBackendIdentity] = useState<BackendIdentity | null>(null);
     const [includeKeys, setIncludeKeys] = useState<boolean>(true);
     const [includeIdentity, setIncludeIdentity] = useState<boolean>(true);
+    const [includeFrameEngine, setIncludeFrameEngine] = useState<boolean>(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
@@ -121,6 +125,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
             const params = new URLSearchParams();
             if (includeKeys) params.append('includeKeys', 'true');
             if (includeIdentity) params.append('includeIdentity', 'true');
+            if (includeFrameEngine) params.append('includeFrameEngine', 'true');
 
             const url = `/api/db/export-db${params.toString() ? '?' + params.toString() : ''}`;
             const response = await fetch(url);
@@ -135,7 +140,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                 .replace("T", "_")
                 .slice(0, 15);
 
-            const filename = includeKeys || includeIdentity
+            const filename = includeKeys || includeIdentity || includeFrameEngine
                 ? `junction_backup_complete_${timestamp}.zip`
                 : `junction_backup_${timestamp}.db`;
 
@@ -148,12 +153,20 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
             URL.revokeObjectURL(downloadUrl);
 
             let message = "Data only backup downloaded";
-            if (includeKeys && includeIdentity) {
+            if (includeKeys && includeIdentity && includeFrameEngine) {
+                message = "Complete backup with FrameEngine downloaded";
+            } else if (includeKeys && includeIdentity) {
                 message = "Complete backup downloaded";
+            } else if (includeKeys && includeFrameEngine) {
+                message = "Data, secrets, and FrameEngine backup downloaded";
+            } else if (includeIdentity && includeFrameEngine) {
+                message = "Data, identity, and FrameEngine backup downloaded";
             } else if (includeKeys) {
                 message = "Data and secrets backup downloaded";
             } else if (includeIdentity) {
                 message = "Data and identity backup downloaded";
+            } else if (includeFrameEngine) {
+                message = "Data and FrameEngine backup downloaded";
             }
 
             showSnackbar(message);
@@ -216,11 +229,14 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
 
     // Get backup type description
     const getBackupDescription = () => {
-        if (!includeKeys && !includeIdentity) return "Data only";
-        if (includeKeys && includeIdentity) return "Complete backup";
-        if (includeKeys) return "Data and secrets";
-        if (includeIdentity) return "Data and identity";
-        return "Unknown";
+        const components = [];
+        if (includeKeys) components.push("secrets");
+        if (includeIdentity) components.push("identity");
+        if (includeFrameEngine) components.push("frameengine");
+
+        if (components.length === 0) return "Data only";
+        if (components.length === 3) return "Complete backup";
+        return `Data and ${components.join(", ")}`;
     };
 
     if (loading) {
@@ -327,13 +343,13 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                                                         color="primary"
                                                         sx={{ fontFamily: 'monospace' }}
                                                     />
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => setIsEditingName(true)}
-                                                            sx={{ padding: 0 }}
-                                                        >
-                                                            <EditIcon fontSize="small" />
-                                                        </IconButton>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => setIsEditingName(true)}
+                                                        sx={{ padding: 0 }}
+                                                    >
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
                                                 </>
                                             )}
                                         </Box>
@@ -372,6 +388,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
                                         Database: {backupInfo.databaseExists ? `${formatFileSize(backupInfo.databaseSize)}` : 'Not found'}<br />
                                         Keys: {backupInfo.hasEncryptionKeys ? `${backupInfo.keyFileCount} files` : 'None'}<br />
+                                        FrameEngine: {backupInfo.hasFrameEngineFiles ? `${backupInfo.frameEngineFileCount} files` : 'None'}<br />
                                         Encryption: {backupInfo.hasEncryptionKeys ? 'Active' : 'Inactive'}
                                     </Typography>
                                 </Box>
@@ -413,6 +430,18 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                     sx={{ display: 'block', mb: 1 }}
                 />
 
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={includeFrameEngine}
+                            onChange={(e) => setIncludeFrameEngine(e.target.checked)}
+                            color="primary"
+                        />
+                    }
+                    label="Include FrameEngine files"
+                    sx={{ display: 'block', mb: 1 }}
+                />
+
                 <Box sx={{
                     p: 1.5,
                     bgcolor: 'rgba(0, 0, 0, 0.02)',
@@ -421,10 +450,14 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
                 }}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                         <strong>{getBackupDescription()}</strong>
-                        {includeKeys && includeIdentity && " - Restore to a new system, recovering the same backend identity and encrypted secrets"}
-                        {includeKeys && !includeIdentity && " - Includes encrypted secrets, but no backend identity - a new identity will be generated"}
-                        {!includeKeys && includeIdentity && " - Includes backend identity, but no encrypted secrets - you'll need to re-enter passwords for collectors"}
-                        {!includeKeys && !includeIdentity && " - Includes no backend identity or encrypted secrets"}
+                        {includeKeys && includeIdentity && includeFrameEngine && " - Complete backup including database, secrets, identity, and FrameEngine configuration"}
+                        {includeKeys && includeIdentity && !includeFrameEngine && " - Restore to a new system, recovering the same backend identity and encrypted secrets"}
+                        {includeKeys && !includeIdentity && includeFrameEngine && " - Includes encrypted secrets and FrameEngine files, but no backend identity"}
+                        {includeKeys && !includeIdentity && !includeFrameEngine && " - Includes encrypted secrets, but no backend identity - a new identity will be generated"}
+                        {!includeKeys && includeIdentity && includeFrameEngine && " - Includes backend identity and FrameEngine files, but no encrypted secrets"}
+                        {!includeKeys && includeIdentity && !includeFrameEngine && " - Includes backend identity, but no encrypted secrets - you'll need to re-enter passwords for collectors"}
+                        {!includeKeys && !includeIdentity && includeFrameEngine && " - Includes FrameEngine files only"}
+                        {!includeKeys && !includeIdentity && !includeFrameEngine && " - Includes no backend identity, encrypted secrets, or FrameEngine files"}
                     </Typography>
                 </Box>
             </Box>

@@ -91,7 +91,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
         try {
             setSetupLoading(true);
 
-            const response = await fetch("/api/auth/setup-and-activate-local", {
+            const response = await fetch("/api/unified-auth/setup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -108,11 +108,12 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
                 setAdminPassword("");
                 setAdminConfirmPassword("");
 
-                if (data.token) {
-                    const loginSuccess = await login(data.username, adminPassword);
-                    if (loginSuccess) {
-                        showSnackbar("Local admin created and logged in successfully", "success");
-                    }
+                // Try to login with the new credentials
+                const loginSuccess = await login(adminUsername.trim(), adminPassword);
+                if (loginSuccess) {
+                    showSnackbar("Local admin created and logged in successfully", "success");
+                } else {
+                    showSnackbar("Local admin created successfully. Please login.", "success");
                 }
 
                 await fetchAuthStatus();
@@ -135,7 +136,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
 
         try {
             setUsernameLoading(true);
-            const response = await fetch("/api/auth/change-username", {
+            const response = await fetch("/api/unified-auth/change-username", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ newUsername: newUsername.trim() })
@@ -174,7 +175,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
 
         try {
             setPasswordLoading(true);
-            const response = await fetch("/api/auth/change-password", {
+            const response = await fetch("/api/unified-auth/change-password", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -203,7 +204,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
     const handleRemoveLocalUser = async () => {
         try {
             setRemoveUserLoading(true);
-            const response = await fetch("/api/auth/remove-user", {
+            const response = await fetch("/api/unified-auth/remove-user", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" }
             });

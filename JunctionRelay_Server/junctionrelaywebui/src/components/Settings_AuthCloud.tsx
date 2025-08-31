@@ -20,7 +20,7 @@
 import React, { useState, useEffect } from "react";
 import {
     Box, Typography, Paper, Button, CircularProgress,
-    Chip, Divider, Dialog, DialogTitle, DialogContent, DialogActions, TextField
+    Chip, Divider
 } from "@mui/material";
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import StarIcon from '@mui/icons-material/Star';
@@ -43,13 +43,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
 }) => {
     const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(false);
     const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
-
-    // Password change states
-    const [passwordDialogOpen, setPasswordDialogOpen] = useState<boolean>(false);
-    const [currentPassword, setCurrentPassword] = useState<string>('');
-    const [newPassword, setNewPassword] = useState<string>('');
-    const [confirmPassword, setConfirmPassword] = useState<string>('');
-    const [passwordLoading, setPasswordLoading] = useState<boolean>(false);
 
     // Environment variable for Stripe billing portal
     const stripeBillingPortalUrl = 'https://billing.stripe.com/p/login/00w7sN7ZS6RE7q87rwcjS00';
@@ -159,53 +152,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             showSnackbar(error.message || "Error starting subscription", "error");
         } finally {
             setSubscriptionLoading(false);
-        }
-    };
-
-    const handleChangePassword = async () => {
-        if (!currentPassword || !newPassword || !confirmPassword) {
-            showSnackbar("All password fields are required", "error");
-            return;
-        }
-        if (newPassword !== confirmPassword) {
-            showSnackbar("New passwords do not match", "error");
-            return;
-        }
-        if (newPassword.length < 8) {
-            showSnackbar("New password must be at least 8 characters long", "error");
-            return;
-        }
-
-        try {
-            setPasswordLoading(true);
-            const cloudToken = localStorage.getItem('cloud_proxy_token');
-
-            const response = await fetch("/api/unified-auth/change-password", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${cloudToken}`
-                },
-                body: JSON.stringify({
-                    currentPassword,
-                    newPassword
-                })
-            });
-
-            if (response.ok) {
-                setPasswordDialogOpen(false);
-                setCurrentPassword('');
-                setNewPassword('');
-                setConfirmPassword('');
-                showSnackbar("Password changed successfully!", "success");
-            } else {
-                const error = await response.json();
-                throw new Error(error.message || "Failed to change password");
-            }
-        } catch (error: any) {
-            showSnackbar(error.message || "Error changing password", "error");
-        } finally {
-            setPasswordLoading(false);
         }
     };
 
@@ -378,14 +324,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                             <Button
                                 variant="outlined"
                                 size="small"
-                                startIcon={<VpnKeyIcon />}
-                                onClick={() => setPasswordDialogOpen(true)}
-                            >
-                                Change Password
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                size="small"
                                 startIcon={<LogoutIcon />}
                                 onClick={handleCloudLogout}
                                 color="error"
@@ -416,83 +354,6 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                     </Button>
                 </Box>
             )}
-
-            {/* Change Password Dialog */}
-            <Dialog
-                open={passwordDialogOpen}
-                onClose={() => {
-                    setPasswordDialogOpen(false);
-                    setCurrentPassword('');
-                    setNewPassword('');
-                    setConfirmPassword('');
-                }}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Change Password</DialogTitle>
-                <DialogContent>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Enter your current password and choose a new one.
-                    </Typography>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="Current Password"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        disabled={passwordLoading}
-                        sx={{ mb: 2 }}
-                    />
-                    <TextField
-                        margin="dense"
-                        label="New Password"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        disabled={passwordLoading}
-                        helperText="Password must be at least 8 characters long"
-                        sx={{ mb: 2 }}
-                    />
-                    <TextField
-                        margin="dense"
-                        label="Confirm New Password"
-                        type="password"
-                        fullWidth
-                        variant="outlined"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        disabled={passwordLoading}
-                        error={confirmPassword.length > 0 && newPassword !== confirmPassword}
-                        helperText={confirmPassword.length > 0 && newPassword !== confirmPassword ? "Passwords do not match" : ""}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => {
-                            setPasswordDialogOpen(false);
-                            setCurrentPassword('');
-                            setNewPassword('');
-                            setConfirmPassword('');
-                        }}
-                        disabled={passwordLoading}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleChangePassword}
-                        variant="contained"
-                        disabled={passwordLoading || !currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword}
-                        startIcon={passwordLoading ? <CircularProgress size={16} /> : undefined}
-                    >
-                        {passwordLoading ? 'Changing...' : 'Change Password'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
         </Paper>
     );
 };

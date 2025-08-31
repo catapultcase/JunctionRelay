@@ -50,7 +50,20 @@ namespace JunctionRelayServer.Services
 
                 // Start services and junctions
                 await StartActiveServicesAsync();
-                await StartAutoStartJunctionsAsync();
+
+                // Check if junction autostart is enabled
+                using var scope = _serviceProvider.CreateScope();
+                var settingsService = scope.ServiceProvider.GetRequiredService<IService_Settings>();
+                var autostartEnabled = await settingsService.GetBoolSettingAsync("junction_autostart_enabled", true);
+
+                if (autostartEnabled)
+                {
+                    await StartAutoStartJunctionsAsync();
+                }
+                else
+                {
+                    Console.WriteLine("[STARTUP] ⏸️ Junction autostart is disabled - skipping auto-start junctions");
+                }
 
                 Console.WriteLine("[STARTUP] ✅ Service_Startup initialization complete");
 
@@ -134,29 +147,31 @@ namespace JunctionRelayServer.Services
 
                 using var scope = _serviceProvider.CreateScope();
                 var junctionManager = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
+                var connectionManager = scope.ServiceProvider.GetRequiredService<Service_Manager_Connections>();
+                var settingsService = scope.ServiceProvider.GetRequiredService<IService_Settings>();
+
+                // Get startup mode setting
+                var startupModeParallel = await settingsService.GetBoolSettingAsync("junction_autostart_parallel", true);
 
                 var junctions = await junctionManager.GetAllJunctionsAsync();
                 var autoStartJunctions = junctions.Where(j => j.AutoStartOnLaunch).ToList();
 
                 Console.WriteLine($"[STARTUP] 📋 Found {autoStartJunctions.Count} junctions set to auto-start");
+                Console.WriteLine($"[STARTUP] 🔧 Startup mode: {(startupModeParallel ? "Parallel" : "Sequential")}");
 
-                foreach (var junction in autoStartJunctions)
+                if (autoStartJunctions.Count == 0)
                 {
-                    try
-                    {
-                        Console.WriteLine($"[STARTUP] 🚀 Auto-starting junction: {junction.Name} (ID: {junction.Id})");
+                    Console.WriteLine("[STARTUP] ✅ No auto-start junctions found - startup complete");
+                    return;
+                }
 
-                        // TODO: Integrate with your junction execution service
-                        // This would typically call something like:
-                        // var junctionExecutor = scope.ServiceProvider.GetRequiredService<Service_Junction_Executor>();
-                        // await junctionExecutor.StartJunctionAsync(junction.Id);
-
-                        Console.WriteLine($"[STARTUP] ✅ Junction '{junction.Name}' auto-start initiated");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[STARTUP] ❌ Failed to auto-start junction '{junction.Name}': {ex.Message}");
-                    }
+                if (startupModeParallel)
+                {
+                    await StartJunctionsInParallelAsync(autoStartJunctions, connectionManager, CancellationToken.None);
+                }
+                else
+                {
+                    await StartJunctionsSequentiallyAsync(autoStartJunctions, connectionManager, CancellationToken.None);
                 }
 
                 Console.WriteLine($"[STARTUP] 🎯 Auto-start processing complete for {autoStartJunctions.Count} junctions");
@@ -165,6 +180,83 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine($"[STARTUP] ❌ Error starting auto-start junctions: {ex.Message}");
             }
+        }
+
+        private async Task StartJunctionsInParallelAsync(List<Model_Junction> junctions, Service_Manager_Connections connectionManager, CancellationToken cancellationToken)
+        {
+            Console.WriteLine("[STARTUP] 🚀 Starting junctions in parallel...");
+
+            var startupTasks = junctions.Select(async junction =>
+            {
+                try
+                {
+                    Console.WriteLine($"[STARTUP] 🔗 Starting junction: {junction.Name} (ID: {junction.Id})");
+
+                    var result = await connectionManager.StartJunctionAsync(junction.Id, cancellationToken);
+
+                    if (result.Success)
+                    {
+                        Console.WriteLine($"[STARTUP] ✅ Junction '{junction.Name}' started successfully");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[STARTUP] ❌ Junction '{junction.Name}' failed to start: {result.Message}");
+                    }
+
+                    return (Junction: junction, Result: result);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[STARTUP] ❌ Exception starting junction '{junction.Name}': {ex.Message}");
+                    return (Junction: junction, Result: (dynamic)new { Success = false, Message = ex.Message });
+                }
+            }).ToArray();
+
+            var results = await Task.WhenAll(startupTasks);
+
+            var successCount = results.Count(r => r.Result.Success);
+            var failureCount = results.Length - successCount;
+
+            Console.WriteLine($"[STARTUP] 📊 Parallel startup results: {successCount} successful, {failureCount} failed");
+        }
+
+        private async Task StartJunctionsSequentiallyAsync(List<Model_Junction> junctions, Service_Manager_Connections connectionManager, CancellationToken cancellationToken)
+        {
+            Console.WriteLine("[STARTUP] 🔗 Starting junctions sequentially...");
+
+            int successCount = 0;
+            int failureCount = 0;
+
+            foreach (var junction in junctions)
+            {
+                try
+                {
+                    Console.WriteLine($"[STARTUP] 🔗 Starting junction: {junction.Name} (ID: {junction.Id})");
+
+                    var result = await connectionManager.StartJunctionAsync(junction.Id, cancellationToken);
+
+                    if (result.Success)
+                    {
+                        Console.WriteLine($"[STARTUP] ✅ Junction '{junction.Name}' started successfully");
+                        successCount++;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[STARTUP] ❌ Junction '{junction.Name}' failed to start: {result.Message}");
+                        failureCount++;
+                    }
+
+                    // Small delay between sequential starts to avoid overwhelming the system
+                    await Task.Delay(500, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[STARTUP] ❌ Exception starting junction '{junction.Name}': {ex.Message}");
+                    failureCount++;
+                }
+            }
+
+            Console.WriteLine($"[STARTUP] 📊 Sequential startup results: {successCount} successful, {failureCount} failed");
         }
 
         public override async Task StopAsync(CancellationToken cancellationToken)
