@@ -42,7 +42,7 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Manager_CloudDevices _cloudDeviceService;
         private readonly Service_Manager_Device_Sync _deviceSyncManager;
         private readonly Service_Manager_COM_Ports _comPortManager;
-
+        private readonly Service_Stream_Manager_Virtual _virtualStreamManager;
         public Controller_Devices(Service_Database_Manager_Devices deviceDb,
             Service_Manager_Devices deviceService,
             Service_Manager_Network_Scan networkScan,
@@ -51,7 +51,8 @@ namespace JunctionRelayServer.Controllers
             Service_Database_Manager_Device_I2CDevices i2cDeviceDb,
             Service_Manager_CloudDevices cloudDeviceService,
             Service_Manager_Device_Sync deviceSyncManager,
-            Service_Manager_COM_Ports comPortManager)
+            Service_Manager_COM_Ports comPortManager,
+            Service_Stream_Manager_Virtual virtualStreamManager)
         {
             _deviceDb = deviceDb;
             _deviceService = deviceService;
@@ -62,6 +63,7 @@ namespace JunctionRelayServer.Controllers
             _cloudDeviceService = cloudDeviceService;
             _deviceSyncManager = deviceSyncManager;
             _comPortManager = comPortManager;
+            _virtualStreamManager = virtualStreamManager;
         }
 
         // Update the GetAllDevices method in Controller_Devices.cs
@@ -138,8 +140,24 @@ namespace JunctionRelayServer.Controllers
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetDeviceById(int id)
         {
+            // First try to get from database
             var device = await _deviceDb.GetDeviceByIdAsync(id);
-            return device == null ? NotFound() : Ok(device);
+            if (device != null)
+            {
+                return Ok(device);
+            }
+
+            // If not found and ID is negative, check if it's a virtual device from blit mode
+            if (id < 0)
+            {
+                var virtualDevice = _virtualStreamManager.GetVirtualDeviceById(id);
+                if (virtualDevice != null)
+                {
+                    return Ok(virtualDevice);
+                }
+            }
+
+            return NotFound();
         }
 
         [HttpPut("{id}")]

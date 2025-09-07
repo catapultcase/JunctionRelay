@@ -104,22 +104,6 @@ namespace JunctionRelayServer.Services
                 screenKey, assignedSensors, screen, junctionType, gatewayDestination, compressPayload);
         }
 
-        public async Task<Dictionary<string, object>> GenerateFramePayloadsAsync(
-            string screenKey,
-            List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen,
-            Model_JunctionScreenLayout? screenOverride = null,
-            int? junctionId = null,
-            int? linkId = null,
-            string? junctionType = null,
-            string? gatewayDestination = null,
-            bool compressPayload = false)
-        {
-            return await _configGenerator.GenerateFramePayloadsAsync(
-                screenKey, assignedSensors, screen, screenOverride, junctionId, linkId,
-                junctionType, gatewayDestination, compressPayload);
-        }
-
         // Delegate to Sensor generator
         public async Task<Dictionary<string, object>> GenerateSensorPayloadsAsync(
             string screenId,

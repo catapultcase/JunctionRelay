@@ -959,7 +959,7 @@ const ConfigureFrame: React.FC = () => {
                 error: `Failed to export layout: ${error instanceof Error ? error.message : 'Unknown error'}`
             }));
         }
-    }, [state.layout.id, state.layout.displayName]);   
+    }, [state.layout.id, state.layout.displayName]);
 
     // Publish layout
     const handlePublish = useCallback(async () => {
@@ -1099,7 +1099,7 @@ const ConfigureFrame: React.FC = () => {
             }}>
                 {/* Properties Panel */}
                 <div style={{
-                    width: '640px',
+                    width: '320px',
                     flexShrink: 0
                 }}>
                     <FrameEngine_PropertiesPanel
@@ -1145,11 +1145,17 @@ const ConfigureFrame: React.FC = () => {
                 {/* Element Library */}
                 <div style={{
                     width: '320px',
-                    flexShrink: 0
+                    flexShrink: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 0
                 }}>
                     <FrameEngine_ElementLibrary
                         selectedElements={state.selectedElementIds}
+                        selectedElementsData={selectedElements}
                         onElementAdd={addElement}
+                        onElementUpdate={updateElement}
+                        onElementDelete={removeElement}
                     />
                 </div>
             </div>

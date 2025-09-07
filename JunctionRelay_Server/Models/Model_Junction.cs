@@ -21,9 +21,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-
 namespace JunctionRelayServer.Models
 {
+    public static class RenderModes
+    {
+        // Internal values for database/code
+        public const string Payload = "Payload";
+        public const string Blit = "Blit";
+        public const string Composite = "Composite";
+
+        public static bool IsFrameMode(string mode)
+        {
+            return mode == Blit || mode == Composite;
+        }
+    }
+
     public class Model_Junction
     {
         public int Id { get; set; }
@@ -40,7 +52,7 @@ namespace JunctionRelayServer.Models
         public bool AllTargetsAllData { get; set; } = false;
         public bool AllTargetsAllScreens { get; set; } = false;
         public bool CompressPayload { get; set; }
-        public string? Timezone {  get; set; }
+        public string? Timezone { get; set; }
 
         // Gateway configuration (only needed when Type = "Gateway")
         public int? GatewayDeviceId { get; set; }
@@ -71,9 +83,9 @@ namespace JunctionRelayServer.Models
 
         // Notifications
         public bool EnableNotifications { get; set; } = false;
-        
+
         // Rendering Configuration
-        public string RenderingMode { get; set; } = "Payload"; // "Payload" or "FrameEngine"
+        public string RenderingMode { get; set; } = RenderModes.Payload;
 
         // Related entities
         public List<Model_JunctionDeviceLink> DeviceLinks { get; set; } = new();
@@ -105,11 +117,14 @@ namespace JunctionRelayServer.Models
 
         public List<Model_JunctionSensorTarget> JunctionSensorTargets { get; set; } = new();
 
-        // Convenience
+        // Convenience properties
         public List<string> SelectedPayloadAttributesList
         {
             get => SelectedPayloadAttributes?.Split(',').ToList() ?? new List<string>();
             set => SelectedPayloadAttributes = string.Join(",", value);
         }
+
+        // Rendering mode helpers
+        public bool IsFrameMode => RenderModes.IsFrameMode(RenderingMode);
     }
 }

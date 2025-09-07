@@ -83,6 +83,7 @@ const AddCollectorModal: React.FC<{
         { value: "Github", name: "GitHub Repository", desc: "Repository statistics" },
         { value: "HomeAssistant", name: "Home Assistant", desc: "Smart home automation" },
         { value: "Host", name: "Host Device", desc: "System monitoring" },
+        { value: "HWiNFO", name: "HWiNFO", desc: "System monitoring" },
         { value: "iCal", name: "iCal Calendar", desc: "Calendar events from iCal feeds" },
         { value: "InternetTime", name: "Internet Time", desc: "Accurate time from internet sources" },
         { value: "LibreHardwareMonitor", name: "Libre Hardware Monitor", desc: "Hardware sensors" },
@@ -400,6 +401,15 @@ const AddCollectorModal: React.FC<{
                 accessToken: "",
                 externalAccessToken: false,
                 pollRate: 1000,
+            }));
+        } else if (collector.collectorType === "HWiNFO") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "HWiNFO",
+                url: "",  // No URL needed for shared memory
+                accessToken: "",  // No access token needed
+                externalAccessToken: false,
+                pollRate: 1000,  // Fast polling since it's local memory access
             }));
         } else if (collector.collectorType === "iCal") {
             setCollector((prev: any) => ({

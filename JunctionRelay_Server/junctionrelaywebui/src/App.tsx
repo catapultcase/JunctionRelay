@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { Container, Box, CircularProgress, Typography, useTheme, useMediaQuery } from "@mui/material";
 import Navbar from "components/Navbar";
@@ -775,6 +775,7 @@ const AppRoutes: React.FC = () => {
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
                     <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewer />} />
+                    <Route path="/device/:deviceId/virtual-screen/fullscreen" element={<VirtualScreenViewer />} />
                     <Route path="/hostinfo" element={<HostInfo />} />
                     <Route path="/hostcharts" element={<HostCharts />} />
                     <Route path="/settings" element={<Settings />} />
@@ -786,15 +787,28 @@ const AppRoutes: React.FC = () => {
     );
 };
 
-// Authentication boundary component
+// Authentication boundary component with virtual screen bypass
 const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [showLogin, setShowLogin] = useState(false);
     const [loading, setLoading] = useState(true);
     const [hasCheckedInitialAuth, setHasCheckedInitialAuth] = useState(false);
     const location = useLocation();
 
+    // Check if current route is a virtual screen that should bypass authentication
+    const isVirtualScreenRoute = useMemo(() => {
+        return location.pathname.includes('/device/') && location.pathname.includes('/virtual-screen');
+    }, [location.pathname]);
+
     const checkAuthStatus = useCallback(async () => {
         try {
+            // BYPASS: Skip authentication for virtual screen routes
+            if (isVirtualScreenRoute) {
+                console.log('Virtual screen route detected, bypassing authentication');
+                setShowLogin(false);
+                setLoading(false);
+                return;
+            }
+
             // First check auth mode - this should always be accessible
             const modeResponse = await originalFetch('/api/unified-auth/config');
             if (!modeResponse.ok) {
@@ -865,7 +879,7 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isVirtualScreenRoute]); // Add isVirtualScreenRoute as dependency
 
     // Check auth status on route changes, but only after initial auth check
     useEffect(() => {
@@ -884,11 +898,15 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         performInitialAuthCheck();
     }, [checkAuthStatus]);
 
-    // Listen for auth changes
+    // Listen for auth changes - but skip for virtual screen routes
     useEffect(() => {
         const handleAuthChange = (event: any) => {
+            // Skip auth change handling for virtual screen routes
+            if (isVirtualScreenRoute) {
+                return;
+            }
+
             // Always recheck auth when auth-changed event is fired
-            // Removed the !showLogin condition that was preventing login page from responding
             if (hasCheckedInitialAuth) {
                 console.log('Auth change detected, rechecking...');
                 checkAuthStatus();
@@ -896,6 +914,11 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         };
 
         const handleStorageChange = (event: StorageEvent) => {
+            // Skip storage change handling for virtual screen routes
+            if (isVirtualScreenRoute) {
+                return;
+            }
+
             // Only care about auth-related storage changes
             if (event.key === 'junctionrelay_token' ||
                 event.key === 'cloud_proxy_token' ||
@@ -914,20 +937,27 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
             window.removeEventListener('auth-changed', handleAuthChange);
             window.removeEventListener('storage', handleStorageChange);
         };
-    }, [hasCheckedInitialAuth, checkAuthStatus]); // Removed showLogin from dependencies
+    }, [hasCheckedInitialAuth, checkAuthStatus, isVirtualScreenRoute]);
 
-    // Handle global 401 responses
+    // Handle global 401 responses - skip for virtual screen routes
     useEffect(() => {
         const handleGlobal401 = (event: CustomEvent) => {
+            if (isVirtualScreenRoute) {
+                return;
+            }
             setShowLogin(true);
         };
 
         window.addEventListener('auth-required' as any, handleGlobal401);
         return () => window.removeEventListener('auth-required' as any, handleGlobal401);
-    }, []);
+    }, [isVirtualScreenRoute]);
 
-    // Handle auth callback from cloud proxy
+    // Handle auth callback from cloud proxy - skip for virtual screen routes
     useEffect(() => {
+        if (isVirtualScreenRoute) {
+            return;
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
         const authStatus = urlParams.get('auth');
@@ -941,8 +971,7 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
             checkAuthStatus();
             window.dispatchEvent(new CustomEvent('auth-changed'));
         }
-    }, [checkAuthStatus]);
-
+    }, [checkAuthStatus, isVirtualScreenRoute]);
 
     if (loading) {
         return (

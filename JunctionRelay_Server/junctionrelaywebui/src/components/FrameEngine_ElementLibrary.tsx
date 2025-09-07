@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useCallback, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -16,6 +16,7 @@ import {
     // Image as ImageIcon,
     // ViewModule as ContainerIcon,
 } from '@mui/icons-material';
+import { FrameEngine_ElementProperties } from './FrameEngine_ElementProperties';
 
 interface PlacedElement {
     id: string;
@@ -42,14 +43,44 @@ interface ElementTemplate {
 
 interface ElementLibraryProps {
     selectedElements: string[];
+    selectedElementsData: PlacedElement[];
     onElementAdd: (element: Omit<PlacedElement, 'id'>) => void;
+    onElementUpdate: (elementId: string, updates: Partial<PlacedElement>) => void;
+    onElementDelete: (elementId: string) => void;
 }
 
 const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
     selectedElements,
+    selectedElementsData,
     onElementAdd,
+    onElementUpdate,
+    onElementDelete,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [activeTab, setActiveTab] = useState<'library' | 'properties'>('library');
+    const [expandedSections, setExpandedSections] = useState<Set<string>>(
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text'])
+    );
+
+    // Auto-switch to properties tab when elements are selected
+    useEffect(() => {
+        if (selectedElementsData.length > 0) {
+            setActiveTab('properties');
+        }
+    }, [selectedElementsData.length]);
+
+    // Toggle section expansion
+    const toggleSection = useCallback((sectionId: string) => {
+        setExpandedSections(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(sectionId)) {
+                newSet.delete(sectionId);
+            } else {
+                newSet.add(sectionId);
+            }
+            return newSet;
+        });
+    }, []);
 
     // Elements list - only sensor and text elements enabled
     const elementTemplates: ElementTemplate[] = [
@@ -92,61 +123,6 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             },
             category: 'basic',
         },
-        // Commented out elements - uncomment when ready to use
-        /*
-        {
-            id: 'chart-widget',
-            name: 'Chart Widget',
-            description: 'Data visualization chart',
-            type: 'chart',
-            icon: <ChartIcon />,
-            defaultWidth: 200,
-            defaultHeight: 120,
-            defaultProperties: {
-                chartType: 'line',
-                title: 'Chart',
-                showLegend: true,
-                showGrid: true,
-                backgroundColor: '#ffffff',
-                borderColor: '#cccccc',
-                fontSize: 12,
-            },
-            category: 'data',
-        },
-        {
-            id: 'image-widget',
-            name: 'Image',
-            description: 'Static image or logo',
-            type: 'image',
-            icon: <ImageIcon />,
-            defaultWidth: 100,
-            defaultHeight: 80,
-            defaultProperties: {
-                imageUrl: '',
-                alt: 'Image',
-                fit: 'cover',
-                borderRadius: 0,
-            },
-            category: 'media',
-        },
-        {
-            id: 'container-widget',
-            name: 'Container',
-            description: 'Group elements together',
-            type: 'container',
-            icon: <ContainerIcon />,
-            defaultWidth: 200,
-            defaultHeight: 100,
-            defaultProperties: {
-                title: 'Container',
-                backgroundColor: '#f5f5f5',
-                borderColor: '#cccccc',
-                borderWidth: 1,
-                padding: 10,
-            },
-            category: 'layout',
-        },
-        */
     ];
 
     // Drag start for element templates
@@ -209,117 +185,171 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         >
             {/* Header */}
             <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
-                    Element Library
+                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem', mb: 1 }}>
+                    Element Library & Properties
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    Drag to canvas or double-click to add
-                </Typography>
+
+                {/* Tab Buttons */}
+                <Box sx={{ display: 'flex' }}>
+                    <button
+                        onClick={() => setActiveTab('library')}
+                        style={{
+                            flex: 1,
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            borderTopLeftRadius: '4px',
+                            borderBottomLeftRadius: '4px',
+                            border: '1px solid #ccc',
+                            backgroundColor: activeTab === 'library' ? '#e3f2fd' : '#f5f5f5',
+                            color: activeTab === 'library' ? '#1976d2' : '#666',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        Library
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('properties')}
+                        style={{
+                            flex: 1,
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            borderTopRightRadius: '4px',
+                            borderBottomRightRadius: '4px',
+                            borderTop: '1px solid #ccc',
+                            borderRight: '1px solid #ccc',
+                            borderBottom: '1px solid #ccc',
+                            backgroundColor: activeTab === 'properties' ? '#e3f2fd' : '#f5f5f5',
+                            color: activeTab === 'properties' ? '#1976d2' : '#666',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        Properties {selectedElementsData.length > 0 && `(${selectedElementsData.length})`}
+                    </button>
+                </Box>
             </Box>
 
-            {/* Search */}
-            <Box sx={{ p: 1.5, borderBottom: 1, borderColor: 'divider' }}>
-                <TextField
-                    size="small"
-                    fullWidth
-                    placeholder="Search elements..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                        startAdornment: (
-                            <InputAdornment position="start">
-                                <SearchIcon fontSize="small" />
-                            </InputAdornment>
-                        ),
-                    }}
-                    sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.875rem' } }}
-                />
-            </Box>
-
-            {/* Elements List */}
-            <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                <Box sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
-                    {Object.entries(templatesByCategory).map(([category, templates]) => (
-                        <Box key={category} sx={{ mb: 3 }}>
-                            <Typography
-                                variant="overline"
-                                sx={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600,
-                                    color: 'text.secondary',
-                                    letterSpacing: 1,
-                                    mb: 1,
-                                    display: 'block',
+            {/* Tab Content */}
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                minHeight: 0
+            }}>
+                {activeTab === 'library' ? (
+                    <>
+                        {/* Search */}
+                        <Box sx={{ p: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+                            <TextField
+                                size="small"
+                                fullWidth
+                                placeholder="Search elements..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon fontSize="small" />
+                                        </InputAdornment>
+                                    ),
                                 }}
-                            >
-                                {categoryNames[category as keyof typeof categoryNames]}
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {templates.map((template) => (
-                                    <Card
-                                        key={template.id}
-                                        draggable
-                                        onDragStart={(e) => handleElementDragStart(template, e)}
-                                        onDoubleClick={() => handleQuickAdd(template)}
+                                sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.875rem' } }}
+                            />
+                        </Box>
+
+                        {/* Elements List */}
+                        <Box sx={{ p: 1.5 }}>
+                            {Object.entries(templatesByCategory).map(([category, templates]) => (
+                                <Box key={category} sx={{ mb: 3 }}>
+                                    <Typography
+                                        variant="overline"
                                         sx={{
-                                            cursor: 'grab',
-                                            transition: 'all 0.2s',
-                                            '&:hover': {
-                                                bgcolor: 'action.hover',
-                                                transform: 'translateY(-1px)',
-                                                boxShadow: 2,
-                                            },
-                                            '&:active': {
-                                                cursor: 'grabbing',
-                                            },
+                                            fontSize: '0.7rem',
+                                            fontWeight: 600,
+                                            color: 'text.secondary',
+                                            letterSpacing: 1,
+                                            mb: 1,
+                                            display: 'block',
                                         }}
                                     >
-                                        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-                                                <Box sx={{ color: 'primary.main', mt: 0.25 }}>
-                                                    {template.icon}
-                                                </Box>
-                                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
-                                                        {template.name}
-                                                    </Typography>
-                                                    <Typography
-                                                        variant="caption"
-                                                        color="text.secondary"
-                                                        sx={{ display: 'block', mt: 0.5, lineHeight: 1.3 }}
-                                                    >
-                                                        {template.description}
-                                                    </Typography>
-                                                    <Typography
-                                                        variant="caption"
-                                                        color="text.disabled"
-                                                        sx={{ display: 'block', mt: 0.5 }}
-                                                    >
-                                                        {template.defaultWidth}×{template.defaultHeight}
-                                                    </Typography>
-                                                </Box>
-                                                <DragIcon color="action" fontSize="small" />
-                                            </Box>
-                                        </CardContent>
-                                    </Card>
-                                ))}
+                                        {categoryNames[category as keyof typeof categoryNames]}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        {templates.map((template) => (
+                                            <Card
+                                                key={template.id}
+                                                draggable
+                                                onDragStart={(e) => handleElementDragStart(template, e)}
+                                                onDoubleClick={() => handleQuickAdd(template)}
+                                                sx={{
+                                                    cursor: 'grab',
+                                                    transition: 'all 0.2s',
+                                                    '&:hover': {
+                                                        bgcolor: 'action.hover',
+                                                        transform: 'translateY(-1px)',
+                                                        boxShadow: 2,
+                                                    },
+                                                    '&:active': {
+                                                        cursor: 'grabbing',
+                                                    },
+                                                }}
+                                            >
+                                                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                                                        <Box sx={{ color: 'primary.main', mt: 0.25 }}>
+                                                            {template.icon}
+                                                        </Box>
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                                                                {template.name}
+                                                            </Typography>
+                                                            <Typography
+                                                                variant="caption"
+                                                                color="text.secondary"
+                                                                sx={{ display: 'block', mt: 0.5, lineHeight: 1.3 }}
+                                                            >
+                                                                {template.description}
+                                                            </Typography>
+                                                            <Typography
+                                                                variant="caption"
+                                                                color="text.disabled"
+                                                                sx={{ display: 'block', mt: 0.5 }}
+                                                            >
+                                                                {template.defaultWidth}×{template.defaultHeight}
+                                                            </Typography>
+                                                        </Box>
+                                                        <DragIcon color="action" fontSize="small" />
+                                                    </Box>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                    </Box>
+                                </Box>
+                            ))}
+                        </Box>
+
+                        {/* Footer */}
+                        <Box sx={{ p: 1.5, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    💡 Tip:
+                                </Typography>
+                                <Typography variant="caption" color="text.disabled">
+                                    Drag or double-click
+                                </Typography>
                             </Box>
                         </Box>
-                    ))}
-                </Box>
-            </Box>
-
-            {/* Footer */}
-            <Box sx={{ p: 1.5, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        💡 Tip:
-                    </Typography>
-                    <Typography variant="caption" color="text.disabled">
-                        Drag or double-click
-                    </Typography>
-                </Box>
-            </Box>
+                    </>
+                ) : (
+                    <FrameEngine_ElementProperties
+                        selectedElements={selectedElementsData}
+                        onElementUpdate={onElementUpdate}
+                        onElementDelete={onElementDelete}
+                        expandedSections={expandedSections}
+                        onToggleSection={toggleSection}
+                    />
+                )}
+            </div>
         </Box>
     );
 };

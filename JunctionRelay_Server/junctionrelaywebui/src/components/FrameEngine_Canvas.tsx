@@ -700,7 +700,8 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
             top: element.y * scale,
             width: element.width * scale,
             height: element.height * scale,
-            border: isSelected ? '2px solid #1976d2' : '1px solid #ccc',
+            border: '1px solid #ccc',
+            outline: isSelected ? '2px solid #1976d2' : 'none',
             cursor: 'move',
             boxShadow: isSelected ? '0 0 0 2px rgba(25, 118, 210, 0.3)' : 'none',
             zIndex: 2,
@@ -714,7 +715,7 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
         if (props.backgroundColor) {
             styles.backgroundColor = props.backgroundColor;
         } else {
-            styles.backgroundColor = element.type === 'sensor' ? '#e3f2fd' : '#ffffff';
+            styles.backgroundColor = 'transparent';
         }
 
         return styles;
@@ -1112,7 +1113,7 @@ const FrameEngine_Canvas: React.FC<CanvasProps> = ({
                     fontFamily: 'Inter',
                     fontWeight: 'normal',
                     textColor: '#000000',
-                    backgroundColor: '#e3f2fd',
+                    backgroundColor: 'transparent',
                     textAlign: 'left',
                     showUnit: true,
                     showLabel: true

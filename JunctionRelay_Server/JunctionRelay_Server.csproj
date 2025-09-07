@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>a19cb7a2-588a-4eda-9675-028393e94ec7</UserSecretsId>
-    <Version>0.8.5.4</Version>
+    <Version>0.8.5.5</Version>
   </PropertyGroup>
   <!-- Exclude frontend source files from .NET compilation -->
   <ItemGroup>
@@ -22,10 +22,9 @@
     <PackageReference Include="Microsoft.TypeScript.MSBuild" Version="5.8.1" />
     <PackageReference Include="MQTTnet" Version="3.1.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="PuppeteerSharp" Version="20.2.2" />
     <PackageReference Include="RJCP.SerialPortStream" Version="3.0.1" />
-    <PackageReference Include="SkiaSharp" Version="3.119.0" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.0" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SSH.NET" Version="2025.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
