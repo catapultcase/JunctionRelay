@@ -323,9 +323,15 @@ namespace JunctionRelayServer.Services
 
             junction.Status = "Starting";
 
-            // Log junction mode
-            bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-            string modeInfo = isFrameMode ? "Frame Engine" : "Payload";
+            // Log junction mode using new render mode names
+            var renderMode = junction.RenderingMode;
+            string modeInfo = renderMode switch
+            {
+                RenderModes.Blit => "Blit (pre-rendered frames)",
+                RenderModes.Composite => "Composite (frame assembly)",
+                RenderModes.Payload => "Payload (data)",
+                _ => $"Unknown ({renderMode})"
+            };
             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🔌 Starting Junction {junctionId} (Type: {junction.Type}, Mode: {modeInfo})");
 
             // Populate links and sensors (including JunctionSensorTargets)
@@ -544,23 +550,41 @@ namespace JunctionRelayServer.Services
             var junctionLinkDb = _scopeFactory.CreateScope().ServiceProvider
                 .GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
-            // Exact-mode checks only
-            bool isFrameMode = junction.RenderingMode != null &&
-                               junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-            bool isRiveMode = junction.RenderingMode != null &&
-                               junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
+            // Check render modes using new constants
+            var renderMode = junction.RenderingMode;
+            bool isPayloadMode = renderMode == RenderModes.Payload;
+            bool isBlitMode = renderMode == RenderModes.Blit;
+            bool isCompositeMode = renderMode == RenderModes.Composite;
+            bool isAnyFrameMode = junction.IsFrameMode;
 
-            if (isFrameMode)
+            // Log the rendering mode
+            string modeDescription = renderMode switch
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Junction {junction.Id} ({junction.Name}) is in Frame rendering mode");
+                RenderModes.Payload => "Data Payloads",
+                RenderModes.Blit => "Pre-rendered Frames (Blit)",
+                RenderModes.Composite => "Frame Assembly (Composite)",
+                _ => $"Unknown mode ({renderMode})"
+            };
+
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎨 Junction {junction.Id} ({junction.Name}) is using {modeDescription} rendering");
+
+            // Get virtual stream manager for blit mode
+            Service_Stream_Manager_Virtual? virtualMgr = null;
+            if (isBlitMode)
+            {
+                virtualMgr = _scopeFactory.CreateScope().ServiceProvider
+                    .GetRequiredService<Service_Stream_Manager_Virtual>();
             }
-            else if (isRiveMode)
+
+            // Determine if this is a gateway junction and get destination info
+            bool isGatewayJunction = junction.Type.Contains("Gateway Junction", StringComparison.OrdinalIgnoreCase);
+            string? gatewayDestination = null;
+            string? junctionTypeForGateway = null;
+
+            if (isGatewayJunction)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎨 Junction {junction.Id} ({junction.Name}) is in Rive mapping mode");
-            }
-            else
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📄 Junction {junction.Id} ({junction.Name}) is in Payload rendering mode");
+                gatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
+                junctionTypeForGateway = junction.Type;
             }
 
             foreach (var link in junction.TargetLinks)
@@ -581,16 +605,25 @@ namespace JunctionRelayServer.Services
 
                 foreach (var screen in screens)
                 {
-                    // Apply screen layout override if exists
+                    // Apply screen layout override if exists and is valid
                     if (overrideDict.TryGetValue(screen.Id, out var screenOverride))
                     {
-                        screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📱 Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
-
-                        // For Frame/Rive modes, also log frame layout override
-                        if ((isFrameMode || isRiveMode) && screenOverride.FrameLayoutId.HasValue)
+                        // Only apply override if it has a valid ScreenLayoutId
+                        if (!string.IsNullOrEmpty(screenOverride.ScreenLayoutId?.ToString()))
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Using frame layout override (ID: {screenOverride.FrameLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+                            screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📱 Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Screen layout override has empty ScreenLayoutId for Device {device.Name} Screen {screen.DisplayName} - using original ScreenLayoutId: {screen.ScreenLayoutId}");
+                        }
+
+                        // For Frame modes, also log frame layout override
+                        if (isAnyFrameMode && screenOverride.FrameLayoutId.HasValue)
+                        {
+                            string frameType = isBlitMode ? "Blit" : "Composite";
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🖼️ Using frame layout override (ID: {screenOverride.FrameLayoutId}) for {frameType} mode on Device {device.Name} Screen {screen.DisplayName}");
                         }
                     }
 
@@ -606,46 +639,58 @@ namespace JunctionRelayServer.Services
                     }
 
                     var screenKey = $"device_{device.Id}_screen_{screen.Id}";
-                    string modeDescription = isFrameMode ? "Frame rendering"
-                                        : isRiveMode ? "Rive mapping"
-                                        : "Payload rendering";
 
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} mode and send rate of {defaultSendRate}ms.");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎬 Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} and send rate of {defaultSendRate}ms. LinkId: {link.Id}");
 
-                    // Gateway junction handling (unchanged)
-                    if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
-                        junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase) ||
-                        junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+                    if (isGatewayJunction && gatewayDestination != null)
                     {
-                        string? currentGatewayDestination = await GetCurrentGatewayDestination(junction, deviceDb);
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Current gateway destination for {screenKey}: {currentGatewayDestination ?? "Not available"}");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🚀 Current gateway destination for {screenKey}: {gatewayDestination}");
+                    }
 
-                        await streamManager.StartStreamingAsync(
-                            junction.Id,
-                            device.Id,
-                            defaultSendRate,
-                            screenKey,
-                            assignedSensors,
-                            screen,
-                            junction.Type,
-                            currentGatewayDestination);
-                    }
-                    else
+                    // BLIT MODE: Create virtual screen duplicate BEFORE starting the real stream
+                    if (isBlitMode && virtualMgr != null)
                     {
-                        await streamManager.StartStreamingAsync(
-                            junction.Id,
-                            device.Id,
-                            defaultSendRate,
-                            screenKey,
-                            assignedSensors,
-                            screen);
+                        try
+                        {
+                            var virtualScreenInfo = await virtualMgr.CreateBlitModeVirtualScreenAsync(
+                                device,
+                                screen,
+                                junction.Id,
+                                link.Id,
+                                defaultSendRate,
+                                assignedSensors);
+
+                            if (virtualScreenInfo.HasValue)
+                            {
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎭 Created virtual screen for blit mode: {device.Name} -> {virtualScreenInfo.Value.virtualScreenUrl} (LinkId: {link.Id})");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to create virtual screen for blit mode: {device.Name} Screen {screen.DisplayName}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error creating virtual screen for blit mode: {device.Name} Screen {screen.DisplayName} - {ex.Message}");
+                        }
                     }
+
+                    // Start the stream using unified signature for all stream managers
+                    await streamManager.StartStreamingAsync(
+                        junction.Id,                    // junctionId
+                        device.Id,                      // deviceId
+                        defaultSendRate,                // rate
+                        screenKey,                      // screenKey
+                        assignedSensors,                // assignedSensors
+                        screen,                         // screen
+                        junctionTypeForGateway,         // junctionType (null for non-gateway)
+                        gatewayDestination,             // gatewayDestination (null for non-gateway)
+                        link.Id);                       // linkId
 
                     await Task.Delay(100);
                 }
             }
         }
-
 
         private async Task<string?> GetCurrentGatewayDestination(Model_Junction junction, Service_Database_Manager_Devices deviceDb)
         {
@@ -671,12 +716,12 @@ namespace JunctionRelayServer.Services
             }
             else if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
-                destination = gatewayDevice.IPAddress; // FIXED: was using COMPort instead of IPAddress
+                destination = gatewayDevice.IPAddress;
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🌐 Using IP address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
-                destination = gatewayDevice.UniqueIdentifier; // WebSocket uses MAC address for device identification
+                destination = gatewayDevice.UniqueIdentifier;
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 📡 Using MAC address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else
@@ -705,6 +750,7 @@ namespace JunctionRelayServer.Services
             // For gateway junctions, get the current destination from the gateway device
             return await GetCurrentGatewayDestination(junction, deviceDb);
         }
+
         public async Task<Model_Operation_Result> StopJunctionAsync(int junctionId, CancellationToken cancellationToken)
         {
             if (!_startedJunctions.TryGetValue(junctionId, out var junction))
@@ -751,6 +797,29 @@ namespace JunctionRelayServer.Services
             foreach (var link in junction.SourceCollectorLinks)
                 _pollingManager.UnregisterJunctionSource($"Collector-{link.CollectorId}", junctionId);
 
+            // Clean up virtual screens for blit mode BEFORE stopping regular streams
+            if (junction.RenderingMode == RenderModes.Blit)
+            {
+                var virtualMgr = scope.ServiceProvider.GetRequiredService<Service_Stream_Manager_Virtual>();
+
+                foreach (var link in junction.TargetLinks)
+                {
+                    var device = await deviceDb.GetDeviceByIdAsync(link.DeviceId);
+                    if (device != null)
+                    {
+                        var deviceScreens = junction.DeviceScreens.Where(screen => screen.DeviceId == device.Id);
+                        foreach (var screen in deviceScreens)
+                        {
+                            // Stop the virtual screen associated with this original screen
+                            virtualMgr.StopBlitModeVirtualScreen(screen.Id);
+                        }
+                    }
+                }
+
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] 🎭 Cleaned up virtual screens for blit mode junction {junctionId}");
+            }
+
+            // Stop regular streams
             foreach (var link in junction.TargetLinks)
             {
                 var device = await deviceDb.GetDeviceByIdAsync(link.DeviceId);

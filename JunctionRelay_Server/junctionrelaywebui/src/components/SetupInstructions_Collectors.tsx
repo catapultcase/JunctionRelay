@@ -160,6 +160,34 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "HWiNFO":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            HWiNFO Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Install HWiNFO:</strong><br />
+                            Download and install HWiNFO64 (or HWiNFO32) on the target system
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. Enable Shared Memory:</strong><br />
+                            • In HWiNFO, go to Settings - General<br />
+                            • Check "Shared Memory Support"<br />
+                            • Restart HWiNFO for changes to take effect
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. Configuration:</strong><br />
+                            • No URL or credentials required<br />
+                            • Reads directly from shared memory<br />
+                            • Much faster than HTTP-based monitoring
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> HWiNFO must be running with shared memory enabled for this collector to work. This provides real-time access to all hardware sensors.
+                        </Typography>
+                    </Box>
+                );
+
             case "iCal":
                 return (
                     <Box>

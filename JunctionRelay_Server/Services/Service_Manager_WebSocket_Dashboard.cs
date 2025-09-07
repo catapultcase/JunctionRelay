@@ -295,7 +295,7 @@ namespace JunctionRelayServer.Services
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
                             lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
                             lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
@@ -365,7 +365,7 @@ namespace JunctionRelayServer.Services
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
                             lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
                             lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
@@ -431,7 +431,7 @@ namespace JunctionRelayServer.Services
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
                             lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
                             lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             health = healthData
@@ -512,7 +512,7 @@ namespace JunctionRelayServer.Services
                             configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
                             hasLastFrame = streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream) != null,
-                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
                             lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream)),
                             lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
                             isGatewayMode = (bool)(streamType.GetProperty("IsGatewayMode")?.GetValue(stream) ?? false),
@@ -611,7 +611,7 @@ namespace JunctionRelayServer.Services
 
                             // frame parity
                             hasLastFrame = streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream) != null,
-                            lastFrameSize = (int?)(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
+                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
                             lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream)),
                             lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
 
@@ -635,6 +635,23 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        private static int? ConvertToNullableInt(object? value)
+        {
+            if (value == null) return null;
+
+            return value switch
+            {
+                int intValue => intValue,
+                long longValue => longValue > int.MaxValue ? int.MaxValue : (int)longValue,
+                short shortValue => shortValue,
+                byte byteValue => byteValue,
+                double doubleValue => (int)Math.Round(doubleValue),
+                float floatValue => (int)Math.Round(floatValue),
+                decimal decimalValue => (int)Math.Round(decimalValue),
+                string stringValue when int.TryParse(stringValue, out var parsed) => parsed,
+                _ => null
+            };
+        }
 
         // Broadcast collector data to all connections
         private async Task BroadcastCollectorDataAsync()

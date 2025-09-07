@@ -405,9 +405,17 @@ namespace JunctionRelayServer.Services
                 ProtocolSpecificData = new Dictionary<string, object>
                 {
                     ["IsVirtual"] = true,
-                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
-                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O"),
-                    ["PayloadsGenerated"] = info.PayloadsGenerated
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime?.ToString("O") ?? "",
+                    ["LastFailureTime"] = info.Health.LastFailureTime?.ToString("O") ?? "",
+                    ["PayloadsGenerated"] = info.PayloadsGenerated,
+                    // NEW: Add blit mode specific data
+                    ["IsBlitMode"] = info.IsBlitMode,
+                    ["CanvasWidth"] = info.CanvasWidth,
+                    ["CanvasHeight"] = info.CanvasHeight,
+                    ["LastFrameSize"] = info.LastFrameSize ?? 0,
+                    ["AverageFrameRenderTime"] = info.AverageFrameRenderTime,
+                    ["MaxFrameRenderTime"] = info.MaxFrameRenderTime,
+                    ["MinFrameRenderTime"] = info.MinFrameRenderTime == long.MaxValue ? 0 : info.MinFrameRenderTime
                 }
             };
         }

@@ -88,37 +88,86 @@ namespace JunctionRelayServer.Services
                 return new
                 {
                     StreamKey = kvp.Key,
-                    info.DeviceName,
-                    info.ScreenId,
-                    info.ScreenName,
-                    info.Status,
-                    info.Rate,
-                    info.Latency,
-                    info.LastSentTime,
-                    info.Protocol,
-                    info.SensorsCount,
-                    // Add health information for frontend
+                    DeviceName = info.DeviceName,
+                    DeviceMac = "Unknown",
+                    ScreenId = info.ScreenId,
+                    ScreenName = info.ScreenName,
+                    Status = info.Status,
+                    Rate = info.Rate,
+                    Latency = info.Latency,
+                    LastSentTime = info.LastSentTime,
+                    Protocol = info.Protocol,
+                    SensorsCount = info.SensorsCount,
+
+                    // Frame information (not applicable for MQTT)
+                    HasLastFrame = false,
+                    LastFrameSize = 0,
+                    LastFrameTime = (DateTime?)null,
+                    LastFrameLayoutType = "",
+
+                    // Gateway information (not applicable for MQTT)
+                    IsGatewayMode = false,
+                    GatewayTarget = "Unknown",
+
+                    // Enhanced health information matching other managers
                     Health = new
                     {
-                        info.Health.ConnectionState,
-                        info.Health.SuccessRate,
-                        info.Health.LastErrorMessage,
-                        info.Health.ErrorType,
-                        info.Health.ConsecutiveFailures,
-                        info.Health.ConsecutiveSuccesses,
-                        info.Health.ConnectionRecreated,
-                        info.Health.AverageLatency,
-                        info.Health.MaxLatency,
-                        info.Health.MinLatency,
-                        info.Health.LastSuccessTime,
-                        info.Health.LastFailureTime,
-                        info.Health.ConnectionRecreationCount,
-                        info.Health.AcknowledgmentTimeouts,
-                        info.Health.PublishFailures,
+                        ConnectionState = info.Health.ConnectionState,
+                        SuccessRate = info.Health.SuccessRate,
+                        LastErrorMessage = info.Health.LastErrorMessage,
+                        ErrorType = info.Health.ErrorType,
+                        ConsecutiveFailures = info.Health.ConsecutiveFailures,
+                        ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
+                        ConnectionRecreated = info.Health.ConnectionRecreated,
+                        LastWebSocketState = (string?)null,
+                        AverageLatency = info.Health.AverageLatency,
+                        MaxLatency = info.Health.MaxLatency,
+                        MinLatency = info.Health.MinLatency,
+                        LastSuccessTime = info.Health.LastSuccessTime,
+                        LastFailureTime = info.Health.LastFailureTime,
+                        ConnectionRecreationCount = info.Health.ConnectionRecreationCount,
+
+                        // Frame-specific health metrics (not applicable for MQTT)
+                        IsFrameMode = false,
+                        PayloadType = "JSON",
+                        FramesSent = 0,
+                        PayloadsSent = info.Health.PublishFailures, // Use existing MQTT metric
+                        CurrentFrameLayoutType = "",
+                        AverageFrameSize = 0.0,
+                        MaxFrameSize = 0L,
+                        MinFrameSize = 0L,
+                        AverageFrameRenderTime = 0.0,
+                        MaxFrameRenderTime = 0L,
+                        MinFrameRenderTime = 0L,
+                        FrameHealthSummary = new { message = "Not in frame mode" },
+
+                        // Gateway-specific health metrics (not applicable for MQTT)
+                        IsGatewayMode = false,
+                        GatewayTarget = "Unknown",
+                        GatewayMessagesSent = 0,
+                        GatewayHealthSummary = new { message = "Not in gateway mode" },
+
+                        // MQTT-specific metrics
+                        AcknowledgmentTimeouts = info.Health.AcknowledgmentTimeouts,
+                        PublishFailures = info.Health.PublishFailures,
                         TopicLatencies = info.Health.TopicLatencies
                     },
 
-                    // Print the two config payload JSON strings sequentially:
+                    // MQTT has dual config payloads - maintain existing structure
+                    ConfigPayloadPrefix = info.StandardConfigPayloadPrefix,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedStandardConfigPayloadPreview() : info.StandardConfigPayloadJson,
+                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+
+                    // Compressed prefix fields
+                    CompressedConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
+
+                    // Always include compressed views
+                    ConfigPayloadCompressed = info.GetCompressedStandardConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
+
+                    // MQTT-specific dual config structure
                     ConfigPayloadPrefixes = new[]
                     {
                         info.StandardConfigPayloadPrefix,
@@ -133,22 +182,13 @@ namespace JunctionRelayServer.Services
                         info.StandardConfigPayloadJson,
                         info.MqttConfigPayloadJson
                     },
-
-                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
-
-                    // NEW: Add compressed prefix fields
                     CompressedStandardConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
                     CompressedMqttConfigPayloadPrefix = info.CompressedMqttConfigPayloadPrefix,
-                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
-
-                    // NEW: Always include compressed views for UI flexibility
                     ConfigPayloadsCompressed = new[]
                     {
                         info.GetCompressedStandardConfigPayloadPreview(),
                         info.GetCompressedMqttConfigPayloadPreview()
-                    },
-                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview()
+                    }
                 };
             });
         }
@@ -308,9 +348,12 @@ namespace JunctionRelayServer.Services
                 return;
             }
 
-            // Determine rendering mode
-            bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-            bool isRiveMode = junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
+            // Determine rendering mode using new constants
+            var renderMode = junction.RenderingMode;
+            bool isPayloadMode = renderMode == RenderModes.Payload;
+            bool isBlitMode = renderMode == RenderModes.Blit;
+            bool isCompositeMode = renderMode == RenderModes.Composite;
+            bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
             // Get screen layout override if exists
             var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
@@ -334,79 +377,29 @@ namespace JunctionRelayServer.Services
                 LastSentTime = DateTime.UtcNow
             };
 
-            // Update protocol to indicate frame or rive mode
-            if (isFrameMode)
+            // Update protocol to indicate rendering mode
+            if (isBlitMode)
             {
-                info.Protocol = "MQTT (Frames)";
+                info.Protocol = "MQTT (Pre-rendered Frames)";
             }
-            else if (isRiveMode)
+            else if (isCompositeMode)
             {
-                info.Protocol = "MQTT (Rive)";
+                info.Protocol = "MQTT (Frame Assembly)";
             }
 
             _streamingTokens[screen.Id] = info;
 
             // Send initial configuration based on rendering mode
-            if (isFrameMode)
+            if (isBlitMode)
             {
-                // FRAME MODE: Generate and send initial frame
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 🖼️ Starting in Frame rendering mode for {screenKey}");
-
-                var frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                Dictionary<string, object> frameConfig = await payloadService.GenerateFramePayloadsAsync(
-                    screenKey,
-                    assignedSensors,
-                    screen,
-                    screenOverride,
-                    junctionId,
-                    null, // MQTT doesn't need linkId
-                    junctionType: null,
-                    gatewayDestination: null,
-                    compressPayload: junction.CompressPayload);
-                frameStopwatch.Stop();
-
-                if (!frameConfig.TryGetValue(screenKey, out object rawFrame))
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] No frame payload for screen {screenKey}.");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
-
-                // Send the frame (should be byte array)
-                if (rawFrame is byte[] frameBytes)
-                {
-                    // For MQTT, we need to send frame via HTTP first (existing behavior)
-                    var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                    var (success, _) = await httpSender.SendPayloadAsync(frameBytes);
-
-                    if (!success)
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Failed to send initial frame via HTTP.");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
-
-                    Console.WriteLine(
-                    $"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_MQTT] " +
-                    $"Initial frame sent to {device.Name} via HTTP for MQTT junction. " +
-                    $"Frame: {frameBytes.Length} bytes, Render: {frameStopwatch.ElapsedMilliseconds}ms");
-                }
-                else
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Frame payload is not byte array for screen {screenKey}.");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
+                return;
             }
-            else if (isRiveMode)
+            else if (isCompositeMode)
             {
-                // RIVE MODE: Generate and send initial Rive config
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 🎭 Starting in Rive rendering mode for {screenKey}");
+                // COMPOSITE MODE: Generate and send initial composite config
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 🎭 Starting in Composite (frame assembly) mode for {screenKey}");
 
-                Dictionary<string, object> riveConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
+                Dictionary<string, object> compositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
                     screenKey,
                     assignedSensors,
                     screen,
@@ -415,33 +408,33 @@ namespace JunctionRelayServer.Services
                     gatewayDestination: null,
                     compressPayload: junction.CompressPayload);
 
-                if (!riveConfig.TryGetValue(screenKey, out object rawRiveConfig))
+                if (!compositeConfig.TryGetValue(screenKey, out object rawCompositeConfig))
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] No Rive config payload for screen {screenKey}.");
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] No composite config payload for screen {screenKey}.");
                     info.Dispose();
                     _streamingTokens.TryRemove(screen.Id, out _);
                     return;
                 }
 
-                // Send the Rive config via HTTP and extract payload info for UI
-                string riveConfigTransmissionPayload;
+                // Send the composite config via HTTP and extract payload info for UI
+                string compositeConfigTransmissionPayload;
                 bool configSent = false;
 
-                if (rawRiveConfig is byte[] riveConfigBytes)
+                if (rawCompositeConfig is byte[] compositeConfigBytes)
                 {
                     if (junction.CompressPayload)
                     {
                         // Extract binary prefix for compressed
-                        string compressedPrefix = ExtractBinaryPrefix(riveConfigBytes);
+                        string compressedPrefix = ExtractBinaryPrefix(compositeConfigBytes);
                         info.UpdateCompressedStandardConfigPayloadPrefix(compressedPrefix);
-                        riveConfigTransmissionPayload = Convert.ToBase64String(riveConfigBytes);
+                        compositeConfigTransmissionPayload = Convert.ToBase64String(compositeConfigBytes);
 
                         // Get uncompressed version for UI display
-                        var uncompressedRiveConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
+                        var uncompressedCompositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
                             screenKey, assignedSensors, screen, screenOverride,
                             junctionType: null, gatewayDestination: null, compressPayload: false);
 
-                        if (uncompressedRiveConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
+                        if (uncompressedCompositeConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
                             uncompressedRaw is string uncompressedString)
                         {
                             string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
@@ -454,48 +447,48 @@ namespace JunctionRelayServer.Services
                     else
                     {
                         // Uncompressed byte array - convert to string
-                        string configString = Encoding.UTF8.GetString(riveConfigBytes);
+                        string configString = Encoding.UTF8.GetString(compositeConfigBytes);
                         string configPrefix = ExtractStringPrefix(configString);
                         info.StandardConfigPayloadPrefix = configPrefix;
                         var idxStd = configString.IndexOf('{');
                         var jsonStd = idxStd > 0 ? configString.Substring(idxStd) : configString;
                         info.UpdateStandardConfigPayload(jsonStd);
-                        riveConfigTransmissionPayload = configString;
+                        compositeConfigTransmissionPayload = configString;
                     }
 
                     var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                    var (success, _) = await httpSender.SendPayloadAsync(riveConfigTransmissionPayload);
+                    var (success, _) = await httpSender.SendPayloadAsync(compositeConfigTransmissionPayload);
                     configSent = success;
                 }
-                else if (rawRiveConfig is string riveConfigString)
+                else if (rawCompositeConfig is string compositeConfigString)
                 {
                     // Extract payload info for UI
-                    string configPrefix = ExtractStringPrefix(riveConfigString);
+                    string configPrefix = ExtractStringPrefix(compositeConfigString);
                     info.StandardConfigPayloadPrefix = configPrefix;
-                    var idxStd = riveConfigString.IndexOf('{');
-                    var jsonStd = idxStd > 0 ? riveConfigString.Substring(idxStd) : riveConfigString;
+                    var idxStd = compositeConfigString.IndexOf('{');
+                    var jsonStd = idxStd > 0 ? compositeConfigString.Substring(idxStd) : compositeConfigString;
                     info.UpdateStandardConfigPayload(jsonStd);
 
                     var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                    var (success, _) = await httpSender.SendPayloadAsync(riveConfigString);
+                    var (success, _) = await httpSender.SendPayloadAsync(compositeConfigString);
                     configSent = success;
                 }
 
                 if (!configSent)
                 {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Failed to send Rive config via HTTP.");
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Failed to send composite config via HTTP.");
                     info.Dispose();
                     _streamingTokens.TryRemove(screen.Id, out _);
                     return;
                 }
 
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_MQTT] " +
-                    $"Rive config sent to {device.Name} via HTTP for MQTT junction.");
+                    $"Composite config sent to {device.Name} via HTTP for MQTT junction.");
             }
             else
             {
                 // PAYLOAD MODE: Generate and send config payloads (existing logic)
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 📄 Starting in Payload rendering mode for {screenKey}");
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 📄 Starting in Payload mode for {screenKey}");
 
                 // Generate UNCOMPRESSED payloads first for display/caching
                 var uncompressedStdCfgs = await payloadService.GenerateConfigPayloadsAsync(
@@ -630,6 +623,17 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Both config payloads sent{compressionInfo}");
             }
 
+            // Log successful start with mode description
+            string modeDescription = junction.RenderingMode switch
+            {
+                RenderModes.Blit => "Pre-rendered Frames",
+                RenderModes.Composite => "Frame Assembly",
+                RenderModes.Payload => "Payload",
+                _ => junction.RenderingMode
+            };
+
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] ✅ MQTT stream started for screen {screenKey} (Mode: {modeDescription})");
+
             // Start streaming loop based on rendering mode
             _ = Task.Run(async () =>
             {
@@ -644,8 +648,11 @@ namespace JunctionRelayServer.Services
                 var junc = await jDb.GetJunctionByIdAsync(junctionId)
                             ?? throw new InvalidOperationException("Junction missing in loop");
 
-                bool isFrameModeLoop = junc.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-                bool isRiveModeLoop = junc.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
+                var renderModeLoop = junc.RenderingMode;
+                bool isPayloadModeLoop = renderModeLoop == RenderModes.Payload;
+                bool isBlitModeLoop = renderModeLoop == RenderModes.Blit;
+                bool isCompositeModeLoop = renderModeLoop == RenderModes.Composite;
+                bool isAnyFrameModeLoop = RenderModes.IsFrameMode(renderModeLoop);
 
                 // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
@@ -653,106 +660,14 @@ namespace JunctionRelayServer.Services
 
                 await Task.Delay(500, cts.Token);
 
-                if (isFrameModeLoop)
+                if (isBlitModeLoop)
                 {
-                    // FRAME MODE: Generate and send frames via HTTP (continuous frame updates)
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Starting Frame rendering loop for {screenKey}");
-
-                    while (!cts.Token.IsCancellationRequested)
-                    {
-                        try
-                        {
-                            var frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                            Dictionary<string, object> framePayload = await plSvc.GenerateFramePayloadsAsync(
-                                screenKey,
-                                assignedSensors,
-                                screen,
-                                screenOverride,
-                                junctionId,
-                                null, // MQTT doesn't need linkId
-                                junctionType: null,
-                                gatewayDestination: null,
-                                compressPayload: junc.CompressPayload);
-                            frameStopwatch.Stop();
-
-                            if (!framePayload.TryGetValue(screenKey, out object rawFrame) || rawFrame is not byte[] frameBytes)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] No frame payload for screen {screenKey}. Exiting loop.");
-                                break;
-                            }
-
-                            // Send frame via HTTP
-                            var httpSender = new Service_Send_Data_HTTP($"http://{dev.IPAddress}/api/data");
-                            var sendStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                            var (success, _) = await httpSender.SendPayloadAsync(frameBytes);
-                            sendStopwatch.Stop();
-
-                            // Create a simple result for health tracking (MQTT doesn't have complex health like WebSocket/HTTP)
-                            var result = new MqttSendResult
-                            {
-                                Success = success,
-                                LatencyMs = sendStopwatch.ElapsedMilliseconds,
-                                ErrorType = success ? string.Empty : "http_frame_send_failed",
-                                ErrorMessage = success ? string.Empty : "HTTP frame send failure for MQTT junction",
-                                Topic = "frame_via_http" // Placeholder topic for frame mode
-                            };
-
-                            // Update health information
-                            info.Health.UpdateHealth(result);
-
-                            if (!result.Success)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Frame send failed: {result.ErrorType} - {result.ErrorMessage}");
-                                if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
-                                {
-                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
-                                    break;
-                                }
-                                if (info.Health.ConsecutiveFailures > 1)
-                                {
-                                    await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
-                                }
-                            }
-
-                            info.Latency = result.LatencyMs;
-                            info.LastSentTime = DateTime.UtcNow;
-
-                            var historyEntry = _historyManager.CreateEntryFromMQTT(info);
-                            _historyManager.AddHistoryEntry(historyEntry);
-
-                            _deviceLatencies[screen.Id] = result.LatencyMs;
-
-                            // Calculate pause for frame rate
-                            int calculatedPause = Math.Max(rate - (int)result.LatencyMs, 0);
-                            if (calculatedPause > 0)
-                            {
-                                await Task.Delay(calculatedPause, cts.Token);
-                            }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in frame streaming loop: {ex.Message}");
-
-                            // Update health with unexpected error
-                            var errorResult = new MqttSendResult
-                            {
-                                Success = false,
-                                ErrorType = "unexpected_error",
-                                ErrorMessage = ex.Message,
-                                LatencyMs = 0,
-                                Topic = "frame_via_http"
-                            };
-                            info.Health.UpdateHealth(errorResult);
-
-                            // Wait a bit before retrying on unexpected errors
-                            await Task.Delay(1000, cts.Token);
-                        }
-                    }
+                    return;
                 }
-                else if (isRiveModeLoop)
+                else if (isCompositeModeLoop)
                 {
-                    // RIVE MODE: Generate and publish Rive sensor data to MQTT topics
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Starting Rive sensor publishing loop for {screenKey}");
+                    // COMPOSITE MODE: Generate and publish composite sensor data to MQTT topics
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Starting Composite sensor publishing loop for {screenKey}");
 
                     // Dictionary to store the last sent payload for each sensor
                     var lastSentPayloads = new Dictionary<int, string>();
@@ -763,8 +678,8 @@ namespace JunctionRelayServer.Services
                         {
                             try
                             {
-                                // Generate UNCOMPRESSED Rive sensor payload first for display/caching
-                                Dictionary<string, object> uncompressedRiveSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
+                                // Generate UNCOMPRESSED composite sensor payload first for display/caching
+                                Dictionary<string, object> uncompressedCompositeSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
                                     screenKey,
                                     assignedSensors,
                                     screen,
@@ -772,7 +687,7 @@ namespace JunctionRelayServer.Services
                                     gatewayDestination: null,
                                     compressPayload: false);
 
-                                if (!uncompressedRiveSensor.TryGetValue(screenKey, out var uncompressedObj) || uncompressedObj is not string uncompressedRaw)
+                                if (!uncompressedCompositeSensor.TryGetValue(screenKey, out var uncompressedObj) || uncompressedObj is not string uncompressedRaw)
                                     continue;
 
                                 // Extract uncompressed sensor payload info FIRST (always needed for UI)
@@ -787,7 +702,7 @@ namespace JunctionRelayServer.Services
                                 string transmissionPayload;
                                 if (junc.CompressPayload)
                                 {
-                                    Dictionary<string, object> compressedRiveSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
+                                    Dictionary<string, object> compressedCompositeSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
                                         screenKey,
                                         assignedSensors,
                                         screen,
@@ -795,7 +710,7 @@ namespace JunctionRelayServer.Services
                                         gatewayDestination: null,
                                         compressPayload: true);
 
-                                    if (!compressedRiveSensor.TryGetValue(screenKey, out var compressedObj))
+                                    if (!compressedCompositeSensor.TryGetValue(screenKey, out var compressedObj))
                                         continue;
 
                                     if (compressedObj is byte[] compressedBytes)
@@ -816,7 +731,7 @@ namespace JunctionRelayServer.Services
                                     }
                                     else
                                     {
-                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected compressed Rive payload type for sensor {sensor.Id}");
+                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected compressed composite payload type for sensor {sensor.Id}");
                                         continue;
                                     }
                                 }
@@ -840,7 +755,7 @@ namespace JunctionRelayServer.Services
 
                                         if (!result.Success)
                                         {
-                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Rive sensor publish failed: {result.ErrorType} - {result.ErrorMessage}");
+                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Composite sensor publish failed: {result.ErrorType} - {result.ErrorMessage}");
 
                                             // Don't immediately break - let health state determine if we should continue
                                             // Only stop if we're truly disconnected with many consecutive failures
@@ -893,7 +808,7 @@ namespace JunctionRelayServer.Services
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException)
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in Rive streaming loop: {ex.Message}");
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in Composite streaming loop: {ex.Message}");
 
                                 // Update health with unexpected error
                                 var errorResult = new MqttSendResult
@@ -1138,6 +1053,7 @@ namespace JunctionRelayServer.Services
         {
             return _historyManager.GetHistorySummary();
         }
+
         public bool ClearStreamHistory(int screenId)
         {
             return _historyManager.ClearStreamHistory(screenId);
@@ -1171,8 +1087,8 @@ namespace JunctionRelayServer.Services
                 StreamsByProtocol = _streamingTokens.Values
                     .GroupBy(s => s.Protocol)
                     .ToDictionary(g => g.Key, g => g.Count()),
-                FrameStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Frames")),
-                RiveStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Rive")),
+                FrameStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Pre-rendered Frames")),
+                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Frame Assembly")),
                 MqttInstances = _mqttInstances.Count,
                 ConnectedInstances = _mqttInstances.Values.Count(m => m.IsConnected),
                 HealthSummary = new

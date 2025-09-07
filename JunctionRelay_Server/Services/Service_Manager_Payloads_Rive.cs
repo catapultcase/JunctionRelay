@@ -62,24 +62,45 @@ namespace JunctionRelayServer.Services
                 // 1) Get the frame layout for this screen
                 Model_Frame_Layout? frameLayout = null;
 
-                // Check if junction has a specific frame layout override for this screen
-                if (screenOverride?.FrameLayoutId.HasValue == true)
+
+                // Do not perform override for virtual puppet screens
+                if (screen.DeviceId < 0)
                 {
-                    frameLayout = await _frameLayoutDb.GetFrameLayoutByIdAsync(screenOverride.FrameLayoutId.Value);
+                    if (screen.FrameLayoutId.HasValue)
+                    {
+                        frameLayout = await _frameLayoutDb.GetFrameLayoutByIdAsync(screen.FrameLayoutId.Value);
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_RIVE] ℹ️ DeviceId < 0 — using screen.FrameLayoutId {screen.FrameLayoutId.Value} for {screenKey}");
+                    }
+
+                    if (frameLayout == null)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_RIVE] ❌ DeviceId < 0 but no FrameLayoutId found for {screenKey}");
+                        return result; // stop here, no fallback
+                    }
+                }
+                else
+                {
+                    // Normal path: check if junction has a specific frame layout override for this screen
+                    if (screenOverride?.FrameLayoutId.HasValue == true)
+                    {
+                        frameLayout = await _frameLayoutDb.GetFrameLayoutByIdAsync(screenOverride.FrameLayoutId.Value);
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_RIVE] ℹ️ Using override FrameLayoutId {screenOverride.FrameLayoutId.Value} for {screenKey}");
+                    }
+
+                    // Fallback to default Rive layout (template)
+                    if (frameLayout == null)
+                    {
+                        var riveLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("COMPOSITE_MODE");
+                        frameLayout = riveLayouts.FirstOrDefault(f => f.IsTemplate);
+                    }
+
+                    if (frameLayout == null)
+                    {
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_RIVE] ❌ No Rive frame layout found for screen {screenKey}");
+                        return result;
+                    }
                 }
 
-                // Fallback to default Rive layout
-                if (frameLayout == null)
-                {
-                    var riveLayouts = await _frameLayoutDb.GetFrameLayoutsByTypeAsync("COMPOSITE_MODE");
-                    frameLayout = riveLayouts.FirstOrDefault(f => f.IsTemplate);
-                }
-
-                if (frameLayout == null)
-                {
-                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_RIVE] ❌ No Rive frame layout found for screen {screenKey}");
-                    return result;
-                }
 
                 // 2) Parse JsonFrameConfig and JsonFrameElements
                 object? frameConfig = null;

@@ -59,7 +59,7 @@ namespace JunctionRelayServer.Services
                     info.Protocol,
                     info.SensorsCount,
 
-                    // NEW: Frame information
+                    // Frame information
                     HasLastFrame = info.LastSentFrameBytes != null,
                     LastFrameSize = info.LastFrameSize,
                     LastFrameTime = info.LastFrameGeneratedTime,
@@ -179,7 +179,7 @@ namespace JunctionRelayServer.Services
             return payload.Substring(0, 8);
         }
 
-        // Update the StartStreamingAsync method to support frame rendering mode
+        // ✅ FIXED: Added linkId parameter to match Virtual manager signature
         public async Task StartStreamingAsync(
             int junctionId,
             int deviceId,
@@ -188,7 +188,8 @@ namespace JunctionRelayServer.Services
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
             string? junctionType = null,           // Junction type (e.g., "Gateway Junction (HTTP to ESP:NOW)")
-            string? gatewayDestination = null)     // Gateway IP address (for Gateway junctions)
+            string? gatewayDestination = null,     // Gateway IP address (for Gateway junctions)
+            int linkId = 0)                        // ✅ FIXED: Added linkId parameter
         {
             if (_streamingTokens.ContainsKey(screen.Id))
             {
@@ -221,9 +222,12 @@ namespace JunctionRelayServer.Services
                     return;
                 }
 
-                // Determine rendering mode
-                bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-                bool isRiveMode = junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
+                // Determine rendering mode using new constants
+                var renderMode = junction.RenderingMode;
+                bool isPayloadMode = renderMode == RenderModes.Payload;
+                bool isBlitMode = renderMode == RenderModes.Blit;
+                bool isCompositeMode = renderMode == RenderModes.Composite;
+                bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
                 // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
@@ -276,92 +280,30 @@ namespace JunctionRelayServer.Services
                     Protocol = useKeepAlive ? "HTTP (Keep-Alive)" : "HTTP"
                 };
 
-                // Update protocol to indicate frame or rive mode
-                if (isFrameMode)
+                // Update protocol to indicate frame mode
+                if (isBlitMode)
                 {
-                    info.Protocol = useKeepAlive ? "HTTP (Keep-Alive, Frames)" : "HTTP (Frames)";
+                    info.Protocol = useKeepAlive ? "HTTP (Keep-Alive, Pre-rendered Frames)" : "HTTP (Pre-rendered Frames)";
                     info.Health.IsFrameMode = true;
                 }
-                else if (isRiveMode)
+                else if (isCompositeMode)
                 {
-                    info.Protocol = useKeepAlive ? "HTTP (Keep-Alive, Rive)" : "HTTP (Rive)";
+                    info.Protocol = useKeepAlive ? "HTTP (Keep-Alive, Frame Assembly)" : "HTTP (Frame Assembly)";
                 }
 
                 _streamingTokens[screen.Id] = info;
 
                 // Send initial configuration based on rendering mode
-                if (isFrameMode)
+                if (isBlitMode)
                 {
-                    // FRAME MODE: Generate and send initial frame
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] 🖼️ Starting in Frame rendering mode for {screenKey}");
-
-                    var frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                    Dictionary<string, object> frameConfig = await payloadService.GenerateFramePayloadsAsync(
-                        screenKey,
-                        assignedSensors,
-                        screen,
-                        screenOverride,
-                        junctionId,
-                        await GetLinkIdForDeviceAsync(junctionId, deviceId, scope),
-                        junctionType: junctionType,
-                        gatewayDestination: targetMacAddress,
-                        compressPayload: junction.CompressPayload);
-                    frameStopwatch.Stop();
-
-                    if (!frameConfig.TryGetValue(screenKey, out object rawFrame))
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No frame payload for screen {screenKey}.");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
-
-                    // Send the frame (should be byte array)
-                    if (rawFrame is byte[] frameBytes)
-                    {
-                        // Store the frame in stream info before sending
-                        var layoutType = screenOverride?.FrameLayoutId?.ToString() ?? screen.Template?.LayoutType ?? "default";
-                        info.UpdateLastSentFrame(frameBytes, layoutType);
-
-                        var sendStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                        var result = await httpSender.SendPayloadWithHealthAsync(frameBytes);
-                        sendStopwatch.Stop();
-
-                        // Update result with frame-specific metrics
-                        result.IsFramePayload = true;
-                        result.FrameSizeBytes = frameBytes.Length;
-                        result.FrameRenderTimeMs = frameStopwatch.ElapsedMilliseconds;
-                        result.PayloadType = "Frame";
-
-                        info.Health.UpdateHealth(result);
-
-                        if (!result.Success)
-                        {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send initial frame.");
-                            info.Dispose();
-                            _streamingTokens.TryRemove(screen.Id, out _);
-                            return;
-                        }
-
-                        Console.WriteLine(
-                        $"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] " +
-                        $"Initial frame sent to {device.Name} via {(useKeepAlive ? "keep-alive" : "standard")} connection. " +
-                        $"Frame: {frameBytes.Length} bytes, Render: {frameStopwatch.ElapsedMilliseconds}ms, Send: {sendStopwatch.ElapsedMilliseconds}ms");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Frame payload is not byte array for screen {screenKey}.");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
+                    return;
                 }
-                else if (isRiveMode)
+                else if (isCompositeMode)
                 {
-                    // RIVE MODE: Generate and send initial Rive config
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] 🎭 Starting in Rive rendering mode for {screenKey}");
+                    // COMPOSITE MODE: Generate and send initial composite config
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] 🎭 Starting in Composite (frame assembly) mode for {screenKey}");
 
-                    Dictionary<string, object> riveConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
+                    Dictionary<string, object> compositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
                         screenKey,
                         assignedSensors,
                         screen,
@@ -370,20 +312,20 @@ namespace JunctionRelayServer.Services
                         gatewayDestination: targetMacAddress,
                         compressPayload: junction.CompressPayload);
 
-                    if (!riveConfig.TryGetValue(screenKey, out object rawRiveConfig))
+                    if (!compositeConfig.TryGetValue(screenKey, out object rawCompositeConfig))
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No Rive config payload for screen {screenKey}.");
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No composite config payload for screen {screenKey}.");
                         info.Dispose();
                         _streamingTokens.TryRemove(screen.Id, out _);
                         return;
                     }
 
-                    // Send the Rive config and extract payload info
+                    // Send the composite config and extract payload info
                     bool configSent = false;
-                    if (rawRiveConfig is byte[] riveConfigBytes)
+                    if (rawCompositeConfig is byte[] compositeConfigBytes)
                     {
-                        var result = await httpSender.SendPayloadWithHealthAsync(riveConfigBytes);
-                        result.PayloadType = "Rive Config";
+                        var result = await httpSender.SendPayloadWithHealthAsync(compositeConfigBytes);
+                        result.PayloadType = "Composite Config";
                         info.Health.UpdateHealth(result);
                         configSent = result.Success;
 
@@ -393,16 +335,16 @@ namespace JunctionRelayServer.Services
                             if (junction.CompressPayload)
                             {
                                 // Extract binary prefix for compressed
-                                string compressedPrefix = ExtractBinaryPrefix(riveConfigBytes);
+                                string compressedPrefix = ExtractBinaryPrefix(compositeConfigBytes);
                                 info.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
 
                                 // Get uncompressed version for UI display
-                                var uncompressedRiveConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
+                                var uncompressedCompositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
                                     screenKey, assignedSensors, screen, screenOverride,
                                     junctionType: junctionType, gatewayDestination: targetMacAddress,
                                     compressPayload: false);
 
-                                if (uncompressedRiveConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
+                                if (uncompressedCompositeConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
                                     uncompressedRaw is string uncompressedString)
                                 {
                                     string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
@@ -416,7 +358,7 @@ namespace JunctionRelayServer.Services
                             else
                             {
                                 // Uncompressed byte array - convert to string
-                                string configString = Encoding.UTF8.GetString(riveConfigBytes);
+                                string configString = Encoding.UTF8.GetString(compositeConfigBytes);
                                 string configPrefix = ExtractStringPrefix(configString);
                                 info.ConfigPayloadPrefix = configPrefix;
                                 string jsonConfig = string.IsNullOrEmpty(configPrefix)
@@ -426,28 +368,28 @@ namespace JunctionRelayServer.Services
                             }
                         }
                     }
-                    else if (rawRiveConfig is string riveConfigString)
+                    else if (rawCompositeConfig is string compositeConfigString)
                     {
-                        var result = await httpSender.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(riveConfigString));
-                        result.PayloadType = "Rive Config";
+                        var result = await httpSender.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(compositeConfigString));
+                        result.PayloadType = "Composite Config";
                         info.Health.UpdateHealth(result);
                         configSent = result.Success;
 
                         // Extract payload info for UI
                         if (configSent)
                         {
-                            string configPrefix = ExtractStringPrefix(riveConfigString);
+                            string configPrefix = ExtractStringPrefix(compositeConfigString);
                             info.ConfigPayloadPrefix = configPrefix;
                             string jsonConfig = string.IsNullOrEmpty(configPrefix)
-                                ? riveConfigString
-                                : riveConfigString.Substring(8);
+                                ? compositeConfigString
+                                : compositeConfigString.Substring(8);
                             info.UpdateConfigPayload(jsonConfig);
                         }
                     }
 
                     if (!configSent)
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send Rive config.");
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Failed to send composite config.");
                         info.Dispose();
                         _streamingTokens.TryRemove(screen.Id, out _);
                         return;
@@ -455,12 +397,12 @@ namespace JunctionRelayServer.Services
 
                     string connectionType = useKeepAlive ? "keep-alive" : "standard";
                     Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_HTTP] " +
-                        $"Rive config sent to {device.Name} via {connectionType} connection.");
+                        $"Composite config sent to {device.Name} via {connectionType} connection.");
                 }
                 else
                 {
                     // PAYLOAD MODE: Generate and send config payload (existing logic)
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] 📄 Starting in Payload rendering mode for {screenKey}");
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] 📄 Starting in Payload mode for {screenKey}");
 
                     // Prepare uncompressed JSON payload
                     Dictionary<string, object> uncompressedConfig = await payloadService.GenerateConfigPayloadsAsync(
@@ -594,8 +536,11 @@ namespace JunctionRelayServer.Services
                     return;
                 }
 
-                bool isFrameMode = junction.RenderingMode.Equals("FrameEngine", StringComparison.OrdinalIgnoreCase);
-                bool isRiveMode = junction.RenderingMode.Equals("CompositeMode", StringComparison.OrdinalIgnoreCase);
+                var renderMode = junction.RenderingMode;
+                bool isPayloadMode = renderMode == RenderModes.Payload;
+                bool isBlitMode = renderMode == RenderModes.Blit;
+                bool isCompositeMode = renderMode == RenderModes.Composite;
+                bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
                 // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
@@ -618,78 +563,14 @@ namespace JunctionRelayServer.Services
                 {
                     try
                     {
-                        if (isFrameMode)
+                        if (isBlitMode)
                         {
-                            // FRAME MODE: Generate and send frame
-                            var frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                            Dictionary<string, object> framePayload = await loopPayloadService.GenerateFramePayloadsAsync(
-                                screenKey,
-                                assignedSensors,
-                                screen,
-                                screenOverride,
-                                junctionId,
-                                await GetLinkIdForDeviceAsync(junctionId, deviceId, loopScope),
-                                junctionType: junctionType,
-                                gatewayDestination: targetMacAddress,
-                                compressPayload: junction.CompressPayload);
-                            frameStopwatch.Stop();
-
-                            if (!framePayload.TryGetValue(screenKey, out object rawFrame) || rawFrame is not byte[] frameBytes)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No frame payload for screen {screenKey}. Exiting loop.");
-                                break;
-                            }
-
-                            // Store the frame in stream info before sending
-                            var layoutType = screenOverride?.FrameLayoutId?.ToString() ?? screen.Template?.LayoutType ?? "default";
-                            info.UpdateLastSentFrame(frameBytes, layoutType);
-
-                            // Send frame
-                            Stopwatch sendStopwatch = Stopwatch.StartNew();
-                            var result = await info.HttpSender!.SendPayloadWithHealthAsync(frameBytes);
-                            sendStopwatch.Stop();
-
-                            // Update result with frame-specific metrics
-                            result.IsFramePayload = true;
-                            result.FrameSizeBytes = frameBytes.Length;
-                            result.FrameRenderTimeMs = frameStopwatch.ElapsedMilliseconds;
-                            result.PayloadType = "Frame";
-
-                            // Update health information
-                            info.Health.UpdateHealth(result);
-
-                            if (!result.Success)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Frame send failed: {result.ErrorType} - {result.ErrorMessage}");
-                                if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
-                                {
-                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
-                                    break;
-                                }
-                                if (info.Health.ConsecutiveFailures > 1)
-                                {
-                                    await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
-                                }
-                            }
-
-                            info.Latency = result.LatencyMs;
-                            info.LastSentTime = DateTime.UtcNow;
-
-                            var historyEntry = _historyManager.CreateEntryFromHTTP(info);
-                            _historyManager.AddHistoryEntry(historyEntry);
-
-                            _streamLatencies[screen.Id] = result.LatencyMs;
-
-                            int calculatedPause = Math.Max(rate - (int)result.LatencyMs, 0);
-                            if (calculatedPause > 0)
-                            {
-                                await Task.Delay(calculatedPause, cts.Token);
-                            }
+                            return;
                         }
-                        else if (isRiveMode)
+                        else if (isCompositeMode)
                         {
-                            // RIVE MODE: Generate and send Rive sensor data
-                            Dictionary<string, object> riveSensorPayload = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
+                            // COMPOSITE MODE: Generate and send composite sensor data
+                            Dictionary<string, object> compositeSensorPayload = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
                                 screenKey,
                                 assignedSensors,
                                 screen,
@@ -697,19 +578,19 @@ namespace JunctionRelayServer.Services
                                 gatewayDestination: targetMacAddress,
                                 compressPayload: junction.CompressPayload);
 
-                            if (!riveSensorPayload.TryGetValue(screenKey, out object rawRiveSensor))
+                            if (!compositeSensorPayload.TryGetValue(screenKey, out object rawCompositeSensor))
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No Rive sensor payload for screen {screenKey}. Exiting loop.");
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] No composite sensor payload for screen {screenKey}. Exiting loop.");
                                 break;
                             }
 
-                            // Send Rive sensor data
+                            // Send composite sensor data
                             Stopwatch stopwatch = Stopwatch.StartNew();
                             HttpSendResult result;
 
-                            if (rawRiveSensor is byte[] riveSensorBytes)
+                            if (rawCompositeSensor is byte[] compositeSensorBytes)
                             {
-                                result = await info.HttpSender!.SendPayloadWithHealthAsync(riveSensorBytes);
+                                result = await info.HttpSender!.SendPayloadWithHealthAsync(compositeSensorBytes);
 
                                 // Extract payload info for UI after successful send
                                 if (result.Success)
@@ -717,16 +598,16 @@ namespace JunctionRelayServer.Services
                                     if (junction.CompressPayload)
                                     {
                                         // Extract binary prefix for compressed
-                                        string compressedPrefix = ExtractBinaryPrefix(riveSensorBytes);
+                                        string compressedPrefix = ExtractBinaryPrefix(compositeSensorBytes);
                                         info.UpdateCompressedLastSentPayloadPrefix(compressedPrefix);
 
                                         // Get uncompressed version for UI display
-                                        var uncompressedRiveSensor = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
+                                        var uncompressedCompositeSensor = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
                                             screenKey, assignedSensors, screen,
                                             junctionType: junctionType, gatewayDestination: targetMacAddress,
                                             compressPayload: false);
 
-                                        if (uncompressedRiveSensor.TryGetValue(screenKey, out object uncompressedRaw) &&
+                                        if (uncompressedCompositeSensor.TryGetValue(screenKey, out object uncompressedRaw) &&
                                             uncompressedRaw is string uncompressedString)
                                         {
                                             string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
@@ -740,7 +621,7 @@ namespace JunctionRelayServer.Services
                                     else
                                     {
                                         // Uncompressed byte array - convert to string
-                                        string sensorString = Encoding.UTF8.GetString(riveSensorBytes);
+                                        string sensorString = Encoding.UTF8.GetString(compositeSensorBytes);
                                         string sensorPrefix = ExtractStringPrefix(sensorString);
                                         info.LastSentPayloadPrefix = sensorPrefix;
                                         string jsonSensor = string.IsNullOrEmpty(sensorPrefix)
@@ -750,38 +631,38 @@ namespace JunctionRelayServer.Services
                                     }
                                 }
                             }
-                            else if (rawRiveSensor is string riveSensorString)
+                            else if (rawCompositeSensor is string compositeSensorString)
                             {
-                                result = await info.HttpSender!.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(riveSensorString));
+                                result = await info.HttpSender!.SendPayloadWithHealthAsync(Encoding.UTF8.GetBytes(compositeSensorString));
 
                                 // Extract payload info for UI after successful send
                                 if (result.Success)
                                 {
-                                    string sensorPrefix = ExtractStringPrefix(riveSensorString);
+                                    string sensorPrefix = ExtractStringPrefix(compositeSensorString);
                                     info.LastSentPayloadPrefix = sensorPrefix;
                                     string jsonSensor = string.IsNullOrEmpty(sensorPrefix)
-                                        ? riveSensorString
-                                        : riveSensorString.Substring(8);
+                                        ? compositeSensorString
+                                        : compositeSensorString.Substring(8);
                                     info.UpdateLastSentPayload(jsonSensor);
                                 }
                             }
                             else
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Unexpected Rive sensor payload type for screen {screenKey}. Exiting loop.");
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Unexpected composite sensor payload type for screen {screenKey}. Exiting loop.");
                                 break;
                             }
 
                             stopwatch.Stop();
 
-                            // Update result with Rive-specific metrics
-                            result.PayloadType = "Rive Sensor";
+                            // Update result with composite-specific metrics
+                            result.PayloadType = "Composite Sensor";
 
                             // Update health information
                             info.Health.UpdateHealth(result);
 
                             if (!result.Success)
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Rive sensor send failed: {result.ErrorType} - {result.ErrorMessage}");
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Composite sensor send failed: {result.ErrorType} - {result.ErrorMessage}");
                                 if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
                                 {
                                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
@@ -1037,7 +918,7 @@ namespace JunctionRelayServer.Services
                             ErrorType = "unexpected_error",
                             ErrorMessage = ex.Message,
                             LatencyMs = 0,
-                            PayloadType = isFrameMode ? "Frame" : (isRiveMode ? "Rive Sensor" : "JSON")
+                            PayloadType = isBlitMode ? "Frame" : (isCompositeMode ? "Composite Sensor" : "JSON")
                         };
                         info.Health.UpdateHealth(errorResult);
 
@@ -1054,22 +935,6 @@ namespace JunctionRelayServer.Services
                 }
 
             }, cts.Token);
-        }
-
-        private async Task<int?> GetLinkIdForDeviceAsync(int junctionId, int deviceId, IServiceScope scope)
-        {
-            try
-            {
-                var junctionLinkDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
-                var deviceLinks = await junctionLinkDb.GetDeviceLinksByJunctionAsync(junctionId);
-                var deviceLink = deviceLinks.FirstOrDefault(link => link.DeviceId == deviceId);
-                return deviceLink?.Id;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] ⚠️ Could not get link ID for device {deviceId}: {ex.Message}");
-                return null;
-            }
         }
 
         public void StopStreaming(int screenId)
@@ -1142,7 +1007,7 @@ namespace JunctionRelayServer.Services
                     .GroupBy(s => s.Protocol)
                     .ToDictionary(g => g.Key, g => g.Count()),
                 FrameStreams = _streamingTokens.Values.Count(s => s.Health.IsFrameMode),
-                RiveStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Rive")),
+                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Frame Assembly")),
                 KeepAliveStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Keep-Alive")),
                 HealthSummary = new
                 {

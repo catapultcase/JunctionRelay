@@ -2,7 +2,8 @@
 
 ## Unified Data Orchestration & IoT Device Management
 
-**Local-first. Cloud-optional. Always in control.**
+**Local-first. Cloud-optional.**
+Connect, transform, and display your data anywhere.
 
 ## 📚 Documentation
 
@@ -13,7 +14,7 @@ Full user and developer documentation is available at:
 ---
 
 ![Dashboard Demo](./assets/ui/Dashboard.gif)
-![Examples](./assets/examples/examples.gif)
+![Examples](./assets/examples/sizzle.gif)
 
 ---
 
@@ -107,6 +108,8 @@ JunctionRelay now supports cloud-managed ESP32 devices for simplified deployment
 * Seamless Integration (cloud devices work alongside local devices in the same interface)
 
 ---
+
+![Examples](./assets/examples/examples.gif)
 
 ### 🚀 Example Builds
 

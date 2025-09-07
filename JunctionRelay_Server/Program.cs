@@ -276,13 +276,13 @@ builder.Services.AddScoped<Service_Database_Manager_Collectors>();
 builder.Services.AddScoped<Service_Database_Manager_Junctions>();
 builder.Services.AddScoped<Service_Database_Manager_JunctionLinks>();
 builder.Services.AddScoped<Service_Database_Manager_Layouts>();
-builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 builder.Services.AddScoped<Service_Manager_Device_Sync>();
 builder.Services.AddScoped<Service_Manager_Payloads>();
 builder.Services.AddScoped<Service_Manager_Sensors>();
 builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
+builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 
 // Core singleton services
 builder.Services.AddSingleton<IService_Settings, Service_Settings>();
@@ -296,6 +296,7 @@ builder.Services.AddSingleton<Service_Stream_Manager_WebSocket>();
 builder.Services.AddSingleton<Service_Stream_Manager_COM>();
 builder.Services.AddSingleton<Service_Stream_Manager_Virtual>();
 builder.Services.AddSingleton<Service_FrameEngine>();
+builder.Services.AddSingleton<Service_FrameEngine_Puppeteer>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
 builder.Services.AddSingleton<Service_Stream_History_Manager>();
 builder.Services.AddSingleton<StartupSignals>();
@@ -344,6 +345,7 @@ builder.Services.AddTransient<DataCollector_GenericAPI>();
 builder.Services.AddTransient<DataCollector_Github>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
 builder.Services.AddTransient<DataCollector_Host>();
+builder.Services.AddTransient<DataCollector_HWiNFO>();
 builder.Services.AddTransient<DataCollector_iCal>();
 builder.Services.AddTransient<DataCollector_InternetTime>();
 builder.Services.AddTransient<DataCollector_LibreHardwareMonitor>();
@@ -366,6 +368,7 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
             { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },
             { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
             { "Host", c => { var i = provider.GetRequiredService<DataCollector_Host>(); i.ApplyConfiguration(c); return i; } },
+            { "HWiNFO", c => { var i = provider.GetRequiredService<DataCollector_HWiNFO>(); i.ApplyConfiguration(c); return i; } },
             { "iCal", c => { var i = provider.GetRequiredService<DataCollector_iCal>(); i.ApplyConfiguration(c); return i; } },
             { "InternetTime", c => { var i = provider.GetRequiredService<DataCollector_InternetTime>(); i.ApplyConfiguration(c); return i; } },
             { "LibreHardwareMonitor", c => { var i = provider.GetRequiredService<DataCollector_LibreHardwareMonitor>(); i.ApplyConfiguration(c); return i; } },
@@ -441,6 +444,15 @@ app.UseCors("AllowFrontend");
 app.UseWebSockets();
 
 app.UseStaticFiles();
+
+// Frames directory for FrameEngine
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(framesPath),
+    RequestPath = "/frames",
+    ServeUnknownFileTypes = true,
+    DefaultContentType = "image/png"
+});
 
 // Internal FrameEngine Templates
 var templatesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "frameengine", "templates");

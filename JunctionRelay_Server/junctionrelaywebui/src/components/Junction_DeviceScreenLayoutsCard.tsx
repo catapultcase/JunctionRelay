@@ -88,7 +88,7 @@ interface ScreenLayoutConfig {
     junctionId?: number;
     deviceScreenId: number;
     screenLayoutId?: number; // For payload mode
-    frameLayoutId?: number; // For frameengine & rive mapping modes
+    frameLayoutId?: number; // For frame modes
     targetPollRate?: number;
     onlySendIfChanged: boolean;
     enableUrlAccess?: boolean; // New field
@@ -132,7 +132,7 @@ interface SensorTag {
     isConnected: boolean; // Now uses real sensor mapping logic
 }
 
-// NEW: Rive Input interfaces
+// Rive Input interfaces
 interface RiveInput {
     machineName: string;
     inputName: string;
@@ -160,7 +160,14 @@ interface DiscoveredRiveData {
     };
 }
 
-// NEW: Function to extract Rive inputs from JsonFrameConfig
+// Render mode display names with proper typing
+const renderModeDisplayNames: Record<string, string> = {
+    'Payload': 'Payloads',
+    'Blit': 'FrameEngine - Blit (Pre-Rendered Frames)',
+    'Composite': 'FrameEngine - Composite (Reassembly at Target)'
+};
+
+// Function to extract Rive inputs from JsonFrameConfig
 const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensors: Sensor[]): RiveInput[] => {
     const allRiveInputs: RiveInput[] = [];
     const inputMap = new Map<string, RiveInput>();
@@ -230,7 +237,7 @@ const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensor
     return allRiveInputs;
 };
 
-// NEW: Rive Input Mapping Section Component
+// Rive Input Mapping Section Component
 const RiveInputMappingSection: React.FC<{
     riveInputs: RiveInput[];
     availableSensors: Sensor[];
@@ -240,7 +247,7 @@ const RiveInputMappingSection: React.FC<{
     if (riveInputs.length === 0) {
         return (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Composite Mode layouts.
+                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Composite layouts.
             </Typography>
         );
     }
@@ -323,26 +330,26 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     // State for screens, layouts, and configurations
     const [deviceScreens, setDeviceScreens] = useState<{ [deviceId: number]: any[] }>({});
     const [screenLayouts, setScreenLayouts] = useState<any[]>([]); // Legacy layouts
-    const [frameLayouts, setFrameLayouts] = useState<any[]>([]); // FrameEngine & rive mapping layouts
+    const [frameLayouts, setFrameLayouts] = useState<any[]>([]); // Frame layouts
     const [screenConfigs, setScreenConfigs] = useState<{ [key: string]: ScreenLayoutConfig }>({});
     const [loadingState, setLoadingState] = useState<{ [key: string]: boolean }>({});
     const [savingRenderingMode, setSavingRenderingMode] = useState<boolean>(false);
 
-    // NEW: State for Rive input mappings
+    // State for Rive input mappings
     const [riveInputMappings, setRiveInputMappings] = useState<Record<string, string[]>>({});
 
-    // Determine rendering mode
-    const isFrameEngine = junction?.renderingMode === "FrameEngine";
-    const isRiveMapping = junction?.renderingMode === "CompositeMode";
+    // Determine rendering mode using new constants
+    const renderingMode = junction?.renderingMode || 'Payload';
+    const isPayloadMode = renderingMode === 'Payload';
+    const isBlitMode = renderingMode === 'Blit';
+    const isCompositeMode = renderingMode === 'Composite';
+    const isAnyFrameMode = isBlitMode || isCompositeMode;
 
     // Filter layouts based on rendering mode
     const getFilteredLayouts = () => {
-        if (isFrameEngine) {
-            // FrameEngine mode - show PRE_RENDERED_IMAGE templates
-            return frameLayouts.filter(layout => layout.layoutType === "PRE_RENDERED_IMAGE");
-        } else if (isRiveMapping) {
-            // CompositeMode mode - show COMPOSITE_MODE templates
-            return frameLayouts.filter(layout => layout.layoutType === "COMPOSITE_MODE");
+        if (isBlitMode || isCompositeMode) {
+            // Both frame modes - show all frame layouts
+            return frameLayouts;
         } else {
             // Payload mode - show traditional screen layouts
             return screenLayouts;
@@ -416,13 +423,13 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         }
     };
 
-    // NEW: Calculate Rive inputs when layouts or sensors change
+    // Calculate Rive inputs when layouts or sensors change - now for both frame modes
     const riveInputs = React.useMemo(() => {
-        if (!isRiveMapping) return [];
+        if (!isAnyFrameMode) return [];
         return extractRiveInputsFromTemplates(availableLayouts, availableSensors);
-    }, [availableLayouts, availableSensors, isRiveMapping]);
+    }, [availableLayouts, availableSensors, isAnyFrameMode]);
 
-    // NEW: Handle Rive input mapping changes
+    // Handle Rive input mapping changes
     const handleRiveInputMappingChange = async (inputKey: string, sensorTags: string[]) => {
         try {
             // Update local state immediately
@@ -462,7 +469,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         }
     };
 
-    // Fetch frame layouts (new frameengine / rive mapping)
+    // Fetch frame layouts
     const fetchFrameLayouts = async () => {
         try {
             setLoadingState(prev => ({ ...prev, frameLayouts: true }));
@@ -591,7 +598,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             };
 
             // Set the appropriate layout ID based on rendering mode
-            if (isFrameEngine || isRiveMapping) {
+            if (isAnyFrameMode) {
                 payload.frameLayoutId = layoutId;
             } else {
                 payload.screenLayoutId = layoutId;
@@ -626,16 +633,12 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 }
             }));
 
-            showSnackbar(
-                `${isRiveMapping ? 'Rive' : (isFrameEngine ? 'Frame' : 'Screen')} layout configuration saved successfully`,
-                "success"
-            );
+            const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
+            showSnackbar(`${modeDescription} layout configuration saved successfully`, "success");
         } catch (error) {
             console.error("Error managing layout configuration:", error);
-            showSnackbar(
-                `Failed to save ${isRiveMapping ? 'rive' : (isFrameEngine ? 'frame' : 'screen')} layout configuration`,
-                "error"
-            );
+            const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
+            showSnackbar(`Failed to save ${modeDescription} layout configuration`, "error");
         } finally {
             setLoadingState(prev => ({ ...prev, [key]: false }));
         }
@@ -825,8 +828,8 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 onJunctionUpdate(updatedJunction);
             }
 
-            const modeLabel = newMode === "FrameEngine" ? "FrameEngine - Pre-Rendered Frames" : newMode === "CompositeMode" ? "FrameEngine - Composite Mode" : "Payload";
-            showSnackbar(`Switched to ${modeLabel} mode successfully`, "success");
+            const modeLabel = renderModeDisplayNames[newMode] || newMode;
+            showSnackbar(`Switched to ${modeLabel} successfully`, "success");
 
             // Refresh screen configurations since they may be different for the new mode
             targetDeviceLinks.forEach(link => {
@@ -855,7 +858,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         const config = screenConfigs[key];
 
         if (config) {
-            return (isFrameEngine || isRiveMapping) ? config.frameLayoutId : config.screenLayoutId;
+            return isAnyFrameMode ? config.frameLayoutId : config.screenLayoutId;
         }
 
         return defaultLayoutId;
@@ -987,23 +990,19 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                         <FormControl size="small" sx={{ minWidth: 200 }}>
                             <InputLabel>Rendering Mode</InputLabel>
                             <Select
-                                value={junction?.renderingMode || "Payload"}
+                                value={renderingMode}
                                 label="Rendering Mode"
                                 onChange={(e) => handleRenderingModeChange(e.target.value)}
                                 disabled={savingRenderingMode || loading}
                             >
-                                <MenuItem value="Payload">Standard Payloads</MenuItem>
-                                <MenuItem value="FrameEngine">FrameEngine (Pre-Rendered Frames)</MenuItem>
-                                <MenuItem value="CompositeMode">FrameEngine (Composite Mode)</MenuItem>
+                                <MenuItem value="Payload">Data Payloads</MenuItem>
+                                <MenuItem value="Blit">Pre-rendered Frames</MenuItem>
+                                <MenuItem value="Composite">Frame Assembly</MenuItem>
                             </Select>
                         </FormControl>
                         <Chip
-                            label={
-                                isRiveMapping
-                                    ? "FrameEngine Active"
-                                    : (isFrameEngine ? "FrameEngine Active" : "Payload Mode Active")
-                            }
-                            color={(isFrameEngine || isRiveMapping) ? "primary" : "default"}
+                            label={`${renderModeDisplayNames[renderingMode] || renderingMode} Active`}
+                            color={isAnyFrameMode ? "primary" : "default"}
                             size="small"
                             icon={<ImageIcon />}
                         />
@@ -1012,17 +1011,17 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                     </Box>
 
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        {isFrameEngine ? (
+                        {isBlitMode ? (
                             <>
-                                <strong>FrameEngine (Pre-Rendered Frames):</strong> Uses the FrameEngine to render complete images and push per-frame. The receiving device should handle only the displaying of these final images.
+                                <strong>Pre-rendered Frames:</strong> Uses the FrameEngine to render complete images and push per-frame. The receiving device should handle only the displaying of these final images.
                             </>
-                        ) : isRiveMapping ? (
+                        ) : isCompositeMode ? (
                             <>
-                                <strong>FrameEngine (Composite Mode):</strong> Uses Rive state machines and animations mapped directly to sensors. The receiving device interprets Rive instructions rather than raw frames or payloads, enabling dynamic, vector-based rendering.
+                                <strong>Frame Assembly:</strong> Uses Rive state machines and animations mapped directly to sensors. The receiving device interprets Rive instructions rather than raw frames or payloads, enabling dynamic, vector-based rendering.
                             </>
                         ) : (
                             <>
-                                <strong>Standard Payloads:</strong> Uses the Payload system to send raw data payloads to target devices using legacy screen layouts. The receiving device should handle rendering/display logic.
+                                <strong>Data Payloads:</strong> Uses the Payload system to send raw data payloads to target devices using legacy screen layouts. The receiving device should handle rendering/display logic.
                             </>
                         )}
                     </Typography>
@@ -1039,16 +1038,16 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                     display: 'flex',
                     alignItems: 'center'
                 }}>
-                    {(isFrameEngine || isRiveMapping) ? <ImageIcon sx={{ mr: 1 }} /> : <ScreenshotIcon sx={{ mr: 1 }} />}
-                    {isRiveMapping
-                        ? "Composite Mode Configurations"
-                        : (isFrameEngine ? "FrameEngine Configurations" : "Screen Layout Overrides")}
+                    {isAnyFrameMode ? <ImageIcon sx={{ mr: 1 }} /> : <ScreenshotIcon sx={{ mr: 1 }} />}
+                    {isCompositeMode
+                        ? "Frame Assembly Configurations"
+                        : (isBlitMode ? "Pre-rendered Frame Configurations" : "Screen Layout Overrides")}
                 </Typography>
             </Box>
 
             {targetDeviceLinks.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
-                    No target devices available. Add devices as targets to configure their {(isFrameEngine || isRiveMapping) ? 'frame/rive layouts' : 'screen layouts'}.
+                    No target devices available. Add devices as targets to configure their {isAnyFrameMode ? 'frame layouts' : 'screen layouts'}.
                 </Typography>
             ) : (
                 <Box>
@@ -1090,15 +1089,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                 <TableRow>
                                                     <TableCell sx={{ ...headerStyle, minWidth: { xs: 120, sm: 'auto' } }}>Screen</TableCell>
                                                     <TableCell sx={{ ...headerStyle, minWidth: { xs: 200, sm: 'auto' } }}>
-                                                        {isRiveMapping ? "Rive Layout" : (isFrameEngine ? "Frame Layout" : "Screen Layout")}
+                                                        {isCompositeMode ? "Frame Layout" : (isBlitMode ? "Frame Layout" : "Screen Layout")}
                                                     </TableCell>
-                                                    {!isRiveMapping && (
+                                                    {!isCompositeMode && (
                                                         <TableCell sx={{ ...headerStyle, minWidth: { xs: 100, sm: 'auto' } }}>Target Poll Rate (ms)</TableCell>
                                                     )}
-                                                    {!isRiveMapping && (
+                                                    {!isCompositeMode && (
                                                         <TableCell sx={{ ...headerStyle, minWidth: { xs: 120, sm: 'auto' } }}>Only Send If Data Changed</TableCell>
                                                     )}
-                                                    {isFrameEngine && (
+                                                    {isBlitMode && (
                                                         <TableCell sx={{ ...headerStyle, minWidth: { xs: 150, sm: 'auto' } }}>External URL Access</TableCell>
                                                     )}
                                                 </TableRow>
@@ -1115,7 +1114,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                     const frameUrl = generateFrameUrl(linkId, screenId);
 
                                                     // Extract sensor tags if a layout is selected
-                                                    const sensorTags = currentLayoutId && (isFrameEngine || isRiveMapping)
+                                                    const sensorTags = currentLayoutId && isAnyFrameMode
                                                         ? extractSensorTagsFromTemplate(currentLayoutId)
                                                         : [];
 
@@ -1124,7 +1123,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                         : null;
 
                                                     // Debug logging
-                                                    if (currentLayoutId && (isFrameEngine || isRiveMapping)) {
+                                                    if (currentLayoutId && isAnyFrameMode) {
                                                         console.log('Debug - Layout ID:', currentLayoutId);
                                                         console.log('Debug - Available Layouts:', availableLayouts);
                                                         console.log('Debug - Selected Layout:', selectedLayout);
@@ -1166,7 +1165,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                             </Typography>
                                                                                             <Typography variant="caption" color="text.secondary">
                                                                                                 {layout.layoutType}
-                                                                                                {(isFrameEngine || isRiveMapping) && layout.isTemplate && " (Template)"}
+                                                                                                {isAnyFrameMode && layout.isTemplate && " (Template)"}
                                                                                             </Typography>
                                                                                         </Box>
                                                                                     </MenuItem>
@@ -1187,7 +1186,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                         )}
                                                                     </Box>
                                                                 </TableCell>
-                                                                {!isRiveMapping && (
+                                                                {!isCompositeMode && (
                                                                     <TableCell sx={cellStyle}>
                                                                         <TextField
                                                                             type="number"
@@ -1200,7 +1199,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                         />
                                                                     </TableCell>
                                                                 )}
-                                                                {!isRiveMapping && (
+                                                                {!isCompositeMode && (
                                                                     <TableCell sx={cellStyle}>
                                                                         <FormControlLabel
                                                                             control={
@@ -1215,7 +1214,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                         />
                                                                     </TableCell>
                                                                 )}
-                                                                {isFrameEngine && (
+                                                                {isBlitMode && (
                                                                     <TableCell sx={cellStyle}>
                                                                         <Box>
                                                                             <FormControlLabel
@@ -1256,10 +1255,10 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                 )}
                                                             </TableRow>
                                                             {/* Sensor Tags Expansion Row */}
-                                                            {sensorTags.length > 0 && (isFrameEngine || isRiveMapping) && (
+                                                            {sensorTags.length > 0 && isAnyFrameMode && (
                                                                 <TableRow>
                                                                     <TableCell
-                                                                        colSpan={isRiveMapping ? 2 : (isFrameEngine ? 5 : 4)}
+                                                                        colSpan={isCompositeMode ? 2 : (isBlitMode ? 5 : 4)}
                                                                         sx={{ p: 0, border: 'none' }}
                                                                     >
                                                                         <Box sx={{ p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 1 }}>
@@ -1281,8 +1280,8 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </Box>
             )}
 
-            {/* NEW: Rive Input Mapping Section - only show for CompositeMode mode */}
-            {isRiveMapping && (
+            {/* Rive Input Mapping Section - show for both frame modes */}
+            {isAnyFrameMode && (
                 <Paper
                     variant="outlined"
                     sx={{ mb: 2, p: { xs: 1, sm: 2 } }}

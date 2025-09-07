@@ -517,7 +517,16 @@ export const FrameEngine_ElementProperties: React.FC<FrameEngine_ElementProperti
 
     if (selectedElements.length === 0) {
         return (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
+            <div style={{
+                padding: '16px',
+                textAlign: 'center',
+                color: '#999',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center'
+            }}>
                 <div style={{ fontSize: '32px', marginBottom: '8px' }}>👆</div>
                 <div style={{ fontSize: '12px' }}>Select an element to edit its properties</div>
             </div>
@@ -528,9 +537,19 @@ export const FrameEngine_ElementProperties: React.FC<FrameEngine_ElementProperti
     const firstElement = selectedElements[0];
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-            {/* Element Info */}
-            <div style={{ padding: '12px', backgroundColor: '#e3f2fd', borderBottom: '1px solid #bbdefb' }}>
+        <div style={{
+            height: '100%',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+        }}>
+            {/* Element Info Header - Fixed */}
+            <div style={{
+                padding: '12px',
+                backgroundColor: '#e3f2fd',
+                borderBottom: '1px solid #bbdefb',
+                flexShrink: 0
+            }}>
                 <div style={{ fontSize: '12px', fontWeight: 500, color: '#1976d2' }}>
                     {multipleSelected ? `${selectedElements.length} elements selected` : `${firstElement.type} element`}
                 </div>
@@ -541,112 +560,126 @@ export const FrameEngine_ElementProperties: React.FC<FrameEngine_ElementProperti
                 )}
             </div>
 
-            {/* Position & Size */}
-            {renderSectionHeader('position', 'Position & Size')}
-            {expandedSections.has('position') && (
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>X Position</label>
-                            <input
-                                type="number"
-                                value={multipleSelected ? '' : Number(firstElement.x).toFixed(2)}
-                                onChange={(e) => {
-                                    const value = parseFloat(e.target.value);
-                                    if (!isNaN(value)) {
-                                        const roundedValue = Math.round(value * 100) / 100;
-                                        updateElementTransform({ x: roundedValue });
-                                    }
-                                }}
-                                style={inputStyle}
-                                placeholder={multipleSelected ? 'Mixed' : ''}
-                                step="0.01"
-                            />
+            {/* Scrollable Content */}
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1px'
+            }}>
+                {/* Position & Size */}
+                {renderSectionHeader('position', 'Position & Size')}
+                {expandedSections.has('position') && (
+                    <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>X Position</label>
+                                <input
+                                    type="number"
+                                    value={multipleSelected ? '' : firstElement.x}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        if (!isNaN(value)) {
+                                            const roundedValue = Math.round(value * 100) / 100;
+                                            updateElementTransform({ x: roundedValue });
+                                        }
+                                    }}
+                                    style={inputStyle}
+                                    placeholder={multipleSelected ? 'Mixed' : ''}
+                                    step="0.01"
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Y Position</label>
+                                <input
+                                    type="number"
+                                    value={multipleSelected ? '' : firstElement.y}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        if (!isNaN(value)) {
+                                            const roundedValue = Math.round(value * 100) / 100;
+                                            updateElementTransform({ y: roundedValue });
+                                        }
+                                    }}
+                                    style={inputStyle}
+                                    placeholder={multipleSelected ? 'Mixed' : ''}
+                                    step="0.01"
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Y Position</label>
-                            <input
-                                type="number"
-                                value={multipleSelected ? '' : Number(firstElement.y).toFixed(2)}
-                                onChange={(e) => {
-                                    const value = parseFloat(e.target.value);
-                                    if (!isNaN(value)) {
-                                        const roundedValue = Math.round(value * 100) / 100;
-                                        updateElementTransform({ y: roundedValue });
-                                    }
-                                }}
-                                style={inputStyle}
-                                placeholder={multipleSelected ? 'Mixed' : ''}
-                                step="0.01"
-                            />
-                        </div>
-                    </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Width</label>
-                            <input
-                                type="number"
-                                value={multipleSelected ? '' : Number(firstElement.width).toFixed(2)}
-                                onChange={(e) => {
-                                    const value = parseFloat(e.target.value);
-                                    if (!isNaN(value) && value > 0) {
-                                        const roundedValue = Math.round(value * 100) / 100;
-                                        updateElementTransform({ width: roundedValue });
-                                    }
-                                }}
-                                style={inputStyle}
-                                placeholder={multipleSelected ? 'Mixed' : ''}
-                                step="0.01"
-                                min="0.01"
-                            />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Height</label>
-                            <input
-                                type="number"
-                                value={multipleSelected ? '' : Number(firstElement.height).toFixed(2)}
-                                onChange={(e) => {
-                                    const value = parseFloat(e.target.value);
-                                    if (!isNaN(value) && value > 0) {
-                                        const roundedValue = Math.round(value * 100) / 100;
-                                        updateElementTransform({ height: roundedValue });
-                                    }
-                                }}
-                                style={inputStyle}
-                                placeholder={multipleSelected ? 'Mixed' : ''}
-                                step="0.01"
-                                min="0.01"
-                            />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Width</label>
+                                <input
+                                    type="number"
+                                    value={multipleSelected ? '' : firstElement.width}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        if (!isNaN(value) && value > 0) {
+                                            const roundedValue = Math.round(value * 100) / 100;
+                                            updateElementTransform({ width: roundedValue });
+                                        }
+                                    }}
+                                    style={inputStyle}
+                                    placeholder={multipleSelected ? 'Mixed' : ''}
+                                    step="0.01"
+                                    min="0.01"
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>Height</label>
+                                <input
+                                    type="number"
+                                    value={multipleSelected ? '' : firstElement.height}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        if (!isNaN(value) && value > 0) {
+                                            const roundedValue = Math.round(value * 100) / 100;
+                                            updateElementTransform({ height: roundedValue });
+                                        }
+                                    }}
+                                    style={inputStyle}
+                                    placeholder={multipleSelected ? 'Mixed' : ''}
+                                    step="0.01"
+                                    min="0.01"
+                                />
+                            </div>
                         </div>
                     </div>
+                )}
+
+                {/* Element-specific properties */}
+                {firstElement.type === 'sensor' && renderSensorProperties()}
+                {firstElement.type === 'text' && renderTextProperties()}
+
+                {/* Actions - Fixed at bottom */}
+                <div style={{ padding: '12px', borderTop: '1px solid #e0e0e0', marginTop: 'auto' }}>
+                    <button
+                        onClick={deleteSelectedElements}
+                        style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            backgroundColor: '#ffebee',
+                            color: '#c62828',
+                            border: '1px solid #c62828',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ffcdd2'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffebee'}
+                    >
+                        🗑️ Delete Selected ({selectedElements.length})
+                    </button>
                 </div>
-            )}
-
-            {/* Element-specific properties */}
-            {firstElement.type === 'sensor' && renderSensorProperties()}
-            {firstElement.type === 'text' && renderTextProperties()}
-
-            {/* Actions */}
-            <div style={{ padding: '12px', borderTop: '1px solid #e0e0e0' }}>
-                <button
-                    onClick={deleteSelectedElements}
-                    style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        backgroundColor: '#ffebee',
-                        color: '#c62828',
-                        border: '1px solid #c62828',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        transition: 'background-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ffcdd2'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffebee'}
-                >
-                    🗑️ Delete Selected ({selectedElements.length})
-                </button>
             </div>
         </div>
     );

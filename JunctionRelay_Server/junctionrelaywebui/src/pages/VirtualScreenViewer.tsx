@@ -18,7 +18,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
     Box,
     Button,
@@ -42,6 +42,17 @@ import {
     Alignment,
 } from '@rive-app/react-canvas';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
+
+// Add type declaration for window properties
+declare global {
+    interface Window {
+        puppeteerMode?: boolean;
+        forceStandaloneMode?: boolean;
+        targetWidth?: number;
+        targetHeight?: number;
+        forceFullscreen?: boolean;
+    }
+}
 
 // Google Fonts loader utility - EXACT COPY from FrameEngine_Canvas
 const loadGoogleFont = (fontFamily: string) => {
@@ -178,306 +189,6 @@ interface VirtualScreenViewerProps {
     isStandalone?: boolean;
 }
 
-// Dynamic Rive Background Component - EXACT COPY from FrameEngine_Canvas
-const RiveBackground: React.FC<{
-    riveFile: string;
-    stateMachine?: string;
-    inputs?: Record<string, any>;
-    width: number;
-    height: number;
-    onRiveDiscovery?: (machines: any[]) => void;
-}> = ({ riveFile, stateMachine, inputs, width, height, onRiveDiscovery }) => {
-    const riveFileUrl = `/api/frameengine/rive-files/${riveFile}/content`;
-    const [discoveredInputs, setDiscoveredInputs] = useState<Record<string, any>>({});
-
-    const { rive, RiveComponent } = useRive({
-        src: riveFileUrl,
-        autoplay: true,
-        layout: new Layout({
-            fit: Fit.Cover,
-            alignment: Alignment.Center
-        }),
-        onLoad: () => {
-            console.log('✅ Rive background loaded:', riveFile);
-        },
-        onLoadError: (error: any) => {
-            console.error('❌ Rive background load error:', error, { riveFile });
-        },
-    });
-
-    // Discovery logic - EXACT COPY from FrameEngine_Canvas
-    useEffect(() => {
-        if (!rive) return;
-
-        let attempts = 0;
-        let stopped = false;
-        const maxAttempts = 20;
-
-        const discoverMachinesAndInputs = () => {
-            if (stopped || !rive) return;
-            attempts++;
-
-            try {
-                const smNames: string[] = Array.isArray(rive.stateMachineNames) ? rive.stateMachineNames : [];
-
-                smNames.forEach((sm) => {
-                    try { rive.play(sm); } catch { }
-                });
-
-                const machines: any[] = smNames.map((smName) => {
-                    const inputs: any[] = [];
-
-                    try {
-                        const rawInputs = rive.stateMachineInputs ? (rive.stateMachineInputs(smName) as any[]) : [];
-
-                        rawInputs.forEach((rawInput) => {
-                            if (rawInput?.name) {
-                                const inputName = String(rawInput.name);
-                                let inputType: string = 'unknown';
-                                let currentValue: any = null;
-                                let hasValue = false;
-
-                                try {
-                                    currentValue = rawInput.value;
-                                    hasValue = true;
-
-                                    if (typeof currentValue === 'number') {
-                                        inputType = 'number';
-                                    } else if (typeof currentValue === 'boolean') {
-                                        inputType = 'boolean';
-                                    }
-                                } catch {
-                                    try {
-                                        if (typeof rawInput.fire === 'function') {
-                                            inputType = 'trigger';
-                                        }
-                                    } catch { }
-                                }
-
-                                inputs.push({
-                                    name: inputName,
-                                    type: inputType,
-                                    currentValue: hasValue ? currentValue : null,
-                                    ref: rawInput
-                                });
-                            }
-                        });
-                    } catch (error) {
-                        console.warn(`Failed to get inputs for state machine "${smName}":`, error);
-                    }
-
-                    return {
-                        name: smName,
-                        inputNames: inputs.map(i => i.name),
-                        inputs
-                    };
-                });
-
-                console.log('🔍 RiveBackground discovered state machines:', machines);
-
-                if (onRiveDiscovery && machines.length > 0) {
-                    onRiveDiscovery(machines);
-                }
-
-                const totalInputs = machines.reduce((sum, m) => sum + m.inputs.length, 0);
-                if (totalInputs === 0 && attempts < maxAttempts) {
-                    setTimeout(discoverMachinesAndInputs, 120 * attempts);
-                }
-
-            } catch (error) {
-                console.error('Error during state machine discovery:', error);
-                if (attempts < maxAttempts) {
-                    setTimeout(discoverMachinesAndInputs, 120 * attempts);
-                }
-            }
-        };
-
-        discoverMachinesAndInputs();
-
-        return () => {
-            stopped = true;
-        };
-    }, [rive, onRiveDiscovery]);
-
-    // Bind input logic - EXACT COPY from FrameEngine_Canvas
-    useEffect(() => {
-        if (!rive || !inputs) return;
-
-        let attempts = 0;
-        let stopped = false;
-        const maxAttempts = 20;
-        const inputRefs: Record<string, any> = {};
-
-        const discoverAndBindInputs = () => {
-            if (stopped || !rive) return;
-            attempts++;
-
-            try {
-                const smNames: string[] = Array.isArray(rive.stateMachineNames) ? rive.stateMachineNames : [];
-
-                smNames.forEach((sm) => {
-                    try { rive.play(sm); } catch { }
-                });
-
-                const newDiscoveredInputs: Record<string, any> = {};
-
-                Object.entries(inputs).forEach(([inputKey, inputValue]) => {
-                    let targetMachine: string;
-                    let inputName: string;
-
-                    if (inputKey.includes('.')) {
-                        const parts = inputKey.split('.');
-                        targetMachine = parts[0];
-                        inputName = parts.slice(1).join('.');
-                    } else {
-                        targetMachine = stateMachine || smNames[0];
-                        inputName = inputKey;
-                    }
-
-                    if (!targetMachine) {
-                        console.warn(`⚠️ No target state machine found for input "${inputKey}"`);
-                        return;
-                    }
-
-                    if (!smNames.includes(targetMachine)) {
-                        console.warn(`⚠️ State machine "${targetMachine}" not found. Available: ${smNames.join(', ')}`);
-                        return;
-                    }
-
-                    console.log(`🔍 Looking for input "${inputName}" in state machine "${targetMachine}"`);
-
-                    const machineInputs = rive.stateMachineInputs
-                        ? (rive.stateMachineInputs(targetMachine) as any[])
-                        : [];
-
-                    const foundInput = machineInputs.find((i) => i?.name === inputName);
-
-                    if (foundInput) {
-                        inputRefs[inputKey] = foundInput;
-
-                        let inputType = 'unknown';
-                        let hasValue = false;
-                        let currentValue: any;
-
-                        try {
-                            currentValue = foundInput.value;
-                            hasValue = true;
-
-                            if (typeof currentValue === 'number') {
-                                inputType = 'number';
-                            } else if (typeof currentValue === 'boolean') {
-                                inputType = 'boolean';
-                            }
-                        } catch {
-                            try {
-                                if (typeof foundInput.fire === 'function') {
-                                    inputType = 'trigger';
-                                }
-                            } catch { }
-                        }
-
-                        newDiscoveredInputs[inputKey] = {
-                            ref: foundInput,
-                            type: inputType,
-                            currentValue: hasValue ? currentValue : null,
-                            stateMachine: targetMachine,
-                            inputName: inputName
-                        };
-
-                        try {
-                            if (inputType === 'trigger') {
-                                if (inputValue && typeof foundInput.fire === 'function') {
-                                    foundInput.fire();
-                                    console.log(`🔥 Fired trigger "${inputName}" in "${targetMachine}"`);
-                                }
-                            } else if (hasValue) {
-                                const newValue = inputType === 'boolean' ? Boolean(inputValue) : Number(inputValue) || 0;
-                                foundInput.value = newValue;
-                                console.log(`✅ Set "${inputName}" in "${targetMachine}" (${inputType}) to:`, newValue);
-                            }
-                        } catch (error) {
-                            console.error(`❌ Error applying input "${inputName}" in "${targetMachine}":`, error);
-                        }
-                    } else {
-                        console.warn(`⚠️ Input "${inputName}" not found in state machine "${targetMachine}"`);
-                        console.log(`Available inputs in "${targetMachine}":`, machineInputs.map(i => i?.name).filter(Boolean));
-                    }
-                });
-
-                setDiscoveredInputs(newDiscoveredInputs);
-
-                const foundCount = Object.keys(newDiscoveredInputs).length;
-                const expectedCount = Object.keys(inputs).length;
-
-                if (foundCount < expectedCount && attempts < maxAttempts) {
-                    setTimeout(discoverAndBindInputs, 120 * attempts);
-                }
-
-            } catch (error) {
-                console.error('Error during input discovery:', error);
-                if (attempts < maxAttempts) {
-                    setTimeout(discoverAndBindInputs, 120 * attempts);
-                }
-            }
-        };
-
-        discoverAndBindInputs();
-
-        return () => {
-            stopped = true;
-            setDiscoveredInputs({});
-        };
-    }, [rive, stateMachine, inputs]);
-
-    // Apply input changes - EXACT COPY from FrameEngine_Canvas
-    useEffect(() => {
-        if (!inputs || Object.keys(discoveredInputs).length === 0) return;
-
-        Object.entries(inputs).forEach(([inputKey, inputValue]) => {
-            const discovered = discoveredInputs[inputKey];
-            if (!discovered || !discovered.ref) return;
-
-            try {
-                if (discovered.type === 'trigger') {
-                    if (inputValue && typeof discovered.ref.fire === 'function') {
-                        discovered.ref.fire();
-                        console.log(`🔥 Fired trigger "${discovered.inputName}" in "${discovered.stateMachine}" via update`);
-                    }
-                } else {
-                    const newValue = discovered.type === 'boolean' ? Boolean(inputValue) : Number(inputValue) || 0;
-                    if (discovered.ref.value !== newValue) {
-                        discovered.ref.value = newValue;
-                        console.log(`🔄 Updated "${discovered.inputName}" in "${discovered.stateMachine}" to:`, newValue);
-                    }
-                }
-            } catch (error) {
-                console.error(`❌ Error updating input "${discovered.inputName}" in "${discovered.stateMachine}":`, error);
-            }
-        });
-    }, [inputs, discoveredInputs]);
-
-    return (
-        <div
-            style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: 'none',
-                zIndex: 0,
-            }}
-        >
-            <RiveComponent
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    display: 'block'
-                }}
-            />
-        </div>
-    );
-};
-
 const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
     deviceId: propDeviceId,
     containerHeight,
@@ -488,10 +199,15 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 }) => {
     const { deviceId: urlDeviceId } = useParams<{ deviceId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
+    const isFullscreenRoute = location.search.includes('fullscreen=true') || location.pathname.includes('/fullscreen');
 
     // Determine mode and device ID
     const isEmbedded = !isStandalone && containerHeight !== undefined;
     const deviceId = propDeviceId || urlDeviceId;
+
+    // NEW: Detect if we're on the fullscreen route for screenshot mode
+    const isScreenshotMode = location.pathname.includes('/fullscreen');
 
     // Core state
     const [device, setDevice] = useState<any>(null);
@@ -527,6 +243,9 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         enabled: true,
         defaultPollRate: 250
     });
+
+    // NEW: Override showControls based on screenshot mode
+    const shouldShowControls = showControls && !isScreenshotMode;
 
     // Load device details
     useEffect(() => {
@@ -589,7 +308,9 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         const matchingStream = streams.find(stream => {
             return stream.screenId === parseInt(deviceId!) ||
                 stream.deviceName === device.name ||
-                stream.screenName === device.name;
+                stream.screenName === device.name ||
+                stream.deviceName === `Virtual-${deviceId}` ||
+                stream.deviceName === `Virtual--${Math.abs(parseInt(deviceId!))}`;
         });
 
         if (matchingStream && matchingStream.configPayloadJson) {
@@ -612,7 +333,11 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                         (sensorData.screenId === parseInt(deviceId!) ||
                             sensorData.screenId === device.uniqueIdentifier ||
                             sensorData.screenId === deviceId ||
-                            sensorData.screenId === "virtual")) {
+                            sensorData.screenId === "virtual" ||
+                            sensorData.screenId === `blit_screen_${device.id}` ||
+                            sensorData.screenId.includes(`blit_screen_`) ||
+                            sensorData.screenId.includes(deviceId))) {
+                        console.log('[VirtualScreenViewer] Debug - Processing sensor data:', sensorData);
                         processSensorData(sensorData);
                     }
                 } catch (err) {
@@ -622,7 +347,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         });
     }, [device, streams, deviceId]);
 
-    // Calculate canvas bounds and scaling for overlay positioning
+    // Calculate canvas bounds and scaling for overlay positioning - FIXED VERSION
     const calculateCanvasBounds = useCallback(() => {
         if (!riveContainerRef.current || !riveConfig) {
             return;
@@ -631,6 +356,9 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         const container = riveContainerRef.current;
         const containerRect = container.getBoundingClientRect();
         const canvasConfig = getCanvasConfig(riveConfig);
+
+        // Detect if we're in Puppeteer mode
+        const isPuppeteerMode = window.puppeteerMode || window.forceStandaloneMode || isScreenshotMode;
 
         if (isEmbedded) {
             const containerWidth = containerRect.width;
@@ -658,7 +386,18 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const canvasWidth = canvasConfig.width;
             const canvasHeight = canvasConfig.height;
 
-            if (isFullscreen) {
+            if (isPuppeteerMode) {
+                // CRITICAL FIX: In Puppeteer mode, the container is forced to fixed positioning
+                // So we need to calculate bounds based on the actual canvas size, not container positioning
+                setCanvasBounds({
+                    left: 0, // Puppeteer CSS forces container to top:0, left:0
+                    top: 0,  // Puppeteer CSS forces container to top:0, left:0
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    scaleX: 1,
+                    scaleY: 1,
+                });
+            } else if (isFullscreen) {
                 const canvasLeft = (containerRect.width - canvasWidth) / 2;
                 const canvasTop = (containerRect.height - canvasHeight) / 2;
 
@@ -684,64 +423,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 });
             }
         }
-    }, [riveConfig, isEmbedded, isFullscreen]);
-
-    // Use ResizeObserver for reliable resize detection
-    useEffect(() => {
-        if (!riveContainerRef.current || !riveConfig) return;
-
-        let timeoutId: NodeJS.Timeout;
-
-        const debouncedCalculate = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                calculateCanvasBounds();
-            }, 16);
-        };
-
-        const resizeObserver = new ResizeObserver((entries) => {
-            debouncedCalculate();
-        });
-
-        resizeObserver.observe(riveContainerRef.current);
-        setTimeout(calculateCanvasBounds, 200);
-
-        return () => {
-            resizeObserver.disconnect();
-            clearTimeout(timeoutId);
-        };
-    }, [riveConfig, calculateCanvasBounds]);
-
-    // Listen for window resize and orientation changes (standalone mode)
-    useEffect(() => {
-        if (isEmbedded) return;
-
-        let timeoutId: NodeJS.Timeout;
-
-        const debouncedCalculate = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                calculateCanvasBounds();
-            }, 16);
-        };
-
-        const handleResize = () => {
-            debouncedCalculate();
-        };
-
-        const handleOrientationChange = () => {
-            setTimeout(calculateCanvasBounds, 300);
-        };
-
-        window.addEventListener('resize', handleResize);
-        window.addEventListener('orientationchange', handleOrientationChange);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            window.removeEventListener('orientationchange', handleOrientationChange);
-            clearTimeout(timeoutId);
-        };
-    }, [calculateCanvasBounds, isEmbedded]);
+    }, [riveConfig, isEmbedded, isFullscreen, isScreenshotMode]);
 
     // Get canvas dimensions and background from config
     const getCanvasConfig = (config: RiveConfig) => {
@@ -1004,6 +686,63 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         return () => clearTimeout(timer);
     }, [rive, currentSensorData, sensorToRiveMap]);
 
+    // Use ResizeObserver for reliable resize detection
+    useEffect(() => {
+        if (!riveContainerRef.current || !riveConfig) return;
+
+        let timeoutId: NodeJS.Timeout;
+
+        const debouncedCalculate = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                calculateCanvasBounds();
+            }, 16);
+        };
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            debouncedCalculate();
+        });
+
+        resizeObserver.observe(riveContainerRef.current);
+        setTimeout(calculateCanvasBounds, 200);
+
+        return () => {
+            resizeObserver.disconnect();
+            clearTimeout(timeoutId);
+        };
+    }, [riveConfig, calculateCanvasBounds]);
+
+    // Listen for window resize and orientation changes (standalone mode)
+    useEffect(() => {
+        if (isEmbedded) return;
+
+        let timeoutId: NodeJS.Timeout;
+
+        const debouncedCalculate = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                calculateCanvasBounds();
+            }, 16);
+        };
+
+        const handleResize = () => {
+            debouncedCalculate();
+        };
+
+        const handleOrientationChange = () => {
+            setTimeout(calculateCanvasBounds, 300);
+        };
+
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', handleOrientationChange);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('orientationchange', handleOrientationChange);
+            clearTimeout(timeoutId);
+        };
+    }, [calculateCanvasBounds, isEmbedded]);
+
     // Fullscreen handlers (standalone only)
     const toggleFullscreen = async () => {
         if (isEmbedded || !containerRef.current) return;
@@ -1034,7 +773,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, [calculateCanvasBounds, isEmbedded]);
 
-    // Load Google Fonts when elements change - EXACT COPY from FrameEngine_Canvas
+    // Load Google Fonts when elements change
     useEffect(() => {
         const fontsToLoad = new Set<string>();
 
@@ -1048,7 +787,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         fontsToLoad.forEach(loadGoogleFont);
     }, [displayElements]);
 
-    // Render overlay elements with canvas-relative positioning - PIXEL PERFECT VERSION WITH PADDING
+    // Render overlay elements with canvas-relative positioning
     const renderOverlayElements = () => {
         if (!riveConfig || !canvasBounds) return null;
 
@@ -1087,7 +826,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const fontWeight = element.properties.fontWeight || '900';
             const textAlign = element.properties.textAlign || 'left';
 
-            // Load Google Fonts properly - EXACT COPY from FrameEngine_Canvas
+            // Load Google Fonts properly
             if (fontFamily &&
                 fontFamily !== 'system-ui' &&
                 fontFamily !== 'Arial' &&
@@ -1106,13 +845,11 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             const scaledHeight = element.position.height * canvasBounds.scaleY;
             const scaledFontSize = fontSize * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
 
-            // CRITICAL: Calculate padding exactly like FrameEngine_Canvas
-            // In the builder: padding: `${4 * scale}px`
-            // We need to apply the same 4px base padding, scaled by our viewport scaling
+            // Calculate padding exactly like FrameEngine_Canvas
             const basePadding = 4;
             const scaledPadding = basePadding * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
 
-            // Build font stack that respects the configured font - EXACT COPY from FrameEngine_Canvas
+            // Build font stack that respects the configured font
             let fontStack;
             if (configuredFont) {
                 fontStack = `"${configuredFont}", system-ui, -apple-system, sans-serif`;
@@ -1120,7 +857,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 fontStack = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
             }
 
-            // CRITICAL: Build styles object WITH padding to match builder
+            // Build styles object WITH padding to match builder
             const elementStyles: React.CSSProperties = {
                 position: 'absolute',
                 left: scaledLeft,
@@ -1138,7 +875,6 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     textAlign === 'right' ? 'flex-end' : 'flex-start',
                 justifyContent: 'center',
                 zIndex: element.properties.zIndex || 10,
-                // CRITICAL: Add the same padding as FrameEngine_Canvas
                 padding: `${scaledPadding}px`,
                 boxSizing: 'border-box',
                 wordWrap: 'break-word',
@@ -1146,12 +882,11 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 lineHeight: element.properties.lineHeight || '1.4',
             };
 
-            // ONLY add textShadow if explicitly defined in properties (NO HARDCODING)
+            // Add text effects only if explicitly defined
             if (element.properties.textShadow === true) {
                 elementStyles.textShadow = '1px 1px 2px rgba(0,0,0,0.3)';
             }
 
-            // ONLY add textBorder if explicitly defined in properties
             if (element.properties.textBorder === true) {
                 elementStyles.WebkitTextStroke = '1px rgba(0,0,0,0.5)';
             }
@@ -1291,7 +1026,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     )}
                 </div>
 
-                {showControls && (
+                {shouldShowControls && (
                     <Box sx={{
                         position: 'absolute',
                         top: isEmbedded ? 8 : 20,
@@ -1328,6 +1063,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         // Embedded mode - render in container
         return (
             <Box
+                data-testid="virtual-screen-container"
                 sx={{
                     position: 'relative',
                     width: '100%',
@@ -1362,7 +1098,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 {renderOverlayElements()}
 
                 {/* Control buttons */}
-                {showControls && (
+                {shouldShowControls && (
                     <Box sx={{
                         position: 'absolute',
                         top: 8,
@@ -1399,7 +1135,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 )}
 
                 {/* Status indicator */}
-                {showControls && (
+                {shouldShowControls && (
                     <Box sx={{
                         position: 'absolute',
                         bottom: 8,
@@ -1427,6 +1163,7 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
         return (
             <div
                 ref={containerRef}
+                data-testid="virtual-screen-container"
                 style={{
                     position: 'fixed',
                     top: 0,
@@ -1436,8 +1173,8 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     margin: 0,
                     padding: 0,
                     backgroundColor: canvasConfig.backgroundColor,
-                    overflow: isFullscreen ? 'hidden' : 'auto',
-                    cursor: isFullscreen ? 'none' : 'default',
+                    overflow: (isFullscreen || isScreenshotMode) ? 'hidden' : 'auto',
+                    cursor: (isFullscreen || isScreenshotMode) ? 'none' : 'default',
                 }}
             >
                 {/* Rive animation - fixed size container */}
@@ -1445,13 +1182,13 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                     ref={riveContainerRef}
                     style={{
                         width: '100%',
-                        minHeight: isFullscreen ? '100vh' : riveConfig ? `${getCanvasConfig(riveConfig).height}px` : '100vh',
-                        height: isFullscreen ? '100vh' : 'auto',
+                        minHeight: (isFullscreen || isScreenshotMode) ? '100vh' : riveConfig ? `${getCanvasConfig(riveConfig).height}px` : '100vh',
+                        height: (isFullscreen || isScreenshotMode) ? '100vh' : 'auto',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        paddingTop: isFullscreen ? 0 : '20px',
-                        paddingBottom: isFullscreen ? 0 : '20px'
+                        paddingTop: (isFullscreen || isScreenshotMode) ? 0 : '20px',
+                        paddingBottom: (isFullscreen || isScreenshotMode) ? 0 : '20px'
                     }}
                 >
                     {riveFileBlob && riveConfig && (
@@ -1472,8 +1209,8 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                 {/* Overlay elements positioned relative to canvas */}
                 {renderOverlayElements()}
 
-                {/* Control buttons - hidden in fullscreen */}
-                {!isFullscreen && showControls && (
+                {/* Control buttons - hidden in fullscreen and screenshot mode */}
+                {!isFullscreen && !isScreenshotMode && shouldShowControls && (
                     <>
                         <Fab
                             color="primary"

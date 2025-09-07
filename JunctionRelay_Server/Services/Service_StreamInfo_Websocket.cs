@@ -90,6 +90,9 @@ namespace JunctionRelayServer.Services
 
         private readonly object _jsonCacheLock = new object();
 
+        public bool IsVirtualBlitMode { get; set; } = false;
+        public int? VirtualScreenId { get; set; }
+
         // Constructor with WebSocket-specific settings
         public Service_StreamInfo_WebSocket(
             bool compressionEnabled = false,
