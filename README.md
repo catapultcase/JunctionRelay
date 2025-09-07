@@ -1,6 +1,6 @@
 # JunctionRelay
 
-## Unified Data Orchestration & IoT Device Management**
+## Unified Data Orchestration & IoT Device Management
 
 **Local-first. Cloud-optional. Always in control.**
 
