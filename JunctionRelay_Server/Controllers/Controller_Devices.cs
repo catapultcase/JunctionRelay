@@ -870,9 +870,9 @@ namespace JunctionRelayServer.Controllers
         // UPDATE a screen
         [HttpPut("{deviceId:int}/screens/{screenId:int}")]
         public async Task<IActionResult> UpdateDeviceScreen(
-            int deviceId,
-            int screenId,
-            [FromBody] Model_Device_Screen_Update_Request updated)
+    int deviceId,
+    int screenId,
+    [FromBody] Model_Device_Screen_Update_Request updated)
         {
             var existing = await _deviceDb.GetDeviceScreenByIdAsync(screenId);
             if (existing == null || existing.DeviceId != deviceId)
@@ -881,6 +881,7 @@ namespace JunctionRelayServer.Controllers
             // Update fields if new values are provided
             existing.DisplayName = updated.DisplayName ?? existing.DisplayName;
             existing.ScreenLayoutId = updated.ScreenLayoutId ?? existing.ScreenLayoutId;
+            existing.FrameLayoutId = updated.FrameLayoutId ?? existing.FrameLayoutId;
             existing.SupportsConfigPayloads = updated.SupportsConfigPayloads ?? existing.SupportsConfigPayloads;
             existing.SupportsSensorPayloads = updated.SupportsSensorPayloads ?? existing.SupportsSensorPayloads;
 

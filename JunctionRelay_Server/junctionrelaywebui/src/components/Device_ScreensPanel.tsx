@@ -216,28 +216,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             if (updatedScreen) {
                 autoSaveScreen(updatedScreen, true); // Immediate save
             }
-        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
-
-    const handleFrameSelectChange = useCallback((screenId: number, field: string) =>
-        (event: any) => {
-            const newValue = event.target.value;
-            console.log(`[DeviceScreensPanel] Select change for screen ${screenId}.${field}: ${newValue}`);
-
-            const updatedScreens = deviceScreens.map(screen =>
-                screen.id === screenId ? { ...screen, [field]: newValue } : screen
-            );
-
-            setDeviceScreens(updatedScreens);
-            if (onScreenChange) {
-                onScreenChange(updatedScreens);
-            }
-
-            // Find the updated screen and auto-save it immediately
-            const updatedScreen = updatedScreens.find(s => s.id === screenId);
-            if (updatedScreen) {
-                autoSaveScreen(updatedScreen, true); // Immediate save
-            }
-        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
+        }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);   
 
     // Handle boolean changes with immediate auto-save
     const handleScreenBooleanChange = useCallback((screenId: number, field: string) =>
@@ -278,7 +257,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                 screenKey: newScreenKey,
                 displayName: newScreenDisplayName,
                 screenLayoutId: newScreenScreenLayoutId,
-                frameLayoutId: newScreenFrameLayoutId,
+                frameLayoutId: newScreenFrameLayoutId, 
                 supportsConfigPayloads: newScreenSupportsConfigPayloads,
                 supportsSensorPayloads: newScreenSupportsSensorPayloads
             };
@@ -517,7 +496,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                 <FormControl fullWidth size="small">
                                     <Select
                                         value={screen.frameLayoutId || ""}
-                                        onChange={handleFrameSelectChange(screen.id, 'frameLayoutId')}
+                                        onChange={handleScreenSelectChange(screen.id, 'frameLayoutId')}
                                         sx={{
                                             '& .MuiSelect-select': {
                                                 fontSize: '0.8rem',
@@ -717,8 +696,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                 <TableCell>
                                     <FormControl fullWidth size="small" sx={{ mb: 1 }}>
                                         <Select
-                                            value={screen.screenFrameId || ""}
-                                            onChange={handleScreenSelectChange(screen.id, 'screenFrameId')}
+                                            value={screen.frameLayoutId || ""}
+                                            onChange={handleScreenSelectChange(screen.id, 'frameLayoutId')}
                                         >
                                             {frameTemplates.map((t: any) => (
                                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
