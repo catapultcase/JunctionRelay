@@ -146,7 +146,7 @@ namespace JunctionRelayServer.Controllers
                         DeviceScreenId = screen.Id,
                         ScreenLayoutId = screen.ScreenLayoutId,
                         FrameLayoutId = screen.FrameLayoutId,
-                        OnlySendIfChanged = true,
+                        OnlySendIfChanged = false,
                         EnableUrlAccess = false
                     };
 

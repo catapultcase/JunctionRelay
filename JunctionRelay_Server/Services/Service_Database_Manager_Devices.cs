@@ -255,25 +255,26 @@ SELECT last_insert_rowid();";
         public async Task<bool> UpdateDeviceScreenAsync(int screenId, Model_Device_Screens updated)
         {
             var sql = @"
-        UPDATE DeviceScreens SET
-            DisplayName = @DisplayName,
-            ScreenLayoutId = @ScreenLayoutId,
-            SupportsConfigPayloads = @SupportsConfigPayloads,
-            SupportsSensorPayloads = @SupportsSensorPayloads
-        WHERE Id = @Id";
+                UPDATE DeviceScreens SET
+                    DisplayName = @DisplayName,
+                    ScreenLayoutId = @ScreenLayoutId,
+                    FrameLayoutId = @FrameLayoutId,
+                    SupportsConfigPayloads = @SupportsConfigPayloads,
+                    SupportsSensorPayloads = @SupportsSensorPayloads
+                WHERE Id = @Id";
 
             var rows = await _db.ExecuteAsync(sql, new
             {
                 Id = screenId,
                 DisplayName = updated.DisplayName,
                 ScreenLayoutId = updated.ScreenLayoutId,
+                FrameLayoutId = updated.FrameLayoutId,  // <- ADD THIS LINE
                 SupportsConfigPayloads = updated.SupportsConfigPayloads,
                 SupportsSensorPayloads = updated.SupportsSensorPayloads
             });
 
             return rows > 0;
         }
-
 
         public async Task<bool> SetFirmwareVersionAsync(int deviceId, string newVersion)
         {

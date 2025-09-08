@@ -16,14 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
 namespace JunctionRelayServer.Models.Requests
 {
     public class Model_Device_Screen_Update_Request
     {
         public required string DisplayName { get; set; }
         public int? ScreenLayoutId { get; set; }
-        public bool? SupportsConfigPayloads { get; set; } 
+        public int? FrameLayoutId { get; set; }
+        public bool? SupportsConfigPayloads { get; set; }
         public bool? SupportsSensorPayloads { get; set; }
     }
 }

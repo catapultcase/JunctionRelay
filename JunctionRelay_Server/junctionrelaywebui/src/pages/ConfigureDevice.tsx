@@ -52,7 +52,7 @@ import DeviceSyncModal from '../components/Device_SyncModal';
 import EditModeModal from '../components/Device_EditModeModal';
 import DeviceHeartbeatPanel from '../components/DeviceHeartbeatPanel';
 import DeviceHeartbeatHistoryPanel from '../components/DeviceHeartbeatHistoryPanel';
-import DeviceScreensPanel from '../components/DeviceScreensPanel';
+import DeviceScreensPanel from '../components/Device_ScreensPanel';
 import FirmwareManagementPanel from '../components/FirmwareManagementPanel';
 import DeviceSensorsPanel from '../components/DeviceSensorsPanel';
 import DevicePreferencesPanel from '../components/DevicePreferencesPanel';
@@ -297,11 +297,12 @@ const ConfigureDevice: React.FC = () => {
     const fetchDeviceData = useCallback(async () => {
         try {
             setStatus("Fetching device data...");
-            const [deviceRes, portsRes, i2cRes, layoutsRes] = await Promise.all([
+            const [deviceRes, portsRes, i2cRes, layoutsRes, frameLayoutsRes] = await Promise.all([
                 fetch(`/api/devices/${id}`),
                 fetch("/api/com/ports"),
                 fetch(`/api/devices/${id}/i2c-devices`),
-                fetch("/api/layouts")
+                fetch("/api/layouts"),
+                fetch("/api/frameengine")
             ]);
 
             if (!deviceRes.ok) throw new Error("Failed to fetch device");
@@ -313,6 +314,7 @@ const ConfigureDevice: React.FC = () => {
             const ports = await portsRes.json();
             const i2c = await i2cRes.json();
             const layouts = await layoutsRes.json();
+            const frameLayouts = await frameLayoutsRes.json();
             const screens = id ? await fetchDeviceScreens(id) : [];
 
             // Auto-check for firmware updates ONCE on page load (using cache)
@@ -345,7 +347,7 @@ const ConfigureDevice: React.FC = () => {
             setSelectedComPort(device.COMPort || "");
             setI2cDevices(i2c);
             setLayoutTemplates(layouts);
-            setFrameTemplates(layouts);
+            setFrameTemplates(frameLayouts);
             setDeviceScreens(screens);
             setOriginalScreens(JSON.parse(JSON.stringify(screens)));
             setInitialFirmwareInfo(firmwareInfo);
