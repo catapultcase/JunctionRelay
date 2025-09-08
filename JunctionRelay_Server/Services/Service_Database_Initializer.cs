@@ -961,8 +961,8 @@ namespace JunctionRelayServer.Services
         ("idx_notifications_expires_at", "Notifications", "ExpiresAt"),
         ("idx_notifications_pending_with_expiry", "Notifications", "IsDelivered, ExpiresAt, CreatedAt"),
 
-                // Add other indexes as needed
-                // ("idx_name", "table_name", "column_list"),
+        // JunctionScreenLayouts unique constraint
+        ("idx_junction_screen_unique", "JunctionScreenLayouts", "JunctionId, DeviceScreenId"),
             };
 
             foreach (var (indexName, tableName, columns) in indexesToCreate)
@@ -978,7 +978,12 @@ namespace JunctionRelayServer.Services
 
                     if (!indexExists)
                     {
-                        _db.Execute($"CREATE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});");
+                        // For the unique constraint, use UNIQUE
+                        string createStatement = indexName == "idx_junction_screen_unique"
+                            ? $"CREATE UNIQUE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});"
+                            : $"CREATE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});";
+
+                        _db.Execute(createStatement);
                         Console.WriteLine($"✅ Created index {indexName} on {tableName}({columns})");
                     }
                 }

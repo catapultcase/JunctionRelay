@@ -345,13 +345,24 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     const isCompositeMode = renderingMode === 'Composite';
     const isAnyFrameMode = isBlitMode || isCompositeMode;
 
+    console.log('[DEBUG] Junction object:', junction);
+    console.log('[DEBUG] Rendering mode from junction:', junction?.renderingMode);
+    console.log('[DEBUG] Final renderingMode:', renderingMode);
+    console.log('[DEBUG] isPayloadMode:', isPayloadMode);
+    console.log('[DEBUG] isBlitMode:', isBlitMode);
+    console.log('[DEBUG] isCompositeMode:', isCompositeMode);
+    console.log('[DEBUG] isAnyFrameMode:', isAnyFrameMode);
+
     // Filter layouts based on rendering mode
     const getFilteredLayouts = () => {
+        console.log('[DEBUG] getFilteredLayouts called - renderingMode:', renderingMode);
+        console.log('[DEBUG] isBlitMode || isCompositeMode:', isBlitMode || isCompositeMode);
+
         if (isBlitMode || isCompositeMode) {
-            // Both frame modes - show all frame layouts
+            console.log('[DEBUG] Returning frame layouts:', frameLayouts);
             return frameLayouts;
         } else {
-            // Payload mode - show traditional screen layouts
+            console.log('[DEBUG] Returning screen layouts:', screenLayouts);
             return screenLayouts;
         }
     };
@@ -453,6 +464,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     const fetchScreenLayouts = async () => {
         try {
             setLoadingState(prev => ({ ...prev, screenLayouts: true }));
+            console.log('[DEBUG] Fetching screen layouts from /api/layouts');
             const response = await fetch('/api/layouts');
 
             if (!response.ok) {
@@ -460,6 +472,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const data = await response.json();
+            console.log('[DEBUG] Screen layouts from API:', data);
             setScreenLayouts(data);
         } catch (error) {
             console.error("Error fetching screen layouts:", error);
@@ -480,7 +493,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const data = await response.json();
-            console.log('Debug - Frame layouts from API:', data);
+            console.log('[DEBUG] Frame layouts from API:', data);
             setFrameLayouts(data);
         } catch (error) {
             console.error("Error fetching frame layouts:", error);
@@ -495,14 +508,17 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         try {
             setLoadingState(prev => ({ ...prev, [`configs-${linkId}`]: true }));
 
+            console.log(`[DEBUG] Fetching screen configs for junction ${junctionId}, link ${linkId}`);
             const response = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts`);
 
             if (response.ok) {
                 const data = await response.json();
+                console.log(`[DEBUG] Screen config response for link ${linkId}:`, data);
 
                 // Store device screens from this response
                 if (data.deviceScreens && data.deviceScreens.length > 0) {
                     const deviceId = data.deviceScreens[0].deviceId;
+                    console.log(`[DEBUG] Storing device screens for device ${deviceId}:`, data.deviceScreens);
                     setDeviceScreens(prev => ({
                         ...prev,
                         [deviceId]: data.deviceScreens
@@ -511,11 +527,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
                 // Process screen configurations
                 const configs = data.screenLayoutOverrides || [];
+                console.log(`[DEBUG] Processing ${configs.length} screen layout overrides:`, configs);
+
                 const newConfigs = { ...screenConfigs };
 
                 configs.forEach((config: any) => {
                     const screenId = config.deviceScreenId;
                     const key = `${linkId}-${screenId}`;
+                    console.log(`[DEBUG] Creating config key "${key}" for screen ${screenId}:`, config);
+
                     newConfigs[key] = {
                         id: config.id,
                         junctionId: config.junctionId,
@@ -530,12 +550,16 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                     };
                 });
 
-                setScreenConfigs(newConfigs);
+                console.log(`[DEBUG] Final screenConfigs state:`, newConfigs);
+                setScreenConfigs(prev => ({
+                    ...prev,
+                    ...newConfigs
+                }));
             } else {
-                console.error(`Failed to fetch screen configurations: ${response.status}`);
+                console.error(`[DEBUG] Failed to fetch screen configurations: ${response.status}`);
             }
         } catch (error) {
-            console.error(`Error fetching screen configurations for link ${linkId}:`, error);
+            console.error(`[DEBUG] Error fetching screen configurations for link ${linkId}:`, error);
         } finally {
             setLoadingState(prev => ({ ...prev, [`configs-${linkId}`]: false }));
         }
@@ -556,45 +580,38 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     // Handle layout change
     const handleLayoutChange = async (linkId: number, screenId: number, layoutId: number | null, defaultLayoutId: number | null) => {
         const key = `${linkId}-${screenId}`;
+        console.log(`[DEBUG] handleLayoutChange called - linkId: ${linkId}, screenId: ${screenId}, key: "${key}"`);
+        console.log(`[DEBUG] Current screenConfigs:`, screenConfigs);
+        console.log(`[DEBUG] Looking for config with key "${key}":`, screenConfigs[key]);
+
+        const existingConfig = screenConfigs[key];
+
+        if (!existingConfig?.id) {
+            console.error(`[DEBUG] No existing screen layout config found for key "${key}"`);
+            console.error(`[DEBUG] Available keys in screenConfigs:`, Object.keys(screenConfigs));
+            console.error(`[DEBUG] All screenConfigs:`, screenConfigs);
+            showSnackbar("Screen layout configuration not found", "error");
+            return;
+        }
+
         try {
             setLoadingState(prev => ({ ...prev, [key]: true }));
 
-            const existingConfig = screenConfigs[key];
+            // Check if this is actually a change
+            const currentEffectiveLayoutId = isAnyFrameMode ? existingConfig.frameLayoutId : existingConfig.screenLayoutId;
 
-            // Remove existing configuration if it exists
-            if (existingConfig && existingConfig.id) {
-                try {
-                    const deleteResponse = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts/${existingConfig.id}`, {
-                        method: "DELETE"
-                    });
-
-                    if (!deleteResponse.ok) {
-                        console.warn(`Warning: Failed to remove existing configuration: ${deleteResponse.status}`);
-                    }
-
-                    // Remove from local state
-                    const newConfigs = { ...screenConfigs };
-                    delete newConfigs[key];
-                    setScreenConfigs(newConfigs);
-                } catch (deleteError) {
-                    console.warn("Warning: Error removing existing configuration:", deleteError);
-                }
-            }
-
-            // If setting to default/null, we're done
-            if (layoutId === defaultLayoutId || layoutId === null) {
-                showSnackbar("Reverted to default layout", "success");
+            if (currentEffectiveLayoutId === layoutId) {
+                console.log(`[DEBUG] Layout ID ${layoutId} unchanged for screen ${screenId}, skipping update`);
                 return;
             }
 
-            // Create new configuration
             const payload: any = {
                 junctionId,
                 deviceScreenId: screenId,
-                targetPollRate: existingConfig?.targetPollRate,
-                onlySendIfChanged: existingConfig?.onlySendIfChanged ?? true,
-                enableUrlAccess: existingConfig?.enableUrlAccess ?? false,
-                urlPath: existingConfig?.urlPath
+                targetPollRate: existingConfig.targetPollRate,
+                onlySendIfChanged: existingConfig.onlySendIfChanged ?? true,
+                enableUrlAccess: existingConfig.enableUrlAccess ?? false,
+                urlPath: existingConfig.urlPath
             };
 
             // Set the appropriate layout ID based on rendering mode
@@ -604,19 +621,23 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 payload.screenLayoutId = layoutId;
             }
 
-            const response = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts`, {
-                method: "POST",
+            // Always UPDATE since record exists from auto-creation
+            payload.id = existingConfig.id;
+            payload.junctionId = existingConfig.junctionId;
+
+            const response = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts/${existingConfig.id}`, {
+                method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to save layout configuration: ${response.status}`);
+                throw new Error(`Failed to update layout configuration: ${response.status}`);
             }
 
-            const data = await response.json();
+            const data = { ...payload, id: existingConfig.id };
 
-            // Update state with new configuration
+            // Update state with updated configuration
             setScreenConfigs(prev => ({
                 ...prev,
                 [key]: {
@@ -634,11 +655,11 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }));
 
             const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
-            showSnackbar(`${modeDescription} layout configuration saved successfully`, "success");
+            showSnackbar(`${modeDescription} layout configuration updated successfully`, "success");
         } catch (error) {
-            console.error("Error managing layout configuration:", error);
+            console.error("Error updating layout configuration:", error);
             const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
-            showSnackbar(`Failed to save ${modeDescription} layout configuration`, "error");
+            showSnackbar(`Failed to update ${modeDescription} layout configuration`, "error");
         } finally {
             setLoadingState(prev => ({ ...prev, [key]: false }));
         }
@@ -852,15 +873,26 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         return layout ? layout.displayName : "Unknown Layout";
     };
 
+    // Helper function to get consistent layout ID selection (matches auto-creation logic)
+    const getDefaultLayoutId = (screen: any, availableLayouts: any[]) => {
+        return screen.screenLayoutId || availableLayouts[0]?.id;
+    };
+   
     // Get current layout ID (configuration or default)
     const getCurrentLayoutId = (screenId: number, defaultLayoutId: number | null, linkId: number) => {
         const key = `${linkId}-${screenId}`;
         const config = screenConfigs[key];
 
+        console.log(`[DEBUG] getCurrentLayoutId - screenId: ${screenId}, linkId: ${linkId}, key: "${key}"`);
+        console.log(`[DEBUG] Config found:`, config);
+
         if (config) {
-            return isAnyFrameMode ? config.frameLayoutId : config.screenLayoutId;
+            const layoutId = isAnyFrameMode ? config.frameLayoutId : config.screenLayoutId;
+            console.log(`[DEBUG] Returning layout ID from config: ${layoutId} (frameMode: ${isAnyFrameMode})`);
+            return layoutId;
         }
 
+        console.log(`[DEBUG] No config found, returning default: ${defaultLayoutId}`);
         return defaultLayoutId;
     };
 
@@ -1103,13 +1135,20 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                 </TableRow>
                                             </TableHead>
                                             <TableBody>
-                                                {screens.map((screen: any) => {
-                                                    const screenId = screen.id;
-                                                    const key = `${linkId}-${screenId}`;
-                                                    const defaultLayoutId = screen.screenLayoutId;
-                                                    const currentLayoutId = getCurrentLayoutId(screenId, defaultLayoutId, linkId);
-                                                    const config = screenConfigs[key];
-                                                    const isConfigured = Boolean(config);
+                                                        {screens.map((screen: any) => {
+                                                            const screenId = screen.id;
+                                                            const key = `${linkId}-${screenId}`;
+                                                            console.log(`[DEBUG] Rendering screen ${screenId}, linkId: ${linkId}, key: "${key}"`);
+                                                            console.log(`[DEBUG] Screen object:`, screen);
+                                                            console.log(`[DEBUG] Config for this key:`, screenConfigs[key]);
+
+                                                            const defaultLayoutId = screen.screenLayoutId;
+                                                            const currentLayoutId = getCurrentLayoutId(screenId, defaultLayoutId, linkId);
+                                                            const config = screenConfigs[key];
+                                                            const isConfigured = Boolean(config);
+
+                                                            console.log(`[DEBUG] Screen ${screenId} - isConfigured: ${isConfigured}, config exists: ${!!config}`);
+
                                                     const isLoading = loadingState[key] || false;
                                                     const frameUrl = generateFrameUrl(linkId, screenId);
 
@@ -1143,17 +1182,17 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                     <Box display="flex" alignItems="center">
                                                                         <FormControl fullWidth size="small">
                                                                             <Select
-                                                                                value={String(currentLayoutId || "")}
+                                                                                value={String(getCurrentLayoutId(screenId, defaultLayoutId, linkId) || "")}
                                                                                 onChange={(e: SelectChangeEvent) => {
-                                                                                    const newLayoutId = e.target.value === "" ? null : parseInt(e.target.value, 10);
-                                                                                    handleLayoutChange(linkId, screenId, newLayoutId, defaultLayoutId);
+                                                                                    const newLayoutId = parseInt(e.target.value, 10);
+                                                                                    const currentValue = getCurrentLayoutId(screenId, defaultLayoutId, linkId);
+
+                                                                                    if (newLayoutId !== currentValue && !isNaN(newLayoutId)) {
+                                                                                        handleLayoutChange(linkId, screenId, newLayoutId, defaultLayoutId);
+                                                                                    }
                                                                                 }}
-                                                                                displayEmpty
-                                                                                disabled={isLoading}
+                                                                                disabled={isLoading || availableLayouts.length === 0}
                                                                             >
-                                                                                <MenuItem value="">
-                                                                                    <em>Use default</em>
-                                                                                </MenuItem>
                                                                                 {availableLayouts.map((layout: any) => (
                                                                                     <MenuItem
                                                                                         key={`layout-${layout.id}`}
@@ -1162,6 +1201,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                         <Box>
                                                                                             <Typography variant="body2">
                                                                                                 {layout.displayName}
+                                                                                                {layout.id === defaultLayoutId && " (Device Default)"}
                                                                                             </Typography>
                                                                                             <Typography variant="caption" color="text.secondary">
                                                                                                 {layout.layoutType}
