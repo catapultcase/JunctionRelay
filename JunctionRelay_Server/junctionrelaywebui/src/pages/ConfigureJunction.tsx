@@ -38,7 +38,7 @@ import * as junctionService from '../services/junctionApiService';
 import Junction_ConfigPanel from '../components/Junction_ConfigPanel';
 import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
 import ScreenSelectionModal from '../components/ScreenSelectionModal';
-import AvailableSourcesTargetsTable from '../components/AvailableSourcesTargetsTable';
+import AvailableSourcesTargetsTable from '../components/Junction_AvailableSourcesTargetsTable';
 import DeviceScreenLayoutsCard from '../components/Junction_DeviceScreenLayoutsCard';
 import Junction_Setup_COM from '../components/Junction_Setup_COM';
 
@@ -745,6 +745,8 @@ const ConfigureJunction: React.FC = () => {
     }, [fetchData]);
 
     const handleAdd = async (item: SourceOrTarget, role: string) => {
+        console.log(`[DEBUG] Adding ${item.type} "${item.name}" as ${role}`);
+
         try {
             let originalRates;
 
@@ -768,6 +770,7 @@ const ConfigureJunction: React.FC = () => {
                 await junctionService.addCollectorLink(junctionId, item.id, role, originalRates);
             }
 
+            console.log(`[DEBUG] ${item.type} link created successfully`);
             await fetchData();
             showSnackbar(`${item.name} added as ${role.toLowerCase()}`, "success");
         } catch (error) {

@@ -106,7 +106,6 @@ namespace JunctionRelayServer.Controllers
             return Ok(allLinks);
         }
 
-
         // POST: api/junctions/{junctionId}/links/device-links
         [HttpPost("device-links")]
         public async Task<IActionResult> AddDeviceLink(int junctionId, [FromBody] Model_JunctionDeviceLink newLink)
@@ -124,7 +123,42 @@ namespace JunctionRelayServer.Controllers
                 return StatusCode(500, "A problem occurred while saving the device link.");
             }
 
+            // Auto-create screen layout overrides for target devices
+            if (newLink.Role == "Target")
+            {
+                await CreateDefaultScreenLayoutOverrides(junctionId, addedLink.Id, newLink.DeviceId);
+            }
+
             return CreatedAtAction(nameof(GetLinksForJunction), new { junctionId }, addedLink);
+        }
+
+        private async Task CreateDefaultScreenLayoutOverrides(int junctionId, int linkId, int deviceId)
+        {
+            try
+            {
+                var deviceScreens = await _deviceDbManager.GetDeviceScreensAsync(deviceId);
+                foreach (var screen in deviceScreens)
+                {
+                    var newScreenLayout = new Model_JunctionScreenLayout
+                    {
+                        JunctionId = junctionId,
+                        JunctionDeviceLinkId = linkId,
+                        DeviceScreenId = screen.Id,
+                        ScreenLayoutId = screen.ScreenLayoutId,
+                        FrameLayoutId = screen.FrameLayoutId,
+                        OnlySendIfChanged = true,
+                        EnableUrlAccess = false
+                    };
+
+                    await _linkDb.AddJunctionScreenLayoutAsync(newScreenLayout);
+                }
+                Console.WriteLine($"✅ Created default screen layout overrides for device {deviceId} with {deviceScreens.Count()} screens");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error creating default screen layout overrides: {ex.Message}");
+                // Don't fail the device link creation if screen layouts fail
+            }
         }
 
         // POST: api/junctions/{junctionId}/links/collector-links
@@ -151,7 +185,7 @@ namespace JunctionRelayServer.Controllers
         [HttpDelete("device-links/{linkId}")]
         public async Task<IActionResult> RemoveDeviceLink(int junctionId, int linkId)
         {
-            var link = await _linkDb.GetDeviceLinkByIdAsync(linkId); // Get the link by ID
+            var link = await _linkDb.GetDeviceLinkByIdAsync(linkId);
 
             if (link == null || link.JunctionId != junctionId)
             {
@@ -167,7 +201,7 @@ namespace JunctionRelayServer.Controllers
                 await RemoveAssociatedScreenLayouts(link.Id);
 
                 // 3. Remove associated JunctionSensors
-                await RemoveAssociatedJunctionSensors(junctionId, link.Id, true);  // true for device
+                await RemoveAssociatedJunctionSensors(junctionId, link.Id, true);
 
                 // 4. Finally, remove the device link itself
                 var success = await _linkDb.RemoveDeviceLinkAsync(junctionId, link.DeviceId);
@@ -177,7 +211,7 @@ namespace JunctionRelayServer.Controllers
                     return StatusCode(500, "An error occurred while deleting the device link.");
                 }
 
-                return NoContent(); // Return no content if the operation is successful
+                return NoContent();
             }
             catch (Exception ex)
             {
@@ -189,7 +223,6 @@ namespace JunctionRelayServer.Controllers
         // Helper method to remove associated JunctionSensorTargets for a device
         private async Task RemoveAssociatedSensorTargets(int junctionId, int deviceId)
         {
-            // SQL query to delete from JunctionSensorTargets will be handled by the sensors manager
             await _sensorsDbManager.RemoveSensorTargetsByDeviceAsync(junctionId, deviceId);
             Console.WriteLine($"✅ Removed associated sensor targets for device with ID {deviceId} in junction {junctionId}.");
         }
@@ -197,7 +230,6 @@ namespace JunctionRelayServer.Controllers
         // Helper method to remove associated JunctionScreenLayouts for a device link
         private async Task RemoveAssociatedScreenLayouts(int linkId)
         {
-            // SQL query to delete from JunctionScreenLayouts will be handled by the links manager
             await _linkDb.RemoveScreenLayoutsByLinkIdAsync(linkId);
             Console.WriteLine($"✅ Removed associated screen layouts for device link with ID {linkId}.");
         }
@@ -206,7 +238,7 @@ namespace JunctionRelayServer.Controllers
         [HttpDelete("collector-links/{linkId}")]
         public async Task<IActionResult> RemoveCollectorLink(int junctionId, int linkId)
         {
-            var link = await _linkDb.GetCollectorLinkByIdAsync(linkId); // Get the link by ID
+            var link = await _linkDb.GetCollectorLinkByIdAsync(linkId);
             if (link == null || link.JunctionId != junctionId)
             {
                 return NotFound($"Collector link with ID {linkId} not found for junction {junctionId}.");
@@ -224,7 +256,7 @@ namespace JunctionRelayServer.Controllers
                 }
 
                 // 3. Remove associated JunctionSensors when a collector link is removed
-                await RemoveAssociatedJunctionSensors(junctionId, link.Id, false);  // false for collector
+                await RemoveAssociatedJunctionSensors(junctionId, link.Id, false);
 
                 // 4. Finally, remove the collector link itself
                 var success = await _linkDb.RemoveCollectorLinkAsync(junctionId, link.CollectorId);
@@ -234,7 +266,7 @@ namespace JunctionRelayServer.Controllers
                     return StatusCode(500, "An error occurred while deleting the collector link.");
                 }
 
-                return NoContent(); // Return no content if the operation is successful
+                return NoContent();
             }
             catch (Exception ex)
             {
@@ -243,16 +275,11 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-
         // Helper method to remove associated JunctionSensors for the source (device or collector)
         private async Task RemoveAssociatedJunctionSensors(int junctionId, int sourceId, bool isDevice)
         {
-            // Remove all sensors linked to this source (device or collector) from JunctionSensors
             await _sensorsDbManager.RemoveJunctionSensorsBySourceIdAsync(junctionId, sourceId, isDevice);
-            // Console.WriteLine($"✅ Removed associated sensors for source with ID {sourceId} in junction {junctionId}. IsDevice: {isDevice}");
         }
-
-
 
         // GET: api/junctions/{junctionId}/links/available-sensors
         [HttpGet("available-sensors")]
@@ -296,7 +323,6 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-
         // PUT: /api/junctions/{junctionId}/links/device-links/{linkId}/update
         [HttpPut("device-links/{linkId}/update")]
         public async Task<IActionResult> UpdateDeviceLinkUpdate(int junctionId, int linkId, [FromBody] Model_JunctionLinkUpdateRequest updateRequest)
@@ -335,7 +361,7 @@ namespace JunctionRelayServer.Controllers
             return Ok(new { message = "Collector link fields updated successfully." });
         }
 
-        // Modified GetDeviceScreenLayouts method
+        // GET: api/junctions/{junctionId}/links/device-links/{linkId}/screen-layouts
         [HttpGet("device-links/{linkId}/screen-layouts")]
         public async Task<IActionResult> GetDeviceScreenLayouts(int junctionId, int linkId)
         {
@@ -386,7 +412,7 @@ namespace JunctionRelayServer.Controllers
             }
 
             // Ensure required foreign keys are set
-            newScreenLayout.JunctionId = junctionId;               // <-- ensure NOT NULL
+            newScreenLayout.JunctionId = junctionId;
             newScreenLayout.JunctionDeviceLinkId = linkId;
 
             // Add the screen layout override
@@ -424,7 +450,7 @@ namespace JunctionRelayServer.Controllers
 
             // Ensure required foreign keys are set
             updatedScreenLayout.Id = screenLayoutId;
-            updatedScreenLayout.JunctionId = junctionId;           // <-- ensure NOT NULL
+            updatedScreenLayout.JunctionId = junctionId;
             updatedScreenLayout.JunctionDeviceLinkId = linkId;
 
             var success = await _linkDb.UpdateJunctionScreenLayoutAsync(updatedScreenLayout);
