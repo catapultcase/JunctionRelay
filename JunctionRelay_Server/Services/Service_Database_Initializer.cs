@@ -816,7 +816,7 @@ namespace JunctionRelayServer.Services
                 ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
                 ("junction_autostart_enabled", "true", "Master toggle for the junction autostart service. If false, no junctions will auto-start regardless of their individual AutoStartOnLaunch setting"),
                 ("junction_autostart_parallel", "false", "If true, auto-start junctions will be started in parallel during system startup. If false, they will be started sequentially with delays between each start"),
-                ("junction_hyperlink_rows", "true", "If true, The Junction list views will embed hyperlinks for navigating to collector/devices"),
+                ("junction_hyperlink_rows", "false", "If true, The Junction list views will embed hyperlinks for navigating to collector/devices"),
                 ("junction_import_export", "false", "If true, enable junction import/export functionality. NOTE: This feature only works if all other references have the same ID - useful for development only"),
                 ("mobile_navigation_on_desktop", "false", "If true, use the mobile navbar even on the desktop experience"),
                 ("mobile_show_back_button", "false", "If true, the first action on the mobile action bar will be a 'back' navigation button"),

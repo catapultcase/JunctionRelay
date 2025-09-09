@@ -75,11 +75,18 @@ const ScreenSelectionModal: React.FC<ScreenSelectionModalProps> = ({
         try {
             setIsLoading(true);
 
-            // Prevent modal from closing until operation completes
+            // Call the parent function to update the state
             await onScreensSelected(localScreenIds);
 
-            // Only close modal after successful save
+            // Show success message BEFORE closing
+            showSnackbar("Screen assignments updated successfully", "success");
+
+            // Add a small delay to ensure state updates are processed
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Close modal after successful save
             onClose();
+
         } catch (error: unknown) {
             console.error("Error saving screen assignments:", error);
 
@@ -90,9 +97,7 @@ const ScreenSelectionModal: React.FC<ScreenSelectionModalProps> = ({
                 errorMessage = String(error);
             }
 
-            // Use the showSnackbar function for better UX
             showSnackbar(`Failed to save screen assignments: ${errorMessage}`, "error");
-
             // Don't close modal on error so user can try again
         } finally {
             setIsLoading(false);

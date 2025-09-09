@@ -174,8 +174,8 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         name: device.name,
                                                         description: device.type,
                                                         ipAddress: device.ipAddress,
-                                                        defaultPollRate: device.defaultPollRate,
-                                                        defaultSendRate: device.defaultSendRate
+                                                        pollRateOverride: device.pollRate,
+                                                        sendRateOverride: device.sendRate
                                                     }, "Source")}
                                                     startIcon={<AddIcon />}
                                                 >
@@ -191,8 +191,8 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         name: device.name,
                                                         description: device.type,
                                                         ipAddress: device.ipAddress,
-                                                        defaultPollRate: device.defaultPollRate,
-                                                        defaultSendRate: device.defaultSendRate
+                                                        pollRateOverride: device.pollRate,
+                                                        sendRateOverride: device.sendRate
                                                     }, "Target")}
                                                     startIcon={<AddIcon />}
                                                 >
@@ -245,8 +245,8 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         name: collector.name,
                                                         description: collector.type,
                                                         url: collector.url,
-                                                        defaultPollRate: collector.defaultPollRate,
-                                                        defaultSendRate: collector.defaultSendRate
+                                                        pollRateOverride: collector.pollRate,
+                                                        sendRateOverride: collector.sendRate
                                                     }, "Source")}
                                                     startIcon={<AddIcon />}
                                                 >
@@ -262,8 +262,8 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         name: collector.name,
                                                         description: collector.type,
                                                         url: collector.url,
-                                                        defaultPollRate: collector.defaultPollRate,
-                                                        defaultSendRate: collector.defaultSendRate
+                                                        pollRateOverride: collector.pollRate,
+                                                        sendRateOverride: collector.sendRate
                                                     }, "Target")}
                                                     startIcon={<AddIcon />}
                                                 >
@@ -282,22 +282,22 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
             <Box
                 sx={{
                     display: 'flex',
-                      flexDirection: {xs: 'column', md: 'row' }, 
-                      gap: 3,
-                      mb: 3
-                    }}
-                  >
+                    flexDirection: { xs: 'column', md: 'row' },
+                    gap: 3,
+                    mb: 3
+                }}
+            >
                 {/* Sources */}
                 <Paper
                     elevation={2}
-                        sx={{
-                          p: 3,
-                          flex: 1,
-                          width: '100%',
-                          borderRadius: 2,
-                          height: 'fit-content'
-                        }}
-                    >
+                    sx={{
+                        p: 3,
+                        flex: 1,
+                        width: '100%',
+                        borderRadius: 2,
+                        height: 'fit-content'
+                    }}
+                >
                     <Typography variant="h6" gutterBottom sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -350,10 +350,10 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         value={source.type === "device"
                                                             ? (devicePollRates[source.linkId || source.id] !== undefined
                                                                 ? devicePollRates[source.linkId || source.id]
-                                                                : source.defaultPollRate)
+                                                                : source.pollRateOverride || 0)
                                                             : (collectorPollRates[source.linkId || source.id] !== undefined
                                                                 ? collectorPollRates[source.linkId || source.id]
-                                                                : source.defaultPollRate)
+                                                                : source.pollRateOverride || 0)
                                                         }
                                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                                                             handlePollRateOverrideChange(e, source.linkId || source.id, source.type)
@@ -365,7 +365,6 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         sx={{ width: "120px" }}
                                                         variant="outlined"
                                                         required
-                                                        placeholder="Enter value"
                                                         label="Poll Rate"
                                                         helperText={
                                                             source.type === "device"
@@ -402,7 +401,7 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                         width: '100%',
                         borderRadius: 2,
                         height: 'fit-content'
-                    }}                
+                    }}
                 >
                     <Typography variant="h6" gutterBottom sx={{
                         display: 'flex',
@@ -456,10 +455,10 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         value={target.type === "device"
                                                             ? (deviceSendRates[target.linkId || target.id] !== undefined
                                                                 ? deviceSendRates[target.linkId || target.id]
-                                                                : target.defaultSendRate)
+                                                                : target.sendRateOverride || 0)
                                                             : (collectorSendRates[target.linkId || target.id] !== undefined
                                                                 ? collectorSendRates[target.linkId || target.id]
-                                                                : target.defaultSendRate)
+                                                                : target.sendRateOverride || 0)
                                                         }
                                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                                                             handleSendRateOverrideChange(e, target.linkId || target.id, target.type)
@@ -471,7 +470,6 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                         sx={{ width: "120px" }}
                                                         variant="outlined"
                                                         required
-                                                        placeholder="Enter value"
                                                         label="Send Rate"
                                                         helperText={
                                                             target.type === "device"

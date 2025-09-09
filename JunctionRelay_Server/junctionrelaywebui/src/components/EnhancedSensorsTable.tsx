@@ -129,11 +129,13 @@ interface SensorColumn {
 }
 
 // Props interface for the component
+// Props interface for the component
 interface EnhancedSensorsTableProps {
     availableSensors: Sensor[];
     handleSensorSelect: (sensorId: number) => Promise<void>;
     handleSensorOrderChange: (sensor: Sensor, newOrder: number) => Promise<void>;
     handleSensorTagChange: (sensor: Sensor, newTag: string) => Promise<void>;
+    handleSensorUpdate?: (updatedSensor: Sensor) => void;
     getSensorOrder: (sensor: Sensor) => number;
     getSensorTag: (sensor: Sensor) => string;
     sensorTargets: SensorTargets;
@@ -150,16 +152,16 @@ interface EnhancedSensorsTableProps {
     junctionId: number;
 
     // New props for junction-level settings
-    allTargetsAllData?: boolean;
+    allDataAllTargets?: boolean;
     allTargetsAllScreens?: boolean;
-    onAllTargetsAllDataChange?: (enabled: boolean) => Promise<void>;
+    onAllDataAllTargetsChange?: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
     onAllTargetsAllScreensChange?: (enabled: boolean) => Promise<void>;
 
     // Props for customization
     hideTargetsColumn?: boolean;
     hideSelectionColumn?: boolean;
     hideSourceColumn?: boolean;
-    hideEditColumn?: boolean; // New prop to hide edit column for ConfigureCollector
+    hideEditColumn?: boolean;
     customTitle?: string;
     customIcon?: React.ReactNode;
     customActions?: (sensor: Sensor) => React.ReactNode;
@@ -168,15 +170,19 @@ interface EnhancedSensorsTableProps {
     sensorsPerPageOverride?: number;
     hidePagination?: boolean;
     hideFilters?: boolean;
-    hideJunctionSettings?: boolean; // New prop to hide junction settings for ConfigureCollector
+    hideJunctionSettings?: boolean;
     additionalColumns?: {
         header: string;
         field: string;
         render: (sensor: Sensor) => React.ReactNode;
         width?: string;
     }[];
-    localStorageKey?: string; // Key for storing column preferences
-    defaultVisibleColumns?: string[]; // Default visible columns for the table
+    localStorageKey?: string;
+    defaultVisibleColumns?: string[];
+
+    // New props for All Targets All Screens functionality
+    deviceScreensMap?: { [deviceId: number]: any[] };
+    onScreenAssignmentUpdate?: (sensorId: number, deviceId: number, screenIds: number[]) => Promise<void>;
 }
 
 // Storage keys
@@ -489,6 +495,7 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     handleSensorSelect,
     handleSensorOrderChange,
     handleSensorTagChange,
+    handleSensorUpdate,
     getSensorOrder,
     getSensorTag,
     sensorTargets,
@@ -503,9 +510,9 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     showSelectedOnly = false,
     setShowSelectedOnly,
     junctionId,
-    allTargetsAllData = false,
+    allDataAllTargets = false,
     allTargetsAllScreens = false,
-    onAllTargetsAllDataChange,
+    onAllDataAllTargetsChange,
     onAllTargetsAllScreensChange,
     // Props with defaults
     hideTargetsColumn = false,
@@ -523,7 +530,9 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
     hideJunctionSettings = false,
     additionalColumns = [],
     localStorageKey = STORAGE_KEY_DEFAULT,
-    defaultVisibleColumns
+    defaultVisibleColumns,
+    deviceScreensMap,
+    onScreenAssignmentUpdate
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -793,55 +802,20 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                 throw new Error(`Failed to update sensor: ${response.status} ${errorText}`);
             }
 
+            // Update the local state immediately after successful save
+            if (handleSensorUpdate) {
+                handleSensorUpdate(updatedSensor);
+            }
+
             showSnackbar("Sensor updated successfully", "success");
         } catch (error) {
             console.error("Error saving sensor:", error);
             showSnackbar("Failed to save sensor", "error");
         }
     };
-
-
-    // Handle AllTargets toggles with confirmation
-    const handleAllTargetsAllDataToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newValue = e.target.checked;
-
-        if (newValue && selectedSensorsCount > 0) {
-            const confirmed = window.confirm(
-                `This will automatically assign all ${selectedSensorsCount} selected sensors to all targets. Continue?`
-            );
-            if (!confirmed) {
-                e.preventDefault();
-                return;
-            }
-        }
-
-        if (onAllTargetsAllDataChange) {
-            try {
-                await onAllTargetsAllDataChange(newValue);
-                showSnackbar(
-                    newValue
-                        ? "All Targets All Data enabled - selected sensors will be automatically assigned"
-                        : "All Targets All Data disabled",
-                    "success"
-                );
-            } catch (error) {
-                showSnackbar("Failed to update All Targets All Data setting", "error");
-            }
-        }
-    };
-
+    
     const handleAllTargetsAllScreensToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const newValue = e.target.checked;
-
-        if (newValue && selectedSensorsCount > 0) {
-            const confirmed = window.confirm(
-                `This will automatically assign all ${selectedSensorsCount} selected sensors to all screens on all targets. Continue?`
-            );
-            if (!confirmed) {
-                e.preventDefault();
-                return;
-            }
-        }
 
         if (onAllTargetsAllScreensChange) {
             try {
@@ -1065,69 +1039,100 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 
                                 return (
                                     <Box key={`devchk-${sensor.Id}-${device.id}`} sx={{ mb: 1 }}>
-                                        <FormControlLabel
-                                            control={
-                                                <Checkbox
-                                                    checked={isChecked}
-                                                    onChange={async () => {
-                                                        try {
-                                                            if (isChecked) {
-                                                                await removeSensorTarget(junctionId, sensor.Id, device.id);
-                                                            } else {
-                                                                await assignSensorTarget(junctionId, sensor.Id, device.id, null);
+                                        <Tooltip
+                                            title={allDataAllTargets ? "Target assignment is automated when 'All Data All Targets' is enabled" : ""}
+                                            placement="top"
+                                        >
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
+                                                        checked={isChecked}
+                                                        disabled={allDataAllTargets}
+                                                        onChange={async () => {
+                                                            try {
+                                                                if (isChecked) {
+                                                                    await removeSensorTarget(junctionId, sensor.Id, device.id);
+
+                                                                    // Update local state immediately
+                                                                    const newList = assignedTargets.filter(t => t.deviceId !== device.id);
+                                                                    setSensorTargets(prev => ({
+                                                                        ...prev,
+                                                                        [sensor.Id]: newList
+                                                                    }));
+                                                                } else {
+                                                                    await assignSensorTarget(junctionId, sensor.Id, device.id, null);
+
+                                                                    // Update local state immediately
+                                                                    const newList = [...assignedTargets, { deviceId: device.id, screenIds: [] }];
+                                                                    setSensorTargets(prev => ({
+                                                                        ...prev,
+                                                                        [sensor.Id]: newList
+                                                                    }));
+
+                                                                    // NEW CODE: Check if All Targets All Screens is enabled and auto-assign screens
+                                                                    if (allTargetsAllScreens && sensor.IsSelected && deviceScreensMap && onScreenAssignmentUpdate) {
+                                                                        const deviceScreens = deviceScreensMap[device.id] || [];
+                                                                        const allScreenIds = deviceScreens.map(screen => screen.id);
+
+                                                                        if (allScreenIds.length > 0) {
+                                                                            try {
+                                                                                await onScreenAssignmentUpdate(sensor.Id, device.id, allScreenIds);
+                                                                            } catch (error) {
+                                                                                console.error(`Error auto-assigning screens for sensor ${sensor.Id} to device ${device.id}:`, error);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } catch (error) {
+                                                                console.error("Error updating sensor target:", error);
+                                                                showSnackbar("Failed to update sensor target", "error");
                                                             }
-
-                                                            const newList = isChecked
-                                                                ? assignedTargets.filter(t => t.deviceId !== device.id)
-                                                                : [...assignedTargets, { deviceId: device.id, screenIds: [] }];
-
-                                                            setSensorTargets(prev => ({
-                                                                ...prev,
-                                                                [sensor.Id]: newList
-                                                            }));
-                                                        } catch (error) {
-                                                            console.error("Error updating sensor target:", error);
-                                                            showSnackbar("Failed to update sensor target", "error");
-                                                        }
-                                                    }}
-                                                    size="small"
-                                                />
-                                            }
-                                            label={
-                                                <Typography variant="body2">
-                                                    {device.name}
-                                                </Typography>
-                                            }
-                                        />
+                                                        }}
+                                                        size="small"
+                                                    />
+                                                }
+                                                label={
+                                                    <Typography variant="body2">
+                                                        {device.name}
+                                                    </Typography>
+                                                }
+                                            />
+                                        </Tooltip>
 
                                         {isChecked && (
                                             <Box sx={{ display: 'flex', alignItems: 'center', ml: 4 }}>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    onClick={() => {
-                                                        setCurrentSensor(sensor);
-                                                        setCurrentTargetDevice(device);
-                                                        setScreenSelectionModalOpen(true);
-                                                    }}
-                                                    sx={{ ml: 1 }}
+                                                <Tooltip
+                                                    title={allTargetsAllScreens ? "Screen assignment is automated when 'All Targets All Screens' is enabled" : ""}
+                                                    placement="top"
                                                 >
-                                                    {assignedScreenCount > 0 ? (
-                                                        <>
-                                                            <Chip
-                                                                size="small"
-                                                                label={assignedScreenCount}
-                                                                color="primary"
-                                                                sx={{ mr: 1, height: 20 }}
-                                                            />
-                                                            {assignedScreenCount === 1
-                                                                ? "Screen Selected"
-                                                                : "Screens Selected"}
-                                                        </>
-                                                    ) : (
-                                                        "Assign Screens"
-                                                    )}
-                                                </Button>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        disabled={allTargetsAllScreens}
+                                                        onClick={() => {
+                                                            setCurrentSensor(sensor);
+                                                            setCurrentTargetDevice(device);
+                                                            setScreenSelectionModalOpen(true);
+                                                        }}
+                                                        sx={{ ml: 1 }}
+                                                    >
+                                                        {assignedScreenCount > 0 ? (
+                                                            <>
+                                                                <Chip
+                                                                    size="small"
+                                                                    label={assignedScreenCount}
+                                                                    color="primary"
+                                                                    sx={{ mr: 1, height: 20 }}
+                                                                />
+                                                                {assignedScreenCount === 1
+                                                                    ? "Screen Selected"
+                                                                    : "Screens Selected"}
+                                                            </>
+                                                        ) : (
+                                                            "Assign Screens"
+                                                        )}
+                                                    </Button>
+                                                </Tooltip>
                                             </Box>
                                         )}
                                     </Box>
@@ -1436,12 +1441,12 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
                             <FormControlLabel
                                 control={
                                     <Switch
-                                        checked={allTargetsAllData}
-                                        onChange={handleAllTargetsAllDataToggle}
+                                        checked={allDataAllTargets}
+                                        onChange={onAllDataAllTargetsChange}
                                         size="small"
                                     />
                                 }
-                                label="All Targets All Data"
+                                label="All Data All Targets"
                             />
 
                             <FormControlLabel

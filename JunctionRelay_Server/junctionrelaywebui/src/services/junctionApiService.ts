@@ -11,7 +11,7 @@ export interface JunctionUpdatePayload {
     ShowOnDashboard?: boolean;
     AutoStartOnLaunch?: boolean;
     CronExpression?: string | null;
-    AllTargetsAllData?: boolean;
+    AllDataAllTargets?: boolean;
     AllTargetsAllScreens?: boolean;
     GatewayDeviceId?: string;
     GatewayDestination?: string;
