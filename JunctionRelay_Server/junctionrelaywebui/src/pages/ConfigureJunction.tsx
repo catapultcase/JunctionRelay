@@ -37,7 +37,7 @@ import * as junctionService from '../services/junctionApiService';
 // Components
 import Junction_ConfigPanel from '../components/Junction_ConfigPanel';
 import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
-import ScreenSelectionModal from '../components/ScreenSelectionModal';
+import ScreenSelectionModal from '../components/Junction_ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/Junction_AvailableSourcesTargetsTable';
 import DeviceScreenLayoutsCard from '../components/Junction_DeviceScreenLayoutsCard';
 import Junction_Setup_COM from '../components/Junction_Setup_COM';
@@ -186,7 +186,8 @@ const ConfigureJunction: React.FC = () => {
     // Listen for bottom action bar events
     useEffect(() => {
         const handleRefresh = () => {
-            fetchData();
+            setLoading(true);
+            fetchData().finally(() => setLoading(false));
         };
 
         const handleSave = () => {
@@ -332,35 +333,102 @@ const ConfigureJunction: React.FC = () => {
     };
 
     // Handle AllTargets settings changes
-    const handleAllTargetsAllDataChange = async (enabled: boolean): Promise<void> => {
+    const handleAllDataAllTargetsChange = async (enabled: boolean): Promise<void> => {
         try {
-            setLoading(true);
+            // Update the junction data on the server
             await junctionService.updateJunction(junctionId, {
                 ...junctionData,
-                AllTargetsAllData: enabled
+                AllDataAllTargets: enabled
             });
-            setJunctionData((prev: any) => ({ ...prev, allTargetsAllData: enabled }));
+
+            // Update local state only - no fetchData() call
+            setJunctionData((prev: any) => ({ ...prev, allDataAllTargets: enabled }));
+
         } catch (error) {
-            console.error("Error updating AllTargetsAllData:", error);
+            console.error("Error updating AllDataAllTargets:", error);
             throw error;
-        } finally {
-            setLoading(false);
         }
     };
 
     const handleAllTargetsAllScreensChange = async (enabled: boolean): Promise<void> => {
         try {
-            setLoading(true);
+            // Update the junction data on the server
             await junctionService.updateJunction(junctionId, {
                 ...junctionData,
                 AllTargetsAllScreens: enabled
             });
+
+            // Update local state only - no fetchData() call
             setJunctionData((prev: any) => ({ ...prev, allTargetsAllScreens: enabled }));
+
+            // If enabling, trigger auto-assignment for existing targets
+            if (enabled) {
+                // Small delay to ensure junction state is updated
+                setTimeout(() => {
+                    autoAssignAllScreensForExistingTargets();
+                }, 100);
+            }
+
+            showSnackbar(
+                enabled
+                    ? "All Targets All Screens enabled - assigning all screens to existing targets"
+                    : "All Targets All Screens disabled",
+                "success"
+            );
         } catch (error) {
             console.error("Error updating AllTargetsAllScreens:", error);
-            throw error;
-        } finally {
-            setLoading(false);
+            showSnackbar("Failed to update All Targets All Screens setting", "error");
+        }
+    };
+
+    const autoAssignAllScreensForExistingTargets = async () => {
+        try {
+            let assignmentCount = 0;
+            const processedCombinations: string[] = [];
+
+            // Iterate through all existing sensor-target combinations
+            for (const [sensorIdStr, targetAssignments] of Object.entries(sensorTargets)) {
+                const sensorId = parseInt(sensorIdStr);
+
+                for (const targetAssignment of targetAssignments) {
+                    const deviceId = targetAssignment.deviceId;
+                    const deviceScreens = deviceScreensMap[deviceId] || [];
+                    const allScreenIds = deviceScreens.map(screen => screen.id);
+                    const currentScreenIds = targetAssignment.screenIds || [];
+
+                    // Only process if there are screens available and not all are already assigned
+                    if (allScreenIds.length > 0 &&
+                        (currentScreenIds.length === 0 ||
+                            !allScreenIds.every(screenId => currentScreenIds.includes(screenId)))) {
+
+                        const combinationKey = `${sensorId}-${deviceId}`;
+                        if (!processedCombinations.includes(combinationKey)) {
+                            try {
+                                await handleScreenAssignmentUpdate(sensorId, deviceId, allScreenIds);
+                                assignmentCount++;
+                                processedCombinations.push(combinationKey);
+
+                                // Small delay to prevent overwhelming the API
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            } catch (error) {
+                                console.error(`Error auto-assigning screens for sensor ${sensorId} to device ${deviceId}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (assignmentCount > 0) {
+                showSnackbar(
+                    `Auto-assigned all screens for ${assignmentCount} existing sensor-target combinations`,
+                    "success"
+                );
+            } else {
+                showSnackbar("All existing targets already have all screens assigned", "info");
+            }
+        } catch (error) {
+            console.error("Error auto-assigning screens for existing targets:", error);
+            showSnackbar("Failed to auto-assign screens for existing targets", "error");
         }
     };
 
@@ -393,7 +461,7 @@ const ConfigureJunction: React.FC = () => {
                 GatewayDestination: junctionData.gatewayDestination,
                 DestinationOverride: junctionData.destinationOverride,
                 BaudRate: junctionData.baudRate,
-                AllTargetsAllData: junctionData.allTargetsAllData,
+                AllDataAllTargets: junctionData.allDataAllTargets,
                 AllTargetsAllScreens: junctionData.allTargetsAllScreens,
             };
 
@@ -429,20 +497,17 @@ const ConfigureJunction: React.FC = () => {
     // The key function to update screen assignments
     const handleScreenAssignmentUpdate = async (sensorId: number, deviceId: number, screenIds: number[]) => {
         try {
-            setLoading(true);
-
             const targetData = sensorTargets[sensorId]?.find(t => t.deviceId === deviceId);
             const existingScreenIds = targetData?.screenIds || [];
 
             if (!targetData && screenIds.length > 0) {
                 try {
                     await junctionService.assignSensorTarget(junctionId, sensorId, deviceId, null);
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // await new Promise(resolve => setTimeout(resolve, 500));
                 } catch (error) {
                     console.error("Failed to create initial target relationship:", error);
                     showSnackbar("Failed to create target relationship: " +
                         (error instanceof Error ? error.message : String(error)), "error");
-                    setLoading(false);
                     return;
                 }
             }
@@ -454,7 +519,7 @@ const ConfigureJunction: React.FC = () => {
             for (const screenId of screensToRemove) {
                 try {
                     await junctionService.removeSensorScreen(junctionId, sensorId, deviceId, screenId);
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // await new Promise(resolve => setTimeout(resolve, 300));
                 } catch (error) {
                     console.error(`Error removing screen ${screenId}:`, error);
                     operationsFailed = true;
@@ -464,13 +529,14 @@ const ConfigureJunction: React.FC = () => {
             for (const screenId of screensToAdd) {
                 try {
                     await junctionService.assignScreenToTarget(junctionId, sensorId, deviceId, screenId);
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // await new Promise(resolve => setTimeout(resolve, 300));
                 } catch (error) {
                     console.error(`Error adding screen ${screenId}:`, error);
                     operationsFailed = true;
                 }
             }
 
+            // Update local state - removed the fetchData() call that was causing the full refresh
             setSensorTargets(prev => {
                 const updatedTargets = [...(prev[sensorId] || [])];
                 const targetIndex = updatedTargets.findIndex(t => t.deviceId === deviceId);
@@ -495,6 +561,8 @@ const ConfigureJunction: React.FC = () => {
 
             if (operationsFailed) {
                 showSnackbar("Some screen assignments could not be updated", "warning");
+            } else {
+                showSnackbar("Screen assignments updated successfully", "success");
             }
         } catch (error) {
             console.error("Error updating screen assignments:", error);
@@ -505,8 +573,59 @@ const ConfigureJunction: React.FC = () => {
                 errorMessage = String(error);
             }
             showSnackbar(`Failed to update screen assignments: ${errorMessage}`, "error");
-        } finally {
-            setLoading(false);
+        }
+    };
+
+    const handleAllDataAllTargetsToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = e.target.checked;
+
+        try {
+            await handleAllDataAllTargetsChange(newValue);
+
+            // Handle auto-assignment if enabled
+            if (newValue) {
+                // Auto-assign selected sensors to all target devices
+                const selectedSensors = availableSensors.filter(sensor => sensor.IsSelected);
+                const deviceTargets = targets.filter(target => target.type === "device");
+
+                for (const sensor of selectedSensors) {
+                    for (const target of deviceTargets) {
+                        try {
+                            // Check if already assigned
+                            const existingTargets = sensorTargets[sensor.Id] || [];
+                            const alreadyAssigned = existingTargets.some(t => t.deviceId === target.id);
+
+                            if (!alreadyAssigned) {
+                                await junctionService.assignSensorTarget(junctionId, sensor.Id, target.id, null);
+
+                                // Update local state immediately
+                                setSensorTargets(prev => {
+                                    const existingTargets = prev[sensor.Id] || [];
+                                    return {
+                                        ...prev,
+                                        [sensor.Id]: [...existingTargets, { deviceId: target.id, screenIds: [] }]
+                                    };
+                                });
+                            }
+                        } catch (error) {
+                            console.error(`Error auto-assigning sensor ${sensor.Id} to device ${target.id}:`, error);
+                        }
+                    }
+                }
+
+                if (deviceTargets.length > 0 && selectedSensors.length > 0) {
+                    showSnackbar(`Auto-assigned ${selectedSensors.length} sensors to ${deviceTargets.length} target devices`, "success");
+                }
+            }
+
+            showSnackbar(
+                newValue
+                    ? "All Data All Targets enabled - selected sensors will be automatically assigned"
+                    : "All Data All Targets disabled",
+                "success"
+            );
+        } catch (error) {
+            showSnackbar("Failed to update All Data All Targets setting", "error");
         }
     };
 
@@ -565,6 +684,22 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
+    const handleSensorUpdate = (updatedSensor: any) => {
+        // Update availableSensors state
+        setAvailableSensors((prev) =>
+            prev.map((s) =>
+                s.Id === updatedSensor.Id ? { ...s, ...updatedSensor } : s
+            )
+        );
+
+        // Update filteredSensors state  
+        setFilteredSensors((prev) =>
+            prev.map((s) =>
+                s.Id === updatedSensor.Id ? { ...s, ...updatedSensor } : s
+            )
+        );
+    };
+
     // Initialize sensors with updated values
     useEffect(() => {
         setFilteredSensors((prevSensors) =>
@@ -602,7 +737,7 @@ const ConfigureJunction: React.FC = () => {
     };
 
     // Fetch all necessary junction data
-    const fetchData = useCallback(async () => {
+    const fetchData = async () => {
         if (!id) return;
 
         try {
@@ -737,12 +872,67 @@ const ConfigureJunction: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [id, junctionId]);
+    };
 
-    // Initial data fetch
     useEffect(() => {
         fetchData();
-    }, [fetchData]);
+    }, []); // Only run once on mount
+
+    // Add a separate effect for when id changes
+    useEffect(() => {
+        if (id) {
+            fetchData();
+        }
+    }, [id]);
+
+    // Function to automatically assign all screens for all targets when All Targets All Screens is enabled
+    const autoAssignAllScreensForAllTargets = async () => {
+        if (!junctionData.allTargetsAllScreens) return;
+
+        const selectedSensors = availableSensors.filter(sensor => sensor.IsSelected);
+        const deviceTargets = targets.filter(target => target.type === "device");
+
+        if (selectedSensors.length === 0 || deviceTargets.length === 0) return;
+
+        try {
+            let assignmentCount = 0;
+
+            // For each selected sensor, assign to all target devices with all their screens
+            for (const sensor of selectedSensors) {
+                for (const target of deviceTargets) {
+                    const deviceScreens = deviceScreensMap[target.id] || [];
+                    const allScreenIds = deviceScreens.map(screen => screen.id);
+
+                    if (allScreenIds.length > 0) {
+                        // Use the optimized screen assignment update that doesn't cause full refresh
+                        await handleScreenAssignmentUpdate(sensor.Id, target.id, allScreenIds);
+                        assignmentCount++;
+                    }
+                }
+            }
+
+            if (assignmentCount > 0) {
+                showSnackbar(`Auto-assigned ${selectedSensors.length} sensors to all screens on ${deviceTargets.length} devices`, "success");
+            }
+        } catch (error) {
+            console.error("Error auto-assigning screens:", error);
+            showSnackbar("Failed to auto-assign screens", "error");
+        }
+    };
+
+    const refreshSensors = async () => {
+        try {
+            const sensorsData = await junctionService.getAvailableSensors(junctionId);
+            const normalizedSensors = sensorsData.map((s: any) => ({
+                ...s,
+                Id: s.id ?? s.Id,
+                IsSelected: s.isSelected ?? s.IsSelected,
+            }));
+            setAvailableSensors(normalizedSensors);
+        } catch (error) {
+            console.error("Error refreshing sensors:", error);
+        }
+    };
 
     const handleAdd = async (item: SourceOrTarget, role: string) => {
         console.log(`[DEBUG] Adding ${item.type} "${item.name}" as ${role}`);
@@ -754,8 +944,8 @@ const ConfigureJunction: React.FC = () => {
                 const originalDevice = allDevices.find(device => device.id === item.id);
                 if (originalDevice) {
                     originalRates = {
-                        pollRateOverride: originalDevice.pollRate,
-                        sendRateOverride: originalDevice.sendRate
+                        pollRateOverride: originalDevice.pollRate || item.pollRateOverride,
+                        sendRateOverride: originalDevice.sendRate || item.sendRateOverride
                     };
                 }
                 await junctionService.addDeviceLink(junctionId, item.id, role, originalRates);
@@ -763,15 +953,101 @@ const ConfigureJunction: React.FC = () => {
                 const originalCollector = allCollectors.find(collector => collector.id === item.id);
                 if (originalCollector) {
                     originalRates = {
-                        pollRateOverride: originalCollector.pollRate,
-                        sendRateOverride: originalCollector.sendRate
+                        pollRateOverride: originalCollector.pollRate || item.pollRateOverride,
+                        sendRateOverride: originalCollector.sendRate || item.sendRateOverride
                     };
                 }
                 await junctionService.addCollectorLink(junctionId, item.id, role, originalRates);
             }
 
             console.log(`[DEBUG] ${item.type} link created successfully`);
-            await fetchData();
+
+            // Fetch the updated links to get the real linkId
+            const links = await junctionService.getJunctionLinks(junctionId);
+
+            const deviceLinks: SourceOrTarget[] = (links.deviceLinks || []).map((d: any) => ({
+                linkId: d.id,
+                id: d.deviceId,
+                name: d.deviceName,
+                description: d.deviceDescription,
+                ipAddress: d.deviceIpAddress,
+                role: d.role,
+                type: "device" as const,
+                pollRateOverride: d.pollRateOverride,
+                sendRateOverride: d.sendRateOverride,
+            }));
+
+            const collectorLinks: SourceOrTarget[] = (links.collectorLinks || []).map((c: any) => ({
+                linkId: c.id,
+                id: c.collectorId,
+                name: c.collectorName,
+                description: c.collectorDescription,
+                url: c.collectorUrl,
+                role: c.role,
+                type: "collector" as const,
+                pollRateOverride: c.pollRateOverride,
+                sendRateOverride: c.sendRateOverride,
+            }));
+
+            // Find the newly created link
+            const newLink = item.type === "device"
+                ? deviceLinks.find(link => link.id === item.id && link.role === role)
+                : collectorLinks.find(link => link.id === item.id && link.role === role);
+
+            if (newLink) {
+                // INITIALIZE RATE STATES FIRST - before updating sources/targets
+                if (item.type === "device") {
+                    setDevicePollRates(prev => ({
+                        ...prev,
+                        [newLink.linkId!]: newLink.pollRateOverride || 0
+                    }));
+                    setDeviceSendRates(prev => ({
+                        ...prev,
+                        [newLink.linkId!]: newLink.sendRateOverride || 0
+                    }));
+                } else {
+                    setCollectorPollRates(prev => ({
+                        ...prev,
+                        [newLink.linkId!]: newLink.pollRateOverride || 0
+                    }));
+                    setCollectorSendRates(prev => ({
+                        ...prev,
+                        [newLink.linkId!]: newLink.sendRateOverride || 0
+                    }));
+                }
+
+                // THEN update sources/targets
+                if (role === "Source") {
+                    setSources(prev => [...prev, newLink]);
+                    await refreshSensors();
+                } else {
+                    setTargets(prev => [...prev, newLink]);
+                }
+
+                // Remove from available items
+                if (item.type === "device") {
+                    setAllDevices(prev => prev.filter(d => d.id !== item.id));
+
+                    // Fetch screens for the newly added device if it's a target
+                    if (role === "Target") {
+                        try {
+                            const res = await fetch(`/api/devices/${item.id}/screens`);
+                            if (res.ok) {
+                                const screens = await res.json();
+                                setDeviceScreensMap(prev => ({
+                                    ...prev,
+                                    [item.id]: screens
+                                }));
+                            }
+                        } catch (err) {
+                            console.error(`Error fetching screens for device ${item.id}`, err);
+                        }
+                    }
+                } else {
+                    setAllCollectors(prev => prev.filter(c => c.id !== item.id));
+                }
+            }
+
             showSnackbar(`${item.name} added as ${role.toLowerCase()}`, "success");
         } catch (error) {
             console.error(`Error adding ${item.type} as ${role}:`, error);
@@ -789,7 +1065,40 @@ const ConfigureJunction: React.FC = () => {
             } else {
                 await junctionService.removeCollectorLink(junctionId, item.linkId);
             }
-            await fetchData();
+
+            // Update local state instead of calling fetchData()
+            setSources(prev => {
+                const updated = prev.filter(s => s.linkId !== item.linkId);
+                // If removing a source, refresh sensors
+                if (prev.some(s => s.linkId === item.linkId)) {
+                    refreshSensors();
+                }
+                return updated;
+            });
+
+            setTargets(prev => prev.filter(t => t.linkId !== item.linkId));
+
+            // Add back to available items
+            if (item.type === "device") {
+                setAllDevices(prev => [...prev, {
+                    id: item.id,
+                    name: item.name,
+                    description: item.description,
+                    ipAddress: item.ipAddress,
+                    pollRate: item.pollRateOverride || 0,
+                    sendRate: item.sendRateOverride || 0
+                }]);
+            } else {
+                setAllCollectors(prev => [...prev, {
+                    id: item.id,
+                    name: item.name,
+                    description: item.description,
+                    url: item.url,
+                    pollRate: item.pollRateOverride || 0,
+                    sendRate: item.sendRateOverride || 0
+                }]);
+            }
+
             showSnackbar(`${item.name} removed`, "success");
         } catch (error) {
             console.error("Error removing item:", error);
@@ -798,6 +1107,8 @@ const ConfigureJunction: React.FC = () => {
     };
 
     // Handle sensor selection
+    // Replace the existing handleSensorSelect function in ConfigureJunction.tsx
+
     const handleSensorSelect = async (sensorId: number) => {
         const currentSensor = availableSensors.find((s) => s.Id === sensorId);
         if (!currentSensor) return;
@@ -818,6 +1129,102 @@ const ConfigureJunction: React.FC = () => {
                     s.Id === sensorId ? { ...s, IsSelected: newIsSelected } : s
                 )
             );
+
+            if (newIsSelected) {
+                // SENSOR WAS SELECTED - Handle auto-assignment logic
+                let newlyAssignedDeviceIds: number[] = [];
+
+                // Handle All Data All Targets behavior
+                if (junctionData.allDataAllTargets) {
+                    const deviceTargets = targets.filter(target => target.type === "device");
+
+                    for (const target of deviceTargets) {
+                        try {
+                            // Check if sensor is already assigned to this device
+                            const existingTargets = sensorTargets[sensorId] || [];
+                            const alreadyAssigned = existingTargets.some(t => t.deviceId === target.id);
+
+                            if (!alreadyAssigned) {
+                                // Assign sensor to this target device (without specific screens)
+                                await junctionService.assignSensorTarget(junctionId, sensorId, target.id, null);
+
+                                // Track this as a newly assigned device
+                                newlyAssignedDeviceIds.push(target.id);
+
+                                // Update local state immediately
+                                setSensorTargets(prev => {
+                                    const existingTargets = prev[sensorId] || [];
+                                    return {
+                                        ...prev,
+                                        [sensorId]: [...existingTargets, { deviceId: target.id, screenIds: [] }]
+                                    };
+                                });
+                            }
+                        } catch (error) {
+                            console.error(`Error auto-assigning sensor ${sensorId} to device ${target.id}:`, error);
+                        }
+                    }
+
+                    if (deviceTargets.length > 0) {
+                        showSnackbar(`Auto-assigned sensor to ${deviceTargets.length} target devices`, "success");
+                    }
+                }
+
+                // Handle All Targets All Screens behavior
+                if (junctionData.allTargetsAllScreens) {
+                    // Get both existing assignments and newly assigned devices
+                    const existingTargetAssignments = sensorTargets[sensorId] || [];
+                    const allRelevantDeviceIds = new Set([
+                        ...existingTargetAssignments.map(t => t.deviceId),
+                        ...newlyAssignedDeviceIds
+                    ]);
+
+                    for (const deviceId of allRelevantDeviceIds) {
+                        const deviceScreens = deviceScreensMap[deviceId] || [];
+                        const allScreenIds = deviceScreens.map(screen => screen.id);
+
+                        if (allScreenIds.length > 0) {
+                            try {
+                                await handleScreenAssignmentUpdate(sensorId, deviceId, allScreenIds);
+                            } catch (error) {
+                                console.error(`Error auto-assigning screens for sensor ${sensorId} to device ${deviceId}:`, error);
+                            }
+                        }
+                    }
+
+                    if (allRelevantDeviceIds.size > 0) {
+                        showSnackbar(`Auto-assigned sensor to all screens on ${allRelevantDeviceIds.size} devices`, "success");
+                    }
+                }
+            } else {
+                // SENSOR WAS DESELECTED - Remove all target assignments
+                const sensorTargetAssignments = sensorTargets[sensorId] || [];
+
+                if (sensorTargetAssignments.length > 0) {
+                    let removedTargetsCount = 0;
+
+                    for (const targetAssignment of sensorTargetAssignments) {
+                        try {
+                            // Remove the sensor from this device target
+                            await junctionService.removeSensorTarget(junctionId, sensorId, targetAssignment.deviceId);
+                            removedTargetsCount++;
+                        } catch (error) {
+                            console.error(`Error removing sensor ${sensorId} from device ${targetAssignment.deviceId}:`, error);
+                        }
+                    }
+
+                    // Update local state to remove all target assignments for this sensor
+                    setSensorTargets(prev => {
+                        const updated = { ...prev };
+                        delete updated[sensorId];
+                        return updated;
+                    });
+
+                    if (removedTargetsCount > 0) {
+                        showSnackbar(`Removed sensor from ${removedTargetsCount} target device${removedTargetsCount > 1 ? 's' : ''}`, "success");
+                    }
+                }
+            }
         } catch (err) {
             console.error("Failed to update sensor selection", err);
             showSnackbar("Failed to update sensor selection", "error");
@@ -829,6 +1236,7 @@ const ConfigureJunction: React.FC = () => {
         if (!id) return;
 
         const refreshJunctionStatus = async () => {
+            // Skip status updates during screen selection to prevent interference
             if (screenSelectionModalOpen) {
                 return;
             }
@@ -850,10 +1258,10 @@ const ConfigureJunction: React.FC = () => {
 
         const statusIntervalId = setInterval(() => {
             refreshJunctionStatus();
-        }, 1000);
+        }, 2000); // Increased from 1000ms to 2000ms to reduce interference
 
         return () => clearInterval(statusIntervalId);
-    }, [id, junctionId, screenSelectionModalOpen]);
+    }, [id, junctionId, screenSelectionModalOpen]); // Added screenSelectionModalOpen as dependency
 
     // Update the handleStartJunction function
     const handleStartJunction = async () => {
@@ -1054,7 +1462,12 @@ const ConfigureJunction: React.FC = () => {
                         variant="outlined"
                         startIcon={<RefreshIcon />}
                         size="small"
-                        onClick={fetchData}
+                        onClick={() => {
+                            // Only refresh specific data without causing scroll to top
+                            setLoading(true);
+                            // Instead of full fetchData(), just refresh the sensor targets
+                            fetchData().finally(() => setLoading(false));
+                        }}
                         sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
                     >
                         Refresh
@@ -1124,36 +1537,39 @@ const ConfigureJunction: React.FC = () => {
                         availableSensors={availableSensors}
                     />
 
-                    <EnhancedSensorsTable
-                        availableSensors={availableSensors}
-                        handleSensorSelect={handleSensorSelect}
-                        handleSensorOrderChange={handleSensorOrderChange}
-                        handleSensorTagChange={handleSensorTagChange}
-                        getSensorOrder={getSensorOrder}
-                        getSensorTag={getSensorTag}
-                        sensorTargets={sensorTargets}
-                        targets={targets}
-                        removeSensorTarget={(junctionId, sensorId, deviceId) =>
-                            junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
-                        assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
-                            junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
-                        setCurrentSensor={setCurrentSensor}
-                        setCurrentTargetDevice={setCurrentTargetDevice}
-                        setScreenSelectionModalOpen={setScreenSelectionModalOpen}
-                        showSnackbar={showSnackbar}
-                        setSensorTargets={setSensorTargets}
-                        showSelectedOnly={showSelectedOnly}
-                        setShowSelectedOnly={handleShowSelectedOnlyChange}
-                        defaultVisibleColumns={getDefaultJunctionColumns()}
-                        localStorageKey="junction_sensors_columns"
-                        junctionId={junctionId}
-                        allTargetsAllData={junctionData.allTargetsAllData}
-                        allTargetsAllScreens={junctionData.allTargetsAllScreens}
-                        onAllTargetsAllDataChange={handleAllTargetsAllDataChange}
-                        onAllTargetsAllScreensChange={handleAllTargetsAllScreensChange}
-                        hideEditColumn={false}
-                        hideJunctionSettings={false}
-                    />
+                        <EnhancedSensorsTable
+                            availableSensors={availableSensors}
+                            handleSensorSelect={handleSensorSelect}
+                            handleSensorOrderChange={handleSensorOrderChange}
+                            handleSensorTagChange={handleSensorTagChange}
+                            handleSensorUpdate={handleSensorUpdate}
+                            getSensorOrder={getSensorOrder}
+                            getSensorTag={getSensorTag}
+                            sensorTargets={sensorTargets}
+                            targets={targets}
+                            removeSensorTarget={(junctionId, sensorId, deviceId) =>
+                                junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
+                            assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
+                                junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
+                            setCurrentSensor={setCurrentSensor}
+                            setCurrentTargetDevice={setCurrentTargetDevice}
+                            setScreenSelectionModalOpen={setScreenSelectionModalOpen}
+                            showSnackbar={showSnackbar}
+                            setSensorTargets={setSensorTargets}
+                            showSelectedOnly={showSelectedOnly}
+                            setShowSelectedOnly={handleShowSelectedOnlyChange}
+                            defaultVisibleColumns={getDefaultJunctionColumns()}
+                            localStorageKey="junction_sensors_columns"
+                            junctionId={junctionId}
+                            allDataAllTargets={junctionData.allDataAllTargets}
+                            allTargetsAllScreens={junctionData.allTargetsAllScreens}
+                            onAllDataAllTargetsChange={handleAllDataAllTargetsToggle}
+                            onAllTargetsAllScreensChange={handleAllTargetsAllScreensChange}
+                            hideEditColumn={false}
+                            hideJunctionSettings={false}
+                            deviceScreensMap={deviceScreensMap}
+                            onScreenAssignmentUpdate={handleScreenAssignmentUpdate}
+                        />
                 </Box>
             )}
 
