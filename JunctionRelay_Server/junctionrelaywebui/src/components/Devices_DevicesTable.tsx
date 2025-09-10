@@ -448,21 +448,21 @@ const DeviceCard = memo(({
                         gap: 1
                     }}>
                         {/* Resync button for scan results */}
-                        {isScanResults && deviceData.status === "DEVICE_EXISTS" && onResync &&
-                            resyncedDevices && !resyncedDevices.has(deviceData.macAddress) && (
+                        {isScanResults && device.status !== "DEVICE_EXISTS" && onResync &&
+                            resyncedDevices && !resyncedDevices.has(device.macAddress) && (
                                 <Tooltip title="Resync Device">
                                     <IconButton
                                         size="small"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onResync(
-                                                deviceData.macAddress || deviceData.MacAddress,
-                                                deviceData.ipAddress || deviceData.IpAddress
+                                                device.macAddress || device.MacAddress,
+                                                device.ipAddress || device.IpAddress
                                             );
                                         }}
-                                        disabled={isResyncing(deviceData.macAddress, deviceData.ipAddress)}
+                                        disabled={isResyncing(device.macAddress, device.ipAddress)}
                                     >
-                                        {isResyncing(deviceData.macAddress, deviceData.ipAddress) ? (
+                                        {isResyncing(device.macAddress, device.ipAddress) ? (
                                             <CircularProgress size={16} />
                                         ) : (
                                             <SyncIcon fontSize="small" />
@@ -1110,8 +1110,8 @@ const DeviceTableRow = memo(({
 
                 return (
                     <Box sx={{ display: 'flex', justifyContent, gap: 0.5 }}>
-                        {/* Resync button for scan results - existing devices only */}
-                        {isScanResults && device.status === "DEVICE_EXISTS" && onResync &&
+                        {/* Resync button for scan results - devices that need resyncing */}
+                        {isScanResults && device.status !== "DEVICE_EXISTS" && onResync &&
                             resyncedDevices && !resyncedDevices.has(device.macAddress) && (
                                 <Tooltip title="Resync Device">
                                     <IconButton

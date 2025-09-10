@@ -55,6 +55,10 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
     const offscreenRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
     const animationRef = useRef<number | null>(null);
 
+    // Memory leak fix refs
+    const isMountedRef = useRef(true);
+    const timeoutRefs = useRef<Set<number>>(new Set());
+
     // ——— Mirror props/state into refs ———
     const streamRef = useRef(stream);
     useEffect(() => { streamRef.current = stream; }, [stream]);
@@ -113,10 +117,14 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
     // Listen for settings changes and page visibility
     useEffect(() => {
         const handleSettingsChange = (event: CustomEvent) => {
-            setSettings(event.detail);
+            if (isMountedRef.current) {
+                setSettings(event.detail);
+            }
         };
 
         const handleVisibilityChange = () => {
+            if (!isMountedRef.current) return;
+
             const wasVisible = isPageVisible.current;
             isPageVisible.current = !document.hidden;
 
@@ -132,6 +140,25 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
         return () => {
             window.removeEventListener('dashboard-settings-changed', handleSettingsChange as any);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
+
+    // Listen for dashboard cleanup
+    useEffect(() => {
+        const handleDashboardCleanup = () => {
+            console.log('Dashboard cleanup event received in ECGStreamVisualizationHTTP');
+            isMountedRef.current = false;
+
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+                animationRef.current = null;
+            }
+        };
+
+        window.addEventListener('dashboard-cleanup', handleDashboardCleanup);
+
+        return () => {
+            window.removeEventListener('dashboard-cleanup', handleDashboardCleanup);
         };
     }, []);
 
@@ -282,7 +309,7 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
     }, [stream.lastSentTime, stream.status, height]);
 
     const triggerPulse = useCallback(() => {
-        if (!isPageVisible.current) return;
+        if (!isPageVisible.current || !isMountedRef.current) return;
 
         setIsActive(true);
         const baselineY = height / 2;
@@ -330,11 +357,23 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
             });
         }
 
-        setTimeout(() => setIsActive(false), pulseDuration);
+        const timeoutId = window.setTimeout(() => {
+            if (isMountedRef.current) {
+                setIsActive(false);
+            }
+            timeoutRefs.current.delete(timeoutId);
+        }, pulseDuration);
+
+        timeoutRefs.current.add(timeoutId);
     }, [height, stream.health, stream.latency, stream.rate]);
 
     // Optimized animation loop with throttling
     const animate = useCallback(() => {
+        // Critical: Check if component is still mounted
+        if (!isMountedRef.current) {
+            return; // Stop animation completely
+        }
+
         const now = Date.now();
 
         // Throttle animation when page is not visible
@@ -356,7 +395,7 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
         if (!canvas || !offscreen) {
             // Retry after a delay if canvas not ready
             setTimeout(() => {
-                if (canvasRef.current && offscreenRef.current) {
+                if (canvasRef.current && offscreenRef.current && isMountedRef.current) {
                     animationRef.current = requestAnimationFrame(animate);
                 }
             }, 100);
@@ -367,7 +406,9 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
         const offCtx = safeGetContext(offscreen);
 
         if (!ctx || !offCtx) {
-            animationRef.current = requestAnimationFrame(animate);
+            if (isMountedRef.current) {
+                animationRef.current = requestAnimationFrame(animate);
+            }
             return;
         }
 
@@ -460,7 +501,10 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(offscreen, 0, 0);
 
-        animationRef.current = requestAnimationFrame(animate);
+        // Only continue if still mounted
+        if (isMountedRef.current) {
+            animationRef.current = requestAnimationFrame(animate);
+        }
     }, [width, height, getHealthColor, safeGetContext]);
 
     // Initialize animation & offscreen with proper cleanup
@@ -489,15 +533,29 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
 
     // Memory cleanup on unmount
     useEffect(() => {
-        return () => {
-            // Clear large buffers to prevent memory leaks
-            dataPoints.current = [];
-            dataBuffer.current = [];
+        isMountedRef.current = true;
 
+        return () => {
+            console.log('ECGStreamVisualizationHTTP unmounting');
+
+            // Mark as unmounted FIRST
+            isMountedRef.current = false;
+
+            // Cancel animation frame
             if (animationRef.current) {
                 cancelAnimationFrame(animationRef.current);
                 animationRef.current = null;
             }
+
+            // Clear all tracked timeouts
+            timeoutRefs.current.forEach(timeoutId => {
+                clearTimeout(timeoutId);
+            });
+            timeoutRefs.current.clear();
+
+            // Clear large buffers to prevent memory leaks
+            dataPoints.current = [];
+            dataBuffer.current = [];
         };
     }, []);
 

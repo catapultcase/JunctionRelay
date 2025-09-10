@@ -45,8 +45,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
-import ECGStreamVisualizationHTTP from './ECGStreamVisualizationHTTP';
-import ECGStreamVisualizationMQTT from './ECGStreamVisualizationMQTT';
+import ECGStreamVisualizationHTTP from './Dashboard_ECGStreamVisualizationHTTP';
+import ECGStreamVisualizationMQTT from './Dashboard_ECGStreamVisualizationMQTT';
 
 interface ActiveStreamsCardProps {
     defaultExpanded?: boolean;
@@ -135,7 +135,8 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         streams,
         connectionStatus,
         isConnected,
-        connect
+        connect,
+        disconnect
     } = useDashboardWebSocket({
         enabled: expanded
     });
@@ -221,12 +222,25 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         }
     }, [selectedStreams, storageKey]);
 
-    // Connect when expanded
+    // Handle WebSocket connection based on expansion state
     useEffect(() => {
-        if (expanded && !isConnected && typeof connect === 'function') {
-            connect();
+        if (expanded) {
+            if (!isConnected && typeof connect === 'function') {
+                connect();
+            }
         }
+        // Removed the disconnect when collapsed - let it stay connected
+        // Only disconnect on component unmount
     }, [expanded, isConnected, connect]);
+
+    // Separate effect for unmount cleanup only
+    useEffect(() => {
+        return () => {
+            if (typeof disconnect === 'function') {
+                disconnect();
+            }
+        };
+    }, [disconnect]);
 
     const handleToggle = () => {
         setExpanded(!expanded);

@@ -206,7 +206,11 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             setRemoveUserLoading(true);
             const response = await fetch("/api/unified-auth/remove-user", {
                 method: "DELETE",
-                headers: { "Content-Type": "application/json" }
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${user.token}`
+                },
+                credentials: 'include'
             });
 
             if (response.ok) {
@@ -312,7 +316,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             )}
 
             {/* Account Management */}
-            {authStatus.isConfigured && (
+            {authStatus.isConfigured && user && (
                 <Box sx={{ mb: 3 }}>
                     <Typography variant="subtitle2" gutterBottom>
                         Account Management

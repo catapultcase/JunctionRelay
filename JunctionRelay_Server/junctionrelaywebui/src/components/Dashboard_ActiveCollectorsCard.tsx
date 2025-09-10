@@ -27,7 +27,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
-import ECGCollectorVisualization from './ECGCollectorVisualization';
+import ECGCollectorVisualization from './Dashboard_ECGCollectorVisualization';
 
 interface ActiveCollectorsCardProps {
     defaultExpanded?: boolean;
@@ -112,7 +112,18 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
                 connect();
             }
         }
+        // Removed the disconnect when collapsed - let it stay connected
+        // Only disconnect on component unmount
     }, [expanded, isConnected, connect]);
+
+    // Separate effect for unmount cleanup only
+    useEffect(() => {
+        return () => {
+            if (typeof disconnect === 'function') {
+                disconnect();
+            }
+        };
+    }, [disconnect]);
 
     const handleToggle = () => {
         setExpanded(!expanded);
