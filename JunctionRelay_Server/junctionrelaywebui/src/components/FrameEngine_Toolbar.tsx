@@ -34,6 +34,7 @@ interface ToolbarProps {
     isEditing: boolean;
     canUndo: boolean;
     canRedo: boolean;
+    onQuickSave: () => Promise<void>;
     onSave: () => Promise<void>;
     onUndo: () => void;
     onRedo: () => void;
@@ -51,6 +52,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     isEditing,
     canUndo,
     canRedo,
+    onQuickSave,
     onSave,
     onUndo,
     onRedo,
@@ -70,6 +72,10 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
             setLoadingAction(null);
         }
     }, []);
+
+    const handleQuickSave = useCallback(() => {
+        handleAction('quickSave', onQuickSave);
+    }, [handleAction, onQuickSave]);
 
     const handleSave = useCallback(() => {
         handleAction('save', onSave);
@@ -94,7 +100,13 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 switch (e.key) {
                     case 's':
                         e.preventDefault();
-                        if (isDirty) handleSave();
+                        if (e.shiftKey && isDirty) {
+                            // Ctrl+Shift+S for full save
+                            handleSave();
+                        } else if (isDirty) {
+                            // Ctrl+S for quick save
+                            handleQuickSave();
+                        }
                         break;
                     case 'z':
                         e.preventDefault();
@@ -110,7 +122,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isDirty, canUndo, canRedo, handleSave, onUndo, onRedo]);
+    }, [isDirty, canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo]);
 
     const buttonStyle = {
         padding: '6px 12px',
@@ -130,6 +142,13 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         background: '#1976d2',
         color: 'white',
         border: '1px solid #1976d2'
+    } as const;
+
+    const secondaryButtonStyle = {
+        ...buttonStyle,
+        background: '#4caf50',
+        color: 'white',
+        border: '1px solid #4caf50'
     } as const;
 
     const disabledButtonStyle = {
@@ -152,12 +171,21 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
             {/* Left Section - File Operations */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <button
-                    onClick={handleSave}
+                    onClick={handleQuickSave}
                     disabled={!isDirty || isLoading}
                     style={isDirty && !isLoading ? primaryButtonStyle : disabledButtonStyle}
-                    title="Save Layout (Ctrl+S)"
+                    title="Quick Save (Ctrl+S) - Save with current thumbnail settings"
                 >
-                    {loadingAction === 'save' ? '⏳' : '💾'} Save
+                    {loadingAction === 'quickSave' ? '⏳' : '💾'} Quick Save
+                </button>
+
+                <button
+                    onClick={handleSave}
+                    disabled={!isDirty || isLoading}
+                    style={isDirty && !isLoading ? secondaryButtonStyle : disabledButtonStyle}
+                    title="Save & Manage Thumbnail (Ctrl+Shift+S) - Review and update thumbnail"
+                >
+                    {loadingAction === 'save' ? '⏳' : '🖼️'} Save
                 </button>
 
                 <div style={{ width: '1px', height: '24px', backgroundColor: '#ddd', margin: '0 8px' }} />

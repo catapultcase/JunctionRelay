@@ -47,16 +47,16 @@ namespace JunctionRelayServer.Services
           (DisplayName, Description, LayoutType,
            IsTemplate, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
            BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageData, BackgroundOpacity,
-           Width, Height, Orientation, RiveFile, RiveEmbedInPayload,
+           Width, Height, Orientation, RiveFile,
            JsonFrameConfig, JsonFrameElements,
-           HasThumbnail, ThumbnailPath, ThumbnailGeneratedAt, ThumbnailFormat)
+           HasThumbnail, ThumbnailPath, ThumbnailGeneratedAt, ThumbnailFormat, ThumbnailOverride)
         VALUES 
           (@DisplayName, @Description, @LayoutType,
            @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
            @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageData, @BackgroundOpacity,
-           @Width, @Height, @Orientation, @RiveFile, @RiveEmbedInPayload,
+           @Width, @Height, @Orientation, @RiveFile,
            @JsonFrameConfig, @JsonFrameElements,
-           @HasThumbnail, @ThumbnailPath, @ThumbnailGeneratedAt, @ThumbnailFormat);
+           @HasThumbnail, @ThumbnailPath, @ThumbnailGeneratedAt, @ThumbnailFormat, @ThumbnailOverride);
         SELECT last_insert_rowid();
     ";
 
@@ -102,13 +102,13 @@ namespace JunctionRelayServer.Services
           Height                = @Height,
           Orientation           = @Orientation,
           RiveFile              = @RiveFile,
-          RiveEmbedInPayload    = @RiveEmbedInPayload,
           JsonFrameConfig       = @JsonFrameConfig,
           JsonFrameElements     = @JsonFrameElements,
           HasThumbnail          = @HasThumbnail,
           ThumbnailPath         = @ThumbnailPath,
           ThumbnailGeneratedAt  = @ThumbnailGeneratedAt,
-          ThumbnailFormat       = @ThumbnailFormat
+          ThumbnailFormat       = @ThumbnailFormat,
+          ThumbnailOverride     = @ThumbnailOverride
         WHERE Id = @Id";
 
             var affected = await _db.ExecuteAsync(sql, frameLayout);
@@ -160,9 +160,10 @@ namespace JunctionRelayServer.Services
                 Height = original.Height,
                 Orientation = original.Orientation,
                 RiveFile = original.RiveFile,
-                RiveEmbedInPayload = original.RiveEmbedInPayload,
                 JsonFrameConfig = original.JsonFrameConfig,
-                JsonFrameElements = original.JsonFrameElements
+                JsonFrameElements = original.JsonFrameElements,
+                // Reset thumbnail override for clones - they get auto-generated thumbnails
+                ThumbnailOverride = false
             };
 
             return await CreateFrameLayoutAsync(clone);
@@ -321,7 +322,7 @@ namespace JunctionRelayServer.Services
                 backgroundColor = frameLayout.BackgroundColor,
                 backgroundOpacity = frameLayout.BackgroundOpacity,
                 riveFile = frameLayout.RiveFile,
-                riveEmbedInPayload = frameLayout.RiveEmbedInPayload,
+                thumbnailOverride = frameLayout.ThumbnailOverride, // Include thumbnail override flag
 
                 // Store as raw JSON strings - this is the key fix
                 jsonFrameConfigRaw = frameLayout.JsonFrameConfig ?? "{}",
@@ -401,7 +402,6 @@ namespace JunctionRelayServer.Services
             return null;
         }
 
-
         // Helper method to sanitize filename
         private static string SanitizeFilename(string filename)
         {
@@ -409,9 +409,6 @@ namespace JunctionRelayServer.Services
             var sanitized = string.Join("_", filename.Split(invalid, StringSplitOptions.RemoveEmptyEntries));
             return string.IsNullOrWhiteSpace(sanitized) ? "frame_layout" : sanitized;
         }
-
-
-        // Add this method to Service_Database_Manager_FrameEngine class
 
         public async Task<int> ImportFrameLayoutPackageAsync(byte[] zipData, string contentRootPath, string riveUserPath, string dbPath)
         {
@@ -450,7 +447,13 @@ namespace JunctionRelayServer.Services
             var backgroundColor = importData.GetProperty("backgroundColor").GetString() ?? "#FFFFFF";
             var backgroundOpacity = importData.GetProperty("backgroundOpacity").GetDouble();
             var riveFile = importData.GetProperty("riveFile").GetString();
-            var riveEmbedInPayload = importData.GetProperty("riveEmbedInPayload").GetBoolean();
+
+            // Extract thumbnail override flag (default to false for imported layouts)
+            var thumbnailOverride = false;
+            if (importData.TryGetProperty("thumbnailOverride", out var thumbnailOverrideProp))
+            {
+                thumbnailOverride = thumbnailOverrideProp.GetBoolean();
+            }
 
             // KEY FIX: Extract JSON as raw strings
             var jsonFrameConfig = "{}";
@@ -512,7 +515,6 @@ namespace JunctionRelayServer.Services
                 BackgroundColor = backgroundColor,
                 BackgroundOpacity = backgroundOpacity,
                 RiveFile = savedRiveFileName,
-                RiveEmbedInPayload = riveEmbedInPayload,
                 JsonFrameConfig = jsonFrameConfig,      // Now properly formatted JSON strings
                 JsonFrameElements = jsonFrameElements,  // Now properly formatted JSON strings
                 IsTemplate = false,
@@ -521,7 +523,8 @@ namespace JunctionRelayServer.Services
                 Created = DateTime.UtcNow,
                 LastModified = DateTime.UtcNow,
                 CreatedBy = "Import",
-                Version = "1.0"
+                Version = "1.0",
+                ThumbnailOverride = thumbnailOverride   // Import the thumbnail override setting
             };
 
             // Save to database
@@ -551,6 +554,7 @@ namespace JunctionRelayServer.Services
                 newFrameLayout.ThumbnailPath = Path.Combine("frameengine", "thumbnails", thumbnailFileName).Replace("\\", "/");
                 newFrameLayout.ThumbnailFormat = thumbnailFormat;
                 newFrameLayout.ThumbnailGeneratedAt = DateTime.UtcNow;
+                // Keep the imported thumbnail override setting
 
                 await UpdateFrameLayoutAsync(newFrameLayout);
             }
@@ -595,7 +599,6 @@ namespace JunctionRelayServer.Services
             return Path.Combine(dataDir, "frameengine", "thumbnails");
         }
 
-
         private static List<Model_Frame_Layout> GetDefaultFrameTemplates()
         {
             var now = DateTime.UtcNow;
@@ -625,14 +628,12 @@ namespace JunctionRelayServer.Services
             Height = 272,
             Orientation = "landscape",
 
-            // Rive settings
-            RiveEmbedInPayload = false,
-
             // Thumbnail settings
             HasThumbnail = true,
             ThumbnailPath = "/templates/jr_static.png",
             ThumbnailGeneratedAt = now,
             ThumbnailFormat = "png",
+            ThumbnailOverride = false, // Templates use built-in thumbnails
 
             // Elements
             JsonFrameConfig = @"",
@@ -660,16 +661,16 @@ namespace JunctionRelayServer.Services
             Orientation = "portrait",
 
             RiveFile = "jr_cyber.riv",
-            RiveEmbedInPayload = true,
 
             // Thumbnail settings
             HasThumbnail = true,
             ThumbnailPath = "/templates/jr_cyber.png",
             ThumbnailGeneratedAt = now,
             ThumbnailFormat = "png",
+            ThumbnailOverride = false, // Templates use built-in thumbnails
            
             // Elements (keeping your existing JSON)
-            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""4"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-21T21:40:42.873Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#ff00ae"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_cyber.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""Signal"",""inputNames"":[],""inputs"":[]},{""name"":""Bar2"",""inputNames"":[""Sensor2_Value""],""inputs"":[{""name"":""Sensor2_Value"",""type"":""number"",""currentValue"":30,""ref"":{""type"":56,""runtimeInput"":{}}}]},{""name"":""Bar1"",""inputNames"":[""Sensor1_Value""],""inputs"":[{""name"":""Sensor1_Value"",""type"":""number"",""currentValue"":40,""ref"":{""type"":56,""runtimeInput"":{}}}]}],""lastUpdate"":""2025-08-21T21:40:33.595Z"",""metadata"":{""totalInputs"":2,""inputTypeBreakdown"":{""number"":2},""discoveryAttempts"":7,""lastSuccessfulDiscovery"":""2025-08-21T21:40:33.595Z""},""activeStateMachine"":""Signal"",""globalInputMappings"":{}},""embedded"":true}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T21:40:42.873Z""}]}",
+            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""4"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-21T21:40:42.873Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#ff00ae"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_cyber.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""Signal"",""inputNames"":[],""inputs"":[]},{""name"":""Bar2"",""inputNames"":[""Sensor2_Value""],""inputs"":[{""name"":""Sensor2_Value"",""type"":""number"",""currentValue"":30,""ref"":{""type"":56,""runtimeInput"":{}}}]},{""name"":""Bar1"",""inputNames"":[""Sensor1_Value""],""inputs"":[{""name"":""Sensor1_Value"",""type"":""number"",""currentValue"":40,""ref"":{""type"":56,""runtimeInput"":{}}}]}],""lastUpdate"":""2025-08-21T21:40:33.595Z"",""metadata"":{""totalInputs"":2,""inputTypeBreakdown"":{""number"":2},""discoveryAttempts"":7,""lastSuccessfulDiscovery"":""2025-08-21T21:40:33.595Z""},""activeStateMachine"":""Signal"",""globalInputMappings"":{}}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T21:40:42.873Z""}]}",
             JsonFrameElements = @"[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T21:40:42.873Z""}]"
         },
         new Model_Frame_Layout
@@ -689,20 +690,20 @@ namespace JunctionRelayServer.Services
             BackgroundColor = "#000000",
             BackgroundOpacity = 1.0,
 
-            Width = 1080,
-            Height = 1920,
-            Orientation = "horizontal",
+            Width = 1920,
+            Height = 1080,
+            Orientation = "landscape",
 
             RiveFile = "jr_pixels.riv",
-            RiveEmbedInPayload = true,
 
             // Thumbnail settings
             HasThumbnail = true,
             ThumbnailPath = "/templates/jr_pixels.png",
             ThumbnailGeneratedAt = now,
             ThumbnailFormat = "png",
+            ThumbnailOverride = false, // Templates use built-in thumbnails
 
-            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""9"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-22T22:57:04.211Z"",""canvas"":{""width"":1920,""height"":1080,""orientation"":""landscape""},""background"":{""type"":""rive"",""color"":""#000000"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_pixels.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""State Machine 1"",""inputNames"":[],""inputs"":[]}],""lastUpdate"":""2025-08-22T22:57:03.715Z"",""metadata"":{""totalInputs"":0,""inputTypeBreakdown"":{},""discoveryAttempts"":6,""lastSuccessfulDiscovery"":""2025-08-22T22:57:03.715Z""},""activeStateMachine"":""State Machine 1"",""globalInputMappings"":{}},""embedded"":true}},""frameElements"":[{""id"":""element_1755900154199_h43camr7v"",""type"":""sensor"",""position"":{""x"":592.28,""y"":-6.87,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""CPU: "",""sensorTag"":""cpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755900570540_7wfmrnmgn"",""type"":""sensor"",""position"":{""x"":593.84,""y"":233.27,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""GPU: "",""sensorTag"":""gpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902392609_pvtzuh8q7"",""type"":""text"",""position"":{""x"":107.39,""y"":2.34,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":2,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902428753_npkmxjz3u"",""type"":""text"",""position"":{""x"":113.47,""y"":240.31,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":3,""order"":3},""properties"":{""text"":""GPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""}]}",
+            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""9"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-22T22:57:04.211Z"",""canvas"":{""width"":1920,""height"":1080,""orientation"":""landscape""},""background"":{""type"":""rive"",""color"":""#000000"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_pixels.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""State Machine 1"",""inputNames"":[],""inputs"":[]}],""lastUpdate"":""2025-08-22T22:57:03.715Z"",""metadata"":{""totalInputs"":0,""inputTypeBreakdown"":{},""discoveryAttempts"":6,""lastSuccessfulDiscovery"":""2025-08-22T22:57:03.715Z""},""activeStateMachine"":""State Machine 1"",""globalInputMappings"":{}}},""frameElements"":[{""id"":""element_1755900154199_h43camr7v"",""type"":""sensor"",""position"":{""x"":592.28,""y"":-6.87,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""CPU: "",""sensorTag"":""cpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755900570540_7wfmrnmgn"",""type"":""sensor"",""position"":{""x"":593.84,""y"":233.27,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""GPU: "",""sensorTag"":""gpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902392609_pvtzuh8q7"",""type"":""text"",""position"":{""x"":107.39,""y"":2.34,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":2,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902428753_npkmxjz3u"",""type"":""text"",""position"":{""x"":113.47,""y"":240.31,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":3,""order"":3},""properties"":{""text"":""GPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""}]}",
             JsonFrameElements = @"[{""id"":""element_1755900154199_h43camr7v"",""type"":""sensor"",""position"":{""x"":592.28,""y"":-6.87,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""CPU: "",""sensorTag"":""cpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755900570540_7wfmrnmgn"",""type"":""sensor"",""position"":{""x"":593.84,""y"":233.27,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""GPU: "",""sensorTag"":""gpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902392609_pvtzuh8q7"",""type"":""text"",""position"":{""x"":107.39,""y"":2.34,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":2,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902428753_npkmxjz3u"",""type"":""text"",""position"":{""x"":113.47,""y"":240.31,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":3,""order"":3},""properties"":{""text"":""GPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.212Z""}]"
         }
     };

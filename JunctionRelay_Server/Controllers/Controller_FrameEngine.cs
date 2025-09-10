@@ -121,7 +121,6 @@ namespace JunctionRelayServer.Controllers
                     BackgroundImageData = request.BackgroundImageData,
                     BackgroundOpacity = Math.Clamp(request.BackgroundOpacity ?? 1.0, 0.0, 1.0),
                     RiveFile = request.RiveFile?.Trim(),
-                    RiveEmbedInPayload = request.RiveEmbedInPayload,
                     JsonFrameConfig = SanitizeJson(request.JsonFrameConfig) ?? "{}",
                     JsonFrameElements = SanitizeJson(request.JsonFrameElements) ?? "[]",
 
@@ -187,8 +186,8 @@ namespace JunctionRelayServer.Controllers
                     existing.BackgroundOpacity = Math.Clamp(request.BackgroundOpacity.Value, 0.0, 1.0);
                 if (request.RiveFile != null)
                     existing.RiveFile = request.RiveFile.Trim();
-                if (request.RiveEmbedInPayload.HasValue)
-                    existing.RiveEmbedInPayload = request.RiveEmbedInPayload.Value;
+                if (request.ThumbnailOverride.HasValue)
+                    existing.ThumbnailOverride = request.ThumbnailOverride.Value;
 
                 if (request.JsonFrameConfig != null)
                 {
@@ -575,6 +574,65 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        // Add this endpoint to Controller_FrameEngine
+        [HttpPost("{id}/thumbnail-upload")]
+        public async Task<ActionResult> UploadCustomThumbnail(int id, IFormFile thumbnail)
+        {
+            try
+            {
+                var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
+                if (frameLayout == null)
+                    return NotFound(new { message = $"Frame layout with ID {id} not found" });
+
+                if (thumbnail == null || thumbnail.Length == 0)
+                    return BadRequest(new { message = "No thumbnail file provided" });
+
+                // Validate file type
+                var allowedTypes = new[] { "image/png", "image/jpeg", "image/jpg", "image/webp" };
+                if (!allowedTypes.Contains(thumbnail.ContentType.ToLower()))
+                    return BadRequest(new { message = "Invalid file type. Only PNG, JPEG, and WebP are allowed." });
+
+                // Validate file size (max 5MB)
+                if (thumbnail.Length > 5 * 1024 * 1024)
+                    return BadRequest(new { message = "File size exceeds 5MB limit" });
+
+                // Process and save the thumbnail
+                using var stream = new MemoryStream();
+                await thumbnail.CopyToAsync(stream);
+                var thumbnailData = stream.ToArray();
+
+                // Determine format from content type
+                var format = thumbnail.ContentType.ToLower() switch
+                {
+                    "image/jpeg" or "image/jpg" => "jpg",
+                    "image/webp" => "webp",
+                    _ => "png"
+                };
+
+                // Save thumbnail to file system
+                var thumbnailPath = await SaveThumbnailToFile(id, thumbnailData, format);
+
+                // Update database record with override flag
+                frameLayout.ThumbnailPath = thumbnailPath;
+                frameLayout.ThumbnailGeneratedAt = DateTime.UtcNow;
+                frameLayout.HasThumbnail = true;
+                frameLayout.ThumbnailFormat = format;
+                frameLayout.ThumbnailOverride = true; // Set override flag
+                await _frameLayoutService.UpdateFrameLayoutAsync(frameLayout);
+
+                return Ok(new
+                {
+                    message = "Custom thumbnail uploaded successfully",
+                    thumbnailPath = thumbnailPath,
+                    size = thumbnailData.Length
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error uploading custom thumbnail", error = ex.Message });
+            }
+        }
+
         // Generate Puppeteer thumbnail
         [HttpPost("{id}/generate-thumbnail")]
         public async Task<ActionResult> GenerateThumbnail(int id, [FromBody] GenerateThumbnailRequest? request = null)
@@ -815,14 +873,14 @@ namespace JunctionRelayServer.Controllers
                 BackgroundImageUrl = frameLayout.BackgroundImageUrl,
                 BackgroundOpacity = frameLayout.BackgroundOpacity,
                 RiveFile = frameLayout.RiveFile,
-                RiveEmbedInPayload = frameLayout.RiveEmbedInPayload,
                 JsonFrameConfig = frameLayout.JsonFrameConfig,
                 JsonFrameElements = frameLayout.JsonFrameElements,
                 Created = frameLayout.Created,
                 LastModified = frameLayout.LastModified,
                 HasThumbnail = frameLayout.HasThumbnail,
                 ThumbnailPath = frameLayout.ThumbnailPath,
-                ThumbnailGeneratedAt = frameLayout.ThumbnailGeneratedAt
+                ThumbnailGeneratedAt = frameLayout.ThumbnailGeneratedAt,
+                ThumbnailOverride = frameLayout.ThumbnailOverride
             };
         }
 
@@ -1014,7 +1072,6 @@ namespace JunctionRelayServer.Controllers
         public double BackgroundOpacity { get; set; } = 1.0;
 
         public string? RiveFile { get; set; }
-        public bool RiveEmbedInPayload { get; set; } = true;
         public string? JsonFrameConfig { get; set; }
         public string? JsonFrameElements { get; set; }
 
@@ -1023,6 +1080,7 @@ namespace JunctionRelayServer.Controllers
         public bool HasThumbnail { get; set; }
         public string? ThumbnailPath { get; set; }
         public DateTime? ThumbnailGeneratedAt { get; set; }
+        public bool ThumbnailOverride { get; set; } = false;
     }
 
     public class CreateFrameLayoutRequest
@@ -1053,7 +1111,6 @@ namespace JunctionRelayServer.Controllers
         public double? BackgroundOpacity { get; set; } = 1.0;
 
         public string? RiveFile { get; set; }
-        public bool RiveEmbedInPayload { get; set; } = true;
         public string? JsonFrameConfig { get; set; }
         public string? JsonFrameElements { get; set; }
     }
@@ -1084,9 +1141,9 @@ namespace JunctionRelayServer.Controllers
         public double? BackgroundOpacity { get; set; }
 
         public string? RiveFile { get; set; }
-        public bool? RiveEmbedInPayload { get; set; }
         public string? JsonFrameConfig { get; set; }
         public string? JsonFrameElements { get; set; }
+        public bool? ThumbnailOverride { get; set; }
     }
 
     public class CloneFrameLayoutRequest

@@ -37,7 +37,6 @@ interface FrameLayoutConfig {
     riveFile?: string | null;
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
-    riveEmbedInPayload?: boolean;
     rows?: number;
     columns?: number;
     isTemplate: boolean;
@@ -114,8 +113,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     backgroundType: 'rive',
                     riveFile: result.filename,
                     riveStateMachine: null,
-                    riveInputs: {},
-                    riveEmbedInPayload: true
+                    riveInputs: {}
                 });
                 event.target.value = '';
             } else {
@@ -406,25 +404,6 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                 </div>
                             )}
 
-                            {/* Embed in Payload Checkbox */}
-                            {layout.riveFile && (
-                                <div>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#333' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={layout.riveEmbedInPayload ?? true}
-                                            onChange={(e) => onLayoutUpdate({ riveEmbedInPayload: e.target.checked })}
-                                        />
-                                        <div>
-                                            <div style={{ fontWeight: 500 }}>Embed Rive file in payload</div>
-                                            <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>
-                                                Include the actual .riv file data (Base64) in the configuration for offline use
-                                            </div>
-                                        </div>
-                                    </label>
-                                </div>
-                            )}
-
                             {/* File Status Info */}
                             {layout.riveFile && (
                                 <div style={{
@@ -437,11 +416,6 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                     <div><strong>File:</strong> {layout.riveFile}</div>
                                     <div><strong>State Machines:</strong> {discoveredMachines.length}</div>
                                     <div><strong>Total Inputs:</strong> {discoveredMachines.reduce((sum: number, m: DiscoveredStateMachine) => sum + m.inputs.length, 0)}</div>
-                                    {/*{layout.riveEmbedInPayload && (*/}
-                                    {/*    <div style={{ marginTop: '4px', padding: '4px', backgroundColor: '#e8f5e8', borderRadius: '2px' }}>*/}
-                                    {/*        <strong>📦 Will embed URL to .riv file in payload</strong>*/}
-                                    {/*    </div>*/}
-                                    {/*)}*/}
                                 </div>
                             )}
 

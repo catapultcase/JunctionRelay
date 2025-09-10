@@ -488,7 +488,6 @@ namespace JunctionRelayServer.Services
     
                     -- Rive Configuration
                     RiveFile NVARCHAR(500),
-                    RiveEmbedInPayload BOOLEAN NOT NULL DEFAULT 1,
     
                     -- Thumbnail Configuration (NEW FIELDS)
                     ThumbnailPath NVARCHAR(255),
