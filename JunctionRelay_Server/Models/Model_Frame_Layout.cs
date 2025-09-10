@@ -49,8 +49,7 @@ namespace JunctionRelayServer.Models
 
         // Rive Configuration
         public string? RiveFile { get; set; }
-        public bool RiveEmbedInPayload { get; set; } = true; // Whether to embed Rive file data in config payload
-
+        
         // Thumbnail Configuration
         public string? ThumbnailPath { get; set; } // Relative path to thumbnail file (e.g., "frameengine/thumbnails/123.png")
         public DateTime? ThumbnailGeneratedAt { get; set; } // When thumbnail was last generated

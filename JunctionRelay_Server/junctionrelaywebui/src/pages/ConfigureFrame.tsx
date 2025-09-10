@@ -53,7 +53,6 @@ interface FrameLayoutConfig {
     riveFile?: string | null;
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
-    riveEmbedInPayload?: boolean;
     riveConfiguration?: RiveConfiguration; // NEW: Store all discovered Rive data
     jsonFrameConfig?: string;
     jsonFrameElements?: string;
@@ -64,6 +63,7 @@ interface FrameLayoutConfig {
     lastModified?: string;
     createdBy?: string;
     version?: string;
+    thumbnailOverride?: boolean; // NEW: Track if user uploaded custom thumbnail
 }
 
 interface PlacedElement {
@@ -127,8 +127,327 @@ interface FrameBuilderState {
     isLoading: boolean;
     isDirty: boolean;
     error: string | null;
-    isSavingThumbnail: boolean; // NEW: Track thumbnail save state
 }
+
+// Modal states
+interface ModalState {
+    thumbnailManagement: boolean;
+    savingProgress: boolean;
+    progressStep: 'saving' | 'thumbnail' | 'complete';
+    progressMessage: string;
+}
+
+// Thumbnail Management Modal Component
+const ThumbnailManagementModal: React.FC<{
+    isOpen: boolean;
+    layout: FrameLayoutConfig;
+    onClose: () => void;
+    onSaveWithThumbnail: (customThumbnail?: File) => Promise<void>;
+    onCaptureThumbnail: () => Promise<void>;
+}> = ({ isOpen, layout, onClose, onSaveWithThumbnail, onCaptureThumbnail }) => {
+    const [uploadingFile, setUploadingFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+    const getCurrentThumbnailUrl = () => {
+        if (layout.id) {
+            return `/api/frameengine/${layout.id}/thumbnail?${Date.now()}`;
+        }
+        return null;
+    };
+
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+            setUploadingFile(file);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                setPreviewUrl(e.target?.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleSaveWithCustomThumbnail = async () => {
+        await onSaveWithThumbnail(uploadingFile || undefined);
+        onClose();
+    };
+
+    const handleCaptureAndSave = async () => {
+        await onCaptureThumbnail();
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div style={{
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                padding: '24px',
+                maxWidth: '500px',
+                width: '90%',
+                maxHeight: '80vh',
+                overflow: 'auto'
+            }}>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600 }}>
+                    Save Layout & Manage Thumbnail
+                </h3>
+
+                {/* Current Thumbnail Section */}
+                <div style={{ marginBottom: '24px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 500 }}>
+                        Current Thumbnail
+                    </h4>
+                    <div style={{
+                        width: '100%',
+                        height: '160px',
+                        border: '2px dashed #ccc',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#f9f9f9',
+                        overflow: 'hidden'
+                    }}>
+                        {getCurrentThumbnailUrl() ? (
+                            <img
+                                src={getCurrentThumbnailUrl()!}
+                                alt="Current thumbnail"
+                                style={{
+                                    maxWidth: '100%',
+                                    maxHeight: '100%',
+                                    objectFit: 'contain'
+                                }}
+                                onError={() => {
+                                    // Handle thumbnail load error
+                                }}
+                            />
+                        ) : (
+                            <div style={{ textAlign: 'center', color: '#666' }}>
+                                <div style={{ fontSize: '32px', marginBottom: '8px' }}>📷</div>
+                                <div style={{ fontSize: '14px' }}>No thumbnail exists yet</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Upload New Thumbnail Section */}
+                <div style={{ marginBottom: '24px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 500 }}>
+                        Upload Custom Thumbnail
+                    </h4>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            marginBottom: '8px'
+                        }}
+                    />
+                    {previewUrl && (
+                        <div style={{
+                            width: '100%',
+                            height: '120px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <img
+                                src={previewUrl}
+                                alt="Upload preview"
+                                style={{
+                                    maxWidth: '100%',
+                                    maxHeight: '100%',
+                                    objectFit: 'contain'
+                                }}
+                            />
+                        </div>
+                    )}
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{
+                    display: 'flex',
+                    gap: '12px',
+                    flexDirection: 'column'
+                }}>
+                    {uploadingFile && (
+                        <button
+                            onClick={handleSaveWithCustomThumbnail}
+                            style={{
+                                padding: '12px 16px',
+                                backgroundColor: '#1976d2',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 500
+                            }}
+                        >
+                            Save with Uploaded Thumbnail
+                        </button>
+                    )}
+
+                    <button
+                        onClick={handleCaptureAndSave}
+                        style={{
+                            padding: '12px 16px',
+                            backgroundColor: '#4caf50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 500
+                        }}
+                    >
+                        Capture from Canvas & Save
+                    </button>
+
+                    <div style={{
+                        display: 'flex',
+                        gap: '8px'
+                    }}>
+                        <button
+                            onClick={() => onSaveWithThumbnail()}
+                            style={{
+                                flex: 1,
+                                padding: '12px 16px',
+                                backgroundColor: '#666',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                            }}
+                        >
+                            Save Without Changes
+                        </button>
+
+                        <button
+                            onClick={onClose}
+                            style={{
+                                flex: 1,
+                                padding: '12px 16px',
+                                backgroundColor: 'transparent',
+                                color: '#666',
+                                border: '1px solid #ccc',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                            }}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Saving Progress Modal Component
+const SavingProgressModal: React.FC<{
+    isOpen: boolean;
+    step: 'saving' | 'thumbnail' | 'complete';
+    message: string;
+    onClose: () => void;
+}> = ({ isOpen, step, message, onClose }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div style={{
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                padding: '32px',
+                textAlign: 'center',
+                minWidth: '300px'
+            }}>
+                {step === 'complete' ? (
+                    <>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 600, color: '#4caf50' }}>
+                            Save Complete!
+                        </h3>
+                        <p style={{ margin: '0 0 24px 0', color: '#666', fontSize: '14px' }}>
+                            {message}
+                        </p>
+                        <button
+                            onClick={onClose}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: '#4caf50',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                            }}
+                        >
+                            Close
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div style={{
+                            width: '40px',
+                            height: '40px',
+                            border: '4px solid #f3f3f3',
+                            borderTop: '4px solid #1976d2',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            margin: '0 auto 16px'
+                        }}></div>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 600 }}>
+                            {step === 'saving' ? 'Saving Layout...' : 'Generating Thumbnail...'}
+                        </h3>
+                        <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>
+                            {message}
+                        </p>
+                    </>
+                )}
+                <style>{`
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                `}</style>
+            </div>
+        </div>
+    );
+};
 
 const ConfigureFrame: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -136,8 +455,13 @@ const ConfigureFrame: React.FC = () => {
     const isEditing = Boolean(id);
     const canvasRef = useRef<HTMLDivElement>(null);
 
-    // Track when we need to generate a thumbnail after the canvas is ready
-    const [pendingThumbnailGeneration, setPendingThumbnailGeneration] = useState(false);
+    // Modal state
+    const [modalState, setModalState] = useState<ModalState>({
+        thumbnailManagement: false,
+        savingProgress: false,
+        progressStep: 'saving',
+        progressMessage: ''
+    });
 
     // Main application state
     const [state, setState] = useState<FrameBuilderState>({
@@ -151,7 +475,7 @@ const ConfigureFrame: React.FC = () => {
             backgroundType: 'color',
             backgroundImageUrl: null,
             backgroundOpacity: 1.0,
-            riveEmbedInPayload: true,
+            thumbnailOverride: false,
             riveConfiguration: {
                 discoveredMachines: [],
                 lastDiscoveryUpdate: '',
@@ -267,21 +591,7 @@ const ConfigureFrame: React.FC = () => {
         isLoading: true,
         isDirty: false,
         error: null,
-        isSavingThumbnail: false,
     });
-
-    // Watch for canvas ref to become available when we have a pending thumbnail
-    useEffect(() => {
-        if (pendingThumbnailGeneration && canvasRef.current && state.layout.id) {
-            console.log('✅ Canvas ref now available, generating thumbnail...');
-            setPendingThumbnailGeneration(false);
-
-            // Small delay to ensure everything is rendered
-            setTimeout(() => {
-                generateAndSaveThumbnail();
-            }, 1500);
-        }
-    }, [pendingThumbnailGeneration, canvasRef.current, state.layout.id]);
 
     // Load the existing frame layout on mount
     useEffect(() => {
@@ -300,20 +610,17 @@ const ConfigureFrame: React.FC = () => {
     // Thumbnail generation function
     const generateAndSaveThumbnail = async () => {
         if (!canvasRef.current) {
-            console.warn('📸 Canvas ref not available for thumbnail generation');
+            console.warn('Canvas ref not available for thumbnail generation');
             return;
         }
 
         if (!state.layout.id) {
-            console.warn('📸 Layout ID not available for thumbnail generation');
+            console.warn('Layout ID not available for thumbnail generation');
             return;
         }
 
         try {
-            setState(prev => ({ ...prev, isSavingThumbnail: true }));
-            console.log('🖼️ Generating thumbnail from canvas...');
-            console.log('📋 Canvas ref available:', !!canvasRef.current);
-            console.log('📋 Layout ID available:', state.layout.id);
+            console.log('Generating thumbnail from canvas...');
 
             // Wait a moment for any animations/renders to settle
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -324,11 +631,11 @@ const ConfigureFrame: React.FC = () => {
                 canvasRef.current;
 
             if (!canvasElement) {
-                console.error('❌ Could not find canvas element for thumbnail capture');
+                console.error('Could not find canvas element for thumbnail capture');
                 return;
             }
 
-            console.log('🎯 Found canvas element for capture:', canvasElement.className || 'no-class');
+            console.log('Found canvas element for capture:', canvasElement.className || 'no-class');
 
             // Capture the canvas with html2canvas
             const canvas = await html2canvas(canvasElement as HTMLElement, {
@@ -342,7 +649,7 @@ const ConfigureFrame: React.FC = () => {
             // Convert to base64
             const dataURL = canvas.toDataURL('image/png', 0.8);
 
-            console.log('📤 Sending thumbnail to backend...');
+            console.log('Sending thumbnail to backend...');
 
             // Send to backend
             const response = await fetch(`/api/frameengine/${state.layout.id}/thumbnail-from-frontend`, {
@@ -352,15 +659,45 @@ const ConfigureFrame: React.FC = () => {
             });
 
             if (response.ok) {
-                console.log('✅ Thumbnail saved successfully');
+                console.log('Thumbnail saved successfully');
             } else {
                 const errorText = await response.text();
-                console.error('❌ Failed to save thumbnail:', errorText);
+                console.error('Failed to save thumbnail:', errorText);
             }
         } catch (error) {
             console.error('Error generating thumbnail:', error);
-        } finally {
-            setState(prev => ({ ...prev, isSavingThumbnail: false }));
+        }
+    };
+
+    // Upload custom thumbnail
+    const uploadCustomThumbnail = async (file: File) => {
+        if (!state.layout.id) {
+            console.warn('Layout ID not available for thumbnail upload');
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('thumbnail', file);
+
+            const response = await fetch(`/api/frameengine/${state.layout.id}/thumbnail-upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                console.log('Custom thumbnail uploaded successfully');
+                // Update thumbnailOverride flag
+                setState(prev => ({
+                    ...prev,
+                    layout: { ...prev.layout, thumbnailOverride: true }
+                }));
+            } else {
+                const errorText = await response.text();
+                console.error('Failed to upload thumbnail:', errorText);
+            }
+        } catch (error) {
+            console.error('Error uploading thumbnail:', error);
         }
     };
 
@@ -479,10 +816,8 @@ const ConfigureFrame: React.FC = () => {
         };
     };
 
-    // Save frame layout to API with thumbnail generation
-    const saveFrameLayout = async () => {
-        setState(prev => ({ ...prev, isLoading: true, error: null }));
-
+    // Core save function used by both quick save and full save
+    const performSave = async (customThumbnail?: File) => {
         try {
             // Build the enhanced JsonFrameConfig with Rive discovery data stored ONCE
             const frameConfig = {
@@ -524,8 +859,7 @@ const ConfigureFrame: React.FC = () => {
                                 metadata: state.layout.riveConfiguration?.discoveryMetadata || {},
                                 activeStateMachine: state.layout.riveConfiguration?.activeStateMachine || state.layout.riveStateMachine,
                                 globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {}
-                            },
-                            embedded: state.layout.riveEmbedInPayload ?? true
+                            }
                         }
                     } : {})
                 },
@@ -595,18 +929,19 @@ const ConfigureFrame: React.FC = () => {
                 riveFile: state.layout.riveFile,
                 riveStateMachine: state.layout.riveStateMachine,
                 riveInputs: state.layout.riveInputs,
+                thumbnailOverride: customThumbnail ? true : state.layout.thumbnailOverride,
                 isTemplate: state.layout.isTemplate,
                 isDraft: state.layout.isDraft,
                 isPublished: state.layout.isPublished,
-                jsonFrameConfig: JSON.stringify(frameConfig), // Discovery data stored here ONCE
-                jsonFrameElements: JSON.stringify(frameElements), // Clean elements without duplication
-                riveEmbedInPayload: state.layout.riveEmbedInPayload ?? true
+                jsonFrameConfig: JSON.stringify(frameConfig),
+                jsonFrameElements: JSON.stringify(frameElements)
             };
 
-            console.log('Saving clean frame config with Rive discovery data stored once:', {
+            console.log('Saving frame config with Rive discovery data:', {
                 riveFile: state.layout.riveFile,
                 discoveredMachines: state.layout.riveConfiguration?.discoveredMachines.length || 0,
-                frameElements: frameElements.length
+                frameElements: frameElements.length,
+                thumbnailOverride: saveData.thumbnailOverride
             });
 
             const response = await fetch(`/api/frameengine/${state.layout.id}`, {
@@ -620,35 +955,166 @@ const ConfigureFrame: React.FC = () => {
                 throw new Error(errorData.message || 'Failed to save frame layout');
             }
 
-            console.log('Frame layout saved successfully with clean Rive data structure');
-            setState(prev => ({ ...prev, isDirty: false, isLoading: false }));
+            console.log('Frame layout saved successfully');
+            setState(prev => ({ ...prev, isDirty: false }));
 
-            // Generate thumbnail after successful save - use pending flag approach
-            if (state.layout.id) {
-                if (canvasRef.current) {
-                    console.log('✅ Canvas immediately available, generating thumbnail...');
-                    // Small delay to ensure UI has settled after save
-                    setTimeout(() => {
-                        generateAndSaveThumbnail();
-                    }, 1000);
-                } else {
-                    console.log('⏳ Canvas not ready, setting pending thumbnail generation...');
-                    setPendingThumbnailGeneration(true);
-                }
-            } else {
-                console.warn('⚠️ No layout ID available for thumbnail generation');
+            // Handle thumbnail operations
+            if (customThumbnail) {
+                await uploadCustomThumbnail(customThumbnail);
+            } else if (!state.layout.thumbnailOverride) {
+                // Auto-generate thumbnail if no override is set
+                await generateAndSaveThumbnail();
             }
+
         } catch (error) {
             console.error('Failed to save frame layout:', error);
+            throw error;
+        }
+    };
+
+    // Quick Save - saves with current thumbnail settings and shows progress modal
+    const handleQuickSave = async () => {
+        setModalState(prev => ({
+            ...prev,
+            savingProgress: true,
+            progressStep: 'saving',
+            progressMessage: 'Saving layout configuration...'
+        }));
+
+        try {
+            await performSave();
+
+            // Show thumbnail generation step if applicable
+            if (!state.layout.thumbnailOverride) {
+                setModalState(prev => ({
+                    ...prev,
+                    progressStep: 'thumbnail',
+                    progressMessage: 'Generating thumbnail from canvas...'
+                }));
+
+                // Small delay to show the step change
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            // Show completion
+            setModalState(prev => ({
+                ...prev,
+                progressStep: 'complete',
+                progressMessage: state.layout.thumbnailOverride
+                    ? 'Layout saved successfully with existing thumbnail.'
+                    : 'Layout saved and thumbnail generated successfully.'
+            }));
+
+            // Auto-close after 2 seconds
+            setTimeout(() => {
+                setModalState(prev => ({ ...prev, savingProgress: false }));
+            }, 2000);
+
+        } catch (error) {
+            setModalState(prev => ({ ...prev, savingProgress: false }));
             setState(prev => ({
                 ...prev,
-                error: error instanceof Error ? error.message : 'Failed to save layout',
-                isLoading: false,
+                error: error instanceof Error ? error.message : 'Failed to save layout'
             }));
         }
     };
 
-    // Load frame layout from API - ENHANCED to restore Rive configuration from JsonFrameConfig
+    // Full Save - opens thumbnail management modal
+    const handleSave = async () => {
+        setModalState(prev => ({ ...prev, thumbnailManagement: true }));
+    };
+
+    // Save with thumbnail from modal
+    const handleSaveWithThumbnail = async (customThumbnail?: File) => {
+        setModalState(prev => ({
+            ...prev,
+            thumbnailManagement: false,
+            savingProgress: true,
+            progressStep: 'saving',
+            progressMessage: 'Saving layout configuration...'
+        }));
+
+        try {
+            await performSave(customThumbnail);
+
+            if (customThumbnail) {
+                setModalState(prev => ({
+                    ...prev,
+                    progressStep: 'complete',
+                    progressMessage: 'Layout saved with custom thumbnail successfully.'
+                }));
+            } else {
+                setModalState(prev => ({
+                    ...prev,
+                    progressStep: 'complete',
+                    progressMessage: 'Layout saved successfully.'
+                }));
+            }
+
+            // Auto-close after 2 seconds
+            setTimeout(() => {
+                setModalState(prev => ({ ...prev, savingProgress: false }));
+            }, 2000);
+
+        } catch (error) {
+            setModalState(prev => ({ ...prev, savingProgress: false }));
+            setState(prev => ({
+                ...prev,
+                error: error instanceof Error ? error.message : 'Failed to save layout'
+            }));
+        }
+    };
+
+    // Capture thumbnail from modal
+    // Capture thumbnail from modal
+    const handleCaptureThumbnail = async () => {
+        setModalState(prev => ({
+            ...prev,
+            thumbnailManagement: false,
+            savingProgress: true,
+            progressStep: 'saving',
+            progressMessage: 'Saving layout configuration...'
+        }));
+
+        try {
+            // First update the layout state to reset thumbnailOverride BEFORE saving
+            setState(prev => ({
+                ...prev,
+                layout: { ...prev.layout, thumbnailOverride: false }
+            }));
+
+            await performSave();
+
+            setModalState(prev => ({
+                ...prev,
+                progressStep: 'thumbnail',
+                progressMessage: 'Capturing thumbnail from canvas...'
+            }));
+
+            // Small delay to show the step change
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            setModalState(prev => ({
+                ...prev,
+                progressStep: 'complete',
+                progressMessage: 'Layout saved and thumbnail captured successfully.'
+            }));
+
+            // Auto-close after 2 seconds
+            setTimeout(() => {
+                setModalState(prev => ({ ...prev, savingProgress: false }));
+            }, 2000);
+
+        } catch (error) {
+            setModalState(prev => ({ ...prev, savingProgress: false }));
+            setState(prev => ({
+                ...prev,
+                error: error instanceof Error ? error.message : 'Failed to save layout'
+            }));
+        }
+    };
+
+    // Load frame layout from API - ENHANCED to restore thumbnailOverride
     const loadFrameLayout = async (layoutId: number) => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -733,8 +1199,8 @@ const ConfigureFrame: React.FC = () => {
                     riveFile: frameConfig.frameConfig?.rive?.file || layoutData.riveFile,
                     riveStateMachine: frameConfig.frameConfig?.rive?.stateMachine || layoutData.riveStateMachine,
                     riveInputs: frameConfig.frameConfig?.rive?.inputs || layoutData.riveInputs,
-                    riveEmbedInPayload: layoutData.riveEmbedInPayload ?? true,
-                    riveConfiguration: riveConfiguration, // NEW: Restored from JsonFrameConfig
+                    riveConfiguration: riveConfiguration,
+                    thumbnailOverride: layoutData.thumbnailOverride || false, // NEW: Load thumbnail override setting
                     jsonFrameConfig: layoutData.jsonFrameConfig,
                     jsonFrameElements: layoutData.jsonFrameElements,
                     isTemplate: frameConfig.frameConfig?.metadata?.isTemplate || layoutData.isTemplate,
@@ -877,7 +1343,7 @@ const ConfigureFrame: React.FC = () => {
 
     // ENHANCED: Handle Rive discovery from Canvas and persist to layout
     const handleRiveDiscovery = useCallback((machines: DiscoveredStateMachine[]) => {
-        console.log('🏗️ ConfigureFrame received Rive discovery:', machines);
+        console.log('ConfigureFrame received Rive discovery:', machines);
         setDiscoveredMachines(machines);
 
         // NEW: Automatically update the layout with discovered machines
@@ -891,7 +1357,7 @@ const ConfigureFrame: React.FC = () => {
                 discoveryMetadata
             };
 
-            console.log('📝 Persisting Rive discovery to layout configuration:', updatedRiveConfiguration);
+            console.log('Persisting Rive discovery to layout configuration:', updatedRiveConfiguration);
 
             setState(prev => ({
                 ...prev,
@@ -934,7 +1400,7 @@ const ConfigureFrame: React.FC = () => {
         }
 
         try {
-            console.log('📤 Exporting layout as ZIP package...');
+            console.log('Exporting layout as ZIP package...');
 
             const response = await fetch(`/api/frameengine/${state.layout.id}/export-standalone`);
 
@@ -951,9 +1417,9 @@ const ConfigureFrame: React.FC = () => {
             a.click();
             URL.revokeObjectURL(url);
 
-            console.log('✅ ZIP package export completed');
+            console.log('ZIP package export completed');
         } catch (error) {
-            console.error('❌ Export failed:', error);
+            console.error('Export failed:', error);
             setState(prev => ({
                 ...prev,
                 error: `Failed to export layout: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -1042,33 +1508,21 @@ const ConfigureFrame: React.FC = () => {
                 </div>
             )}
 
-            {/* NEW: Thumbnail save status indicator */}
-            {state.isSavingThumbnail && (
-                <div style={{
-                    backgroundColor: '#e3f2fd',
-                    border: '1px solid #2196f3',
-                    borderLeft: 'none',
-                    borderRight: 'none',
-                    borderTop: 'none',
-                    color: '#1565c0',
-                    padding: '4px 16px',
-                    fontSize: '12px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                }}>
-                    <div style={{
-                        width: '12px',
-                        height: '12px',
-                        border: '2px solid #1565c0',
-                        borderTop: '2px solid transparent',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite'
-                    }}></div>
-                    📸 Capturing and saving thumbnail...
-                </div>
-            )}
+            {/* Modals */}
+            <ThumbnailManagementModal
+                isOpen={modalState.thumbnailManagement}
+                layout={state.layout}
+                onClose={() => setModalState(prev => ({ ...prev, thumbnailManagement: false }))}
+                onSaveWithThumbnail={handleSaveWithThumbnail}
+                onCaptureThumbnail={handleCaptureThumbnail}
+            />
+
+            <SavingProgressModal
+                isOpen={modalState.savingProgress}
+                step={modalState.progressStep}
+                message={modalState.progressMessage}
+                onClose={() => setModalState(prev => ({ ...prev, savingProgress: false }))}
+            />
 
             {/* Toolbar */}
             <div style={{ flexShrink: 0 }}>
@@ -1077,11 +1531,12 @@ const ConfigureFrame: React.FC = () => {
                     elements={state.elements}
                     selectedElements={state.selectedElementIds}
                     isDirty={state.isDirty}
-                    isLoading={state.isLoading || state.isSavingThumbnail}
+                    isLoading={state.isLoading}
                     isEditing={isEditing}
                     canUndo={state.historyIndex > 0}
                     canRedo={state.historyIndex < state.history.length - 1}
-                    onSave={saveFrameLayout}
+                    onQuickSave={handleQuickSave}
+                    onSave={handleSave}
                     onUndo={handleUndo}
                     onRedo={handleRedo}
                     onPreview={generatePreview}
@@ -1116,7 +1571,7 @@ const ConfigureFrame: React.FC = () => {
                     />
                 </div>
 
-                {/* Canvas Area - NEW: Added ref for thumbnail capture and data attributes */}
+                {/* Canvas Area - Added ref for thumbnail capture and data attributes */}
                 <div
                     ref={canvasRef}
                     style={{
