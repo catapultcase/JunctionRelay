@@ -414,6 +414,7 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpDelete("remove-user")]
+        [Authorize]
         public async Task<IActionResult> RemoveUser()
         {
             try

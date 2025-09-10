@@ -45,12 +45,13 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     const { enabled = true, url, defaultPollRate = POLL_RATE_PRESETS.NORMAL } = options;
 
     const ws = useRef<WebSocket | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-    const pollIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const reconnectTimeoutRef = useRef<number | undefined>(undefined);
+    const pollIntervalRef = useRef<number | undefined>(undefined);
     const reconnectAttempts = useRef(0);
     const maxReconnectAttempts = 5;
     const baseReconnectDelay = 1000; // 1 second
     const enabledRef = useRef(enabled);
+    const isMountedRef = useRef(true); // Track if hook is mounted
 
     // Poll rate state with persistence
     const [pollRate, setPollRateState] = useState<number>(() => {
@@ -78,6 +79,8 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     }, [pollRate]);
 
     const setPollRate = useCallback((rate: number) => {
+        if (!isMountedRef.current) return;
+
         console.log(`[Dashboard WebSocket] Updating poll rate to ${rate}ms`);
         setPollRateState(rate);
 
@@ -89,14 +92,14 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     }, []);
 
     const startPolling = useCallback(() => {
-        if (!enabledRef.current || pollIntervalRef.current) {
+        if (!enabledRef.current || !isMountedRef.current || pollIntervalRef.current) {
             return;
         }
 
         console.log(`[Dashboard WebSocket] Starting polling at ${pollRate}ms intervals`);
 
         const poll = () => {
-            if (ws.current?.readyState === WebSocket.OPEN && enabledRef.current) {
+            if (ws.current?.readyState === WebSocket.OPEN && enabledRef.current && isMountedRef.current) {
                 sendMessage({ type: 'request-collectors' });
                 sendMessage({ type: 'request-streams' });
             }
@@ -106,7 +109,7 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
         poll();
 
         // Set up interval
-        pollIntervalRef.current = setInterval(poll, pollRate);
+        pollIntervalRef.current = window.setInterval(poll, pollRate);
     }, [pollRate]);
 
     const stopPolling = useCallback(() => {
@@ -118,8 +121,8 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     }, []);
 
     const connect = useCallback(() => {
-        if (!enabledRef.current) {
-            console.log('[Dashboard WebSocket] Connection disabled');
+        if (!enabledRef.current || !isMountedRef.current) {
+            console.log('[Dashboard WebSocket] Connection disabled or unmounted');
             return;
         }
 
@@ -128,25 +131,29 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
         }
 
         console.log('[Dashboard WebSocket] Connecting to:', wsUrl);
-        setData(prev => ({ ...prev, connectionStatus: 'connecting' }));
+        if (isMountedRef.current) {
+            setData(prev => ({ ...prev, connectionStatus: 'connecting' }));
+        }
 
         try {
             ws.current = new WebSocket(wsUrl);
 
             ws.current.onopen = () => {
                 console.log('[Dashboard WebSocket] Connected successfully');
-                setData(prev => ({ ...prev, connectionStatus: 'connected' }));
+                if (isMountedRef.current) {
+                    setData(prev => ({ ...prev, connectionStatus: 'connected' }));
+                }
                 reconnectAttempts.current = 0;
 
                 // Start polling when connection is established
-                if (enabledRef.current) {
+                if (enabledRef.current && isMountedRef.current) {
                     startPolling();
                 }
             };
 
             ws.current.onmessage = (event) => {
-                // Only process messages if enabled
-                if (!enabledRef.current) return;
+                // Only process messages if enabled and mounted
+                if (!enabledRef.current || !isMountedRef.current) return;
 
                 try {
                     const message = JSON.parse(event.data);
@@ -158,46 +165,56 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
 
             ws.current.onclose = (event) => {
                 console.log('[Dashboard WebSocket] Connection closed:', event.code, event.reason);
-                setData(prev => ({
-                    ...prev,
-                    connectionStatus: enabledRef.current ? 'disconnected' : 'disabled'
-                }));
+
+                if (isMountedRef.current) {
+                    setData(prev => ({
+                        ...prev,
+                        connectionStatus: enabledRef.current ? 'disconnected' : 'disabled'
+                    }));
+                }
 
                 // Stop polling when connection closes
                 stopPolling();
 
-                // Auto-reconnect only if enabled and not a normal closure
+                // Auto-reconnect only if enabled, mounted, and not a normal closure
                 if (enabledRef.current &&
+                    isMountedRef.current &&
                     event.code !== 1000 &&
                     reconnectAttempts.current < maxReconnectAttempts) {
 
                     const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts.current), 30000);
                     console.log(`[Dashboard WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1})`);
 
-                    reconnectTimeoutRef.current = setTimeout(() => {
-                        if (enabledRef.current) { // Double-check enabled state
+                    reconnectTimeoutRef.current = window.setTimeout(() => {
+                        if (enabledRef.current && isMountedRef.current) { // Double-check enabled and mounted state
                             reconnectAttempts.current++;
                             connect();
                         }
                     }, delay);
+                } else if (!isMountedRef.current) {
+                    console.log('[Dashboard WebSocket] Not reconnecting - hook unmounted');
                 }
             };
 
             ws.current.onerror = (error) => {
                 console.error('[Dashboard WebSocket] Connection error:', error);
-                setData(prev => ({
-                    ...prev,
-                    connectionStatus: enabledRef.current ? 'error' : 'disabled'
-                }));
+                if (isMountedRef.current) {
+                    setData(prev => ({
+                        ...prev,
+                        connectionStatus: enabledRef.current ? 'error' : 'disabled'
+                    }));
+                }
                 stopPolling();
             };
 
         } catch (error) {
             console.error('[Dashboard WebSocket] Failed to create connection:', error);
-            setData(prev => ({
-                ...prev,
-                connectionStatus: enabledRef.current ? 'error' : 'disabled'
-            }));
+            if (isMountedRef.current) {
+                setData(prev => ({
+                    ...prev,
+                    connectionStatus: enabledRef.current ? 'error' : 'disabled'
+                }));
+            }
         }
     }, [wsUrl, startPolling, stopPolling]);
 
@@ -215,38 +232,50 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
 
         // Close the WebSocket connection
         if (ws.current) {
+            // Remove event handlers to prevent reconnection attempts
+            ws.current.onclose = null;
+            ws.current.onerror = null;
+            ws.current.onmessage = null;
+            ws.current.onopen = null;
+
             ws.current.close(1000, 'Manual disconnect');
             ws.current = null;
         }
 
-        // Update state
-        setData(prev => ({
-            ...prev,
-            connectionStatus: enabledRef.current ? 'disconnected' : 'disabled'
-        }));
+        // Update state only if mounted
+        if (isMountedRef.current) {
+            setData(prev => ({
+                ...prev,
+                connectionStatus: enabledRef.current ? 'disconnected' : 'disabled'
+            }));
+        }
     }, [stopPolling]);
 
     const handleMessage = useCallback((message: any) => {
-        // Only handle messages if enabled
-        if (!enabledRef.current) return;
+        // Only handle messages if enabled and mounted
+        if (!enabledRef.current || !isMountedRef.current) return;
 
         const now = Date.now();
 
         switch (message.type) {
             case 'collectors-update':
-                setData(prev => ({
-                    ...prev,
-                    collectors: message.data || [],
-                    lastUpdate: now
-                }));
+                if (isMountedRef.current) {
+                    setData(prev => ({
+                        ...prev,
+                        collectors: message.data || [],
+                        lastUpdate: now
+                    }));
+                }
                 break;
 
             case 'streams-update':
-                setData(prev => ({
-                    ...prev,
-                    streams: message.data || [],
-                    lastUpdate: now
-                }));
+                if (isMountedRef.current) {
+                    setData(prev => ({
+                        ...prev,
+                        streams: message.data || [],
+                        lastUpdate: now
+                    }));
+                }
                 break;
 
             case 'pong':
@@ -260,8 +289,8 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     }, []);
 
     const sendMessage = useCallback((message: any) => {
-        if (!enabledRef.current) {
-            console.warn('[Dashboard WebSocket] Cannot send message - disabled');
+        if (!enabledRef.current || !isMountedRef.current) {
+            console.warn('[Dashboard WebSocket] Cannot send message - disabled or unmounted');
             return;
         }
 
@@ -273,13 +302,14 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
     }, []);
 
     const reconnect = useCallback(() => {
-        if (!enabledRef.current) {
-            console.log('[Dashboard WebSocket] Cannot reconnect - disabled');
+        if (!enabledRef.current || !isMountedRef.current) {
+            console.log('[Dashboard WebSocket] Cannot reconnect - disabled or unmounted');
             return;
         }
 
         if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = undefined;
         }
 
         if (ws.current) {
@@ -292,6 +322,8 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
 
     // Handle enabled state changes
     useEffect(() => {
+        if (!isMountedRef.current) return;
+
         if (enabled) {
             console.log('[Dashboard WebSocket] Enabling connection');
             setData(prev => ({
@@ -303,24 +335,46 @@ export const useDashboardWebSocket = (options: WebSocketHookOptions = {}): UseDa
             console.log('[Dashboard WebSocket] Disabling connection');
             disconnect();
             // Clear data when disabled to free memory
-            setData({
-                collectors: [],
-                streams: [],
-                lastUpdate: 0,
-                connectionStatus: 'disabled'
-            });
+            if (isMountedRef.current) {
+                setData({
+                    collectors: [],
+                    streams: [],
+                    lastUpdate: 0,
+                    connectionStatus: 'disabled'
+                });
+            }
         }
     }, [enabled, connect, disconnect]);
 
-    // Cleanup on unmount
+    // Cleanup on unmount - THIS IS THE CRITICAL FIX
     useEffect(() => {
         return () => {
+            console.log('[Dashboard WebSocket] Hook unmounting - clearing all timers and connections');
+
+            // Mark as unmounted FIRST to prevent any further operations
+            isMountedRef.current = false;
+
+            // Stop polling
             stopPolling();
+
+            // Clear reconnection timer - THIS WAS THE MAIN LEAK
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
+                reconnectTimeoutRef.current = undefined;
+                console.log('[Dashboard WebSocket] Cleared reconnection timeout');
             }
+
+            // Close WebSocket and remove all handlers
             if (ws.current) {
+                // Remove all event handlers to prevent any callbacks
+                ws.current.onclose = null;
+                ws.current.onerror = null;
+                ws.current.onmessage = null;
+                ws.current.onopen = null;
+
                 ws.current.close(1000, 'Component unmounting');
+                ws.current = null;
+                console.log('[Dashboard WebSocket] Closed WebSocket connection');
             }
         };
     }, [stopPolling]);

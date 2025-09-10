@@ -34,9 +34,9 @@ import { useTheme, useMediaQuery } from "@mui/material";
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
 import AddJunctionModal from "../components/Junction_AddJunctionModal";
-import DashboardSettings from '../components/DashboardSettings';
-import ActiveCollectorsCard from '../components/ActiveCollectorsCard';
-import ActiveStreamsCard from '../components/ActiveStreamsCard';
+import DashboardSettings from '../components/Dashboard_Settings';
+import ActiveCollectorsCard from '../components/Dashboard_ActiveCollectorsCard';
+import ActiveStreamsCard from '../components/Dashboard_ActiveStreamsCard';
 
 // Main Dashboard Component
 const Dashboard = () => {
@@ -63,6 +63,15 @@ const Dashboard = () => {
 
     // Dashboard component does NOT include dashboard toggle column
     const additionalColumns: JunctionColumn[] = []; // Empty - no dashboard column
+
+    // Add cleanup when navigating away from dashboard
+    useEffect(() => {
+        return () => {
+            console.log('Dashboard unmounting - cleaning up resources');
+            // Notify child components to cleanup
+            window.dispatchEvent(new CustomEvent('dashboard-cleanup'));
+        };
+    }, []);
 
     // NEW: Bottom Action Bar event listeners
     useEffect(() => {
@@ -162,9 +171,14 @@ const Dashboard = () => {
         }
     }, [showSnackbar]);
 
-    // Initial data loading
+    // Initial data loading with enhanced cleanup
     useEffect(() => {
+        let mounted = true;
+        let intervalId: number | null = null;
+
         const init = async () => {
+            if (!mounted) return;
+
             try {
                 setLoading(true);
 
@@ -174,11 +188,15 @@ const Dashboard = () => {
                 }
                 const junctions = await junctionsResponse.json();
 
+                if (!mounted) return; // Check again after async operation
+
                 const runningResponse = await fetch("/api/connections/running");
                 let runningData: { id: number; status: string }[] = [];
                 if (runningResponse.ok) {
                     runningData = await runningResponse.json();
                 }
+
+                if (!mounted) return; // Check again after async operation
 
                 const mergedJunctions = junctions.map((j: Junction, index: number) => {
                     const u = runningData.find((x: any) => x.id === j.id);
@@ -187,23 +205,40 @@ const Dashboard = () => {
                 });
 
                 mergedJunctions.sort((a: Junction, b: Junction) => a.sortOrder - b.sortOrder);
-                setJunctions(mergedJunctions);
+
+                if (mounted) {
+                    setJunctions(mergedJunctions);
+                }
 
             } catch (err: any) {
-                showSnackbar("Error fetching junctions", "error");
-                console.error("Error fetching junctions:", err);
+                if (mounted) {
+                    showSnackbar("Error fetching junctions", "error");
+                    console.error("Error fetching junctions:", err);
+                }
             } finally {
-                setLoading(false);
+                if (mounted) {
+                    setLoading(false);
+                }
             }
         };
 
         init();
 
-        const intervalId = setInterval(() => {
-            refreshJunctionsStatus();
+        intervalId = window.setInterval(() => {
+            if (mounted) {
+                refreshJunctionsStatus();
+            }
         }, 1000);
 
-        return () => clearInterval(intervalId);
+        // Enhanced cleanup
+        return () => {
+            mounted = false;
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+            console.log('Dashboard effect cleanup - clearing interval and marking unmounted');
+        };
     }, [refreshJunctionsStatus, showSnackbar]);
 
     // Handle updating junction sort order
@@ -332,15 +367,6 @@ const Dashboard = () => {
         const saved = localStorage.getItem('dashboard_streams_expanded');
         return saved !== null ? saved === 'true' : true;
     });
-
-    // Remove these useEffects since setters are no longer used
-    // useEffect(() => {
-    //     localStorage.setItem('dashboard_collectors_expanded', collectorsExpanded.toString());
-    // }, [collectorsExpanded]);
-
-    // useEffect(() => {
-    //     localStorage.setItem('dashboard_streams_expanded', streamsExpanded.toString());
-    // }, [streamsExpanded]);
 
     return (
         <Box sx={{ padding: 2 }}>

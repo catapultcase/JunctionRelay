@@ -46,7 +46,7 @@ import Settings_SessionManagement from '../components/Settings_SessionManagement
 import Settings_Database from '../components/Settings_Database';
 import Settings_Backups from '../components/Settings_CloudBackups';
 import StreamHistorySettings from '../components/StreamHistorySettings';
-import DashboardSettings from '../components/DashboardSettings';
+import DashboardSettings from '../components/Dashboard_Settings';
 
 
 interface SettingItem {

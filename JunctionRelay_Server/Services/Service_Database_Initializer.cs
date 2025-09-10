@@ -30,18 +30,21 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_Devices _deviceDbManager;
         private readonly Service_Database_Manager_Sensors _sensorDbManager;
         private readonly Service_Layout_Templates layoutTemplates;
+        private readonly Service_Database_Manager_FrameEngine _frameEngineManager;
 
         public Service_Database_Initializer(IDbConnection db,
                                              Service_HostInfo hostInfo,
                                              Service_Database_Manager_Devices deviceDbManager,
                                              Service_Database_Manager_Sensors sensorDbManager,
-                                             Service_Layout_Templates layoutTemplates)
+                                             Service_Layout_Templates layoutTemplates,
+                                             Service_Database_Manager_FrameEngine frameEngineManager)
         {
             _db = db;
             _hostInfo = hostInfo;
             _deviceDbManager = deviceDbManager;
             _sensorDbManager = sensorDbManager;
             this.layoutTemplates = layoutTemplates;
+            _frameEngineManager = frameEngineManager;
         }
 
         public async Task InitializeAsync()
@@ -784,17 +787,35 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-
-            // Seed templates
-            var existingTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
-            if (existingTemplates == 0)
+            // Seed screen layout templates
+            var existingScreenTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
+            if (existingScreenTemplates == 0)
             {
                 await layoutTemplates.InitializeLayoutTemplatesAsync();
-                Console.WriteLine("✅ Initialized layout templates");
+                Console.WriteLine("✅ Initialized screen layout templates");
             }
             else
             {
-                Console.WriteLine($"ℹ️ Skipped layout template initialization - {existingTemplates} templates already exist");
+                Console.WriteLine($"ℹ️ Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
+            }
+
+            // Seed frame layout templates (NEW)
+            var existingFrameTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM FrameLayouts WHERE IsTemplate = 1");
+            if (existingFrameTemplates == 0)
+            {
+                var templatesCreated = await _frameEngineManager.RestoreDefaultTemplatesAsync();
+                if (templatesCreated)
+                {
+                    Console.WriteLine("✅ Initialized frame layout templates");
+                }
+                else
+                {
+                    Console.WriteLine("ℹ️ No frame layout templates were created");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"ℹ️ Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
             }
 
             // Alter tables if needed

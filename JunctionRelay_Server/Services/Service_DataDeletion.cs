@@ -54,7 +54,7 @@ namespace JunctionRelayServer.Services
                 // Delete identity files (backend-id.txt, jwt-secret.key)
                 if (!string.IsNullOrEmpty(deletionDbDirectory))
                 {
-                    var backendIdFile = Path.Combine(deletionDbDirectory, "backend-id.txt");
+                    var backendIdFile = Path.Combine(deletionDbDirectory, "backend-id.json");
                     var jwtSecretFile = Path.Combine(deletionDbDirectory, "jwt-secret.key");
 
                     if (File.Exists(backendIdFile))
