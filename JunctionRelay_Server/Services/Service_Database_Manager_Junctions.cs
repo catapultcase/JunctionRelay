@@ -317,20 +317,20 @@ namespace JunctionRelayServer.Services
             source.Id = 0;  // Reset the ID since it's a new entry
 
             const string insertSql = @"
-    INSERT INTO Junctions (
-    Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
-    CronExpression, AllTargetsAllData, AllTargetsAllScreens,
-    GatewayDeviceId, GatewayDestination, RenderingMode, DestinationOverride, BaudRate,
-    MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
-    RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
-    HealthCheckIntervalMs, EnableNotifications, CompressPayload
+INSERT INTO Junctions (
+Name, Description, Type, Status, SortOrder, ShowOnDashboard, AutoStartOnLaunch,
+CronExpression, AllTargetsAllData, AllTargetsAllScreens,
+GatewayDeviceId, GatewayDestination, RenderingMode, DestinationOverride, BaudRate,
+MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
+RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
+HealthCheckIntervalMs, EnableNotifications, CompressPayload
 ) VALUES (
-    @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
-    @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
-    @GatewayDeviceId, @GatewayDestination, @RenderingMode, @DestinationOverride, @BaudRate,
-    @MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
-    @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
-    @HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
+@Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
+@CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
+@GatewayDeviceId, @GatewayDestination, @RenderingMode, @DestinationOverride, @BaudRate,
+@MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
+@RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
+@HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
 );
 SELECT last_insert_rowid();
 ";
@@ -346,17 +346,17 @@ SELECT last_insert_rowid();
             foreach (var link in source.DeviceLinks)
             {
                 int newLinkId = await _db.ExecuteScalarAsync<int>(@"
-        INSERT INTO JunctionDeviceLinks (
-            JunctionId, DeviceId, Role, IsSelected, IsTested, WarnOnDuplicate,
-            PollRateOverride, LastPolled, SendRateOverride, LastSent,
-            DeclareFailedAfter, RetryAttempts
-        )
-        VALUES (
-            @JunctionId, @DeviceId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
-            @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-            @DeclareFailedAfter, @RetryAttempts
-        );
-        SELECT last_insert_rowid();", new
+    INSERT INTO JunctionDeviceLinks (
+        JunctionId, DeviceId, Role, IsSelected, IsTested, WarnOnDuplicate,
+        PollRateOverride, LastPolled, SendRateOverride, LastSent,
+        DeclareFailedAfter, RetryAttempts
+    )
+    VALUES (
+        @JunctionId, @DeviceId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
+        @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
+        @DeclareFailedAfter, @RetryAttempts
+    );
+    SELECT last_insert_rowid();", new
                 {
                     JunctionId = newJunctionId,
                     link.DeviceId,
@@ -377,24 +377,24 @@ SELECT last_insert_rowid();
                 foreach (var layout in link.ScreenLayouts)
                 {
                     await _db.ExecuteAsync(@"
-            INSERT INTO JunctionScreenLayouts (
-                JunctionId,
-                JunctionDeviceLinkId, 
-                DeviceScreenId, 
-                ScreenLayoutId, 
-                FrameLayoutId, 
-                TargetPollRate, 
-                OnlySendIfChanged
-            )
-            VALUES (
-                @JunctionId,
-                @NewLinkId, 
-                @DeviceScreenId, 
-                @ScreenLayoutId, 
-                @FrameLayoutId, 
-                @TargetPollRate, 
-                @OnlySendIfChanged
-            );", new
+        INSERT INTO JunctionScreenLayouts (
+            JunctionId,
+            JunctionDeviceLinkId, 
+            DeviceScreenId, 
+            ScreenLayoutId, 
+            FrameLayoutId, 
+            TargetPollRate, 
+            OnlySendIfChanged
+        )
+        VALUES (
+            @JunctionId,
+            @NewLinkId, 
+            @DeviceScreenId, 
+            @ScreenLayoutId, 
+            @FrameLayoutId, 
+            @TargetPollRate, 
+            @OnlySendIfChanged
+        );", new
                     {
                         JunctionId = newJunctionId,
                         NewLinkId = newLinkId,
@@ -412,17 +412,17 @@ SELECT last_insert_rowid();
             foreach (var link in source.CollectorLinks)
             {
                 int newCollectorLinkId = await _db.ExecuteScalarAsync<int>(@"
-        INSERT INTO JunctionCollectorLinks (
-            JunctionId, CollectorId, Role, IsSelected, IsTested, WarnOnDuplicate,
-            PollRateOverride, LastPolled, SendRateOverride, LastSent,
-            DeclareFailedAfter, RetryAttempts
-        )
-        VALUES (
-            @JunctionId, @CollectorId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
-            @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
-            @DeclareFailedAfter, @RetryAttempts
-        );
-        SELECT last_insert_rowid();", new
+    INSERT INTO JunctionCollectorLinks (
+        JunctionId, CollectorId, Role, IsSelected, IsTested, WarnOnDuplicate,
+        PollRateOverride, LastPolled, SendRateOverride, LastSent,
+        DeclareFailedAfter, RetryAttempts
+    )
+    VALUES (
+        @JunctionId, @CollectorId, @Role, @IsSelected, @IsTested, @WarnOnDuplicate,
+        @PollRateOverride, @LastPolled, @SendRateOverride, @LastSent,
+        @DeclareFailedAfter, @RetryAttempts
+    );
+    SELECT last_insert_rowid();", new
                 {
                     JunctionId = newJunctionId,
                     link.CollectorId,
@@ -459,24 +459,24 @@ SELECT last_insert_rowid();
                     newCollectorLinkId = collectorLinkIdMap.GetValueOrDefault(cloned.JunctionCollectorLinkId.Value);
 
                 int newSensorId = await _db.ExecuteScalarAsync<int>(@"
-        INSERT INTO JunctionSensors (
-            JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder, MQTTServiceId,
-            MQTTTopic, MQTTQoS, SensorType, ExternalId, DeviceName, Name, ComponentName,
-            Category, Unit, Value, DecimalPlaces, SensorTag, Formula, LastUpdated,
-            CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4,
-            CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8,
-            CustomAttribute9, CustomAttribute10, IsMissing, IsStale, IsSelected, IsVisible,
-            DeviceId, ServiceId, CollectorId, OriginalId
-        ) VALUES (
-            @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder, @MQTTServiceId,
-            @MQTTTopic, @MQTTQoS, @SensorType, @ExternalId, @DeviceName, @Name, @ComponentName,
-            @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, @LastUpdated,
-            @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4,
-            @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8,
-            @CustomAttribute9, @CustomAttribute10, @IsMissing, @IsStale, @IsSelected, @IsVisible,
-            @DeviceId, @ServiceId, @CollectorId, @OriginalId
-        );
-        SELECT last_insert_rowid();", new
+    INSERT INTO JunctionSensors (
+        JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder, MQTTServiceId,
+        MQTTTopic, MQTTQoS, SensorType, ExternalId, DeviceName, Name, ComponentName,
+        Category, Unit, Value, DecimalPlaces, SensorTag, Formula, LastUpdated,
+        CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4,
+        CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8,
+        CustomAttribute9, CustomAttribute10, IsMissing, IsStale, IsSelected, IsVisible,
+        DeviceId, ServiceId, CollectorId, OriginalId, IsCustomJunctionSensor, IsEventSensor
+    ) VALUES (
+        @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder, @MQTTServiceId,
+        @MQTTTopic, @MQTTQoS, @SensorType, @ExternalId, @DeviceName, @Name, @ComponentName,
+        @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, @LastUpdated,
+        @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4,
+        @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8,
+        @CustomAttribute9, @CustomAttribute10, @IsMissing, @IsStale, @IsSelected, @IsVisible,
+        @DeviceId, @ServiceId, @CollectorId, @OriginalId, @IsCustomJunctionSensor, @IsEventSensor
+    );
+    SELECT last_insert_rowid();", new
                 {
                     cloned.JunctionId,
                     JunctionDeviceLinkId = newDeviceLinkId,
@@ -514,7 +514,9 @@ SELECT last_insert_rowid();
                     cloned.DeviceId,
                     cloned.ServiceId,
                     cloned.CollectorId,
-                    cloned.OriginalId
+                    cloned.OriginalId,
+                    cloned.IsCustomJunctionSensor,
+                    cloned.IsEventSensor
                 });
 
                 sensorIdMap[sensor.Id] = newSensorId;
@@ -526,8 +528,8 @@ SELECT last_insert_rowid();
                 if (!sensorIdMap.TryGetValue(target.SensorId, out var newSensorId)) continue;
 
                 await _db.ExecuteAsync(@"
-        INSERT INTO JunctionSensorTargets (JunctionId, SensorId, DeviceId, ScreenId, PositionIndex)
-        VALUES (@JunctionId, @SensorId, @DeviceId, @ScreenId, @PositionIndex);", new
+    INSERT INTO JunctionSensorTargets (JunctionId, SensorId, DeviceId, ScreenId, PositionIndex)
+    VALUES (@JunctionId, @SensorId, @DeviceId, @ScreenId, @PositionIndex);", new
                 {
                     JunctionId = newJunctionId,
                     SensorId = newSensorId,

@@ -31,6 +31,8 @@ namespace JunctionRelayServer.Services
         {
             _comPortManager = comPortManager ?? throw new ArgumentNullException(nameof(comPortManager));
             _comPort = comPort ?? throw new ArgumentNullException(nameof(comPort));
+
+            Console.WriteLine($"[SERVICE_SEND_DATA_COM] Created COM sender for {comPort} (no chunking - direct transmission)");
         }
 
         public Task<(bool Success, string ResponseMessage)> SendPayloadAsync(string payload)
@@ -43,35 +45,16 @@ namespace JunctionRelayServer.Services
                 if (string.IsNullOrEmpty(payload))
                     return Task.FromResult((false, "Payload cannot be null or empty."));
 
-                if (!_comPortManager.IsPortOpen(_comPort))
-                {
-                    Console.WriteLine($"[SERVICE_SEND_DATA_COM] COM port {_comPort} not open. Attempting to open...");
-                    _comPortManager.OpenConnection(_comPort, 115200);
-                }
-
-                if (!_comPortManager.IsPortOpen(_comPort))
-                    return Task.FromResult((false, $"Failed to open COM port {_comPort}."));
-
-                // ⚠️ Remove all trailing newline/control characters
-                string cleaned = payload.TrimEnd('\n', '\r', '\0');
-
-                // Convert to raw UTF-8 bytes (for JSON/prefix compatibility)
-                byte[] payloadBytes = Encoding.UTF8.GetBytes(cleaned);
-
-                // ✅ Send raw bytes only, no extra newline or terminator
-                _comPortManager.SendData(_comPort, payloadBytes);
-                // Flush buffer
-                _comPortManager.Flush(_comPort);
-
-                return Task.FromResult((true, "ACK"));
+                // Convert string to UTF-8 bytes and send as binary
+                byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
+                return SendPayloadAsync(payloadBytes);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error sending string to {_comPort}: {ex.Message}");
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error converting string payload: {ex.Message}");
                 return Task.FromResult((false, ex.Message));
             }
         }
-
 
         public Task<(bool Success, string ResponseMessage)> SendPayloadAsync(byte[] payloadBytes)
         {
@@ -92,21 +75,19 @@ namespace JunctionRelayServer.Services
                 if (!_comPortManager.IsPortOpen(_comPort))
                     return Task.FromResult((false, $"Failed to open COM port {_comPort}."));
 
-                // Send raw binary data
+                // Send entire payload directly - no chunking
                 _comPortManager.SendData(_comPort, payloadBytes);
-                // Flush buffer
                 _comPortManager.Flush(_comPort);
 
-                // Console.WriteLine($"[SERVICE_SEND_DATA_COM] Sent {payloadBytes.Length} bytes (binary) to {_comPort}");
+                // Console.WriteLine($"[SERVICE_SEND_DATA_COM] Sent {payloadBytes.Length} bytes to {_comPort}");
                 return Task.FromResult((true, "ACK"));
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error sending bytes to {_comPort}: {ex.Message}");
+                Console.WriteLine($"[SERVICE_SEND_DATA_COM] Error sending payload to {_comPort}: {ex.Message}");
                 return Task.FromResult((false, ex.Message));
             }
         }
-
 
         public void OpenPortIfNotOpen(int baudRate = 115200)
         {

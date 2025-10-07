@@ -265,7 +265,7 @@ namespace JunctionRelayServer.Collectors
                                     ExternalId = $"{readingElement.dwSensorIndex}:{readingElement.dwReadingID}",
                                     SensorType = "SharedMemory",
                                     DeviceName = collector.Name,
-                                    SensorTag = $"{readingElement.dwSensorIndex}:{readingElement.dwReadingID}",
+                                    SensorTag = sensorName,
                                     JunctionId = null,
                                     DeviceId = null,
                                     CollectorId = collector.Id,

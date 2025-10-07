@@ -1,4 +1,23 @@
-﻿import React, { useState, useCallback, useEffect } from 'react';
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -12,33 +31,26 @@ import {
     DragIndicator as DragIcon,
     Sensors as SensorsIcon,
     TextFields as TextIcon,
-    // BarChart as ChartIcon,
-    // Image as ImageIcon,
-    // ViewModule as ContainerIcon,
+    ShowChart as ChartIcon,
+    Schedule as ClockIcon,
+    Grain as OscilloscopeIcon,
+    Explore as TunnelIcon,
+    Cloud as WeatherIcon,
+    AllOut as Tunnel2DIcon,
 } from '@mui/icons-material';
 import { FrameEngine_ElementProperties } from './FrameEngine_ElementProperties';
-
-interface PlacedElement {
-    id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    properties: Record<string, any>;
-    sensorId?: string;
-}
+import type { PlacedElement, ElementType } from './FrameEngine_Types';
 
 interface ElementTemplate {
     id: string;
     name: string;
     description: string;
-    type: PlacedElement['type'];
+    type: ElementType;
     icon: React.ReactNode;
     defaultWidth: number;
     defaultHeight: number;
     defaultProperties: Record<string, any>;
-    category: 'basic' | 'data' | 'media' | 'layout';
+    category: 'basic' | 'data' | 'media' | 'layout' | 'effects';
 }
 
 interface ElementLibraryProps {
@@ -59,17 +71,15 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'library' | 'properties'>('library');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text'])
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'clock', 'oscilloscope', 'tunnel', 'weather'])
     );
 
-    // Auto-switch to properties tab when elements are selected
     useEffect(() => {
         if (selectedElementsData.length > 0) {
             setActiveTab('properties');
         }
     }, [selectedElementsData.length]);
 
-    // Toggle section expansion
     const toggleSection = useCallback((sectionId: string) => {
         setExpandedSections(prev => {
             const newSet = new Set(prev);
@@ -82,29 +92,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         });
     }, []);
 
-    // Elements list - only sensor and text elements enabled
     const elementTemplates: ElementTemplate[] = [
-        {
-            id: 'sensor-display',
-            name: 'Sensor Display',
-            description: 'Display live sensor data with value and unit',
-            type: 'sensor',
-            icon: <SensorsIcon />,
-            defaultWidth: 120,
-            defaultHeight: 60,
-            defaultProperties: {
-                sensorName: 'New Sensor',
-                placeholderValue: '',
-                placeholderUnit: '',
-                fontSize: 12,
-                showUnit: true,
-                showLabel: true,
-                backgroundColor: '#e3f2fd',
-                textColor: '#000000',
-                textAlign: 'left',
-            },
-            category: 'data',
-        },
         {
             id: 'text-label',
             name: 'Text Label',
@@ -123,9 +111,177 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             },
             category: 'basic',
         },
+        {
+            id: 'clock-display',
+            name: 'Clock',
+            description: 'Live clock with timezone support',
+            type: 'clock',
+            icon: <ClockIcon />,
+            defaultWidth: 200,
+            defaultHeight: 60,
+            defaultProperties: {
+                fontSize: 24,
+                fontFamily: 'Inter',
+                fontWeight: 'normal',
+                color: '#000000',
+                backgroundColor: 'transparent',
+                textAlign: 'center',
+                verticalAlign: 'center',
+                timeFormat: '12h',
+                showSeconds: true,
+                showDate: false,
+                dateFormat: 'short',
+                timezone: 'America/Chicago',
+                textShadow: false,
+                textBorder: false,
+            },
+            category: 'basic',
+        },
+        {
+            id: 'sensor-display',
+            name: 'Sensor Display',
+            description: 'Display live sensor data with value and unit',
+            type: 'sensor',
+            icon: <SensorsIcon />,
+            defaultWidth: 120,
+            defaultHeight: 60,
+            defaultProperties: {
+                sensorName: 'New Sensor',
+                placeholderValue: '',
+                placeholderUnit: '',
+                fontSize: 12,
+                showUnit: true,
+                showLabel: true,
+                backgroundColor: 'transparent',
+                color: '#000000',
+                textAlign: 'left',
+            },
+            category: 'data',
+        },
+        {
+            id: 'ecg-display',
+            name: 'ECG Waveform',
+            description: 'Real-time waveform chart for sensor data',
+            type: 'ecg',
+            icon: <ChartIcon />,
+            defaultWidth: 300,
+            defaultHeight: 120,
+            defaultProperties: {
+                sensorTag: '',
+                waveformColor: '#00ff00',
+                backgroundColor: '#000000',
+                gridColor: 'rgba(0, 255, 0, 0.2)',
+                showGrid: true,
+                showBorder: true,
+                bufferSize: 200,
+                yAxisMin: 0,
+                yAxisMax: 100,
+                lineWidth: 2,
+                gridScrollSpeed: 0.5,
+            },
+            category: 'data',
+        },
+        {
+            id: 'oscilloscope-display',
+            name: 'Oscilloscope',
+            description: 'Advanced waveform display with multiple modes',
+            type: 'oscilloscope',
+            icon: <OscilloscopeIcon />,
+            defaultWidth: 400,
+            defaultHeight: 200,
+            defaultProperties: {
+                sensorTag: '',
+                waveformColor: '#00ff00',
+                backgroundColor: '#000000',
+                gridColor: 'rgba(0, 255, 0, 0.2)',
+                showGrid: true,
+                showBorder: true,
+                bufferSize: 200,
+                yAxisMin: 0,
+                yAxisMax: 100,
+                lineWidth: 2,
+                mode: 'glow',
+                phosphorDecay: 0.95,
+                glowIntensity: 3,
+                frequency: 0.05,
+                phase: 0,
+                amplitude: 1,
+                harmonics: 0,
+                noiseLevel: 0,
+                symmetry: 0,
+                triggerLevel: 50,
+                showTrigger: false,
+            },
+            category: 'effects',
+        },
+        {
+            id: 'tunnel-effect',
+            name: 'Tunnel Effect',
+            description: 'Psychedelic tunnel with 2D/3D rendering modes',
+            type: 'tunnel',
+            icon: <TunnelIcon />,
+            defaultWidth: 400,
+            defaultHeight: 300,
+            defaultProperties: {
+                sensorTag: '',
+                primaryColor: '#ff00ff',
+                secondaryColor: '#00ffff',
+                backgroundColor: '#000000',
+                tunnelType: 'circular',
+                speed: 1,
+                depth: 20,
+                ringSpacing: 5,
+                rotation: 0.5,
+                twist: 0,
+                pulseSpeed: 1,
+                pulseAmount: 0.2,
+                scanlines: true,
+                scanlineIntensity: 0.3,
+                chromatic: false,
+                chromaticAmount: 2,
+                pixelate: false,
+                pixelSize: 4,
+                colorCycle: false,
+                colorCycleSpeed: 0.01,
+                perspective: 1,
+                glow: true,
+                glowIntensity: 10,
+                renderMode: '2d',
+                curveTargetX: 0,
+                curveTargetY: 0,
+                curveStrength: 1,
+                banking: 0.5,
+                pitch: 0,
+                originX: 0.5,
+                originY: 0.5,
+                depthFade: false,
+                fadeEnd: 'back',
+            },
+            category: 'effects',
+        },
+        {
+            id: 'weather-display',
+            name: 'Weather Scene',
+            description: '3D weather visualization with dynamic effects',
+            type: 'weather',
+            icon: <WeatherIcon />,
+            defaultWidth: 400,
+            defaultHeight: 300,
+            defaultProperties: {
+                sensorTag: '',
+                weatherType: 'clear',
+                timeOfDay: 'day',
+                cloudDensity: 0.5,
+                animationSpeed: 1,
+                particleCount: 500,
+                showStars: true,
+                cameraAngle: 30,
+                backgroundColor: 'transparent',
+            },
+            category: 'effects',
+        },
     ];
 
-    // Drag start for element templates
     const handleElementDragStart = useCallback((template: ElementTemplate, event: React.DragEvent) => {
         const elementData = {
             type: template.type,
@@ -141,7 +297,6 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         event.dataTransfer.effectAllowed = 'copy';
     }, []);
 
-    // Quick add element (double-click)
     const handleQuickAdd = useCallback((template: ElementTemplate) => {
         onElementAdd({
             type: template.type,
@@ -153,7 +308,6 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         });
     }, [onElementAdd]);
 
-    // Filter + group by category
     const filteredTemplates = elementTemplates.filter(t =>
         t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.description.toLowerCase().includes(searchTerm.toLowerCase())
@@ -169,27 +323,28 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         data: 'Data Elements',
         media: 'Media Elements',
         layout: 'Layout Elements',
+        effects: 'Visual Effects',
     };
 
     return (
         <Box
             sx={{
                 width: 320,
-                flex: 1,
+                height: '100%',
                 bgcolor: 'background.paper',
                 borderLeft: 1,
                 borderColor: 'divider',
                 display: 'flex',
                 flexDirection: 'column',
+                overflow: 'hidden',
             }}
         >
-            {/* Header */}
-            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            {/* Fixed Header */}
+            <Box sx={{ flexShrink: 0, p: 2, borderBottom: 1, borderColor: 'divider' }}>
                 <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem', mb: 1 }}>
                     Element Library & Properties
                 </Typography>
 
-                {/* Tab Buttons */}
                 <Box sx={{ display: 'flex' }}>
                     <button
                         onClick={() => setActiveTab('library')}
@@ -230,15 +385,10 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                 </Box>
             </Box>
 
-            {/* Tab Content */}
-            <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                minHeight: 0
-            }}>
+            {/* Scrollable Content */}
+            <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                 {activeTab === 'library' ? (
                     <>
-                        {/* Search */}
                         <Box sx={{ p: 1.5, borderBottom: 1, borderColor: 'divider' }}>
                             <TextField
                                 size="small"
@@ -257,7 +407,6 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                             />
                         </Box>
 
-                        {/* Elements List */}
                         <Box sx={{ p: 1.5 }}>
                             {Object.entries(templatesByCategory).map(([category, templates]) => (
                                 <Box key={category} sx={{ mb: 3 }}>
@@ -328,11 +477,10 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                             ))}
                         </Box>
 
-                        {/* Footer */}
                         <Box sx={{ p: 1.5, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    💡 Tip:
+                                    Tip:
                                 </Typography>
                                 <Typography variant="caption" color="text.disabled">
                                     Drag or double-click
@@ -349,7 +497,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                         onToggleSection={toggleSection}
                     />
                 )}
-            </div>
+            </Box>
         </Box>
     );
 };

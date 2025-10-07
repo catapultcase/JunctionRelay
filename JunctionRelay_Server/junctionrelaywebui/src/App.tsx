@@ -33,6 +33,8 @@ import ConfigureCollector from "pages/ConfigureCollector";
 import ConfigureJunction from "pages/ConfigureJunction";
 import FrameEngine from "pages/FrameEngine";
 import ConfigureFrame from "pages/ConfigureFrame";
+import EventEngine from "pages/EventEngine";
+import ConfigureEventRule from "pages/ConfigureEventRule";
 import Payloads from "pages/Payloads";
 import ConfigurePayload from "pages/ConfigurePayload";
 import HostInfo from "pages/HostInfo";
@@ -41,6 +43,7 @@ import Settings from "pages/Settings";
 import VirtualScreenViewer from "pages/VirtualScreenViewer";
 import LoginOnly from "components/LoginOnly";
 import { AuthProvider } from "auth/AuthContext";
+import { NotificationProvider } from "context/NotificationContext";
 import Streams from "pages/Streams";
 import { useFeatureFlags } from "hooks/useFeatureFlags";
 
@@ -206,6 +209,14 @@ const BottomActionBarWrapper: React.FC = () => {
         return localStorage.getItem('configure_frame_view_mode') || 'table';
     });
 
+    const [eventEngineViewMode, setEventEngineViewMode] = useState(() => {
+        return localStorage.getItem('junctionrelay_eventengine_view_mode') || 'table';
+    });
+
+    const [configureEventRuleViewMode, setConfigureEventRuleViewMode] = useState(() => {
+        return localStorage.getItem('configure_eventrule_view_mode') || 'table';
+    });
+
     const [configurePayloadViewMode, setConfigurePayloadViewMode] = useState(() => {
         return localStorage.getItem('configure_payload_view_mode') || 'table';
     });
@@ -225,8 +236,14 @@ const BottomActionBarWrapper: React.FC = () => {
             if (e.key === 'junctionrelay_frameengine_view_mode' && e.newValue) {
                 setFrameEngineViewMode(e.newValue);
             }
+            if (e.key === 'junctionrelay_eventengine_view_mode' && e.newValue) {
+                setEventEngineViewMode(e.newValue);
+            }
             if (e.key === 'junctionrelay_payloads_view_mode' && e.newValue) {
                 setPayloadsViewMode(e.newValue);
+            }
+            if (e.key === 'configure_eventrule_view_mode' && e.newValue) {
+                setConfigureEventRuleViewMode(e.newValue);
             }
             if (e.key === 'dashboard_junctions_view_mode' && e.newValue) {
                 setDashboardJunctionsViewMode(e.newValue);
@@ -248,6 +265,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     setServicesViewMode(e.detail.mode);
                 } else if (location.pathname === '/frameengine') {
                     setFrameEngineViewMode(e.detail.mode);
+                } else if (location.pathname === '/eventengine') {
+                    setEventEngineViewMode(e.detail.mode);
                 } else if (location.pathname === '/payloads') {
                     setPayloadsViewMode(e.detail.mode);
                 } else if (location.pathname === '/') {
@@ -260,6 +279,8 @@ const BottomActionBarWrapper: React.FC = () => {
                     setConfigureJunctionViewMode(e.detail.mode);
                 } else if (location.pathname.includes('/configure-collector/')) {
                     setConfigureCollectorViewMode(e.detail.mode);
+                } else if (location.pathname.includes('/configure-eventrule/')) {
+                    setConfigureEventRuleViewMode(e.detail.mode);
                 } else if (location.pathname.includes('/configure-service/')) {
                     setConfigureServiceViewMode(e.detail.mode);
                 } else if (location.pathname.includes('/configure-frame/')) {
@@ -310,6 +331,8 @@ const BottomActionBarWrapper: React.FC = () => {
             return servicesViewMode;
         } else if (location.pathname === '/frameengine') {
             return frameEngineViewMode;
+        } else if (location.pathname === '/eventengine') {
+            return eventEngineViewMode;
         } else if (location.pathname === '/payloads') {
             return payloadsViewMode;
         } else if (location.pathname.includes('/configure-device/')) {
@@ -318,6 +341,8 @@ const BottomActionBarWrapper: React.FC = () => {
             return configureJunctionViewMode;
         } else if (location.pathname.includes('/configure-collector/')) {
             return configureCollectorViewMode;
+        } else if (location.pathname.includes('/configure-eventrule/')) {
+            return configureEventRuleViewMode;
         } else if (location.pathname.includes('/configure-service/')) {
             return configureServiceViewMode;
         } else if (location.pathname.includes('/configure-frame/')) {
@@ -351,6 +376,9 @@ const BottomActionBarWrapper: React.FC = () => {
         } else if (location.pathname === '/frameengine') {
             storageKey = 'junctionrelay_frameengine_view_mode';
             setterFunction = setFrameEngineViewMode;
+        } else if (location.pathname === '/eventengine') {
+            storageKey = 'junctionrelay_eventengine_view_mode';
+            setterFunction = setEventEngineViewMode;
         } else if (location.pathname === '/payloads') {
             storageKey = 'junctionrelay_payloads_view_mode';
             setterFunction = setPayloadsViewMode;
@@ -363,6 +391,9 @@ const BottomActionBarWrapper: React.FC = () => {
         } else if (location.pathname.includes('/configure-collector/')) {
             storageKey = 'configure_collector_view_mode';
             setterFunction = setConfigureCollectorViewMode;
+        } else if (location.pathname.includes('/configure-eventrule/')) {
+            storageKey = 'configure_eventrule_view_mode';
+            setterFunction = setConfigureEventRuleViewMode;
         } else if (location.pathname.includes('/configure-service/')) {
             storageKey = 'configure_service_view_mode';
             setterFunction = setConfigureServiceViewMode;
@@ -475,7 +506,31 @@ const BottomActionBarWrapper: React.FC = () => {
                         }
                     ]
                 };
-            } else if (location.pathname.includes('/configure-service/')) {
+            } else if (location.pathname.includes('/configure-eventrule/')) {
+                return {
+                    showBackButton,
+                    showSaveButton: true,
+                    viewModeActions,
+                    heroAction: {
+                        icon: <BugReportIcon />,
+                        label: 'Test Rule',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-test-eventrule'));
+                        }
+                    },
+                    rightSecondaryActions: [
+                        {
+                            icon: <DeleteSweepIcon />,
+                            label: 'Delete',
+                            color: 'error' as const,
+                            onClick: () => {
+                                window.dispatchEvent(new CustomEvent('bottom-action-delete'));
+                            }
+                        }
+                    ]
+                };
+            }
+            else if (location.pathname.includes('/configure-service/')) {
                 return {
                     showBackButton,
                     showSaveButton: true,
@@ -595,20 +650,11 @@ const BottomActionBarWrapper: React.FC = () => {
                                 },
                                 color: 'secondary' as const
                             }
-                            // {
-                            //     icon: <CloudIcon />,
-                            //     label: 'Add Cloud Device',
-                            //     description: 'Register a JunctionRelay cloud device',
-                            //     onClick: () => {
-                            //         window.dispatchEvent(new CustomEvent('bottom-action-add-cloud-device'));
-                            //     },
-                            //     color: 'info' as const
-                            // }
                         ]
                     },
                     rightSecondaryActions: [
                         {
-                            icon: null, // No icon, just text
+                            icon: null,
                             label: 'Scan',
                             showText: true,
                             onClick: () => {
@@ -632,7 +678,7 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: [
                         {
-                            icon: null, // No icon, just text
+                            icon: null,
                             label: 'Test',
                             showText: true,
                             onClick: () => {
@@ -656,7 +702,7 @@ const BottomActionBarWrapper: React.FC = () => {
                     },
                     rightSecondaryActions: [
                         {
-                            icon: null, // No icon, just text
+                            icon: null,
                             label: 'Test',
                             showText: true,
                             onClick: () => {
@@ -678,7 +724,20 @@ const BottomActionBarWrapper: React.FC = () => {
                             window.dispatchEvent(new CustomEvent('bottom-action-add-frame'));
                         }
                     }
-                    // No secondary actions for frame engine
+                };
+
+            case '/eventengine':
+                return {
+                    showBackButton,
+                    showSaveButton: false,
+                    viewModeActions,
+                    heroAction: {
+                        icon: <AddIcon />,
+                        label: 'Add Event Rule',
+                        onClick: () => {
+                            window.dispatchEvent(new CustomEvent('bottom-action-add-eventrule'));
+                        }
+                    }
                 };
 
             case '/payloads':
@@ -693,14 +752,12 @@ const BottomActionBarWrapper: React.FC = () => {
                             window.dispatchEvent(new CustomEvent('bottom-action-add-payload'));
                         }
                     }
-                    // No secondary actions for payloads
                 };
 
             case '/settings':
                 return {
                     showBackButton,
                     showSaveButton: false,
-                    // No view modes for settings
                     rightSecondaryActions: [
                         {
                             icon: <SaveIcon />,
@@ -733,6 +790,17 @@ const BottomActionBarWrapper: React.FC = () => {
     return <BottomActionBar {...getBottomActionConfig()} />;
 };
 
+// Navigation logger component
+const NavigationLogger: React.FC = () => {
+    const location = useLocation();
+
+    useEffect(() => {
+        console.log('🗺️🗺️🗺️ ROUTE CHANGED TO:', location.pathname);
+    }, [location.pathname]);
+
+    return null;
+};
+
 // Main app routes component
 const AppRoutes: React.FC = () => {
     const theme = useTheme();
@@ -744,6 +812,7 @@ const AppRoutes: React.FC = () => {
 
     return (
         <>
+            <NavigationLogger />
             {/* Hide navbar for virtual screen viewer */}
             {!isVirtualScreenRoute && <Navbar />}
             <Container
@@ -766,16 +835,18 @@ const AppRoutes: React.FC = () => {
                     <Route path="/devices" element={<Devices />} />
                     <Route path="/services" element={<Services />} />
                     <Route path="/collectors" element={<Collectors />} />
-                    <Route path="/configure-device/:id" element={<ConfigureDevice />} />
+                    <Route path="/configure-device/:id" element={<ConfigureDevice key={location.pathname} />} />
                     <Route path="/configure-service/:id" element={<ConfigureService />} />
                     <Route path="/configure-collector/:id" element={<ConfigureCollector />} />
+                    <Route path="/configure-eventrule/:id" element={<ConfigureEventRule />} />
                     <Route path="/configure-junction/:id" element={<ConfigureJunction />} />
                     <Route path="/frameengine" element={<FrameEngine />} />
                     <Route path="/configure-frame/:id" element={<ConfigureFrame />} />
+                    <Route path="/eventengine" element={<EventEngine />} />
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
-                    <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewer />} />
-                    <Route path="/device/:deviceId/virtual-screen/fullscreen" element={<VirtualScreenViewer />} />
+                    <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewer key={location.pathname} />} />
+                    <Route path="/device/:deviceId/virtual-screen/fullscreen" element={<VirtualScreenViewer key={location.pathname} />} />
                     <Route path="/hostinfo" element={<HostInfo />} />
                     <Route path="/hostcharts" element={<HostCharts />} />
                     <Route path="/settings" element={<Settings />} />
@@ -879,7 +950,7 @@ const AuthBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         } finally {
             setLoading(false);
         }
-    }, [isVirtualScreenRoute]); // Add isVirtualScreenRoute as dependency
+    }, [isVirtualScreenRoute]);
 
     // Check auth status on route changes, but only after initial auth check
     useEffect(() => {
@@ -1005,15 +1076,17 @@ const AppWithProviders: React.FC = () => {
     return (
         <AuthProvider>
             <Router>
-                <AuthBoundary>
-                    <AppRoutes />
-                </AuthBoundary>
+                <NotificationProvider>
+                    <AuthBoundary>
+                        <AppRoutes />
+                    </AuthBoundary>
+                </NotificationProvider>
             </Router>
         </AuthProvider>
     );
 };
 
-// Main App component - no Clerk provider needed
+// Main App component
 const App: React.FC = () => {
     return <AppWithProviders />;
 };

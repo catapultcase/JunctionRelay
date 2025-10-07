@@ -50,7 +50,7 @@ const Junctions = () => {
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<AlertColor>("success");
     const [detailedConnections, setDetailedConnections] = useState<boolean>(() => {
-        const savedValue = localStorage.getItem('junctions_detailed_connections');
+        const savedValue = localStorage.getItem('junctions_page_detailed_connections');
         return savedValue !== null ? savedValue === 'true' : true;
     });
 
@@ -140,7 +140,7 @@ const Junctions = () => {
     }, [showSnackbar]);
 
     // Service setting change handlers
-    const handleAutostartToggle = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleServiceAutostartToggle = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const newValue = event.target.checked;
         setAutostartEnabled(newValue);
         await updateServiceSetting('junction_autostart_enabled', newValue);
@@ -175,11 +175,6 @@ const Junctions = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array - refreshJunctions is stable
-
-    // Save preferences when they change
-    useEffect(() => {
-        localStorage.setItem('junctions_detailed_connections', detailedConnections.toString());
-    }, [detailedConnections]);
 
     // Refresh only junction status - matches Dashboard pattern with smart comparison
     const refreshJunctionsStatus = useCallback(() => {
@@ -350,6 +345,37 @@ const Junctions = () => {
         } catch (err) {
             console.error("Dashboard toggle error:", err);
             showSnackbar("Error updating junction dashboard status", "error");
+        }
+    }, [junctions, showSnackbar, refreshJunctions]);
+
+    const handleAutoStartToggle = useCallback(async (junctionId: number, autoStartOnLaunch: boolean) => {
+        try {
+            // Find the junction to update
+            const junction = junctions.find(j => j.id === junctionId);
+            if (!junction) {
+                throw new Error("Junction not found");
+            }
+
+            const updatedJunction = {
+                ...junction,
+                autoStartOnLaunch: autoStartOnLaunch
+            };
+
+            const response = await fetch(`/api/junctions/${junctionId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedJunction),
+            });
+
+            if (response.ok) {
+                showSnackbar(`Junction auto-start ${autoStartOnLaunch ? 'enabled' : 'disabled'}`, "success");
+                await refreshJunctions();
+            } else {
+                throw new Error("Failed to update junction");
+            }
+        } catch (err) {
+            console.error("Auto-start toggle error:", err);
+            showSnackbar("Error updating junction auto-start status", "error");
         }
     }, [junctions, showSnackbar, refreshJunctions]);
 
@@ -562,7 +588,7 @@ const Junctions = () => {
                                 control={
                                     <Switch
                                         checked={autostartEnabled}
-                                        onChange={handleAutostartToggle}
+                                        onChange={handleServiceAutostartToggle}
                                         disabled={loadingSettings}
                                         color="primary"
                                     />
@@ -612,6 +638,7 @@ const Junctions = () => {
                     onDeleteJunction={handleDeleteJunction}
                     onUpdateSortOrders={handleUpdateSortOrders}
                     onJunctionAdded={refreshJunctions}
+                    onAutoStartToggle={handleAutoStartToggle}
                     detailedConnections={detailedConnections}
                     setDetailedConnections={setDetailedConnections}
                     localStorageKey="junctions_visible_cols"
@@ -619,6 +646,8 @@ const Junctions = () => {
                     showAddButton={false}
                     showImportButton={false}
                     viewModeStorageKey="junctions_page_view_mode"
+                    showRunningOnlyStorageKey="junctions_page_show_running_only"
+                    detailedConnectionsStorageKey="junctions_page_detailed_connections"
                 />
             )}
 

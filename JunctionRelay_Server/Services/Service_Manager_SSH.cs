@@ -72,6 +72,9 @@ namespace JunctionRelayServer.Services
             public volatile bool LastHealthCheckSuccess = false;
             public DateTime LastHealthCheckSent = DateTime.MinValue;
             public int ConsecutiveFailures { get; set; } = 0;
+
+            // Mark if this is a collector-managed connection (not tied to a device)
+            public bool IsCollectorManaged { get; set; } = false;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -162,16 +165,26 @@ namespace JunctionRelayServer.Services
                 var deviceKey = kvp.Key;
                 var connection = kvp.Value;
 
+                // Skip collector-managed connections - they manage their own lifecycle
+                if (connection.IsCollectorManaged)
+                {
+                    // However, still check if the connection is actually dead and clean it up
+                    if (connection.SshClient?.IsConnected == false)
+                    {
+                        disconnectedDevices.Add(deviceKey);
+                    }
+                    continue;
+                }
+
                 // Check if connection is still valid
                 if (!connection.IsConnected || connection.SshClient?.IsConnected != true)
                 {
-                    Console.WriteLine($"[SSH Service] 🔌 Connection lost for device {connection.DeviceName} ({deviceKey})");
                     disconnectedDevices.Add(deviceKey);
                 }
                 // Check for excessive failures
                 else if (connection.ConsecutiveFailures >= 5)
                 {
-                    Console.WriteLine($"[SSH Service] 🚨 Too many consecutive failures for {connection.DeviceName}, disconnecting");
+                    Console.WriteLine($"[SSH Service] ❌ Too many consecutive failures for {connection.DeviceName}, disconnecting");
                     disconnectedDevices.Add(deviceKey);
                 }
             }
@@ -192,10 +205,15 @@ namespace JunctionRelayServer.Services
                 var deviceKey = kvp.Key;
                 var connection = kvp.Value;
 
+                // Don't cleanup collector-managed connections automatically
+                if (connection.IsCollectorManaged)
+                {
+                    continue;
+                }
+
                 // Close connections that have been idle for too long
                 if ((now - connection.LastUsed).TotalMilliseconds > _maxIdleTimeMs)
                 {
-                    Console.WriteLine($"[SSH Service] ⏰ Closing idle connection to {connection.DeviceName}");
                     idleConnections.Add(deviceKey);
                 }
             }
@@ -204,11 +222,124 @@ namespace JunctionRelayServer.Services
             await Task.WhenAll(disconnectTasks);
         }
 
+        // Connects to a device using the provided credentials (for collectors)
+        public async Task<bool> ConnectDeviceAsync(string host, int port, string username, string credential, bool useKeyAuth)
+        {
+            var deviceKey = $"{host}:{port}:{username}";
+
+            try
+            {
+                Console.WriteLine($"[SSH Service] Attempting to connect to {deviceKey} (KeyAuth: {useKeyAuth})");
+
+                // Check if already connected
+                if (_sshConnections.TryGetValue(deviceKey, out var existingConnection))
+                {
+                    // If it's a device-managed connection and it's healthy, reuse it
+                    if (!existingConnection.IsCollectorManaged &&
+                        existingConnection.IsConnected &&
+                        existingConnection.SshClient?.IsConnected == true)
+                    {
+                        Console.WriteLine($"[SSH Service] Reusing existing device heartbeat connection for {deviceKey}");
+                        existingConnection.LastUsed = DateTime.UtcNow;
+                        return true;
+                    }
+
+                    // If it's collector-managed and healthy, reuse it
+                    if (existingConnection.IsCollectorManaged &&
+                        existingConnection.IsConnected &&
+                        existingConnection.SshClient?.IsConnected == true)
+                    {
+                        Console.WriteLine($"[SSH Service] Device {deviceKey} already connected (collector-managed)");
+                        existingConnection.LastUsed = DateTime.UtcNow;
+                        return true;
+                    }
+
+                    // Connection exists but is unhealthy, disconnect and recreate
+                    Console.WriteLine($"[SSH Service] Existing connection to {deviceKey} is unhealthy, reconnecting");
+                    await DisconnectDeviceAsync(deviceKey);
+                }
+
+                // Prepare authentication method
+                AuthenticationMethod authMethod;
+
+                if (useKeyAuth)
+                {
+                    try
+                    {
+                        using var keyStream = new MemoryStream(Encoding.UTF8.GetBytes(credential));
+                        var privateKeyFile = new PrivateKeyFile(keyStream);
+                        authMethod = new PrivateKeyAuthenticationMethod(username, privateKeyFile);
+                        Console.WriteLine($"[SSH Service] Using private key authentication for {deviceKey}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SSH Service] ❌ Failed to load private key for {deviceKey}: {ex.Message}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    authMethod = new PasswordAuthenticationMethod(username, credential);
+                    Console.WriteLine($"[SSH Service] Using password authentication for {deviceKey}");
+                }
+
+                // Create SSH connection info
+                var connectionInfo = new Renci.SshNet.ConnectionInfo(host, port, username, authMethod)
+                {
+                    Timeout = TimeSpan.FromMilliseconds(_connectionTimeoutMs)
+                };
+
+                var sshClient = new SshClient(connectionInfo);
+                var connection = new DeviceSshConnection
+                {
+                    SshClient = sshClient,
+                    DeviceId = "collector",
+                    DeviceName = deviceKey,
+                    IPAddress = host,
+                    Username = username,
+                    Port = port,
+                    UseKeyAuth = useKeyAuth,
+                    IsCollectorManaged = true,
+                    LastReconnectAttempt = DateTime.UtcNow
+                };
+
+                // Connect
+                using var connectCts = new CancellationTokenSource(_connectionTimeoutMs);
+                await Task.Run(() => sshClient.Connect(), connectCts.Token);
+
+                if (sshClient.IsConnected)
+                {
+                    connection.IsConnected = true;
+                    connection.ConnectedAt = DateTime.UtcNow;
+                    connection.LastUsed = DateTime.UtcNow;
+                    connection.ReconnectAttempts = 0;
+                    connection.ConsecutiveFailures = 0;
+                    connection.LastError = null;
+
+                    _sshConnections[deviceKey] = connection;
+
+                    Console.WriteLine($"[SSH Service] ✅ Successfully connected to {deviceKey}");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"[SSH Service] ❌ Failed to connect to {deviceKey}");
+                    sshClient.Dispose();
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SSH Service] ❌ Error connecting to {deviceKey}: {ex.Message}");
+                return false;
+            }
+        }
+
         private async Task ConnectToDeviceAsync(Model_Device device, CancellationToken stoppingToken)
         {
             var deviceKey = $"{device.IPAddress}:{device.SshPort ?? 22}:{device.SshUsername}";
 
-            Console.WriteLine($"[SSH Service] 🔄 Connecting to {device.Name} ({deviceKey})");
+            Console.WriteLine($"[SSH Service] Connecting to {device.Name} ({deviceKey})");
 
             try
             {
@@ -225,7 +356,6 @@ namespace JunctionRelayServer.Services
                         using var keyStream = new MemoryStream(Encoding.UTF8.GetBytes(decryptedKey));
                         var privateKeyFile = new PrivateKeyFile(keyStream);
                         authMethod = new PrivateKeyAuthenticationMethod(device.SshUsername, privateKeyFile);
-                        Console.WriteLine($"[SSH Service] 🔑 Using private key authentication for device '{device.Name}'");
                     }
                     catch (Exception ex)
                     {
@@ -237,7 +367,6 @@ namespace JunctionRelayServer.Services
                 {
                     var decryptedPassword = await _secretsService.DecryptSecretAsync(device.SshPassword);
                     authMethod = new PasswordAuthenticationMethod(device.SshUsername, decryptedPassword);
-                    Console.WriteLine($"[SSH Service] 🔐 Using password authentication for device '{device.Name}'");
                 }
                 else
                 {
@@ -267,6 +396,7 @@ namespace JunctionRelayServer.Services
                     UseKeyAuth = device.UseSshKeyAuth,
                     EncryptedPrivateKey = device.SshPrivateKey,
                     EncryptedPassword = device.SshPassword,
+                    IsCollectorManaged = false,
                     LastReconnectAttempt = DateTime.UtcNow
                 };
 
@@ -307,7 +437,6 @@ namespace JunctionRelayServer.Services
 
                         if (attempt < retries)
                         {
-                            Console.WriteLine($"[SSH Service] ⚠️ SSH connection attempt {attempt} failed for device '{device.Name}': {ex.Message}");
                             await Task.Delay(1000, stoppingToken);
                         }
                     }
@@ -346,7 +475,6 @@ namespace JunctionRelayServer.Services
                 !connection.IsConnected ||
                 connection.SshClient?.IsConnected != true)
             {
-                Console.WriteLine($"[SSH Service] ❌ Device {deviceKey} not connected for health check");
                 return (false, 0, null);
             }
 
@@ -361,8 +489,6 @@ namespace JunctionRelayServer.Services
                 // Use default 'uptime' if command is empty
                 var cmdToExecute = !string.IsNullOrWhiteSpace(command) ? command : "uptime";
 
-                Console.WriteLine($"[SSH Service] 📤 Executing SSH command on device '{connection.DeviceName}': {cmdToExecute}");
-
                 using var sshCommand = connection.SshClient!.CreateCommand(cmdToExecute);
                 sshCommand.CommandTimeout = TimeSpan.FromMilliseconds(_healthCheckTimeoutMs);
 
@@ -370,10 +496,6 @@ namespace JunctionRelayServer.Services
                 sw.Stop();
 
                 var duration = (int)sw.ElapsedMilliseconds;
-
-                // Show first 100 chars of output for debugging
-                var outputPreview = result.Length > 100 ? result.Substring(0, 100) + "..." : result;
-                Console.WriteLine($"[SSH Service] 📥 SSH command result for device '{connection.DeviceName}' ({duration}ms): {outputPreview?.TrimEnd()}");
 
                 // Check if command executed successfully (exit status 0)
                 var commandExitStatus = sshCommand.ExitStatus ?? -1;
@@ -388,7 +510,6 @@ namespace JunctionRelayServer.Services
                 // If no result returned, consider it a failure
                 if (string.IsNullOrWhiteSpace(result))
                 {
-                    Console.WriteLine($"[SSH Service] ❌ SSH command returned empty result for device '{connection.DeviceName}'");
                     connection.ConsecutiveFailures++;
                     connection.LastHealthCheckSuccess = false;
                     return (false, duration, null);
@@ -400,14 +521,12 @@ namespace JunctionRelayServer.Services
 
                 if (success)
                 {
-                    Console.WriteLine($"[SSH Service] ✅ SSH health check for device '{connection.DeviceName}' contains expected value '{expectedVal}'");
                     connection.ConsecutiveFailures = 0;
                     connection.LastHealthCheckSuccess = true;
                 }
                 else
                 {
                     Console.WriteLine($"[SSH Service] ❌ SSH command output for '{connection.DeviceName}' doesn't contain expected value '{expectedVal}'");
-                    Console.WriteLine($"[SSH Service] 📄 Full output: {result.Substring(0, Math.Min(200, result.Length))}");
                     connection.ConsecutiveFailures++;
                     connection.LastHealthCheckSuccess = false;
                 }
@@ -432,7 +551,6 @@ namespace JunctionRelayServer.Services
                 !connection.IsConnected ||
                 connection.SshClient?.IsConnected != true)
             {
-                Console.WriteLine($"[SSH Service] ❌ Device {deviceKey} not connected for command execution");
                 return (false, 0, null, -1);
             }
 
@@ -448,8 +566,6 @@ namespace JunctionRelayServer.Services
                 // Update last used timestamp
                 connection.LastUsed = DateTime.UtcNow;
 
-                Console.WriteLine($"[SSH Service] 📤 Executing SSH command on device '{connection.DeviceName}': {command}");
-
                 using var sshCommand = connection.SshClient!.CreateCommand(command);
                 sshCommand.CommandTimeout = TimeSpan.FromMilliseconds(timeoutMs);
 
@@ -458,8 +574,6 @@ namespace JunctionRelayServer.Services
 
                 var duration = (int)sw.ElapsedMilliseconds;
                 var exitStatus = sshCommand.ExitStatus ?? -1;
-
-                Console.WriteLine($"[SSH Service] 📥 SSH command completed for device '{connection.DeviceName}' ({duration}ms) - Exit Status: {exitStatus}");
 
                 return (exitStatus == 0, duration, result, exitStatus);
             }
@@ -498,6 +612,7 @@ namespace JunctionRelayServer.Services
                     ReconnectAttempts = c.ReconnectAttempts,
                     ConsecutiveFailures = c.ConsecutiveFailures,
                     UseKeyAuth = c.UseKeyAuth,
+                    IsCollectorManaged = c.IsCollectorManaged,
                     LastError = c.LastError?.Message
                 });
         }
@@ -520,6 +635,7 @@ namespace JunctionRelayServer.Services
                     ReconnectAttempts = c.ReconnectAttempts,
                     ConsecutiveFailures = c.ConsecutiveFailures,
                     UseKeyAuth = c.UseKeyAuth,
+                    IsCollectorManaged = c.IsCollectorManaged,
                     LastError = c.LastError?.Message,
                     LastReconnectAttempt = c.LastReconnectAttempt
                 });
@@ -584,8 +700,6 @@ namespace JunctionRelayServer.Services
                     }
 
                     connection.SshClient?.Dispose();
-
-                    Console.WriteLine($"[SSH Service] 🔌 Disconnected from {connection.DeviceName} ({deviceKey})");
                 }
                 catch (Exception ex)
                 {

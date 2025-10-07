@@ -5,6 +5,8 @@
 
 using Dapper;
 using JunctionRelayServer.Models;
+using JunctionRelayServer.Utils;
+using Microsoft.AspNetCore.Hosting;
 using System.Data;
 using System.Text.Json;
 
@@ -13,10 +15,17 @@ namespace JunctionRelayServer.Services
     public class Service_Database_Manager_FrameEngine
     {
         private readonly IDbConnection _db;
+        private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly DatabasePathProvider _dbPathProvider;
 
-        public Service_Database_Manager_FrameEngine(IDbConnection db)
+        public Service_Database_Manager_FrameEngine(
+            IDbConnection db,
+            IWebHostEnvironment webHostEnvironment,
+            DatabasePathProvider dbPathProvider)
         {
             _db = db;
+            _webHostEnvironment = webHostEnvironment;
+            _dbPathProvider = dbPathProvider;
         }
 
         public async Task<IEnumerable<Model_Frame_Layout>> GetAllFrameLayoutsAsync()
@@ -82,34 +91,35 @@ namespace JunctionRelayServer.Services
             frameLayout.LastModified = DateTime.UtcNow;
 
             const string sql = @"
-        UPDATE FrameLayouts
-        SET 
-          DisplayName           = @DisplayName,
-          Description           = @Description,
-          LayoutType            = @LayoutType,
-          IsTemplate            = @IsTemplate,
-          IsDraft               = @IsDraft,
-          IsPublished           = @IsPublished,
-          LastModified          = @LastModified,
-          CreatedBy             = @CreatedBy,
-          Version               = @Version,
-          BackgroundType        = @BackgroundType,
-          BackgroundColor       = @BackgroundColor,
-          BackgroundImageUrl    = @BackgroundImageUrl,
-          BackgroundImageData   = @BackgroundImageData,
-          BackgroundOpacity     = @BackgroundOpacity,
-          Width                 = @Width,
-          Height                = @Height,
-          Orientation           = @Orientation,
-          RiveFile              = @RiveFile,
-          JsonFrameConfig       = @JsonFrameConfig,
-          JsonFrameElements     = @JsonFrameElements,
-          HasThumbnail          = @HasThumbnail,
-          ThumbnailPath         = @ThumbnailPath,
-          ThumbnailGeneratedAt  = @ThumbnailGeneratedAt,
-          ThumbnailFormat       = @ThumbnailFormat,
-          ThumbnailOverride     = @ThumbnailOverride
-        WHERE Id = @Id";
+                UPDATE FrameLayouts
+                SET 
+                  DisplayName           = @DisplayName,
+                  Description           = @Description,
+                  LayoutType            = @LayoutType,
+                  IsTemplate            = @IsTemplate,
+                  IsDraft               = @IsDraft,
+                  IsPublished           = @IsPublished,
+                  LastModified          = @LastModified,
+                  CreatedBy             = @CreatedBy,
+                  Version               = @Version,
+                  BackgroundType        = @BackgroundType,
+                  BackgroundColor       = @BackgroundColor,
+                  BackgroundImageUrl    = @BackgroundImageUrl,
+                  BackgroundImageData   = @BackgroundImageData,
+                  BackgroundOpacity     = @BackgroundOpacity,
+                  Width                 = @Width,
+                  Height                = @Height,
+                  Orientation           = @Orientation,
+                  RiveFile              = @RiveFile,
+                  JsonFrameConfig       = @JsonFrameConfig,
+                  JsonFrameConfigRuntime = @JsonFrameConfigRuntime,
+                  JsonFrameElements     = @JsonFrameElements,
+                  HasThumbnail          = @HasThumbnail,
+                  ThumbnailPath         = @ThumbnailPath,
+                  ThumbnailGeneratedAt  = @ThumbnailGeneratedAt,
+                  ThumbnailFormat       = @ThumbnailFormat,
+                  ThumbnailOverride     = @ThumbnailOverride
+                WHERE Id = @Id";
 
             var affected = await _db.ExecuteAsync(sql, frameLayout);
             return affected > 0;
@@ -173,24 +183,66 @@ namespace JunctionRelayServer.Services
         {
             try
             {
-                var defaults = GetDefaultFrameTemplates();
+                // The service handles its own path resolution
+                var contentRootPath = _webHostEnvironment.ContentRootPath;
+                var dbPath = _dbPathProvider.DbPath;
+                var dataDir = Path.GetDirectoryName(dbPath) ?? throw new InvalidOperationException("Invalid database path");
+                var riveUserPath = Path.Combine(dataDir, "frameengine", "rive");
+                var templatePackagesPath = Path.Combine(contentRootPath, "frameengine", "template-packages");
+
+                if (!Directory.Exists(templatePackagesPath))
+                {
+                    Console.WriteLine($"Template packages directory not found: {templatePackagesPath}");
+                    return false;
+                }
+
+                var zipFiles = Directory.GetFiles(templatePackagesPath, "*.zip");
+                if (zipFiles.Length == 0)
+                {
+                    Console.WriteLine("No template ZIP files found");
+                    return false;
+                }
+
                 var anyChanged = false;
 
-                foreach (var template in defaults)
+                foreach (var zipFile in zipFiles)
                 {
-                    var existing = await GetFrameLayoutByNameAsync(template.DisplayName!);
-                    if (existing == null)
+                    try
                     {
-                        await CreateFrameLayoutAsync(template);
-                        anyChanged = true;
+                        var templateName = Path.GetFileNameWithoutExtension(zipFile);
+
+                        // Check if template already exists
+                        var existing = await GetFrameLayoutByNameAsync(templateName);
+                        if (existing != null && existing.IsTemplate)
+                        {
+                            Console.WriteLine($"Template '{templateName}' already exists, skipping");
+                            continue;
+                        }
+
+                        Console.WriteLine($"Importing template: {templateName}");
+
+                        // Use existing import method with internal path resolution
+                        var zipData = await File.ReadAllBytesAsync(zipFile);
+                        var layoutId = await ImportFrameLayoutPackageAsync(zipData, contentRootPath, riveUserPath, dbPath);
+
+                        // Convert imported layout to template
+                        var importedLayout = await GetFrameLayoutByIdAsync(layoutId);
+                        if (importedLayout != null)
+                        {
+                            importedLayout.DisplayName = templateName;
+                            importedLayout.IsTemplate = true;
+                            importedLayout.IsDraft = false;
+                            importedLayout.IsPublished = true;
+                            importedLayout.CreatedBy = "JunctionRelay";
+                            await UpdateFrameLayoutAsync(importedLayout);
+
+                            Console.WriteLine($"Successfully restored template: {templateName}");
+                            anyChanged = true;
+                        }
                     }
-                    else if (existing.IsTemplate)
+                    catch (Exception ex)
                     {
-                        // Update the existing template in-place
-                        template.Id = existing.Id;
-                        template.Created = existing.Created; // preserve creation time
-                        await UpdateFrameLayoutAsync(template);
-                        anyChanged = true;
+                        Console.WriteLine($"Error importing template {Path.GetFileName(zipFile)}: {ex.Message}");
                     }
                 }
 
@@ -198,7 +250,7 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Error restoring default frame templates: {ex.Message}", ex);
+                throw new InvalidOperationException($"Error restoring templates: {ex.Message}", ex);
             }
         }
 
@@ -599,117 +651,8 @@ namespace JunctionRelayServer.Services
             return Path.Combine(dataDir, "frameengine", "thumbnails");
         }
 
-        private static List<Model_Frame_Layout> GetDefaultFrameTemplates()
-        {
-            var now = DateTime.UtcNow;
 
-            return new List<Model_Frame_Layout>
-    {
-        new Model_Frame_Layout
-        {
-            DisplayName = "Pre-Rendered Image",
-            Description = "Static image background with optional sensor/text overlays",
-            LayoutType = "PRE_RENDERED_IMAGE",
-            IsTemplate = true,
-            IsDraft = false,
-            IsPublished = true,
-            Created = now,
-            LastModified = now,
-            CreatedBy = "JunctionRelay",
-            Version = "1.0",
-
-            // Background defaults
-            BackgroundType = "color",
-            BackgroundColor = "#FFFFFF",
-            BackgroundOpacity = 1.0,
-
-            // Dimensions/orientation
-            Width = 792,
-            Height = 272,
-            Orientation = "landscape",
-
-            // Thumbnail settings
-            HasThumbnail = true,
-            ThumbnailPath = "/templates/jr_static.png",
-            ThumbnailGeneratedAt = now,
-            ThumbnailFormat = "png",
-            ThumbnailOverride = false, // Templates use built-in thumbnails
-
-            // Elements
-            JsonFrameConfig = @"",
-            JsonFrameElements = @""
-        },
-        new Model_Frame_Layout
-        {
-            DisplayName = "JR Cyber",
-            Description = "Vertical UI for JunctionRelay Jr Demo on Waveshare 400x1280 Display",
-            LayoutType = "COMPOSITE_MODE",
-            IsTemplate = true,
-            IsDraft = false,
-            IsPublished = true,
-            Created = now,
-            LastModified = now,
-            CreatedBy = "JunctionRelay",
-            Version = "1.0",
-
-            BackgroundType = "rive",
-            BackgroundColor = "#FFFFFF",
-            BackgroundOpacity = 1.0,
-
-            Width = 400,
-            Height = 1280,
-            Orientation = "portrait",
-
-            RiveFile = "jr_cyber.riv",
-
-            // Thumbnail settings
-            HasThumbnail = true,
-            ThumbnailPath = "/templates/jr_cyber.png",
-            ThumbnailGeneratedAt = now,
-            ThumbnailFormat = "png",
-            ThumbnailOverride = false, // Templates use built-in thumbnails
-           
-            // Elements (keeping your existing JSON)
-            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""4"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-21T21:40:42.873Z"",""canvas"":{""width"":400,""height"":1280,""orientation"":""portrait""},""background"":{""type"":""rive"",""color"":""#ff00ae"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_cyber.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""Signal"",""inputNames"":[],""inputs"":[]},{""name"":""Bar2"",""inputNames"":[""Sensor2_Value""],""inputs"":[{""name"":""Sensor2_Value"",""type"":""number"",""currentValue"":30,""ref"":{""type"":56,""runtimeInput"":{}}}]},{""name"":""Bar1"",""inputNames"":[""Sensor1_Value""],""inputs"":[{""name"":""Sensor1_Value"",""type"":""number"",""currentValue"":40,""ref"":{""type"":56,""runtimeInput"":{}}}]}],""lastUpdate"":""2025-08-21T21:40:33.595Z"",""metadata"":{""totalInputs"":2,""inputTypeBreakdown"":{""number"":2},""discoveryAttempts"":7,""lastSuccessfulDiscovery"":""2025-08-21T21:40:33.595Z""},""activeStateMachine"":""Signal"",""globalInputMappings"":{}}},""frameElements"":[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T21:40:42.873Z""}]}",
-            JsonFrameElements = @"[{""id"":""element_1755458946580_nnmkuo8bi"",""type"":""sensor"",""position"":{""x"":146,""y"":230.68,""width"":224.5,""height"":76.89},""display"":{""visible"":true,""zIndex"":1,""order"":0},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""CPU Load"",""sensorTag"":""cpu_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755462732822_9fa8z0nuz"",""type"":""sensor"",""position"":{""x"":146,""y"":360.14,""width"":641.35,""height"":85.73},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""placeholderValue"":""62"",""placeholderUnit"":""%"",""fontSize"":52,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Memory Load"",""sensorTag"":""mem_load""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755459706258_70bus86nf"",""type"":""text"",""position"":{""x"":27,""y"":236.51,""width"":127.8,""height"":73.86},""display"":{""visible"":true,""zIndex"":1,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755460606505_nf1cbp2n5"",""type"":""text"",""position"":{""x"":27,""y"":376.88,""width"":143.1,""height"":61.11},""display"":{""visible"":true,""zIndex"":1,""order"":3},""properties"":{""text"":""MEM:"",""fontSize"":40,""fontWeight"":""900"",""textAlign"":""left"",""color"":""#929e00"",""backgroundColor"":""transparent"",""fontFamily"":""Orbitron""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715808821_6j4dgyzcp"",""type"":""sensor"",""position"":{""x"":94.6,""y"":606.37,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":4},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Read"",""sensorTag"":""cache_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715826121_ykjzyte4k"",""type"":""sensor"",""position"":{""x"":96.75,""y"":672.27,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":5},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Cache Write"",""sensorTag"":""cache_write""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715848043_qifk78vnw"",""type"":""sensor"",""position"":{""x"":91.65,""y"":1138.88,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":6},""properties"":{""placeholderValue"":""66"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Read"",""sensorTag"":""array_read""},""lastModified"":""2025-08-21T21:40:42.873Z""},{""id"":""element_1755715861118_icvue5bep"",""type"":""sensor"",""position"":{""x"":102.73,""y"":1204.78,""width"":302.27,""height"":74.34},""display"":{""visible"":true,""zIndex"":1,""order"":7},""properties"":{""placeholderValue"":""56"",""placeholderUnit"":""%"",""fontSize"":42,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#929e00"",""textAlign"":""left"",""fontFamily"":""Orbitron"",""fontWeight"":""900"",""placeholderSensorLabel"":""Array Write"",""sensorTag"":""array_write""},""lastModified"":""2025-08-21T21:40:42.873Z""}]"
-        },
-        new Model_Frame_Layout
-        {
-            DisplayName = "JR Pixels",
-            Description = "Horizontal UI",
-            LayoutType = "COMPOSITE_MODE",
-            IsTemplate = true,
-            IsDraft = false,
-            IsPublished = true,
-            Created = now,
-            LastModified = now,
-            CreatedBy = "JunctionRelay",
-            Version = "1.0",
-
-            BackgroundType = "rive",
-            BackgroundColor = "#000000",
-            BackgroundOpacity = 1.0,
-
-            Width = 1920,
-            Height = 1080,
-            Orientation = "landscape",
-
-            RiveFile = "jr_pixels.riv",
-
-            // Thumbnail settings
-            HasThumbnail = true,
-            ThumbnailPath = "/templates/jr_pixels.png",
-            ThumbnailGeneratedAt = now,
-            ThumbnailFormat = "png",
-            ThumbnailOverride = false, // Templates use built-in thumbnails
-
-            JsonFrameConfig = @"{""type"":""rive_config"",""screenId"":""9"",""frameConfig"":{""version"":""1.0"",""lastConfigUpdate"":""2025-08-22T22:57:04.211Z"",""canvas"":{""width"":1920,""height"":1080,""orientation"":""landscape""},""background"":{""type"":""rive"",""color"":""#000000"",""hasImageData"":false,""opacity"":1},""rive"":{""enabled"":true,""file"":""jr_pixels.riv"",""inputs"":{},""settings"":{""fit"":""cover"",""alignment"":""center"",""autoplay"":true,""loop"":true},""discovery"":{""machines"":[{""name"":""State Machine 1"",""inputNames"":[],""inputs"":[]}],""lastUpdate"":""2025-08-22T22:57:03.715Z"",""metadata"":{""totalInputs"":0,""inputTypeBreakdown"":{},""discoveryAttempts"":6,""lastSuccessfulDiscovery"":""2025-08-22T22:57:03.715Z""},""activeStateMachine"":""State Machine 1"",""globalInputMappings"":{}}},""frameElements"":[{""id"":""element_1755900154199_h43camr7v"",""type"":""sensor"",""position"":{""x"":592.28,""y"":-6.87,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""CPU: "",""sensorTag"":""cpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755900570540_7wfmrnmgn"",""type"":""sensor"",""position"":{""x"":593.84,""y"":233.27,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""GPU: "",""sensorTag"":""gpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902392609_pvtzuh8q7"",""type"":""text"",""position"":{""x"":107.39,""y"":2.34,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":2,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902428753_npkmxjz3u"",""type"":""text"",""position"":{""x"":113.47,""y"":240.31,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":3,""order"":3},""properties"":{""text"":""GPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""}]}",
-            JsonFrameElements = @"[{""id"":""element_1755900154199_h43camr7v"",""type"":""sensor"",""position"":{""x"":592.28,""y"":-6.87,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":0,""order"":0},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""CPU: "",""sensorTag"":""cpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755900570540_7wfmrnmgn"",""type"":""sensor"",""position"":{""x"":593.84,""y"":233.27,""width"":900.68,""height"":367.61},""display"":{""visible"":true,""zIndex"":1,""order"":1},""properties"":{""sensorName"":""New Sensor"",""placeholderValue"":""40"",""placeholderUnit"":""C"",""fontSize"":120,""showUnit"":true,""showLabel"":false,""backgroundColor"":""transparent"",""textColor"":""#ffffff"",""textAlign"":""left"",""fontFamily"":""Press Start 2P"",""placeholderSensorLabel"":""GPU: "",""sensorTag"":""gpu_temp""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902392609_pvtzuh8q7"",""type"":""text"",""position"":{""x"":107.39,""y"":2.34,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":2,""order"":2},""properties"":{""text"":""CPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.211Z""},{""id"":""element_1755902428753_npkmxjz3u"",""type"":""text"",""position"":{""x"":113.47,""y"":240.31,""width"":720.84,""height"":357.59},""display"":{""visible"":true,""zIndex"":3,""order"":3},""properties"":{""text"":""GPU:"",""fontSize"":120,""fontWeight"":""normal"",""textAlign"":""left"",""color"":""#ffffff"",""backgroundColor"":""transparent"",""fontFamily"":""Press Start 2P""},""lastModified"":""2025-08-22T22:57:04.212Z""}]"
-        }
-    };
-        }
-
-        /// Check if a template thumbnail exists in the application's template directory
+        // Check if a template thumbnail exists in the application's template directory
 
         private static bool HasTemplateThumbnail(string templateFileName)
         {

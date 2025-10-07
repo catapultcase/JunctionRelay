@@ -198,6 +198,16 @@ namespace JunctionRelayServer.Controllers
                     }
                 }
 
+                // NEW: Handle runtime config
+                if (request.JsonFrameConfigRuntime != null)
+                {
+                    var sanitizedRuntimeConfig = SanitizeJson(request.JsonFrameConfigRuntime);
+                    if (sanitizedRuntimeConfig != null)
+                    {
+                        existing.JsonFrameConfigRuntime = sanitizedRuntimeConfig;
+                    }
+                }
+
                 if (request.JsonFrameElements != null)
                     existing.JsonFrameElements = SanitizeJson(request.JsonFrameElements) ?? existing.JsonFrameElements;
 
@@ -777,31 +787,31 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
+                Console.WriteLine($"[DEBUG] GetThumbnail called for ID: {id}");
+
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
+                {
+                    Console.WriteLine($"[DEBUG] Frame layout with ID {id} not found in database");
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
+                }
+
+                Console.WriteLine($"[DEBUG] Frame layout found - HasThumbnail: {frameLayout.HasThumbnail}, ThumbnailPath: '{frameLayout.ThumbnailPath}', IsTemplate: {frameLayout.IsTemplate}");
 
                 if (!frameLayout.HasThumbnail || string.IsNullOrEmpty(frameLayout.ThumbnailPath))
+                {
+                    Console.WriteLine($"[DEBUG] No thumbnail available - HasThumbnail: {frameLayout.HasThumbnail}, ThumbnailPath null/empty: {string.IsNullOrEmpty(frameLayout.ThumbnailPath)}");
                     return NotFound(new { message = "No thumbnail available for this frame layout" });
-
-                string thumbnailPath;
-
-                // Handle template thumbnails vs user thumbnails
-                if (frameLayout.IsTemplate)
-                {
-                    // Template thumbnail - serve from application templates folder
-                    var fileName = Path.GetFileName(frameLayout.ThumbnailPath);
-                    var templatesPath = Path.Combine(_webHostEnvironment.ContentRootPath, "frameengine", "templates");
-                    thumbnailPath = Path.Combine(templatesPath, fileName);
                 }
-                else
-                {
-                    // User thumbnail - serve from AppData thumbnails folder
-                    thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
-                }
+
+                // All thumbnails are now served from the data directory
+                var thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
+                Console.WriteLine($"[DEBUG] Resolved thumbnail path: '{thumbnailPath}'");
 
                 if (!System.IO.File.Exists(thumbnailPath))
                 {
+                    Console.WriteLine($"[DEBUG] Thumbnail file does not exist at: '{thumbnailPath}'");
+
                     // File missing, update database
                     frameLayout.HasThumbnail = false;
                     frameLayout.ThumbnailPath = null;
@@ -809,7 +819,10 @@ namespace JunctionRelayServer.Controllers
                     return NotFound(new { message = "Thumbnail file not found" });
                 }
 
+                Console.WriteLine($"[DEBUG] Thumbnail file exists, reading file...");
                 var fileBytes = await System.IO.File.ReadAllBytesAsync(thumbnailPath);
+                Console.WriteLine($"[DEBUG] File read successfully, size: {fileBytes.Length} bytes");
+
                 var contentType = frameLayout.ThumbnailFormat switch
                 {
                     "jpg" or "jpeg" => "image/jpeg",
@@ -817,10 +830,13 @@ namespace JunctionRelayServer.Controllers
                     _ => "image/png"
                 };
 
+                Console.WriteLine($"[DEBUG] Serving thumbnail with content type: {contentType}");
                 return File(fileBytes, contentType, $"thumbnail-{id}.{frameLayout.ThumbnailFormat}");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[DEBUG] Exception in GetThumbnail: {ex.Message}");
+                Console.WriteLine($"[DEBUG] Stack trace: {ex.StackTrace}");
                 return StatusCode(500, new { message = "Error retrieving thumbnail", error = ex.Message });
             }
         }
@@ -874,6 +890,7 @@ namespace JunctionRelayServer.Controllers
                 BackgroundOpacity = frameLayout.BackgroundOpacity,
                 RiveFile = frameLayout.RiveFile,
                 JsonFrameConfig = frameLayout.JsonFrameConfig,
+                JsonFrameConfigRuntime = frameLayout.JsonFrameConfigRuntime,
                 JsonFrameElements = frameLayout.JsonFrameElements,
                 Created = frameLayout.Created,
                 LastModified = frameLayout.LastModified,
@@ -1073,6 +1090,7 @@ namespace JunctionRelayServer.Controllers
 
         public string? RiveFile { get; set; }
         public string? JsonFrameConfig { get; set; }
+        public string? JsonFrameConfigRuntime { get; set; }
         public string? JsonFrameElements { get; set; }
 
         public DateTime Created { get; set; }
@@ -1142,6 +1160,7 @@ namespace JunctionRelayServer.Controllers
 
         public string? RiveFile { get; set; }
         public string? JsonFrameConfig { get; set; }
+        public string? JsonFrameConfigRuntime { get; set; }  // NEW
         public string? JsonFrameElements { get; set; }
         public bool? ThumbnailOverride { get; set; }
     }

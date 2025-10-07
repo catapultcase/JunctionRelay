@@ -40,7 +40,7 @@ namespace JunctionRelayServer.Models
         public required string Category { get; set; }
         public required string Unit { get; set; }
         public required string Value { get; set; }
-        public required int DecimalPlaces { get; set; } 
+        public required int DecimalPlaces { get; set; }
         public required string SensorTag { get; set; }
 
         // Optional properties (nullable types)
@@ -68,6 +68,8 @@ namespace JunctionRelayServer.Models
         public bool IsStale { get; set; }
         public bool IsSelected { get; set; }
         public bool IsVisible { get; set; }
+        public bool IsCustomJunctionSensor { get; set; }
+        public bool IsEventSensor { get; set; }
 
         // Relationships
         public int? DeviceId { get; set; }  // Nullable to link to devices
@@ -93,6 +95,8 @@ namespace JunctionRelayServer.Models
                 IsStale = this.IsStale,
                 IsSelected = this.IsSelected,
                 IsVisible = this.IsVisible,
+                IsCustomJunctionSensor = this.IsCustomJunctionSensor,
+                IsEventSensor = this.IsEventSensor,
                 ExternalId = this.ExternalId,
                 DeviceId = this.DeviceId,
                 ServiceId = this.ServiceId,
@@ -138,6 +142,8 @@ namespace JunctionRelayServer.Models
                 IsStale = this.IsStale,
                 IsSelected = this.IsSelected,
                 IsVisible = this.IsVisible,
+                IsCustomJunctionSensor = this.IsCustomJunctionSensor,
+                IsEventSensor = this.IsEventSensor,
                 ExternalId = this.ExternalId,
                 DeviceId = this.DeviceId,
                 ServiceId = this.ServiceId,

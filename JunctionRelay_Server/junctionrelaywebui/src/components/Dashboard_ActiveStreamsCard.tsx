@@ -37,13 +37,19 @@ import {
     ListItemText,
     SelectChangeEvent,
     Button,
-    Tooltip
+    Tooltip,
+    Slider,
+    FormControlLabel,
+    Switch
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
+import StreamIcon from '@mui/icons-material/Stream';
+import AspectRatioIcon from '@mui/icons-material/AspectRatio';
+import GroupWorkIcon from '@mui/icons-material/GroupWork';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 import ECGStreamVisualizationHTTP from './Dashboard_ECGStreamVisualizationHTTP';
 import ECGStreamVisualizationMQTT from './Dashboard_ECGStreamVisualizationMQTT';
@@ -127,6 +133,22 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
             return saved ? JSON.parse(saved) : [];
         } catch {
             return [];
+        }
+    });
+
+    // ECG width control with localStorage persistence
+    const [ecgWidth, setEcgWidth] = useState<number>(() => {
+        const saved = localStorage.getItem(`${storageKey}_ecg_width`);
+        return saved ? parseInt(saved, 10) : 400; // Default to current size
+    });
+
+    // NEW: Group by protocol toggle with localStorage persistence
+    const [groupByProtocol, setGroupByProtocol] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem(`${storageKey}_group_by_protocol`);
+            return saved !== null ? saved === 'true' : true; // Default to true
+        } catch {
+            return true;
         }
     });
 
@@ -222,6 +244,20 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         }
     }, [selectedStreams, storageKey]);
 
+    // Save ECG width to localStorage
+    useEffect(() => {
+        localStorage.setItem(`${storageKey}_ecg_width`, ecgWidth.toString());
+    }, [ecgWidth, storageKey]);
+
+    // NEW: Save group by protocol setting to localStorage
+    useEffect(() => {
+        try {
+            localStorage.setItem(`${storageKey}_group_by_protocol`, groupByProtocol.toString());
+        } catch {
+            // Ignore localStorage errors
+        }
+    }, [groupByProtocol, storageKey]);
+
     // Handle WebSocket connection based on expansion state
     useEffect(() => {
         if (expanded) {
@@ -267,6 +303,16 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         setSelectedStreams([]);
     };
 
+    // Handle ECG width change
+    const handleEcgWidthChange = (event: Event, newValue: number | number[]) => {
+        setEcgWidth(newValue as number);
+    };
+
+    // NEW: Handle group by protocol toggle
+    const handleGroupByProtocolChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setGroupByProtocol(event.target.checked);
+    };
+
     // Filter streams based on selection
     const displayedStreams = useMemo(() => {
         return availableStreams.filter(item => selectedStreams.includes(item.key));
@@ -276,68 +322,72 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
     const groupedStreams = useMemo(() => {
         const httpStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
-            return protocol.includes('http') || protocol === 'https';
+            return protocol.includes('http');
         });
 
         const mqttStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
-            return protocol === 'mqtt';
+            return protocol.includes('mqtt');
         });
 
         const comStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
-            return protocol === 'com';
+            return protocol.includes('com');
         });
 
         const webSocketStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
-            return protocol === 'websocket' || protocol.includes('websocket');
+            return protocol.includes('websocket');
+        });
+
+        const virtualStreams = displayedStreams.filter(item => {
+            const protocol = item.stream.protocol?.toLowerCase() || '';
+            return protocol.includes('virtual');
         });
 
         const otherStreams = displayedStreams.filter(item => {
             const protocol = item.stream.protocol?.toLowerCase() || '';
             return !protocol.includes('http') &&
-                protocol !== 'mqtt' &&
-                protocol !== 'com' &&
-                protocol !== 'https' &&
-                protocol !== 'websocket' &&
-                !protocol.includes('websocket');
+                !protocol.includes('mqtt') &&
+                !protocol.includes('com') &&
+                !protocol.includes('websocket') &&
+                !protocol.includes('virtual');
         });
 
-        return { httpStreams, mqttStreams, comStreams, webSocketStreams, otherStreams };
+        return { httpStreams, mqttStreams, comStreams, webSocketStreams, virtualStreams, otherStreams };
     }, [displayedStreams]);
 
     // Render the appropriate visualization component
     const renderStreamVisualization = (item: { key: string; name: string; stream: any }) => {
         const protocol = item.stream.protocol?.toLowerCase() || '';
 
-        if (protocol === 'mqtt') {
+        if (protocol.includes('mqtt')) {
             return (
                 <ECGStreamVisualizationMQTT
                     key={item.key}
                     stream={item.stream}
-                    width={400}
+                    width={ecgWidth} // Use dynamic width
                     height={120}
                 />
             );
-        } else if (protocol === 'websocket' || protocol.includes('websocket')) {
+        } else if (protocol.includes('websocket')) {
             // Use HTTP visualization for WebSocket streams (they have similar structure)
             // You could create a dedicated ECGStreamVisualizationWebSocket component if needed
             return (
                 <ECGStreamVisualizationHTTP
                     key={item.key}
                     stream={item.stream}
-                    width={400}
+                    width={ecgWidth} // Use dynamic width
                     height={120}
                 />
             );
         } else {
-            // Use HTTP visualization for HTTP, COM, and unknown protocols
+            // Use HTTP visualization for HTTP, COM, Virtual, and unknown protocols
             return (
                 <ECGStreamVisualizationHTTP
                     key={item.key}
                     stream={item.stream}
-                    width={400}
+                    width={ecgWidth} // Use dynamic width
                     height={120}
                 />
             );
@@ -345,73 +395,130 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
     };
 
     const renderStreamSelect = () => (
-        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>Display Streams</InputLabel>
-            <Select
-                multiple
-                value={selectedStreams}
-                onChange={handleStreamSelectionChange}
-                label="Display Streams"
-                MenuProps={{
-                    PaperProps: {
-                        style: {
-                            maxHeight: 300
+        <Box>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Display Streams</InputLabel>
+                <Select
+                    multiple
+                    value={selectedStreams}
+                    onChange={handleStreamSelectionChange}
+                    label="Display Streams"
+                    MenuProps={{
+                        PaperProps: {
+                            style: {
+                                maxHeight: 300
+                            }
                         }
-                    }
-                }}
-                renderValue={(selected) => (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((key) => {
-                            const stream = availableStreams.find(s => s.key === key);
-                            const protocol = stream?.stream?.protocol || 'Unknown';
-                            return (
-                                <Chip
-                                    key={key}
-                                    label={`${stream?.name || key} (${protocol})`}
-                                    size="small"
-                                />
-                            );
-                        })}
-                    </Box>
-                )}
-            >
-                {availableStreams.map((item) => (
-                    <MenuItem key={item.key} value={item.key}>
-                        <Checkbox checked={selectedStreams.includes(item.key)} />
-                        <ListItemText
-                            primary={item.name}
-                            secondary={`Protocol: ${item.stream.protocol || 'Unknown'} | Status: ${item.stream.status || 'Unknown'}`}
-                        />
-                    </MenuItem>
-                ))}
-            </Select>
+                    }}
+                    renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {selected.map((key) => {
+                                const stream = availableStreams.find(s => s.key === key);
+                                const protocol = stream?.stream?.protocol || 'Unknown';
+                                return (
+                                    <Chip
+                                        key={key}
+                                        label={`${stream?.name || key} (${protocol})`}
+                                        size="small"
+                                    />
+                                );
+                            })}
+                        </Box>
+                    )}
+                >
+                    {availableStreams.map((item) => (
+                        <MenuItem key={item.key} value={item.key}>
+                            <Checkbox checked={selectedStreams.includes(item.key)} />
+                            <ListItemText
+                                primary={item.name}
+                                secondary={`Protocol: ${item.stream.protocol || 'Unknown'} | Status: ${item.stream.status || 'Unknown'}`}
+                            />
+                        </MenuItem>
+                    ))}
+                </Select>
 
-            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <Button
-                    size="small"
-                    onClick={handleSelectAll}
-                    startIcon={<SelectAllIcon />}
-                    disabled={selectedStreams.length === availableStreams.length}
-                >
-                    Select All
-                </Button>
-                <Button
-                    size="small"
-                    onClick={handleDeselectAll}
-                    startIcon={<DeselectIcon />}
-                    disabled={selectedStreams.length === 0}
-                >
-                    Deselect All
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={handleSelectAll}
+                        startIcon={<SelectAllIcon />}
+                        disabled={selectedStreams.length === availableStreams.length}
+                    >
+                        Select All
+                    </Button>
+                    <Button
+                        size="small"
+                        onClick={handleDeselectAll}
+                        startIcon={<DeselectIcon />}
+                        disabled={selectedStreams.length === 0}
+                    >
+                        Deselect All
+                    </Button>
+                </Box>
+            </FormControl>
+
+            {/* NEW: Group by Protocol Toggle */}
+            <Box sx={{ mt: 3, mb: 3 }}>
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={groupByProtocol}
+                            onChange={handleGroupByProtocolChange}
+                            color="primary"
+                        />
+                    }
+                    label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <GroupWorkIcon color="primary" fontSize="small" />
+                            <Typography variant="subtitle2">
+                                Group by Protocol
+                            </Typography>
+                        </Box>
+                    }
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    When enabled, streams are organized by protocol type. When disabled, all streams are shown in a single section.
+                </Typography>
             </Box>
-        </FormControl>
+
+            {/* ECG Width Control (matching collector card style) */}
+            <Box sx={{ mt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <AspectRatioIcon color="primary" fontSize="small" />
+                    <Typography variant="subtitle2">
+                        ECG Width: {ecgWidth}px
+                    </Typography>
+                </Box>
+                <Box sx={{ px: 2, maxWidth: 300 }}>
+                    <Slider
+                        value={ecgWidth}
+                        onChange={handleEcgWidthChange}
+                        min={200}
+                        max={800}
+                        step={50}
+                        marks={[
+                            { value: 200, label: '200' },
+                            { value: 400, label: '400' },
+                            { value: 600, label: '600' },
+                            { value: 800, label: '800' }
+                        ]}
+                        size="small"
+                        sx={{ mb: 1 }}
+                    />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                    Adjust visualization width (saved automatically)
+                </Typography>
+            </Box>
+        </Box>
     );
 
     return (
-        <Card sx={{ mb: 4 }}>
+        <Card sx={{ mb: 4, borderRadius: 2 }}>
             <CardHeader
                 title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <StreamIcon color="primary" />
                         <Typography variant="h6">
                             Active Streams
                         </Typography>
@@ -429,8 +536,17 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         variant="outlined"
                                     />
                                 )}
-                                {/* Protocol breakdown */}
+                                {/* Width indicator chip */}
                                 {displayedStreams.length > 0 && (
+                                    <Chip
+                                        label={`${ecgWidth}px wide`}
+                                        size="small"
+                                        variant="outlined"
+                                        color="secondary"
+                                    />
+                                )}
+                                {/* Protocol breakdown (only show when grouping is enabled) */}
+                                {displayedStreams.length > 0 && groupByProtocol && (
                                     <>
                                         {groupedStreams.httpStreams.length > 0 && (
                                             <Chip
@@ -460,6 +576,13 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                                 sx={{ bgcolor: '#ff9800', color: 'white' }}
                                             />
                                         )}
+                                        {groupedStreams.virtualStreams.length > 0 && (
+                                            <Chip
+                                                label={`${groupedStreams.virtualStreams.length} Virtual`}
+                                                size="small"
+                                                sx={{ bgcolor: '#795548', color: 'white' }}
+                                            />
+                                        )}
                                         {groupedStreams.otherStreams.length > 0 && (
                                             <Chip
                                                 label={`${groupedStreams.otherStreams.length} Other`}
@@ -475,8 +598,8 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                 }
                 action={
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        {expanded && availableStreams.length > 1 && (
-                            <Tooltip title="Stream Selection">
+                        {expanded && (
+                            <Tooltip title="Stream Settings">
                                 <IconButton
                                     onClick={handleStreamSelectToggle}
                                     size="small"
@@ -510,7 +633,7 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
 
                         {/* Stream Selection Panel */}
                         <Collapse in={showStreamSelect}>
-                            {showStreamSelect && availableStreams.length > 0 && (
+                            {showStreamSelect && (
                                 <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
                                     <Typography variant="subtitle2" gutterBottom>
                                         Stream Display Settings
@@ -540,7 +663,7 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                     Show All Streams
                                 </Button>
                             </Paper>
-                        ) : (
+                        ) : groupByProtocol ? (
                             <>
                                 {/* HTTP Streams Section */}
                                 {groupedStreams.httpStreams.length > 0 && (
@@ -551,11 +674,8 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         <Box sx={{
                                             display: 'grid',
                                             gap: 2,
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
-                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
-                                            }
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
                                         }}>
                                             {groupedStreams.httpStreams.map(renderStreamVisualization)}
                                         </Box>
@@ -571,11 +691,8 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         <Box sx={{
                                             display: 'grid',
                                             gap: 2,
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
-                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
-                                            }
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
                                         }}>
                                             {groupedStreams.mqttStreams.map(renderStreamVisualization)}
                                         </Box>
@@ -591,11 +708,8 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         <Box sx={{
                                             display: 'grid',
                                             gap: 2,
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
-                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
-                                            }
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
                                         }}>
                                             {groupedStreams.comStreams.map(renderStreamVisualization)}
                                         </Box>
@@ -611,13 +725,27 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         <Box sx={{
                                             display: 'grid',
                                             gap: 2,
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
-                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
-                                            }
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
                                         }}>
                                             {groupedStreams.webSocketStreams.map(renderStreamVisualization)}
+                                        </Box>
+                                    </Box>
+                                )}
+
+                                {/* Virtual Streams Section */}
+                                {groupedStreams.virtualStreams.length > 0 && (
+                                    <Box sx={{ mb: 3 }}>
+                                        <Typography variant="subtitle2" sx={{ mb: 2, color: '#795548', fontWeight: 'bold' }}>
+                                            Virtual Streams ({groupedStreams.virtualStreams.length})
+                                        </Typography>
+                                        <Box sx={{
+                                            display: 'grid',
+                                            gap: 2,
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
+                                        }}>
+                                            {groupedStreams.virtualStreams.map(renderStreamVisualization)}
                                         </Box>
                                     </Box>
                                 )}
@@ -631,17 +759,29 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                                         <Box sx={{
                                             display: 'grid',
                                             gap: 2,
-                                            gridTemplateColumns: {
-                                                xs: '1fr',
-                                                sm: 'repeat(auto-fit, minmax(300px, 1fr))',
-                                                md: 'repeat(auto-fit, minmax(400px, 1fr))'
-                                            }
+                                            gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                            width: '100%'
                                         }}>
                                             {groupedStreams.otherStreams.map(renderStreamVisualization)}
                                         </Box>
                                     </Box>
                                 )}
                             </>
+                        ) : (
+                            // Single section view (when groupByProtocol is false)
+                            <Box sx={{ mb: 3 }}>
+                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                    All Streams ({displayedStreams.length})
+                                </Typography>
+                                <Box sx={{
+                                    display: 'grid',
+                                    gap: 2,
+                                    gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                    width: '100%'
+                                }}>
+                                    {displayedStreams.map(renderStreamVisualization)}
+                                </Box>
+                            </Box>
                         )}
                     </CardContent>
                 )}

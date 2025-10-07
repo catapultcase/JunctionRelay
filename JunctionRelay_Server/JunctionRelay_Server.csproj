@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>a19cb7a2-588a-4eda-9675-028393e94ec7</UserSecretsId>
-    <Version>0.8.5.6</Version>
+    <Version>0.8.5.8</Version>
   </PropertyGroup>
   <!-- Exclude frontend source files from .NET compilation -->
   <ItemGroup>
@@ -55,26 +55,16 @@
   </ItemGroup>
 
 <ItemGroup>
-  <!-- Copy .meta.json (already Content) -->
-  <Content Update="frameengine\templates\**\*.json">
-    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    <PreserveNewest>true</PreserveNewest>
-  </Content>
-
-  <!-- Copy .riv (usually None) -->
-  <None Update="frameengine\templates\**\*.riv">
+  <!-- FrameEngine template-packages directory (ZIP files only) -->
+  <None Update="frameengine\template-packages\**\*.zip">
     <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     <PreserveNewest>true</PreserveNewest>
   </None>
+</ItemGroup>
 
-  <!-- Copy .png thumbnails -->
-  <None Update="frameengine\templates\**\*.png">
-    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    <PreserveNewest>true</PreserveNewest>
-  </None>
+<ItemGroup>
+  <TypeScriptCompile Include="junctionrelaywebui\src\interfaces\VirtualDisplayDataProvider.ts" />
 </ItemGroup>
 
   <!-- Build frontend and copy directly into publish/wwwroot -->

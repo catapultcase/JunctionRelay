@@ -126,13 +126,13 @@ namespace JunctionRelayServer.Services
                     SensorPayloadLastAckAt DATETIME,
                     -- SSH Configuration
                     SshUsername TEXT,
-                    SshPassword TEXT,  -- Should be encrypted/hashed in your service layer
+                    SshPassword TEXT,
                     ExternalSshPassword BOOLEAN DEFAULT 0,
                     SshPort INTEGER DEFAULT 22,
                     SshTimeoutMs INTEGER DEFAULT 10000,
-                    SshPrivateKey TEXT,  -- Should be encrypted in your service layer
+                    SshPrivateKey TEXT,
                     ExternalSshPrivateKey BOOLEAN DEFAULT 0,
-                    UseSshKeyAuth BOOLEAN DEFAULT 0,  -- 0 = password auth, 1 = key auth
+                    UseSshKeyAuth BOOLEAN DEFAULT 0,
                     SshConnectionRetries INTEGER DEFAULT 3,
                     SshVerifyHostKey BOOLEAN DEFAULT 1,
                     -- Capabilities
@@ -160,82 +160,54 @@ namespace JunctionRelayServer.Services
 
             // Create Services table
             _db.Execute(@"
-                    CREATE TABLE IF NOT EXISTS Services (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Name TEXT NOT NULL,
-                        Description TEXT NOT NULL,
-                        Type TEXT NOT NULL,
-                        Status TEXT DEFAULT 'Offline',
-                        UniqueIdentifier TEXT NOT NULL,
-                        COMPort TEXT,
-                        ServiceModel TEXT,
-                        ServiceManufacturer TEXT,
-                        FirmwareVersion TEXT,
-                        CustomFirmware BOOLEAN DEFAULT 0,
-                        IgnoreUpdates BOOLEAN DEFAULT 0,
-                        MCU TEXT,
-                        WirelessConnectivity TEXT,
-                        URL TEXT,
-                        PollRate INTEGER DEFAULT 5000,
-                        SendRate INTEGER DEFAULT 5000,
-                        LastPolled DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        IsGateway BOOLEAN DEFAULT 0,
-                        GatewayId INTEGER,
-                        IsJunctionRelayService BOOLEAN DEFAULT 0,
-                        LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        AccessToken TEXT,
-                        ExternalAccessToken BOOLEAN DEFAULT 0,
-                        HomeAssistantAddress TEXT,
-                        HomeAssistantUsername TEXT,
-                        HomeAssistantSharedJunctions TEXT,
-                        GrafanaSharedMetrics, TEXT,
-                        MQTTBrokerAddress TEXT,
-                        MQTTBrokerPort TEXT,
-                        MQTTUsername TEXT,
-                        FOREIGN KEY(GatewayId) REFERENCES Services(Id)
-                   );
-                ");
-
-            //// Add missing columns to Services table
-            //var columnsToAdd = new[]
-            //{
-            //    ("HomeAssistantSharedJunctions", "TEXT"),
-            //    ("GrafanaSharedMetrics", "TEXT")
-            //};
-
-            //foreach (var (columnName, columnType) in columnsToAdd)
-            //{
-            //    try
-            //    {
-            //        var columnExists = _db.ExecuteScalar<int>(@"
-            //        SELECT COUNT(*) 
-            //        FROM pragma_table_info('Services') 
-            //        WHERE name = @columnName", new { columnName }) > 0;
-
-            //        if (!columnExists)
-            //        {
-            //            _db.Execute($"ALTER TABLE Services ADD COLUMN {columnName} {columnType};");
-            //            Console.WriteLine($"✅ Added {columnName} column to Services table");
-            //        }
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        Console.WriteLine($"⚠️ Failed to add {columnName} column: {ex.Message}");
-            //    }
-            //}
+                CREATE TABLE IF NOT EXISTS Services (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    Type TEXT NOT NULL,
+                    Status TEXT DEFAULT 'Offline',
+                    UniqueIdentifier TEXT NOT NULL,
+                    COMPort TEXT,
+                    ServiceModel TEXT,
+                    ServiceManufacturer TEXT,
+                    FirmwareVersion TEXT,
+                    CustomFirmware BOOLEAN DEFAULT 0,
+                    IgnoreUpdates BOOLEAN DEFAULT 0,
+                    MCU TEXT,
+                    WirelessConnectivity TEXT,
+                    URL TEXT,
+                    PollRate INTEGER DEFAULT 5000,
+                    SendRate INTEGER DEFAULT 5000,
+                    LastPolled DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    IsGateway BOOLEAN DEFAULT 0,
+                    GatewayId INTEGER,
+                    IsJunctionRelayService BOOLEAN DEFAULT 0,
+                    LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    AccessToken TEXT,
+                    ExternalAccessToken BOOLEAN DEFAULT 0,
+                    HomeAssistantAddress TEXT,
+                    HomeAssistantUsername TEXT,
+                    HomeAssistantSharedJunctions TEXT,
+                    GrafanaSharedMetrics TEXT,
+                    MQTTBrokerAddress TEXT,
+                    MQTTBrokerPort TEXT,
+                    MQTTUsername TEXT,
+                    FOREIGN KEY(GatewayId) REFERENCES Services(Id)
+                );
+            ");
 
             // Create MqttSubscriptions table
             _db.Execute(@"
-            CREATE TABLE IF NOT EXISTS MqttSubscriptions(
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ServiceId INTEGER NOT NULL,
-                Topic TEXT NOT NULL,
-                QoS INTEGER DEFAULT 0,
-                Active BOOLEAN DEFAULT 1,
-                DateAdded DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(ServiceId) REFERENCES Services(Id)
-                    );
-                ");
+                CREATE TABLE IF NOT EXISTS MqttSubscriptions (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ServiceId INTEGER NOT NULL,
+                    Topic TEXT NOT NULL,
+                    QoS INTEGER DEFAULT 0,
+                    Active BOOLEAN DEFAULT 1,
+                    DateAdded DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(ServiceId) REFERENCES Services(Id)
+                );
+            ");
 
             // Create DeviceScreens table
             _db.Execute(@"
@@ -252,65 +224,73 @@ namespace JunctionRelayServer.Services
                     UseKeepAlive BOOLEAN DEFAULT 0,
                     UNIQUE(DeviceId, ScreenKey),
                     FOREIGN KEY(DeviceId) REFERENCES Devices(Id),
-                    FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id)
+                    FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id),
                     FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
                 );
             ");
 
             // Create JunctionScreenLayouts table
             _db.Execute(@"
-               CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
-                   Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   JunctionId INTEGER NOT NULL,
-                   JunctionDeviceLinkId INTEGER NOT NULL,
-                   DeviceScreenId INTEGER NOT NULL,
-                   ScreenLayoutId INTEGER,
-                   FrameLayoutId INTEGER,
-                   TargetPollRate INTEGER,
-                   LastRequested DATETIME,
-                   OnlySendIfChanged INTEGER DEFAULT 1,
-                   EnableUrlAccess INTEGER DEFAULT 0,
-                   UrlPath TEXT,
-                   FOREIGN KEY(JunctionDeviceLinkId) REFERENCES JunctionDeviceLinks(Id) ON DELETE CASCADE,
-                   FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id),
-                   FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
-               );
+                CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    JunctionId INTEGER NOT NULL,
+                    JunctionDeviceLinkId INTEGER NOT NULL,
+                    DeviceScreenId INTEGER NOT NULL,
+                    ScreenLayoutId INTEGER,
+                    FrameLayoutId INTEGER,
+                    TargetPollRate INTEGER,
+                    LastRequested DATETIME,
+                    OnlySendIfChanged INTEGER DEFAULT 1,
+                    EnableUrlAccess INTEGER DEFAULT 0,
+                    UrlPath TEXT,
+                    FOREIGN KEY(JunctionDeviceLinkId) REFERENCES JunctionDeviceLinks(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ScreenLayoutId) REFERENCES ScreenLayouts(Id),
+                    FOREIGN KEY(FrameLayoutId) REFERENCES FrameLayouts(Id)
+                );
             ");
 
             // Create Notifications table
             _db.Execute(@"
-                    CREATE TABLE IF NOT EXISTS Notifications (
-                        Id TEXT PRIMARY KEY,
-                        Type TEXT NOT NULL DEFAULT 'info' CHECK(Type IN ('success', 'error', 'warning', 'info')),
-                        Message TEXT NOT NULL,
-                        Title TEXT,
-                        Category TEXT NOT NULL DEFAULT 'system' CHECK(Category IN ('api', 'auth', 'cloud', 'system')),
-                        Duration INTEGER,
-                        Persistent BOOLEAN NOT NULL DEFAULT 0,
-                        CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        IsDelivered BOOLEAN NOT NULL DEFAULT 0,
-                        DeliveredAt DATETIME,
-                        ExpiresAt, DATETIME,
-                        StructuredContent, TEXT
-                    );
-                ");
+                CREATE TABLE IF NOT EXISTS Notifications (
+                    Id TEXT PRIMARY KEY,
+                    Type TEXT NOT NULL DEFAULT 'info' CHECK(Type IN ('success', 'error', 'warning', 'info')),
+                    Message TEXT NOT NULL,
+                    Title TEXT,
+                    Category TEXT NOT NULL DEFAULT 'system' CHECK(Category IN ('api', 'auth', 'cloud', 'system')),
+                    Duration INTEGER,
+                    Persistent BOOLEAN NOT NULL DEFAULT 0,
+                    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    IsDelivered BOOLEAN NOT NULL DEFAULT 0,
+                    DeliveredAt DATETIME,
+                    ExpiresAt DATETIME,
+                    StructuredContent TEXT
+                );
+            ");
 
             // Create indexes for Notifications table
             _db.Execute(@"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_pending ON Notifications(IsDelivered, CreatedAt);
-                ");
+                CREATE INDEX IF NOT EXISTS idx_notifications_pending ON Notifications(IsDelivered, CreatedAt);
+            ");
 
-                            _db.Execute(@"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_category ON Notifications(Category);
-                ");
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_notifications_category ON Notifications(Category);
+            ");
 
-                            _db.Execute(@"
-                    CREATE INDEX IF NOT EXISTS idx_notifications_created ON Notifications(CreatedAt);
-                ");
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_notifications_created ON Notifications(CreatedAt);
+            ");
+
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_notifications_expires_at ON Notifications(ExpiresAt);
+            ");
+
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_notifications_pending_with_expiry ON Notifications(IsDelivered, ExpiresAt, CreatedAt);
+            ");
 
             // Create DeviceI2CDevices table
             _db.Execute(@"
-                   CREATE TABLE IF NOT EXISTS DeviceI2CDevices (
+                CREATE TABLE IF NOT EXISTS DeviceI2CDevices (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     DeviceId INTEGER NOT NULL,
                     I2CAddress TEXT NOT NULL,
@@ -324,14 +304,14 @@ namespace JunctionRelayServer.Services
 
             // Create DeviceI2CDeviceEndpoints table
             _db.Execute(@"
-                    CREATE TABLE IF NOT EXISTS DeviceI2CDeviceEndpoints (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        I2CDeviceId INTEGER NOT NULL,
-                        EndpointType TEXT NOT NULL, -- publish, subscribe, command, telemetry, etc
-                        Address TEXT NOT NULL,
-                        QoS INTEGER DEFAULT 0,
-                        Notes TEXT,
-                        FOREIGN KEY(I2CDeviceId) REFERENCES DeviceI2CDevices(Id)
+                CREATE TABLE IF NOT EXISTS DeviceI2CDeviceEndpoints (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    I2CDeviceId INTEGER NOT NULL,
+                    EndpointType TEXT NOT NULL,
+                    Address TEXT NOT NULL,
+                    QoS INTEGER DEFAULT 0,
+                    Notes TEXT,
+                    FOREIGN KEY(I2CDeviceId) REFERENCES DeviceI2CDevices(Id)
                 );
             ");
 
@@ -394,11 +374,6 @@ namespace JunctionRelayServer.Services
                     TextSize TEXT,
                     LabelSize TEXT,
                     ValueSize TEXT,
-                    TitleFontId INTEGER,
-                    SubHeadingFontId INTEGER,
-                    SensorLabelsFontId INTEGER,
-                    SensorValuesFontId INTEGER,
-                    SensorUnitsFontId INTEGER,
                     DecimalPlaces INTEGER,
         
                     -- Alignment and Positioning
@@ -446,13 +421,7 @@ namespace JunctionRelayServer.Services
                     MinWidth INTEGER,
                     MaxWidth INTEGER,
                     MinHeight INTEGER,
-                    MaxHeight INTEGER,
-        
-                    FOREIGN KEY(TitleFontId) REFERENCES Fonts(Id),
-                    FOREIGN KEY(SubHeadingFontId) REFERENCES Fonts(Id),
-                    FOREIGN KEY(SensorLabelsFontId) REFERENCES Fonts(Id),
-                    FOREIGN KEY(SensorValuesFontId) REFERENCES Fonts(Id),
-                    FOREIGN KEY(SensorUnitsFontId) REFERENCES Fonts(Id)
+                    MaxHeight INTEGER        
                 );
             ");
 
@@ -489,7 +458,7 @@ namespace JunctionRelayServer.Services
                     -- Rive Configuration
                     RiveFile NVARCHAR(500),
     
-                    -- Thumbnail Configuration (NEW FIELDS)
+                    -- Thumbnail Configuration
                     ThumbnailPath NVARCHAR(255),
                     ThumbnailGeneratedAt DATETIME,
                     HasThumbnail BOOLEAN NOT NULL DEFAULT 0,
@@ -503,46 +472,103 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            // Create Fonts table
+            // Create EventRules table
             _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS Fonts (
+                CREATE TABLE IF NOT EXISTS EventRules (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Color TEXT,
-                    Family TEXT,
-                    Size TEXT
-                );
-            ");
-
-            // Create Logic table
-            _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS Logic (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    LogicName TEXT,
+                    Name TEXT NOT NULL,
                     Description TEXT,
-                    JunctionId INTEGER NOT NULL, 
-                    SensorId INTEGER NOT NULL, 
-                    OverrideColorHex TEXT,
-                    OverrideDisplayText TEXT,
-                    HideSensorValue BOOLEAN,
-                    OverrideUnits TEXT,
-                    Priority INTEGER,
-                    IsEnabled BOOLEAN DEFAULT 1,
-                    AppliesWhen TEXT,
-                    FOREIGN KEY(JunctionId) REFERENCES Junctions(Id)
+                    Enabled INTEGER DEFAULT 1,
+        
+                    -- Trigger Logic Configuration
+                    TriggerLogic TEXT DEFAULT 'ANY',
+        
+                    -- Metadata
+                    LastTriggered DATETIME,
+                    TriggerCount INTEGER DEFAULT 0,
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
 
-            // Create Logic Conditions table
+            // Create EventTriggers table
             _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS LogicConditions (
+                CREATE TABLE IF NOT EXISTS EventTriggers (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    LogicId INTEGER NOT NULL,
-                    Field TEXT NOT NULL DEFAULT 'value',
-                    Operator TEXT NOT NULL DEFAULT '>',
-                    TargetValue REAL NOT NULL,
-                    LogicalJoin TEXT DEFAULT 'AND',
-                    FOREIGN KEY(LogicId) REFERENCES Logic(Id)
+                    EventRuleId INTEGER NOT NULL,
+                    TriggerOrder INTEGER DEFAULT 0,
+                    IsActive BOOLEAN DEFAULT 1,
+        
+                    -- Trigger Configuration
+                    TriggerType TEXT NOT NULL DEFAULT 'Sensor',
+                    TriggerSensorId INTEGER,
+                    TriggerCondition TEXT,
+                    TriggerValue TEXT,
+                    TriggerDebounceMs INTEGER DEFAULT 0,
+        
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        
+                    FOREIGN KEY (EventRuleId) REFERENCES EventRules(Id) ON DELETE CASCADE,
+                    FOREIGN KEY (TriggerSensorId) REFERENCES Sensors(Id) ON DELETE CASCADE
                 );
+            ");
+
+            // Create EventActions table
+            _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS EventActions (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    EventRuleId INTEGER NOT NULL,
+                    ActionOrder INTEGER DEFAULT 0,
+                    IsActive BOOLEAN DEFAULT 1,
+                    DelayBeforeNextMs INTEGER DEFAULT 0,
+        
+                    -- Action Configuration
+                    ActionType TEXT NOT NULL,
+                    ActionTargetSensorId INTEGER,
+                    ActionStaticValue TEXT,
+                    ActionTransform TEXT,
+                    ActionJunctionId INTEGER,
+                    ActionMqttTopic TEXT,
+                    ActionMqttPayload TEXT,
+                    ActionMqttServiceId INTEGER,
+                    ActionHttpUrl TEXT,
+                    ActionHttpMethod TEXT DEFAULT 'POST',
+                    ActionHttpPayload TEXT,
+        
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        
+                    FOREIGN KEY(EventRuleId) REFERENCES EventRules(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ActionTargetSensorId) REFERENCES Sensors(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ActionJunctionId) REFERENCES Junctions(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ActionMqttServiceId) REFERENCES Services(Id) ON DELETE SET NULL
+                );
+            ");
+
+            // EventTriggers indexes
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventtriggers_rule ON EventTriggers(EventRuleId);
+            ");
+
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventtriggers_sensor ON EventTriggers(TriggerSensorId);
+            ");
+
+            // EventActions indexes
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventactions_rule ON EventActions(EventRuleId);
+            ");
+
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventactions_sensor ON EventActions(ActionTargetSensorId);
+            ");
+
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventactions_junction ON EventActions(ActionJunctionId);
+            ");
+
+            // EventRules index
+            _db.Execute(@"
+                CREATE INDEX IF NOT EXISTS idx_eventrules_enabled ON EventRules(Enabled);
             ");
 
             // Create Collectors table
@@ -559,40 +585,48 @@ namespace JunctionRelayServer.Services
                     PollRate INTEGER DEFAULT 5000,
                     SendRate INTEGER DEFAULT 5000,
                     ServiceId INTEGER,
-                    DecimalPlaces INTEGER DEFAULT 1
+                    DecimalPlaces INTEGER DEFAULT 1,
+                    LastFetchTime DATETIME,
+                    LastFetchTotalSensors INTEGER,
+                    LastFetchNewSensors INTEGER,
+                    LastFetchLostSensors INTEGER,
+                    LastFetchSuccessful BOOLEAN,
+                    LastFetchErrorMessage TEXT,
+                    TestFrequency INTEGER,
+                    LastTested DATETIME
                 );
             ");
 
             // Create Junctions table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS Junctions (
-                    Id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name                     TEXT    NOT NULL,
-                    Description              TEXT    NOT NULL DEFAULT '',
-                    Type                     TEXT,
-                    Status                   TEXT    NOT NULL DEFAULT 'Idle',
-                    SortOrder                INTEGER NOT NULL DEFAULT 0,
-                    ShowOnDashboard          BOOLEAN NOT NULL DEFAULT 1,
-                    AutoStartOnLaunch        BOOLEAN NOT NULL DEFAULT 0,
-                    CronExpression           TEXT,
-                    GatewayDeviceId          INTEGER,
-                    GatewayDestination       TEXT,
-                    RenderingMode            TEXT,
-                    DestinationOverride      TEXT,
-                    BaudRate                 INTEGER,   
-                    AllTargetsAllData        BOOLEAN NOT NULL DEFAULT 0,
-                    AllTargetsAllScreens     BOOLEAN NOT NULL DEFAULT 0,
-                    CompressPayload          BOOLEAN NOT NULL DEFAULT 0,
-                    MQTTBrokerId             INTEGER,
-                    SelectedPayloadAttributes TEXT   NOT NULL DEFAULT '',
-                    StreamAutoTimeout        BOOLEAN NOT NULL DEFAULT 0,
-                    StreamAutoTimeoutMs      INTEGER NOT NULL DEFAULT 10000,
-                    RetryCount               INTEGER NOT NULL DEFAULT 3,
-                    RetryIntervalMs          INTEGER NOT NULL DEFAULT 1000,
-                    EnableTests              BOOLEAN NOT NULL DEFAULT 1,
-                    EnableHealthCheck        BOOLEAN NOT NULL DEFAULT 1,
-                    HealthCheckIntervalMs    INTEGER NOT NULL DEFAULT 60000,
-                    EnableNotifications      BOOLEAN NOT NULL DEFAULT 0
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    Description TEXT NOT NULL DEFAULT '',
+                    Type TEXT,
+                    Status TEXT NOT NULL DEFAULT 'Idle',
+                    SortOrder INTEGER NOT NULL DEFAULT 0,
+                    ShowOnDashboard BOOLEAN NOT NULL DEFAULT 1,
+                    AutoStartOnLaunch BOOLEAN NOT NULL DEFAULT 0,
+                    CronExpression TEXT,
+                    GatewayDeviceId INTEGER,
+                    GatewayDestination TEXT,
+                    RenderingMode TEXT,
+                    DestinationOverride TEXT,
+                    BaudRate INTEGER,   
+                    AllTargetsAllData BOOLEAN NOT NULL DEFAULT 0,
+                    AllTargetsAllScreens BOOLEAN NOT NULL DEFAULT 0,
+                    CompressPayload BOOLEAN NOT NULL DEFAULT 0,
+                    MQTTBrokerId INTEGER,
+                    SelectedPayloadAttributes TEXT NOT NULL DEFAULT '',
+                    StreamAutoTimeout BOOLEAN NOT NULL DEFAULT 0,
+                    StreamAutoTimeoutMs INTEGER NOT NULL DEFAULT 10000,
+                    RetryCount INTEGER NOT NULL DEFAULT 3,
+                    RetryIntervalMs INTEGER NOT NULL DEFAULT 1000,
+                    EnableTests BOOLEAN NOT NULL DEFAULT 1,
+                    EnableHealthCheck BOOLEAN NOT NULL DEFAULT 1,
+                    HealthCheckIntervalMs INTEGER NOT NULL DEFAULT 60000,
+                    EnableNotifications BOOLEAN NOT NULL DEFAULT 0
                 );
             ");
 
@@ -613,6 +647,8 @@ namespace JunctionRelayServer.Services
                     IsStale BOOLEAN DEFAULT 0,
                     IsSelected BOOLEAN DEFAULT 0,
                     IsVisible BOOLEAN DEFAULT 1,
+                    IsCustomJunctionSensor BOOLEAN DEFAULT 0,
+                    IsEventSensor BOOLEAN DEFAULT 0,
                     ExternalId TEXT,
                     DeviceId INTEGER,
                     ServiceId INTEGER,
@@ -644,7 +680,7 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            // Create JunctionSensors table (cloned sensors for a junction)
+            // Create JunctionSensors table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS JunctionSensors (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,     
@@ -660,7 +696,9 @@ namespace JunctionRelayServer.Services
                     IsMissing BOOLEAN DEFAULT 0,               
                     IsStale BOOLEAN DEFAULT 0,                 
                     IsSelected BOOLEAN DEFAULT 0,             
-                    IsVisible BOOLEAN DEFAULT 1,              
+                    IsVisible BOOLEAN DEFAULT 1,
+                    IsCustomJunctionSensor BOOLEAN DEFAULT 0,
+                    IsEventSensor BOOLEAN DEFAULT 0,
                     ExternalId TEXT,                           
                     DeviceId INTEGER,
                     ServiceId INTEGER,  
@@ -705,7 +743,7 @@ namespace JunctionRelayServer.Services
                     FOREIGN KEY(SensorId) REFERENCES JunctionSensors(Id),
                     FOREIGN KEY(DeviceId) REFERENCES Devices(Id),
                     FOREIGN KEY(ScreenId) REFERENCES DeviceScreens(Id)
-                 );
+                );
             ");
 
             // Create JunctionDeviceLinks table
@@ -749,7 +787,7 @@ namespace JunctionRelayServer.Services
                     FOREIGN KEY(JunctionId) REFERENCES Junctions(Id)
                 );
             ");
-           
+
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS StreamHistoryConfiguration (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -761,8 +799,7 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-
-                _db.Execute(@"
+            _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS AuthUsers (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Username TEXT NOT NULL UNIQUE,
@@ -786,6 +823,12 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
+            // Create unique index for JunctionScreenLayouts
+            _db.Execute(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_junction_screen_unique 
+                ON JunctionScreenLayouts(JunctionId, DeviceScreenId);
+            ");
+
             // Seed screen layout templates
             var existingScreenTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
             if (existingScreenTemplates == 0)
@@ -798,7 +841,7 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"ℹ️ Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
             }
 
-            // Seed frame layout templates (NEW)
+            // Seed frame layout templates
             var existingFrameTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM FrameLayouts WHERE IsTemplate = 1");
             if (existingFrameTemplates == 0)
             {
@@ -817,22 +860,21 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"ℹ️ Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
             }
 
-            // Alter tables if needed
+            // Apply schema updates for future changes
             await ApplySchemaUpdatesAsync();
 
             // Seed settings
             await SeedInitialSettingsAsync();
-
         }
 
         public async Task SeedInitialSettingsAsync()
         {
-            // Define the default settings
             var defaultSettings = new List<(string Key, string Value, string Description)>
-{
+            {
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
                 ("device_combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
                 ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
+                ("global_sensorcache_expiry", "60000", "Time in milliseconds after which sensor data expires from the global cache (default: 1 minute)"),
                 ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
                 ("junction_autostart_enabled", "true", "Master toggle for the junction autostart service. If false, no junctions will auto-start regardless of their individual AutoStartOnLaunch setting"),
                 ("junction_autostart_parallel", "false", "If true, auto-start junctions will be started in parallel during system startup. If false, they will be started sequentially with delays between each start"),
@@ -843,7 +885,6 @@ namespace JunctionRelayServer.Services
                 ("mobile_show_navigation_row", "false", "If true, add a navigation bar to the bottom of the mobile experience"),
                 ("top_bar_show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
                 ("top_bar_show_host_charts", "false", "If true, show the tab for host charts"),
-                // Notification system settings
                 ("notifications_enabled", "true", "Master toggle for the notification system"),
                 ("notifications_api_calls", "true", "Show notifications for API success/error events"),
                 ("notifications_auth_events", "true", "Show notifications for authentication events (login, logout, etc.)"),
@@ -854,23 +895,22 @@ namespace JunctionRelayServer.Services
                 ("notifications_duration_success", "6000", "How long success notifications stay visible (milliseconds)"),
                 ("notifications_duration_error", "8000", "How long error notifications stay visible (milliseconds)"),
                 ("notifications_max_concurrent", "5", "Maximum number of notifications to show at once"),
-                // Service control settings
-                ("service_heartbeats_enabled", "true", "Master toggle for the heartbeat monitoring service"),
                 ("service_connection_status_enabled", "true", "Master toggle for the connection status monitoring service"),
+                ("service_eventengine_enabled", "false", "Master toggle for the EventEngine service"),
+                ("service_heartbeats_enabled", "true", "Master toggle for the heartbeat monitoring service"),
             };
 
             int addedCount = 0;
-            // Check and insert each setting individually if it doesn't exist
             foreach (var setting in defaultSettings)
             {
                 var exists = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM Settings WHERE Key = @Key",
                                                    new { Key = setting.Key }) > 0;
                 if (!exists)
                 {
-                    await Task.Yield(); // Add this line to make the method truly async
+                    await Task.Yield();
                     _db.Execute(@"
-                INSERT INTO Settings (Key, Value, Description) 
-                VALUES (@Key, @Value, @Description)",
+                        INSERT INTO Settings (Key, Value, Description) 
+                        VALUES (@Key, @Value, @Description)",
                         new
                         {
                             Key = setting.Key,
@@ -886,72 +926,41 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Add this method to your Service_Database_Initializer class
-
         private async Task ApplySchemaUpdatesAsync()
         {
             Console.WriteLine("[DATABASE] 🔄 Checking for schema updates...");
-            // Define all schema updates in one place
+
+            // Define schema updates
             var schemaUpdates = new Dictionary<string, (string columnName, string columnType)[]>
             {
-                // Services table updates
-                ["Services"] = new (string, string)[]
-                {
-                    //("HomeAssistantSharedJunctions", "TEXT"),
-                    //("GrafanaSharedMetrics", "TEXT")
-                },
-                // Notifications table updates
-                ["Notifications"] = new (string, string)[]
-                {
-                    //("ExpiresAt", "DATETIME"), // Add expiration support
-                    //("StructuredContent", "TEXT") // Add multi-line notification support
-                },
-                // Devices table updates (if you need any in the future)
-                ["Devices"] = new (string, string)[]
-                {
-                    // Add future device columns here when needed
-                    // ("NewColumn", "TEXT"),
-                },
-                // FrameLayouts table updates
                 ["FrameLayouts"] = new (string, string)[]
                 {
-                //("FieldsToSend", "TEXT")
-                //("ThumbnailOverride", "BOOLEAN")
-                },
-                // ScreenLayouts table updates
-                ["ScreenLayouts"] = new (string, string)[]
-                {
-                //  ("FieldsToSend", "TEXT")
-                },
-                // Add other tables as needed
-                // ["OtherTable"] = new (string, string)[]
-                // {
-                //     ("ColumnName", "DATATYPE"),
-                // }
+            ("JsonFrameConfigRuntime", "TEXT")
+                }
             };
+
             int totalUpdatesApplied = 0;
             foreach (var (tableName, columnsToAdd) in schemaUpdates)
             {
-                if (columnsToAdd.Length == 0) continue; // Skip empty arrays
+                if (columnsToAdd.Length == 0) continue;
+
                 Console.WriteLine($"[DATABASE] 🔍 Checking {tableName} table for missing columns...");
+
                 foreach (var (columnName, columnType) in columnsToAdd)
                 {
                     try
                     {
                         var columnExists = _db.ExecuteScalar<int>(@"
-            SELECT COUNT(*) 
-            FROM pragma_table_info(@tableName) 
-            WHERE name = @columnName",
+                    SELECT COUNT(*) 
+                    FROM pragma_table_info(@tableName) 
+                    WHERE name = @columnName",
                             new { tableName, columnName }) > 0;
+
                         if (!columnExists)
                         {
                             _db.Execute($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType};");
                             Console.WriteLine($"✅ Added {columnName} column to {tableName} table");
                             totalUpdatesApplied++;
-                        }
-                        else
-                        {
-                            Console.WriteLine($"ℹ️ Column {columnName} already exists in {tableName} table");
                         }
                     }
                     catch (Exception ex)
@@ -960,8 +969,7 @@ namespace JunctionRelayServer.Services
                     }
                 }
             }
-            // Also handle index creation here if needed
-            await CreateMissingIndexesAsync();
+
             if (totalUpdatesApplied > 0)
             {
                 Console.WriteLine($"[DATABASE] ✅ Applied {totalUpdatesApplied} schema update(s) successfully");
@@ -970,48 +978,8 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine("[DATABASE] ℹ️ No schema updates needed - database is up to date");
             }
-        }
 
-        private async Task CreateMissingIndexesAsync()
-        {
-            // Define indexes that should exist
-            var indexesToCreate = new (string indexName, string tableName, string columns)[]
-            {
-        // Notifications table indexes
-        ("idx_notifications_expires_at", "Notifications", "ExpiresAt"),
-        ("idx_notifications_pending_with_expiry", "Notifications", "IsDelivered, ExpiresAt, CreatedAt"),
-
-        // JunctionScreenLayouts unique constraint
-        ("idx_junction_screen_unique", "JunctionScreenLayouts", "JunctionId, DeviceScreenId"),
-            };
-
-            foreach (var (indexName, tableName, columns) in indexesToCreate)
-            {
-                try
-                {
-                    // Check if index exists
-                    var indexExists = _db.ExecuteScalar<int>(@"
-                SELECT COUNT(*) 
-                FROM sqlite_master 
-                WHERE type = 'index' AND name = @indexName",
-                        new { indexName }) > 0;
-
-                    if (!indexExists)
-                    {
-                        // For the unique constraint, use UNIQUE
-                        string createStatement = indexName == "idx_junction_screen_unique"
-                            ? $"CREATE UNIQUE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});"
-                            : $"CREATE INDEX IF NOT EXISTS {indexName} ON {tableName}({columns});";
-
-                        _db.Execute(createStatement);
-                        Console.WriteLine($"✅ Created index {indexName} on {tableName}({columns})");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"⚠️ Failed to create index {indexName}: {ex.Message}");
-                }
-            }
+            await Task.CompletedTask;
         }
     }
 }

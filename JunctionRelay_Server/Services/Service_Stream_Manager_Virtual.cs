@@ -18,10 +18,9 @@
  */
 
 using System.Collections.Concurrent;
-using System.IO.Compression;
+using System.Diagnostics;
 using System.Text;
-using System.Linq;
-using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using JunctionRelayServer.Models;
 
 namespace JunctionRelayServer.Services
@@ -50,7 +49,6 @@ namespace JunctionRelayServer.Services
             _frameEngine = frameEngine;
         }
 
-        // PUBLIC helper method that ANY stream manager can call to create virtual screens for blit mode
         public async Task<(int virtualDeviceId, int virtualScreenId, string virtualScreenUrl)?> CreateBlitModeVirtualScreenAsync(
             Model_Device realDevice,
             Model_Device_Screens realScreen,
@@ -59,28 +57,22 @@ namespace JunctionRelayServer.Services
             int rate,
             List<Model_Sensor> assignedSensors)
         {
-            // Get any screen layout overrides for the real screen first
             using var scope = _scopeFactory.CreateScope();
             var junctionLinkDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
             var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, realScreen.Id);
             var screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == realScreen.Id);
 
-            // Create virtual screen for blit mode with proper overrides applied
             var (virtualDevice, virtualScreen, virtualScreenUrl) = CreateVirtualScreenForBlit(realDevice, realScreen, screenOverride);
 
-            // Track the virtual screen
             _blitModeVirtualScreens[realScreen.Id] = (virtualDevice.Id, virtualScreen.Id, virtualScreenUrl, linkId);
 
-            // Start a virtual stream to the virtual screen (recursive call but with virtual device)
             var virtualScreenKey = $"device_{virtualDevice.Id}_screen_{virtualScreen.Id}";
             await StartStreamingAsync(junctionId, virtualDevice.Id, rate, virtualScreenKey, assignedSensors, virtualScreen, null, null, linkId);
 
-            // Initialize Puppeteer browser for this virtual screen automatically
             try
             {
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Initializing Puppeteer browser for virtual device {virtualDevice.Id}");
 
-                // Create a basic frame layout for initialization (will be overridden by actual calls)
                 var defaultFrameLayout = new Model_Frame_Layout
                 {
                     Id = -1,
@@ -89,10 +81,9 @@ namespace JunctionRelayServer.Services
                     Height = 240
                 };
 
-                // Initialize browser by attempting to render a frame with empty sensor data
                 await _puppeteerEngine.RenderFrame(
                     defaultFrameLayout,
-                    new Dictionary<string, object>(), // Empty sensor data for initialization
+                    new Dictionary<string, object>(),
                     virtualDevice.Id.ToString(),
                     junctionId,
                     linkId,
@@ -104,7 +95,6 @@ namespace JunctionRelayServer.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Warning: Failed to initialize Puppeteer browser for virtual device {virtualDevice.Id}: {ex.Message}");
-                // Continue anyway - browser will be created on first frame capture if needed
             }
 
             Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Created and started blit mode virtual stream for {realDevice.Name} -> {virtualScreenUrl}");
@@ -112,15 +102,12 @@ namespace JunctionRelayServer.Services
             return (virtualDevice.Id, virtualScreen.Id, virtualScreenUrl);
         }
 
-        // PUBLIC helper method to stop blit mode virtual screens
         public async void StopBlitModeVirtualScreen(int originalScreenId)
         {
             if (_blitModeVirtualScreens.TryGetValue(originalScreenId, out var screenTuple))
             {
-                // Stop the virtual stream
                 StopStreaming(screenTuple.virtualScreenId);
 
-                // Clean up Puppeteer browser for this virtual screen
                 try
                 {
                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Cleaning up Puppeteer browser for virtual device {screenTuple.virtualDeviceId}");
@@ -131,14 +118,12 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Warning: Error cleaning up Puppeteer browser for virtual device {screenTuple.virtualDeviceId}: {ex.Message}");
                 }
 
-                // Remove from tracking
                 _blitModeVirtualScreens.TryRemove(originalScreenId, out _);
 
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Stopped blit mode virtual screen for original screen {originalScreenId}");
             }
         }
 
-        // PUBLIC method to capture frames for blit mode (called by other stream managers)
         public async Task<byte[]?> CaptureFrameForBlitMode(
             int originalScreenId,
             Dictionary<string, object> sensorData,
@@ -164,7 +149,7 @@ namespace JunctionRelayServer.Services
                     screenTuple.virtualScreenId,
                     screenConfig);
 
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Captured frame for virtual screen {screenTuple.virtualScreenId} ({frameBytes.Length} bytes)");
+                // Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Captured frame for virtual screen {screenTuple.virtualScreenId} ({frameBytes.Length} bytes)");
                 return frameBytes;
             }
             catch (Exception ex)
@@ -174,7 +159,6 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // PUBLIC method to refresh virtual screen page (useful for debugging)
         public async Task<bool> RefreshVirtualScreen(int originalScreenId)
         {
             if (_blitModeVirtualScreens.TryGetValue(originalScreenId, out var screenTuple))
@@ -192,23 +176,19 @@ namespace JunctionRelayServer.Services
             return false;
         }
 
-        // PUBLIC method to get Puppeteer metrics for debugging
         public object GetPuppeteerMetrics()
         {
             return _puppeteerEngine.GetBrowserMetrics();
         }
 
-        // Create a virtual device that mirrors a real device for blit mode
         private (Model_Device virtualDevice, Model_Device_Screens virtualScreen, string virtualScreenUrl) CreateVirtualScreenForBlit(
             Model_Device realDevice,
             Model_Device_Screens realScreen,
             Model_JunctionScreenLayout? screenOverride = null)
         {
-            // Generate unique IDs for virtual device and screen
-            var virtualDeviceId = -Math.Abs(realDevice.Id + 10000); // Negative to avoid conflicts
+            var virtualDeviceId = -Math.Abs(realDevice.Id + 10000);
             var virtualScreenId = -Math.Abs(realScreen.Id + 20000);
 
-            // Create virtual device that mirrors the real device
             var virtualDevice = new Model_Device
             {
                 Id = virtualDeviceId,
@@ -222,19 +202,18 @@ namespace JunctionRelayServer.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            // Create virtual screen that mirrors the real screen with overrides applied
             var virtualScreen = new Model_Device_Screens
             {
                 Id = virtualScreenId,
                 DeviceId = virtualDeviceId,
                 ScreenKey = $"blit_screen_{virtualScreenId}",
                 DisplayName = $"Blit-{realScreen.DisplayName}",
-                Template = realScreen.Template, // Use same template
-                ScreenLayoutId = screenOverride?.ScreenLayoutId ?? realScreen.ScreenLayoutId, // Apply override if exists
-                FrameLayoutId = screenOverride?.FrameLayoutId ?? realScreen.FrameLayoutId, // Apply override if exists
+                Template = realScreen.Template,
+                ScreenLayoutId = screenOverride?.ScreenLayoutId ?? realScreen.ScreenLayoutId,
+                FrameLayoutId = screenOverride?.FrameLayoutId ?? realScreen.FrameLayoutId,
                 FrameTemplate = realScreen.FrameTemplate,
                 ScreenType = realScreen.ScreenType,
-                SupportsConfigPayloads = true, // Always true for virtual screens
+                SupportsConfigPayloads = true,
                 SupportsSensorPayloads = true,
                 UseKeepAlive = false
             };
@@ -255,32 +234,16 @@ namespace JunctionRelayServer.Services
             return (virtualDevice, virtualScreen, virtualScreenUrl);
         }
 
-        // Match the WebSocket shape so /api/connections/streams can display uniform fields
         public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
         {
             return _streamingTokens.Select(kvp =>
             {
                 var info = kvp.Value;
-
-                // JSON we keep for UI
-                string configJson = info.ConfigPayloadJson ?? "{}";
-                string lastJson = info.LastGeneratedPayloadJson ?? "{}";
-
-                // Always provide compressed hex previews (like WS manager does),
-                // but keep the *JSON* fields uncompressed for readability.
-                string configHex = CompressToHex(configJson);
-                string lastHex = CompressToHex(lastJson);
-
-                // Match updated naming: payloadType shows "Composite Sensor" when running in composite mode
-                bool isComposite = (info.Protocol ?? "").IndexOf("Frame Assembly", StringComparison.OrdinalIgnoreCase) >= 0;
-                string payloadType = isComposite ? "Composite Sensor" : "JSON";
-
                 return new
                 {
-                    // Core parity
                     StreamKey = kvp.Key,
                     DeviceName = info.DeviceName,
-                    DeviceMac = "Unknown",
+                    DeviceMac = "Virtual",
                     ScreenId = info.ScreenId,
                     ScreenName = info.ScreenName,
                     Status = info.Status,
@@ -289,18 +252,12 @@ namespace JunctionRelayServer.Services
                     LastSentTime = info.LastGeneratedTime,
                     Protocol = info.Protocol ?? "Virtual",
                     SensorsCount = info.SensorsCount,
-
-                    // Frame parity fields
                     HasLastFrame = info.LastGeneratedFrameBytes != null,
                     LastFrameSize = info.LastFrameSize,
                     LastFrameTime = info.LastFrameGeneratedTime,
                     LastFrameLayoutType = info.LastFrameLayoutType,
-
-                    // Gateway parity fields
                     IsGatewayMode = false,
-                    GatewayTarget = "Unknown",
-
-                    // Health parity - FIXED TO MATCH OTHER MANAGERS' INT TYPES
+                    GatewayTarget = "N/A",
                     Health = new
                     {
                         ConnectionState = info.Health.ConnectionState,
@@ -312,75 +269,38 @@ namespace JunctionRelayServer.Services
                         ConnectionRecreated = false,
                         LastWebSocketState = (string?)null,
                         AverageLatency = info.Health.AverageLatency,
-                        MaxLatency = (long)info.Latency,        // Cast to long to match WS manager
-                        MinLatency = (long)info.Latency,        // Cast to long to match WS manager
+                        MaxLatency = (long)info.Latency,
+                        MinLatency = (long)info.Latency,
                         LastSuccessTime = info.Health.LastSuccessTime,
                         LastFailureTime = info.Health.LastFailureTime,
                         ConnectionRecreationCount = 0,
-
-                        // Frame/gateway metrics - FIXED TO USE INT TYPES
-                        IsFrameMode = false,
-                        PayloadType = payloadType,
-                        FramesSent = 0,
-                        PayloadsSent = (int)Math.Min(info.PayloadsGenerated, int.MaxValue), // Cast long to int safely
-                        CurrentFrameLayoutType = "",
-                        AverageFrameSize = 0.0,                 // double to match WS
-                        MaxFrameSize = 0L,                      // long to match WS
-                        MinFrameSize = 0L,                      // long to match WS (not MaxValue)
-                        AverageFrameRenderTime = 0.0,           // double to match WS  
-                        MaxFrameRenderTime = 0L,                // long to match WS
-                        MinFrameRenderTime = 0L,                // long to match WS (not MaxValue)
-                        FrameHealthSummary = new { message = "Not in frame mode" },
-
-                        IsGatewayMode = false,
-                        GatewayTarget = "Unknown",
+                        IsFrameMode = info.Health.IsFrameMode,
+                        PayloadType = info.Health.PayloadType,
+                        FramesSent = info.Health.FramesSent,
+                        PayloadsSent = info.Health.PayloadsSent,
+                        CurrentFrameLayoutType = info.Health.CurrentFrameLayoutType,
+                        AverageFrameSize = info.Health.AverageFrameSize,
+                        MaxFrameSize = info.Health.MaxFrameSize,
+                        MinFrameSize = info.Health.MinFrameSize,
+                        AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
+                        MaxFrameRenderTime = info.Health.MaxFrameRenderTime,
+                        MinFrameRenderTime = info.Health.MinFrameRenderTime,
+                        FrameHealthSummary = info.Health.GetFrameHealthSummary(),
                         GatewayMessagesSent = 0,
                         GatewayHealthSummary = new { message = "Not in gateway mode" }
                     },
-
-                    // Payload fields (prefixes left empty for UI safety, like WS often does)
-                    ConfigPayloadPrefix = "",
-                    ConfigPayloadJson = configJson,
-                    LastSentPayloadPrefix = "",
-                    LastSentPayloadJson = lastJson,
-
-                    // Compressed previews: always include hex (like WS manager)
-                    CompressedConfigPayloadPrefix = "",
-                    CompressedLastSentPayloadPrefix = "",
-                    ConfigPayloadCompressed = configHex,
-                    LastSentPayloadCompressed = lastHex
+                    ConfigPayloadPrefix = info.ConfigPayloadPrefix,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
+                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+                    CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
+                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview()
                 };
             });
         }
 
-        private static string ExtractStringPrefix(string payload)
-        {
-            if (string.IsNullOrEmpty(payload) || payload.Length < 8) return string.Empty;
-            for (int i = 0; i < 8; i++)
-            {
-                if (payload[i] < '0' || payload[i] > '9') return string.Empty;
-            }
-            return payload.Substring(0, 8);
-        }
-
-        private static string CompressToHex(string? s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            var input = Encoding.UTF8.GetBytes(s);
-            using var ms = new MemoryStream();
-            using (var gzip = new GZipStream(ms, CompressionMode.Compress))
-                gzip.Write(input, 0, input.Length);
-            var bytes = ms.ToArray();
-            var sb = new StringBuilder(bytes.Length * 3);
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                if (i > 0) sb.Append(' ');
-                sb.Append(bytes[i].ToString("x2"));
-            }
-            return sb.ToString();
-        }
-
-        // Updated method with 9 parameters to match the unified signature
         public async Task StartStreamingAsync(
             int junctionId,
             int deviceId,
@@ -396,16 +316,6 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Stream already active for device {deviceId}, screen {screenKey}");
                 return;
-            }
-
-            // Log gateway parameters for debugging (Virtual manager doesn't use them but logs for consistency)
-            if (!string.IsNullOrEmpty(junctionType))
-            {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Gateway junction type: {junctionType} (ignored by virtual manager)");
-            }
-            if (!string.IsNullOrEmpty(gatewayDestination))
-            {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Gateway destination: {gatewayDestination} (ignored by virtual manager)");
             }
 
             var cts = new CancellationTokenSource();
@@ -426,15 +336,17 @@ namespace JunctionRelayServer.Services
             var device = await deviceDb.GetDeviceByIdAsync(deviceId);
             var deviceName = device?.Name ?? $"Virtual-{deviceId}";
 
-            // Determine rendering mode using new constants
             var renderMode = junction.RenderingMode;
             bool isBlitMode = renderMode == RenderModes.Blit;
             bool isCompositeMode = renderMode == RenderModes.Composite;
             bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
-            // Fetch screen layout overrides
             var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
             Model_JunctionScreenLayout? screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
+
+            string protocolString = isCompositeMode ? "Virtual (Frame Assembly)"
+                                  : isBlitMode ? "Virtual (Pre-rendered Frames)"
+                                  : "Virtual";
 
             var info = new Service_StreamInfo_Virtual
             {
@@ -447,64 +359,61 @@ namespace JunctionRelayServer.Services
                 Cts = cts,
                 Latency = 0,
                 LastGeneratedTime = DateTime.UtcNow,
-                Protocol = isCompositeMode ? "Virtual (Frame Assembly)"
-                                  : isBlitMode ? "Virtual (Pre-rendered Frames)"
-                                  : "Virtual"
+                Protocol = protocolString
             };
+
+            if (isAnyFrameMode)
+            {
+                info.Health.IsFrameMode = true;
+            }
 
             _streamingTokens[screen.Id] = info;
 
-            // CONFIG GENERATION - (composite or blit both use same data - this manager is not currently setup for standard payload mode)
-            var riveConfig = await payloadSvc.GenerateRiveConfigPayloadsAsync(
-                screenKey,
-                assignedSensors,
-                screen,
-                screenOverride,
-                junctionType: junctionType,
-                gatewayDestination: gatewayDestination,
-                compressPayload: junction.CompressPayload);
+            // CONFIG GENERATION
+            Model_PayloadResultCollection configResult;
 
-            if (!riveConfig.TryGetValue(screenKey, out var rawConfig))
+            if (isCompositeMode || isBlitMode)
             {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] No rive config for {screenKey}.");
+                configResult = await payloadSvc.GenerateFrameEngineConfigPayloadsAsync(
+                    screenKey,
+                    assignedSensors,
+                    screen,
+                    screenOverride,
+                    junctionType: junctionType,
+                    gatewayDestination: gatewayDestination,
+                    compressPayload: junction.CompressPayload);
+            }
+            else
+            {
+                configResult = await payloadSvc.GenerateConfigPayloadsAsync(
+                    screenKey,
+                    assignedSensors,
+                    screen,
+                    overrideTemplate: null,
+                    junctionType: junctionType,
+                    gatewayDestination: gatewayDestination,
+                    compressPayload: junction.CompressPayload);
+            }
+
+            var configPayload = configResult.GetResult(screenKey);
+            if (configPayload == null)
+            {
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] No config payload for {screenKey}.");
                 _streamingTokens.TryRemove(screen.Id, out _);
                 return;
             }
 
-            // Extract config JSON for UI display
-            string configJson = "";
-            if (rawConfig is byte[] configBytes)
+            // Update StreamInfo with config details
+            info.ConfigPayloadPrefix = configPayload.UncompressedPrefix;
+            info.UpdateConfigPayload(configPayload.UncompressedJson);
+            if (configPayload.IsCompressed)
             {
-                if (junction.CompressPayload)
-                {
-                    // Get uncompressed version for UI display
-                    var uncompressedConfig = await payloadSvc.GenerateRiveConfigPayloadsAsync(
-                        screenKey, assignedSensors, screen, screenOverride,
-                        junctionType: junctionType, gatewayDestination: gatewayDestination, compressPayload: false);
-
-                    if (uncompressedConfig.TryGetValue(screenKey, out var rawUnc) && rawUnc is string uncStr)
-                    {
-                        var prefix = ExtractStringPrefix(uncStr);
-                        configJson = string.IsNullOrEmpty(prefix) ? uncStr : uncStr.Substring(8);
-                    }
-                }
-                else
-                {
-                    var configStr = Encoding.UTF8.GetString(configBytes);
-                    var prefix = ExtractStringPrefix(configStr);
-                    configJson = string.IsNullOrEmpty(prefix) ? configStr : configStr.Substring(8);
-                }
-            }
-            else if (rawConfig is string configStr)
-            {
-                var prefix = ExtractStringPrefix(configStr);
-                configJson = string.IsNullOrEmpty(prefix) ? configStr : configStr.Substring(8);
+                info.UpdateCompressedConfigPayloadPrefix(configPayload.CompressedPrefix);
             }
 
-            info.UpdateConfigPayload(configJson);
-            Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Rive config prepared for {deviceName}/{screenKey}.");
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Config prepared for {deviceName}/{screenKey} ({configPayload.BinaryPayload.Length} bytes).");
 
-            // SENSOR LOOP - Always use Rive sensor payloads
+            // SENSOR LOOP
             _ = Task.Run(async () =>
             {
                 using var loopScope = _scopeFactory.CreateScope();
@@ -514,90 +423,80 @@ namespace JunctionRelayServer.Services
 
                 while (!cts.Token.IsCancellationRequested)
                 {
-                    // Console.WriteLine($"[DEBUG] Sensor loop iteration for device {deviceId}, screen {screen.Id}, isBlitMode: {isBlitMode}");
-
                     try
                     {
-                        // Always generate Rive sensor payloads (works for both blit and composite)
-                        var riveSensor = await loopPayloadSvc.GenerateRiveSensorPayloadsAsync(
-                            screenKey,
-                            assignedSensors,
-                            screen,
-                            junctionType: junctionType,
-                            gatewayDestination: gatewayDestination,
-                            compressPayload: junction.CompressPayload);
+                        Stopwatch stopwatch = Stopwatch.StartNew();
+                        Model_PayloadResultCollection sensorResult;
 
-                        if (!riveSensor.TryGetValue(screenKey, out var rawSensor))
+                        if (isCompositeMode || isBlitMode)
+                        {
+                            sensorResult = await loopPayloadSvc.GenerateFrameEngineSensorPayloadsAsync(
+                                screenKey,
+                                assignedSensors,
+                                screen,
+                                junctionType: junctionType,
+                                gatewayDestination: gatewayDestination,
+                                compressPayload: junction.CompressPayload);
+                        }
+                        else
+                        {
+                            sensorResult = await loopPayloadSvc.GenerateSensorPayloadsAsync(
+                                screenKey,
+                                assignedSensors.Count,
+                                assignedSensors,
+                                screen,
+                                junctionType: junctionType,
+                                gatewayDestination: gatewayDestination,
+                                compressPayload: junction.CompressPayload);
+                        }
+
+                        var sensorPayload = sensorResult.GetResult(screenKey);
+                        if (sensorPayload == null)
                             break;
 
-                        // Extract sensor JSON for UI display
-                        string sensorJson = "";
-                        if (rawSensor is byte[] sensorBytes)
-                        {
-                            if (junction.CompressPayload)
-                            {
-                                // Get uncompressed version for UI display
-                                var uncompressed = await loopPayloadSvc.GenerateRiveSensorPayloadsAsync(
-                                    screenKey, assignedSensors, screen,
-                                    junctionType: junctionType, gatewayDestination: gatewayDestination,
-                                    compressPayload: false);
+                        stopwatch.Stop();
 
-                                if (uncompressed.TryGetValue(screenKey, out var rawUnc) && rawUnc is string uncStr)
-                                {
-                                    var prefix = ExtractStringPrefix(uncStr);
-                                    sensorJson = string.IsNullOrEmpty(prefix) ? uncStr : uncStr.Substring(8);
-                                }
-                            }
-                            else
-                            {
-                                var sensorStr = Encoding.UTF8.GetString(sensorBytes);
-                                var prefix = ExtractStringPrefix(sensorStr);
-                                sensorJson = string.IsNullOrEmpty(prefix) ? sensorStr : sensorStr.Substring(8);
-                            }
-                        }
-                        else if (rawSensor is string sensorStr)
+                        // Update StreamInfo with sensor payload details
+                        info.LastSentPayloadPrefix = sensorPayload.UncompressedPrefix;
+                        info.UpdateLastSentPayload(sensorPayload.UncompressedJson);
+                        if (sensorPayload.IsCompressed)
                         {
-                            var prefix = ExtractStringPrefix(sensorStr);
-                            sensorJson = string.IsNullOrEmpty(prefix) ? sensorStr : sensorStr.Substring(8);
+                            info.UpdateCompressedLastSentPayloadPrefix(sensorPayload.CompressedPrefix);
                         }
 
-                        info.UpdateLastGeneratedPayload(sensorJson);
+                        var healthResult = new VirtualStreamHealthResult
+                        {
+                            Success = true,
+                            LatencyMs = stopwatch.ElapsedMilliseconds,
+                            PayloadType = isCompositeMode ? "Composite Sensor" : (isBlitMode ? "Frame" : "JSON"),
+                            IsGatewayMode = false,
+                            GatewayTarget = null
+                        };
 
-                        info.LastGeneratedTime = DateTime.UtcNow;
-                        info.Latency = 0;
-                        _streamLatencies[screen.Id] = 0;
+                        info.Health.UpdateHealth(healthResult);
 
-                        // BLIT MODE: Capture frame if this is a virtual screen for blit mode (fire-and-forget async)
-                        if (isBlitMode && deviceId < 0) // Virtual device IDs are negative
+                        // BLIT MODE: Capture frame if this is a virtual screen for blit mode
+                        if (isBlitMode && deviceId < 0)
                         {
                             _ = Task.Run(async () =>
                             {
                                 try
                                 {
-                                    // Console.WriteLine($"[DEBUG] Starting frame capture for virtual device {deviceId}, screen {screen.Id}");
-
-                                    // Find the original screen ID that this virtual screen represents
                                     var originalScreenEntry = _blitModeVirtualScreens.FirstOrDefault(kvp => kvp.Value.virtualScreenId == screen.Id);
                                     if (!originalScreenEntry.Equals(default(KeyValuePair<int, (int, int, string, int)>)))
                                     {
                                         var originalScreenId = originalScreenEntry.Key;
                                         var storedLinkId = originalScreenEntry.Value.linkId;
-                                        // Console.WriteLine($"[DEBUG] Found original screen ID: {originalScreenId}");
 
-                                        // Get frame layout from screen override or screen itself
                                         using var frameScope = _scopeFactory.CreateScope();
                                         var frameLayoutDb = frameScope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
                                         var frameLayoutId = screenOverride?.FrameLayoutId ?? screen.FrameLayoutId;
-                                        // Console.WriteLine($"[DEBUG] Frame layout ID: {frameLayoutId}");
 
                                         if (frameLayoutId.HasValue)
                                         {
                                             var frameLayout = await frameLayoutDb.GetFrameLayoutByIdAsync(frameLayoutId.Value);
                                             if (frameLayout != null)
                                             {
-                                                // Console.WriteLine($"[DEBUG] Got frame layout: {frameLayout.DisplayName} ({frameLayout.Width}x{frameLayout.Height})");
-
-                                                // Take a screenshot with the correct parameters for saving
                                                 var frameBytes = await _puppeteerEngine.CaptureScreenshot(
                                                     deviceId.ToString(),
                                                     frameLayout.Width,
@@ -606,55 +505,58 @@ namespace JunctionRelayServer.Services
                                                     storedLinkId,
                                                     originalScreenId);
 
-                                                // Update stream info with frame data
                                                 info.UpdateLastGeneratedFrame(frameBytes, frameLayout.LayoutType ?? "BLIT", DateTime.UtcNow);
-                                                // Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Captured blit frame for virtual screen {screen.Id} ({frameBytes.Length} bytes)");
-                                            }
-                                            else
-                                            {
-                                                Console.WriteLine($"[DEBUG] Frame layout not found for ID: {frameLayoutId}");
                                             }
                                         }
-                                        else
-                                        {
-                                            Console.WriteLine($"[DEBUG] No frame layout ID available");
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Console.WriteLine($"[DEBUG] No original screen entry found for virtual screen {screen.Id}");
                                     }
                                 }
                                 catch (Exception frameEx)
                                 {
                                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Error capturing blit frame: {frameEx.Message}");
-                                    Console.WriteLine($"[DEBUG] Frame capture exception: {frameEx}");
                                 }
                             });
                         }
 
-                        // Update health metrics
-                        info.Health.ConsecutiveSuccesses++;
-                        info.Health.ConsecutiveFailures = 0;
-                        info.Health.LastSuccessTime = DateTime.UtcNow;
+                        info.Latency = healthResult.LatencyMs;
+                        info.LastGeneratedTime = DateTime.UtcNow;
 
-                        // Add to history
-                        var entry = _historyManager.CreateEntryFromVirtual(info);
-                        _historyManager.AddHistoryEntry(entry);
+                        var historyEntry = _historyManager.CreateEntryFromVirtual(info);
+                        _historyManager.AddHistoryEntry(historyEntry);
 
-                        await Task.Delay(rate, cts.Token);
+                        _streamLatencies[screen.Id] = healthResult.LatencyMs;
+
+                        int calculatedPause = Math.Max(rate - (int)healthResult.LatencyMs, 0);
+                        if (calculatedPause > 0)
+                        {
+                            await Task.Delay(calculatedPause, cts.Token);
+                        }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Error: {ex.Message}");
-                        info.Health.ConsecutiveFailures++;
-                        info.Health.LastFailureTime = DateTime.UtcNow;
-                        info.Health.LastErrorMessage = ex.Message;
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Unexpected error: {ex.Message}");
+
+                        var errorResult = new VirtualStreamHealthResult
+                        {
+                            Success = false,
+                            ErrorType = "unexpected_error",
+                            ErrorMessage = ex.Message,
+                            LatencyMs = 0,
+                            PayloadType = isCompositeMode ? "Composite Sensor" : (isBlitMode ? "Frame" : "JSON"),
+                            IsGatewayMode = false,
+                            GatewayTarget = null
+                        };
+                        info.Health.UpdateHealth(errorResult);
+
                         await Task.Delay(1000, cts.Token);
                     }
                 }
 
-                info.Status = "Inactive";
+                if (_streamingTokens.TryGetValue(screen.Id, out var finalInfo))
+                {
+                    finalInfo.Status = "Inactive";
+                    finalInfo.Health.ConnectionState = "disconnected";
+                }
+
             }, cts.Token);
 
             string modeDescription = renderMode switch
@@ -665,10 +567,8 @@ namespace JunctionRelayServer.Services
                 _ => renderMode
             };
 
-            Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] ✅ Virtual stream started for screen {screenKey} (Mode: {modeDescription})");
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Virtual stream started for screen {screenKey} (Mode: {modeDescription})");
         }
-
-
 
         public void StopStreaming(int screenId)
         {
@@ -678,14 +578,12 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Stopped stream for screen {screenId}");
             }
 
-            // Clean up blit mode virtual screen if exists
             if (_blitModeVirtualScreens.TryRemove(screenId, out var blitScreenTuple))
             {
                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_VIRTUAL] Cleaned up blit mode virtual screen for original screen {screenId}");
             }
         }
 
-        // Get virtual screen URL for blit mode (for Puppeteer to use)
         public string? GetBlitModeVirtualScreenUrl(int originalScreenId)
         {
             if (_blitModeVirtualScreens.TryGetValue(originalScreenId, out var screenTuple))
@@ -695,7 +593,6 @@ namespace JunctionRelayServer.Services
             return null;
         }
 
-        // Get virtual device ID for blit mode
         public int? GetBlitModeVirtualDeviceId(int originalScreenId)
         {
             if (_blitModeVirtualScreens.TryGetValue(originalScreenId, out var screenTuple))
@@ -710,10 +607,8 @@ namespace JunctionRelayServer.Services
             var virtualScreen = _blitModeVirtualScreens.Values
                 .FirstOrDefault(v => v.virtualDeviceId == virtualDeviceId);
 
-            // Check if we found a match by comparing with default tuple
             if (!virtualScreen.Equals(default((int, int, string, int))))
             {
-                // Create a virtual device model based on the stored info
                 return new Model_Device
                 {
                     Id = virtualScreen.virtualDeviceId,
@@ -739,9 +634,73 @@ namespace JunctionRelayServer.Services
             return latency;
         }
 
-        public StreamHistoryResponse GetStreamHistory(int screenId, DateTime? from = null, DateTime? to = null, bool includeStats = true)
+        public StreamHistoryResponse GetStreamHistory(int screenId, DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = true)
         {
-            return _historyManager.GetStreamHistory(screenId, from, to, includeStats);
+            return _historyManager.GetStreamHistory(screenId, fromTime, toTime, includeStatistics);
         }
+
+        public Dictionary<int, StreamHistoryResponse> GetAllStreamHistories(DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = false)
+        {
+            return _historyManager.GetAllStreamHistories(fromTime, toTime, includeStatistics);
+        }
+
+        public object GetHistorySummary()
+        {
+            return _historyManager.GetHistorySummary();
+        }
+
+        public bool ClearStreamHistory(int screenId)
+        {
+            return _historyManager.ClearStreamHistory(screenId);
+        }
+
+        public void UpdateHistoryRetention(TimeSpan retentionPeriod)
+        {
+            _historyManager.UpdateRetentionPeriod(retentionPeriod);
+        }
+
+        public void UpdateHistoryMaxEntries(int maxEntries)
+        {
+            _historyManager.UpdateMaxEntries(maxEntries);
+        }
+
+        public HistoryConfiguration GetHistoryConfiguration()
+        {
+            return _historyManager.GetConfiguration();
+        }
+
+        public object GetVirtualStreamMetrics()
+        {
+            return new
+            {
+                TotalStreams = _streamingTokens.Count,
+                ActiveStreams = _streamingTokens.Values.Count(s => s.Status == "Active"),
+                BlitModeVirtualScreens = _blitModeVirtualScreens.Count,
+                StreamsByProtocol = _streamingTokens.Values
+                    .GroupBy(s => s.Protocol)
+                    .ToDictionary(g => g.Key, g => g.Count()),
+                FrameStreams = _streamingTokens.Values.Count(s => s.Health.IsFrameMode),
+                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol?.Contains("Frame Assembly") == true),
+                BlitStreams = _streamingTokens.Values.Count(s => s.Protocol?.Contains("Pre-rendered Frames") == true),
+                HealthSummary = new
+                {
+                    Good = _streamingTokens.Values.Count(s => s.Health.ConnectionState == "good"),
+                    Poor = _streamingTokens.Values.Count(s => s.Health.ConnectionState == "poor"),
+                    Disconnected = _streamingTokens.Values.Count(s => s.Health.ConnectionState == "disconnected")
+                }
+            };
+        }
+    }
+
+    // Helper class for virtual stream health results
+    public class VirtualStreamHealthResult
+    {
+        public bool Success { get; set; }
+        public string? ErrorType { get; set; }
+        public string? ErrorMessage { get; set; }
+        public long LatencyMs { get; set; }
+        public string PayloadType { get; set; } = "";
+        public bool IsGatewayMode { get; set; }
+        public string? GatewayTarget { get; set; }
     }
 }

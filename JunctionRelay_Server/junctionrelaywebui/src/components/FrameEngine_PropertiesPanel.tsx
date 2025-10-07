@@ -20,55 +20,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { FrameEngine_LayoutProperties } from './FrameEngine_LayoutProperties';
 import { FrameEngine_ElementList } from './FrameEngine_ElementList';
-
-interface FrameLayoutConfig {
-    displayName: string;
-    description?: string;
-    layoutType: string;
-    width: number;
-    height: number;
-    orientation?: string;
-    backgroundColor?: string;
-    backgroundType?: string;
-    backgroundImageUrl?: string | null;
-    backgroundImageData?: Uint8Array | null;
-    backgroundOpacity?: number;
-    riveFile?: string | null;
-    riveStateMachine?: string | null;
-    riveInputs?: Record<string, any> | null;
-    rows?: number;
-    columns?: number;
-    isTemplate: boolean;
-    isDraft?: boolean;
-    isPublished?: boolean;
-}
-
-interface PlacedElement {
-    id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    properties: Record<string, any>;
-    sensorId?: string;
-    visible?: boolean;
-    zIndex?: number;
-}
-
-// Types for Rive discovery
-interface DiscoveredInput {
-    name: string;
-    type: 'number' | 'boolean' | 'trigger' | 'unknown';
-    currentValue?: any;
-    ref?: any;
-}
-
-interface DiscoveredStateMachine {
-    name: string;
-    inputNames: string[];
-    inputs: DiscoveredInput[];
-}
+import type {
+    FrameLayoutConfig,
+    PlacedElement,
+    DiscoveredInput,
+    DiscoveredStateMachine,
+    DiscoveredDataBinding
+} from './FrameEngine_Types';
 
 interface FrameEngine_PropertiesPanelProps {
     layout: FrameLayoutConfig;
@@ -81,6 +39,7 @@ interface FrameEngine_PropertiesPanelProps {
     onElementDuplicate?: (elementId: string) => void;
     onElementReorder?: (fromIndex: number, toIndex: number) => void;
     discoveredMachines?: DiscoveredStateMachine[];
+    discoveredBindings?: DiscoveredDataBinding[];
 }
 
 export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelProps> = ({
@@ -94,10 +53,11 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     onElementDuplicate,
     onElementReorder,
     discoveredMachines = [],
+    discoveredBindings = [],
 }) => {
     const [activeSection, setActiveSection] = useState<'layout' | 'element'>('layout');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text'])
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography'])
     );
 
     // Handle element visibility toggle
@@ -227,6 +187,7 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                         expandedSections={expandedSections}
                         onToggleSection={toggleSection}
                         discoveredMachines={discoveredMachines}
+                        discoveredBindings={discoveredBindings}
                     />
                 ) : (
                     <FrameEngine_ElementList

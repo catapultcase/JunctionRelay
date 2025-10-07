@@ -69,10 +69,9 @@ namespace JunctionRelayServer.Services
             var existingJunctionSensors = await _sensorsDbManager.GetJunctionSensorsByJunctionIdAsync(junctionId);
             var seenKeys = new HashSet<string>(
                 existingJunctionSensors
-                    .Select(s => $"{s.ExternalId}:{s.JunctionDeviceLinkId ?? s.JunctionCollectorLinkId}"),
+                    .Select(s => $"{s.ExternalId}:{s.JunctionDeviceLinkId ?? s.JunctionCollectorLinkId ?? 0}"),
                 StringComparer.OrdinalIgnoreCase
             );
-
             var deviceLinks = await _linkDb.GetDeviceLinksByJunctionAsync(junctionId);
             var collectorLinks = await _linkDb.GetCollectorLinksByJunctionAsync(junctionId);
             var insertedCount = 0;
@@ -82,6 +81,7 @@ namespace JunctionRelayServer.Services
                 int? linkId = null;
                 bool isDevice = false;
 
+                // Handle all sensors the same way
                 if (sensor.DeviceId.HasValue)
                 {
                     var dl = deviceLinks.FirstOrDefault(x => x.DeviceId == sensor.DeviceId);
@@ -93,9 +93,11 @@ namespace JunctionRelayServer.Services
                     if (cl != null) linkId = cl.Id;
                 }
 
+                // Skip sensors that don't have a valid link
                 if (!linkId.HasValue)
                     continue;
 
+                // Create unique key
                 var key = $"{sensor.ExternalId}:{linkId.Value}";
                 if (seenKeys.Contains(key))
                     continue;
@@ -117,7 +119,6 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine($"❌ Error inserting sensor {sensor.ExternalId}: {ex.Message}");
                 }
             }
-
             Console.WriteLine($"✅ Cloned {insertedCount} sensors for junction {junctionId}.");
         }
     }

@@ -46,37 +46,35 @@ import TvIcon from '@mui/icons-material/Tv';
 
 // Helper function to get collector type info with colors and icons
 const getCollectorTypeInfo = (type: string) => {
-    const typeMap: Record < string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
-    "Cloudflare": { color: "primary", icon: < CloudIcon fontSize = "small" /> },
-        "Github": { color: "info", icon: < DnsIcon fontSize = "small" /> },
-        "HomeAssistant": { color: "info", icon: < HomeIcon fontSize = "small" /> },
-        "Host": { color: "secondary", icon: < ComputerIcon fontSize = "small" /> },
-        "LibreHardwareMonitor": { color: "primary", icon: < MemoryIcon fontSize = "small" /> },
-        "MQTT": { color: "error", icon: < RouterIcon fontSize = "small" /> },
-        "NeoPixelColor": { color: "secondary", icon: < ColorLensIcon fontSize = "small" /> },
-        "RateTester": { color: "warning", icon: < SpeedIcon fontSize = "small" /> },
-        "Render": { color: "success", icon: < CloudIcon fontSize = "small" /> },
-        "SonarrCalendar": { color: "secondary", icon: < TvIcon fontSize = "small" /> },
-        "Stripe": { color: "success", icon: < PaymentIcon fontSize = "small" /> },
-        "UptimeKuma": { color: "success", icon: < MonitorHeartIcon fontSize = "small" /> },
+    const typeMap: Record<string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
+        "Cloudflare": { color: "primary", icon: <CloudIcon fontSize="small" /> },
+        "Github": { color: "info", icon: <DnsIcon fontSize="small" /> },
+        "HomeAssistant": { color: "info", icon: <HomeIcon fontSize="small" /> },
+        "Host": { color: "secondary", icon: <ComputerIcon fontSize="small" /> },
+        "LibreHardwareMonitor": { color: "primary", icon: <MemoryIcon fontSize="small" /> },
+        "MQTT": { color: "error", icon: <RouterIcon fontSize="small" /> },
+        "NeoPixelColor": { color: "secondary", icon: <ColorLensIcon fontSize="small" /> },
+        "RateTester": { color: "warning", icon: <SpeedIcon fontSize="small" /> },
+        "Render": { color: "success", icon: <CloudIcon fontSize="small" /> },
+        "SonarrCalendar": { color: "secondary", icon: <TvIcon fontSize="small" /> },
+        "Stripe": { color: "success", icon: <PaymentIcon fontSize="small" /> },
+        "UptimeKuma": { color: "success", icon: <MonitorHeartIcon fontSize="small" /> },
+        "FrameEngine": { color: "warning", icon: <MemoryIcon fontSize="small" /> },
     };
 
-return typeMap[type] || { color: "default" as const, icon: < DnsIcon fontSize = "small" /> };
+    return typeMap[type] || { color: "default" as const, icon: <DnsIcon fontSize="small" /> };
 };
 
 // Helper function to extract base URL from Sonarr iCal feed URL
 const extractSonarrBaseUrl = (icalFeedUrl: string): string => {
     if (!icalFeedUrl) return "";
 
-try
-{
-    const url = new URL(icalFeedUrl);
-    return `${ url.protocol}//${url.host}`;
-}
-catch
-{
-    return "";
-}
+    try {
+        const url = new URL(icalFeedUrl);
+        return `${url.protocol}//${url.host}`;
+    } catch {
+        return "";
+    }
 };
 
 // Memoized Collector Card component for tile views
@@ -85,14 +83,26 @@ const CollectorCard = memo(({
     viewMode,
     onDelete,
     onEdit,
+    isFrameEngine = false,
+    onCardClick,
 }: {
-collector: any,
+    collector: any,
     viewMode: 'standard' | 'mini',
     onDelete: (e: React.MouseEvent, id: number) => void,
     onEdit: (e: React.MouseEvent, collector: any) => void,
+    isFrameEngine?: boolean,
+    onCardClick?: () => void,
 }) => {
     const navigate = useNavigate();
     const typeInfo = getCollectorTypeInfo(collector.collectorType);
+
+    const handleCardClick = () => {
+        if (isFrameEngine && onCardClick) {
+            onCardClick();
+        } else {
+            navigate(`/configure-collector/${collector.id}`);
+        }
+    };
 
     const getCardHeight = () => {
         return viewMode === 'mini' ? 120 : 220;
@@ -103,8 +113,7 @@ collector: any,
 
     // Get display URL based on collector type
     const getDisplayUrl = () => {
-        if (collector.collectorType === 'SonarrCalendar')
-        {
+        if (collector.collectorType === 'SonarrCalendar') {
             // For Sonarr, show the base URL extracted from the access token, or fall back to stored URL
             return collector.url || extractSonarrBaseUrl(collector.accessToken) || "Sonarr iCal Feed";
         }
@@ -112,32 +121,29 @@ collector: any,
     };
 
     return (
-        < Card
-            variant = "outlined"
-            sx ={
-        {
-        cursor: 'pointer',
+        <Card
+            variant="outlined"
+            sx={{
+                cursor: 'pointer',
                 transition: 'all 0.2s ease-in-out',
                 position: 'relative',
                 minHeight: getCardHeight(),
                 display: 'flex',
                 flexDirection: 'column',
                 '&:hover': {
-            boxShadow: 6,
+                    boxShadow: 6,
                     transform: 'translateY(-2px)',
                     backgroundColor: 'action.hover'
                 },
                 border: '1px solid',
                 borderColor: statusColor === 'success' ? 'success.main' : 'divider',
-            }
-    }
-    onClick ={ () => navigate(`/ configure - collector /${ collector.id}`)}
+            }}
+            onClick={handleCardClick}
         >
             {/* Status Badge */}
-            < Box
-                sx ={
-        {
-        position: 'absolute',
+            <Box
+                sx={{
+                    position: 'absolute',
                     top: viewMode === 'mini' ? 4 : 8,
                     right: viewMode === 'mini' ? 4 : 8,
                     backgroundColor: statusColor === 'success' ? 'success.main' :
@@ -152,152 +158,142 @@ collector: any,
                     textTransform: 'uppercase',
                     boxShadow: 1,
                     zIndex: 1
-                }
-    }
+                }}
             >
-                {
-        viewMode === 'mini'
+                {viewMode === 'mini'
                     ? (statusColor === 'success' ? '●' : '○')
                     : (collector.status || 'Unknown')
                 }
-            </ Box >
+            </Box>
 
-            < CardContent sx ={
-        {
-        flex: 1,
+            <CardContent sx={{
+                flex: 1,
                 pt: viewMode === 'mini' ? 2.5 : 5,
                 p: viewMode === 'mini' ? 1 : 2
-            }
-    }>
+            }}>
                 {/* Collector Name with type icon */}
-                < Box sx ={
-        {
-        display: 'flex',
+                <Box sx={{
+                    display: 'flex',
                     alignItems: 'center',
                     mb: viewMode === 'mini' ? 0.5 : 1,
                     gap: 0.5
-                }
-    }>
-                    { typeInfo.icon}
-                    < Typography
-                        variant ={ viewMode === 'mini' ? 'body2' : 'h6'}
-    sx ={
-        {
-        fontSize: viewMode === 'mini' ? '0.75rem' : { xs: '1rem', sm: '1.1rem' },
+                }}>
+                    {typeInfo.icon}
+                    <Typography
+                        variant={viewMode === 'mini' ? 'body2' : 'h6'}
+                        sx={{
+                            fontSize: viewMode === 'mini' ? '0.75rem' : { xs: '1rem', sm: '1.1rem' },
                             fontWeight: 600,
                             lineHeight: viewMode === 'mini' ? 1.2 : 1.5,
                             flex: 1
-                        }
-    }
-    noWrap
->
-                        { collector.name}
-                    </ Typography >
-                </ Box >
+                        }}
+                        noWrap
+                    >
+                        {collector.name}
+                    </Typography>
+                </Box>
 
                 {/* Collector Details */}
-    {
-        viewMode === 'standard' && (
-
-        <>
-
-            < Divider sx ={ { mb: 1 } } />
-
-            < Box sx ={ { mb: 1 } }>
-
-                < Typography variant = "body2" color = "textSecondary" sx ={ { fontSize: '0.8rem' } }>
-
-                    < strong > Type:</ strong > { collector.collectorType || "Unknown"}
-                            </ Typography >
-                            {
-            getDisplayUrl() && (
-                                < Typography variant = "body2" color = "textSecondary" sx ={ { fontSize: '0.8rem' } }>
-                                    < strong > URL:</ strong > { getDisplayUrl()}
-                                </ Typography >
+                {viewMode === 'standard' && (
+                    <>
+                        <Divider sx={{ mb: 1 }} />
+                        <Box sx={{ mb: 1 }}>
+                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                <strong>Type:</strong> {collector.collectorType || "Unknown"}
+                            </Typography>
+                            {getDisplayUrl() && (
+                                <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                    <strong>URL:</strong> {getDisplayUrl()}
+                                </Typography>
                             )}
-                            < Typography variant = "body2" color = "textSecondary" sx ={ { fontSize: '0.8rem' } }>
-                                < strong > Token:</ strong > { collector.accessToken ? "Configured" : "Not set"}
-                            </ Typography >
-                        </ Box >
+                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
+                                <strong>Token:</strong> {collector.accessToken ? "Configured" : "Not set"}
+                            </Typography>
+                        </Box>
                     </>
                 )}
 
-    {/* Type Chip */}
-                < Box sx ={
-        {
-        display: 'flex',
+                {/* Type Chip */}
+                <Box sx={{
+                    display: 'flex',
                     flexDirection: 'column',
                     gap: viewMode === 'mini' ? 0.5 : 1,
                     mt: 'auto'
-                }
-    }>
-                    < Box sx ={
-        {
-        display: 'flex',
+                }}>
+                    <Box sx={{
+                        display: 'flex',
                         gap: 0.5,
                         flexWrap: 'wrap',
                         alignItems: 'center'
-                    }
-    }>
-                        < Chip
-                            label ={
-        viewMode === 'mini'
-                                ? collector.collectorType?.substring(0, 8) + (collector.collectorType?.length > 8 ? '...' : '')
-                                : collector.collectorType
+                    }}>
+                        <Chip
+                            label={
+                                viewMode === 'mini'
+                                    ? collector.collectorType?.substring(0, 8) + (collector.collectorType?.length > 8 ? '...' : '')
+                                    : collector.collectorType
                             }
-    color ={ typeInfo.color}
-    size = "small"
-                            sx ={
-        {
-        fontSize: viewMode === 'mini' ? '0.6rem' : '0.7rem',
+                            color={typeInfo.color}
+                            size="small"
+                            sx={{
+                                fontSize: viewMode === 'mini' ? '0.6rem' : '0.7rem',
                                 height: viewMode === 'mini' ? 18 : 22
-                            }
-    }
+                            }}
                         />
-                    </ Box >
-                </ Box >
+                    </Box>
+                </Box>
 
-                {/* Action Buttons for standard view */}
-    {
-        viewMode === 'standard' && (
-
-        < Box sx ={
-            {
-            display: 'flex',
+                {/* Action Buttons for standard view - Hidden for FrameEngine */}
+                {viewMode === 'standard' && !isFrameEngine && (
+                    <Box sx={{
+                        display: 'flex',
                         justifyContent: 'flex-end',
                         alignItems: 'center',
                         mt: 1,
                         gap: 1
-                    }
-        }>
-                        < Tooltip title = "Edit" >
-                            < IconButton
-                                size = "small"
-                                onClick ={
-            (e) => {
-                e.stopPropagation();
-                onEdit(e, collector);
-            }}
+                    }}>
+                        <Tooltip title="Edit">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit(e, collector);
+                                }}
                             >
-                                < EditIcon fontSize = "small" />
-                            </ IconButton >
-                        </ Tooltip >
-                        < Tooltip title = "Delete" >
-                            < IconButton
-                                size = "small"
-                                onClick ={
-            (e) => {
-                e.stopPropagation();
-                onDelete(e, collector.id);
-            }}
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(e, collector.id);
+                                }}
                             >
-                                < DeleteIcon fontSize = "small" />
-                            </ IconButton >
-                        </ Tooltip >
-                    </ Box >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
                 )}
-            </ CardContent >
-        </ Card >
+
+                {/* Special notice for FrameEngine in standard view */}
+                {viewMode === 'standard' && isFrameEngine && (
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        mt: 1,
+                        p: 1,
+                        backgroundColor: 'action.hover',
+                        borderRadius: 1
+                    }}>
+                        <Typography variant="caption" color="text.secondary" align="center">
+                            Managed by EventEngine
+                        </Typography>
+                    </Box>
+                )}
+            </CardContent>
+        </Card>
     );
 });
 

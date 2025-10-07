@@ -695,7 +695,7 @@ const Settings: React.FC = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <StorageIcon sx={{ mr: 1 }} />
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="h6">Database & Backend</Typography>
+                                <Typography variant="h6">Local Backups</Typography>
                                 {backendFriendlyName && (
                                     <Chip
                                         label={backendFriendlyName}

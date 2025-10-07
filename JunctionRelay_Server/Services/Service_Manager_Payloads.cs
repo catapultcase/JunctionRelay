@@ -21,14 +21,13 @@ using JunctionRelayServer.Models;
 
 namespace JunctionRelayServer.Services
 {
-
-    /// Main orchestrator for payload generation. Delegates to specialized generators.
-
     public class Service_Manager_Payloads
     {
-        private readonly Service_Manager_Payloads_Rive _riveGenerator;
+        private readonly Service_Manager_Payloads_FrameEngine _frameEngineGenerator;
         private readonly Service_Manager_Payloads_Config _configGenerator;
         private readonly Service_Manager_Payloads_Sensor _sensorGenerator;
+        private readonly Service_Manager_Payloads_Blit _blitGenerator;
+        private readonly Service_Manager_Payloads_Prefix _prefixService;
 
         public Service_Manager_Payloads(
             Service_Database_Manager_Sensors sensorDb,
@@ -37,21 +36,25 @@ namespace JunctionRelayServer.Services
             Service_FrameEngine frameEngine,
             Service_Database_Manager_FrameEngine frameLayoutDb,
             Service_Database_Manager_JunctionLinks junctionLinksService,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            Service_Manager_Events eventManager)
         {
-            _riveGenerator = new Service_Manager_Payloads_Rive(
-                frameLayoutDb, httpContextAccessor, serviceManagerConnections, layoutsDb);
+            _prefixService = new Service_Manager_Payloads_Prefix();
+
+            _frameEngineGenerator = new Service_Manager_Payloads_FrameEngine(
+                frameLayoutDb, httpContextAccessor, serviceManagerConnections, layoutsDb, _prefixService, eventManager);
 
             _configGenerator = new Service_Manager_Payloads_Config(
                 layoutsDb, frameEngine, frameLayoutDb, junctionLinksService,
-                serviceManagerConnections, httpContextAccessor);
+                serviceManagerConnections, httpContextAccessor, _prefixService);
 
             _sensorGenerator = new Service_Manager_Payloads_Sensor(
-                serviceManagerConnections, layoutsDb);
+                serviceManagerConnections, layoutsDb, _prefixService, eventManager);
+
+            _blitGenerator = new Service_Manager_Payloads_Blit();
         }
 
-        // Delegate to Rive generator
-        public async Task<Dictionary<string, object>> GenerateRiveConfigPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateFrameEngineConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -60,12 +63,12 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null,
             bool compressPayload = false)
         {
-            return await _riveGenerator.GenerateRiveConfigPayloadsAsync(
+            return await _frameEngineGenerator.GenerateFrameEngineConfigPayloadsAsync(
                 screenKey, assignedSensors, screen, screenOverride,
                 junctionType, gatewayDestination, compressPayload);
         }
 
-        public async Task<Dictionary<string, object>> GenerateRiveSensorPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateFrameEngineSensorPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -73,12 +76,11 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null,
             bool compressPayload = false)
         {
-            return await _riveGenerator.GenerateRiveSensorPayloadsAsync(
+            return await _frameEngineGenerator.GenerateFrameEngineSensorPayloadsAsync(
                 screenKey, assignedSensors, screen, junctionType, gatewayDestination, compressPayload);
         }
 
-        // Delegate to Config generator
-        public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -92,7 +94,7 @@ namespace JunctionRelayServer.Services
                 junctionType, gatewayDestination, compressPayload);
         }
 
-        public async Task<Dictionary<string, object>> GenerateMQTTSubscriptionConfigPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateMQTTSubscriptionConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -104,8 +106,7 @@ namespace JunctionRelayServer.Services
                 screenKey, assignedSensors, screen, junctionType, gatewayDestination, compressPayload);
         }
 
-        // Delegate to Sensor generator
-        public async Task<Dictionary<string, object>> GenerateSensorPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateSensorPayloadsAsync(
             string screenId,
             int sensorCount,
             List<Model_Sensor> assignedSensors,
@@ -119,29 +120,19 @@ namespace JunctionRelayServer.Services
                 junctionType, gatewayDestination, compressPayload);
         }
 
-        public async Task<Dictionary<string, object>> GenerateMatrixSensorPayloadsAsync(
-            string screenId,
-            int sensorCount,
-            List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen,
-            int startingYOffset,
-            string? junctionType = null,
-            string? gatewayDestination = null,
-            bool compressPayload = false)
+        public byte[] GenerateBlitFramePayload(
+            byte[] rgb565Data,
+            bool compressPayload = false,
+            bool isGatewayMode = false)
         {
-            return await _sensorGenerator.GenerateMatrixSensorPayloadsAsync(
-                screenId, sensorCount, assignedSensors, screen, startingYOffset,
-                junctionType, gatewayDestination, compressPayload);
+            return _blitGenerator.GenerateBlitFramePayload(rgb565Data, compressPayload, isGatewayMode);
         }
 
-        // Gateway command serialization (utility method)
-        public string SerializeGatewayCommand(
+        public byte[] SerializeGatewayCommand(
             object command,
-            bool includePrefix,
-            bool compressPayload = false,
-            string routingHint = "01")
+            bool compressPayload = false)
         {
-            return _configGenerator.SerializeGatewayCommand(command, includePrefix, compressPayload, routingHint);
+            return _configGenerator.SerializeGatewayCommand(command, compressPayload);
         }
     }
 }

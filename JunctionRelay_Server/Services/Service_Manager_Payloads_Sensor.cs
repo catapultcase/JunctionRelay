@@ -18,46 +18,47 @@
  */
 
 using JunctionRelayServer.Models;
-using System.Text.Json;
-using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 
 namespace JunctionRelayServer.Services
 {
-
-    /// Specialized generator for sensor data payloads (standard and matrix-style)
     public class Service_Manager_Payloads_Sensor
     {
         private readonly Service_Manager_Connections _serviceManagerConnections;
         private readonly Service_Database_Manager_Layouts _layoutsDb;
+        private readonly Service_Manager_Payloads_Prefix _prefixService;
+        private readonly Service_Manager_Events _eventManager;
 
         public Service_Manager_Payloads_Sensor(
             Service_Manager_Connections serviceManagerConnections,
-            Service_Database_Manager_Layouts layoutsDb)
+            Service_Database_Manager_Layouts layoutsDb,
+            Service_Manager_Payloads_Prefix prefixService,
+            Service_Manager_Events eventManager)
         {
             _serviceManagerConnections = serviceManagerConnections;
             _layoutsDb = layoutsDb;
+            _prefixService = prefixService;
+            _eventManager = eventManager;
         }
 
-        public async Task<Dictionary<string, object>> GenerateSensorPayloadsAsync(
-            string screenId,
-            int sensorCount,
-            List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen,
-            string? junctionType = null,
-            string? gatewayDestination = null,
-            bool compressPayload = false)
+        public async Task<Model_PayloadResultCollection> GenerateSensorPayloadsAsync(
+    string screenId,
+    int sensorCount,
+    List<Model_Sensor> assignedSensors,
+    Model_Device_Screens screen,
+    string? junctionType = null,
+    string? gatewayDestination = null,
+    bool compressPayload = false)
         {
-            var result = new Dictionary<string, object>();
+            var result = new Model_PayloadResultCollection();
 
-            // 1) Ensure we have assigned sensors to work with
             if (assignedSensors.Count == 0)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ No assigned sensors for Screen {screenId}. Skipping payload generation.");
                 return result;
             }
 
-            // 2) Load template from database
             if (screen.ScreenLayoutId == null)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
@@ -71,10 +72,7 @@ namespace JunctionRelayServer.Services
                 return result;
             }
 
-            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] Template ID: {template.Id}, FieldsToSend from DB: '{template.FieldsToSend}'");
-
-            // 3) Parse FieldsToSend from template
-            var fieldsToSend = new[] { "SensorTag", "Value", "Unit" }; // Default fallback
+            var fieldsToSend = new[] { "SensorTag", "Value", "Unit" };
             if (!string.IsNullOrEmpty(template.FieldsToSend))
             {
                 fieldsToSend = template.FieldsToSend.Split(',')
@@ -83,140 +81,61 @@ namespace JunctionRelayServer.Services
                     .ToArray();
             }
 
-            // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] Using fields: {string.Join(", ", fieldsToSend)} for screen {screenId}");
-
-            // 4) Create a dictionary to hold the sensor data in the desired structure
             var sensors = new Dictionary<string, object>();
 
-            // 5) Sort the assigned sensors by SensorOrder before processing
             var sortedSensors = assignedSensors
                 .OrderBy(s => s.SensorOrder)
                 .Take(sensorCount)
                 .ToList();
 
-            // 6) Iterate over the sorted sensors and create the payloads
             foreach (var sensor in sortedSensors)
             {
-                // Get the sensor's latest value from the global cache using OriginalId
-                var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
-                if (cachedSensor == null)
+                bool sensorDataFound = false;
+                Model_Sensor? dataSource = null;
+
+                if (sensor.IsCustomJunctionSensor)
                 {
-                    // Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ Sensor with OriginalId {sensor.OriginalId} not found in cache.");
-                    continue;
+                    // Handle custom junction sensors
+                    dataSource = sensor; // Use the sensor itself as data source
+                    sensorDataFound = true;
                 }
-
-                // Build sensor data based on selected fields
-                var sensorData = BuildSensorData(sensor, cachedSensor, fieldsToSend);
-
-                // Use the sensor's SensorTag as the key for the payload
-                sensors[sensor.SensorTag] = new List<object> { sensorData };
-            }
-
-            // 7) Create the final payload object in the desired structure
-            var payloadDict = new Dictionary<string, object>
-            {
-                ["type"] = "sensor",
-                ["screenId"] = screen.ScreenKey,
-                ["sensors"] = sensors
-            };
-
-            // 8) Add gateway destination if applicable
-            if (!string.IsNullOrEmpty(junctionType))
-            {
-                AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
-            }
-
-            // 9) Determine routing hint and serialize with optional prefix and compression
-            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
-            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "sensor", compressPayload, routingHint);
-
-            // 10) Return under the screenId
-            result[screenId] = finalPayload;
-
-            return result;
-        }
-
-        public async Task<Dictionary<string, object>> GenerateMatrixSensorPayloadsAsync(
-            string screenId,
-            int sensorCount,
-            List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen,
-            int startingYOffset,
-            string? junctionType = null,
-            string? gatewayDestination = null,
-            bool compressPayload = false)
-        {
-            var result = new Dictionary<string, object>();
-
-            // 1) If no sensors are assigned, skip
-            if (assignedSensors.Count == 0)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ No assigned sensors for Screen {screenId}. Skipping payload generation.");
-                return result;
-            }
-
-            // 2) Load template from database
-            if (screen.ScreenLayoutId == null)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
-                return result;
-            }
-
-            var template = await _layoutsDb.GetTemplateByIdAsync(screen.ScreenLayoutId.Value);
-            if (template == null)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ Layout template {screen.ScreenLayoutId.Value} not found for screen {screen.Id}.");
-                return result;
-            }
-
-            var sensors = new Dictionary<string, object>();
-
-            // 3) Get the sorted sensors, limit by count
-            var sortedSensors = assignedSensors
-                .OrderBy(s => s.SensorOrder)
-                .Take(sensorCount)
-                .ToList();
-
-            int offset = startingYOffset;
-
-            // 4) Process each sensor and build matrix-style payload
-            foreach (var sensor in sortedSensors)
-            {
-                var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
-                if (cachedSensor != null)
+                else if (sensor.IsEventSensor)
                 {
-                    // Format the sensor value based on decimal places from template
-                    string formattedValue;
-                    if (double.TryParse(cachedSensor.Value?.ToString(), out double numericValue))
+                    // Handle event sensors - get latest values from event cache
+                    var eventSensor = await _eventManager.GetEventSensorAsync(sensor.OriginalId);
+                    if (eventSensor != null)
                     {
-                        formattedValue = numericValue.ToString($"F{sensor.DecimalPlaces}");
+                        dataSource = eventSensor;
+                        sensorDataFound = true;
                     }
-                    else
-                    {
-                        formattedValue = cachedSensor.Value?.ToString() ?? "";
-                    }
-
-                    // Create the text with formatted value
-                    string text = $"{sensor.SensorTag}: {formattedValue} {cachedSensor.Unit}";
-
-                    var sensorData = new List<object> { new { text } };
-
-                    sensors[sensor.SensorTag] = new
-                    {
-                        Position = new { x = 0, y = offset },
-                        Data = sensorData
-                    };
-
-                    // Increment offset for next sensor (8 pixels is font height)
-                    offset += 8;
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ Sensor with OriginalId {sensor.OriginalId} not found in cache.");
+                    // Handle regular device/collector sensors
+                    var cachedSensor = _serviceManagerConnections.GetSensorData(sensor.OriginalId);
+                    if (cachedSensor != null)
+                    {
+                        dataSource = cachedSensor;
+                        sensorDataFound = true;
+                    }
+                }
+
+                if (sensorDataFound && dataSource != null)
+                {
+                    var sensorData = BuildSensorData(sensor, dataSource == sensor ? null : dataSource, fieldsToSend);
+                    sensors[sensor.SensorTag] = new List<object> { sensorData };
+                }
+                else
+                {
+                    // Only log if sensor wasn't found in any of the 3 locations
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_SENSOR] ⚠️ Sensor {sensor.SensorTag} (OriginalId: {sensor.OriginalId}) not found in any cache for sensor payload");
+
+                    // Still include the sensor but with fallback data
+                    var sensorData = BuildSensorData(sensor, null, fieldsToSend);
+                    sensors[sensor.SensorTag] = new List<object> { sensorData };
                 }
             }
 
-            // 5) Create the final payload object
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "sensor",
@@ -224,23 +143,42 @@ namespace JunctionRelayServer.Services
                 ["sensors"] = sensors
             };
 
-            // 6) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenId);
             }
 
-            // 7) Determine routing hint and serialize with optional prefix and compression
-            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
-            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixSensor, "matrix sensor", compressPayload, routingHint);
+            // Generate uncompressed JSON first
+            string uncompressedJson = JsonSerializer.Serialize(payloadDict);
+            string uncompressedPrefix = ExtractStringPrefix(uncompressedJson);
 
-            // 8) Return under the screenId
-            result[screenId] = finalPayload;
+            // Generate binary payload
+            var routing = _prefixService.DetermineRouting(junctionType);
+            byte[] binaryPayload = _prefixService.CreateDataMessage(payloadDict, routing,
+                Service_Manager_Payloads_Prefix.SerializationFormat.Json, compressPayload);
+
+            // Extract compressed prefix if compression was used
+            string compressedPrefix = string.Empty;
+            if (compressPayload)
+            {
+                compressedPrefix = ExtractBinaryPrefix(binaryPayload);
+            }
+
+            var payloadResult = new Model_PayloadResult
+            {
+                BinaryPayload = binaryPayload,
+                UncompressedJson = uncompressedJson,
+                UncompressedPrefix = uncompressedPrefix,
+                CompressedPrefix = compressedPrefix,
+                IsCompressed = compressPayload,
+                PayloadType = "sensor"
+            };
+
+            result.AddResult(screenId, payloadResult);
 
             return result;
         }
 
-        // Helper method to build sensor data based on selected fields
         private Dictionary<string, object> BuildSensorData(Model_Sensor sensor, Model_Sensor? cachedSensor, string[] fieldsToSend)
         {
             var sensorData = new Dictionary<string, object>();
@@ -249,7 +187,6 @@ namespace JunctionRelayServer.Services
             {
                 var fieldName = field.Trim();
 
-                // Skip SensorTag since it's always used as the outer key
                 if (fieldName.Equals("SensorTag", StringComparison.OrdinalIgnoreCase))
                     continue;
 
@@ -312,7 +249,14 @@ namespace JunctionRelayServer.Services
                         }
                         else
                         {
-                            value = cachedSensor?.Value?.ToString() ?? sensor.Value;
+                            if (double.TryParse(sensor.Value?.ToString(), out double sensorNumericValue))
+                            {
+                                value = sensorNumericValue.ToString($"F{sensor.DecimalPlaces}");
+                            }
+                            else
+                            {
+                                value = sensor.Value?.ToString() ?? "N/A";
+                            }
                         }
                         break;
                     case "DecimalPlaces":
@@ -389,7 +333,6 @@ namespace JunctionRelayServer.Services
             return sensorData;
         }
 
-        // Shared utility methods
         private void AddGatewayDestination(Dictionary<string, object> payloadDict, string junctionType, string? gatewayDestination, string screenKey)
         {
             if (junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase))
@@ -405,62 +348,47 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        private byte[] CompressData(string data)
+        private string ExtractStringPrefix(string payload)
         {
-            var bytes = Encoding.UTF8.GetBytes(data);
-            using var output = new MemoryStream();
-            using (var gzip = new GZipStream(output, CompressionMode.Compress))
-            {
-                gzip.Write(bytes, 0, bytes.Length);
-            }
-            return output.ToArray();
+            // For uncompressed JSON, create a readable summary
+            if (string.IsNullOrEmpty(payload))
+                return string.Empty;
+
+            return $"JSON: {payload.Length} chars";
         }
 
-        private object SerializeWithOptionalPrefix(Dictionary<string, object> payloadDict, bool includePrefix, string payloadType, bool compressPayload = false, string routingHint = "00")
+        private string ExtractBinaryPrefix(byte[] payload)
         {
-            var json = JsonSerializer.Serialize(payloadDict, new JsonSerializerOptions
+            if (payload == null || payload.Length < 8)
+                return string.Empty;
+
+            try
             {
-                WriteIndented = false
-            });
+                // Parse the binary header to create human-readable prefix
+                var (length, type, routing) = Service_Manager_Payloads_Prefix.ParseHeader(payload.Take(8).ToArray());
 
-            if (compressPayload)
-            {
-                var compressedData = CompressData(json);
-
-                if (includePrefix)
+                string typeName = type switch
                 {
-                    var lengthHint = Math.Min(compressedData.Length, 9999).ToString("D4");
-                    var typeField = "01"; // Gzip
-                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
-                    var prefix = lengthHint + typeField + cleanRoutingHint;
+                    Service_Manager_Payloads_Prefix.MessageType.DATA => "DATA",
+                    Service_Manager_Payloads_Prefix.MessageType.COMMAND => "COMMAND",
+                    Service_Manager_Payloads_Prefix.MessageType.BLIT_RGB565 => "BLIT_RGB565",
+                    Service_Manager_Payloads_Prefix.MessageType.BLIT_COMPRESSED => "BLIT_COMPRESSED",
+                    _ => $"UNKNOWN(0x{(ushort)type:04x})"
+                };
 
-                    var prefixBytes = Encoding.UTF8.GetBytes(prefix);
-                    var result = new byte[prefixBytes.Length + compressedData.Length];
-                    Array.Copy(prefixBytes, 0, result, 0, prefixBytes.Length);
-                    Array.Copy(compressedData, 0, result, prefixBytes.Length, compressedData.Length);
-
-                    return result;
-                }
-                else
+                string routingName = routing switch
                 {
-                    return compressedData;
-                }
+                    Service_Manager_Payloads_Prefix.RoutingMode.LOCAL => "LOCAL",
+                    Service_Manager_Payloads_Prefix.RoutingMode.GATEWAY => "GATEWAY",
+                    var r when (ushort)r >= 0x0100 => $"SCREEN_{(ushort)r - 0x0100}",
+                    _ => $"UNKNOWN(0x{(ushort)routing:04x})"
+                };
+
+                return $"Len={length}, Type={typeName}, Route={routingName}";
             }
-            else
+            catch
             {
-                if (includePrefix)
-                {
-                    var lengthHint = Math.Min(json.Length, 9999).ToString("D4");
-                    var typeField = "00"; // JSON
-                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
-                    var prefix = lengthHint + typeField + cleanRoutingHint;
-
-                    return prefix + json;
-                }
-                else
-                {
-                    return json;
-                }
+                return $"BINARY: {payload.Length} bytes";
             }
         }
     }

@@ -1,4 +1,23 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import FrameEngine_Toolbar from '../components/FrameEngine_Toolbar';
@@ -20,9 +39,18 @@ interface DiscoveredStateMachine {
     inputs: DiscoveredInput[];
 }
 
+interface DiscoveredDataBinding {
+    name: string;
+    type: 'number' | 'string' | 'boolean' | 'color' | 'trigger' | 'enum' | 'list' | 'image' | 'unknown'; // Added 'list' and 'image'
+    propertyName?: string;
+    currentValue?: any;
+    ref?: any;
+}
+
 // Enhanced Rive configuration interface
 interface RiveConfiguration {
     discoveredMachines: DiscoveredStateMachine[];
+    discoveredBindings: DiscoveredDataBinding[];
     lastDiscoveryUpdate: string;
     activeStateMachine?: string;
     globalInputMappings?: Record<string, any>;
@@ -53,7 +81,17 @@ interface FrameLayoutConfig {
     riveFile?: string | null;
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
-    riveConfiguration?: RiveConfiguration; // NEW: Store all discovered Rive data
+    riveBindings?: Record<string, any> | null;
+    riveConfiguration?: RiveConfiguration;
+    canvasSettings?: {
+        grid: {
+            snapToGrid: boolean;
+            showGrid: boolean;
+            gridSize: number;
+            gridColor: string;
+        };
+        elementPadding: number;
+    };
     jsonFrameConfig?: string;
     jsonFrameElements?: string;
     isTemplate: boolean;
@@ -63,12 +101,12 @@ interface FrameLayoutConfig {
     lastModified?: string;
     createdBy?: string;
     version?: string;
-    thumbnailOverride?: boolean; // NEW: Track if user uploaded custom thumbnail
+    thumbnailOverride?: boolean;
 }
 
 interface PlacedElement {
     id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
+    type: 'sensor' | 'text' | 'chart' | 'image' | 'container' | 'ecg' | 'clock' | 'oscilloscope' | 'tunnel' | 'weather';
     x: number;
     y: number;
     width: number;
@@ -81,7 +119,7 @@ interface PlacedElement {
 
 interface SavedElement {
     id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
+    type: 'sensor' | 'text' | 'chart' | 'image' | 'container' | 'ecg' | 'clock' | 'oscilloscope' | 'tunnel' | 'weather';
     position: {
         x: number;
         y: number;
@@ -127,6 +165,7 @@ interface FrameBuilderState {
     isLoading: boolean;
     isDirty: boolean;
     error: string | null;
+    previewMode: boolean; // NEW: Preview mode state
 }
 
 // Modal states
@@ -463,7 +502,7 @@ const ConfigureFrame: React.FC = () => {
         progressMessage: ''
     });
 
-    // Main application state
+    // Main application state - UPDATED with previewMode
     const [state, setState] = useState<FrameBuilderState>({
         layout: {
             displayName: '',
@@ -476,8 +515,18 @@ const ConfigureFrame: React.FC = () => {
             backgroundImageUrl: null,
             backgroundOpacity: 1.0,
             thumbnailOverride: false,
+            canvasSettings: {
+                grid: {
+                    snapToGrid: false,
+                    showGrid: false,
+                    gridSize: 10,
+                    gridColor: '#000000'
+                },
+                elementPadding: 4
+            },
             riveConfiguration: {
                 discoveredMachines: [],
+                discoveredBindings: [],
                 lastDiscoveryUpdate: '',
                 globalInputMappings: {},
                 discoveryMetadata: {
@@ -591,7 +640,18 @@ const ConfigureFrame: React.FC = () => {
         isLoading: true,
         isDirty: false,
         error: null,
+        previewMode: false, // NEW: Initialize preview mode as false
     });
+
+    // NEW: Toggle preview mode
+    const togglePreviewMode = useCallback(() => {
+        setState(prev => ({
+            ...prev,
+            previewMode: !prev.previewMode,
+            // Clear selection when entering preview mode
+            selectedElementIds: prev.previewMode ? prev.selectedElementIds : []
+        }));
+    }, []);
 
     // Load the existing frame layout on mount
     useEffect(() => {
@@ -761,6 +821,15 @@ const ConfigureFrame: React.FC = () => {
         });
     }, []);
 
+    // Handle canvas settings changes
+    const handleCanvasSettingsChange = useCallback((canvasSettings: FrameLayoutConfig['canvasSettings']) => {
+        setState(prev => ({
+            ...prev,
+            layout: { ...prev.layout, canvasSettings },
+            isDirty: true,
+        }));
+    }, []);
+
     // Navigate back to list
     const handleNew = useCallback(() => {
         if (state.isDirty) {
@@ -798,9 +867,12 @@ const ConfigureFrame: React.FC = () => {
     }, []);
 
     // Utility function to generate discovery metadata
-    const generateDiscoveryMetadata = (machines: DiscoveredStateMachine[]) => {
+    const generateDiscoveryMetadata = (machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => {
         const totalInputs = machines.reduce((sum, machine) => sum + machine.inputs.length, 0);
+        const totalBindings = bindings.length;
+
         const inputTypeBreakdown: Record<string, number> = {};
+        const bindingTypeBreakdown: Record<string, number> = {};
 
         machines.forEach(machine => {
             machine.inputs.forEach(input => {
@@ -808,9 +880,15 @@ const ConfigureFrame: React.FC = () => {
             });
         });
 
+        bindings.forEach(binding => {
+            bindingTypeBreakdown[binding.type] = (bindingTypeBreakdown[binding.type] || 0) + 1;
+        });
+
         return {
             totalInputs,
+            totalBindings,
             inputTypeBreakdown,
+            bindingTypeBreakdown,
             discoveryAttempts: (state.layout.riveConfiguration?.discoveryMetadata?.discoveryAttempts || 0) + 1,
             lastSuccessfulDiscovery: new Date().toISOString()
         };
@@ -819,7 +897,7 @@ const ConfigureFrame: React.FC = () => {
     // Core save function used by both quick save and full save
     const performSave = async (customThumbnail?: File) => {
         try {
-            // Build the enhanced JsonFrameConfig with Rive discovery data stored ONCE
+            // Build the enhanced JsonFrameConfig with Rive discovery data (NO frameElements)
             const frameConfig = {
                 type: "rive_config",
                 screenId: state.layout.id?.toString() || "new",
@@ -830,7 +908,16 @@ const ConfigureFrame: React.FC = () => {
                     canvas: {
                         width: state.layout.width,
                         height: state.layout.height,
-                        orientation: state.layout.orientation || 'landscape'
+                        orientation: state.layout.orientation || 'landscape',
+                        settings: state.layout.canvasSettings || {
+                            grid: {
+                                snapToGrid: false,
+                                showGrid: false,
+                                gridSize: 10,
+                                gridColor: '#000000'
+                            },
+                            elementPadding: 4
+                        }
                     },
 
                     background: {
@@ -840,60 +927,101 @@ const ConfigureFrame: React.FC = () => {
                         opacity: state.layout.backgroundOpacity || 1.0
                     },
 
-                    // Store Rive data ONCE at the layout level
+                    // Store Rive data at the layout level
                     ...(state.layout.backgroundType === 'rive' || state.layout.riveFile ? {
                         rive: {
                             enabled: state.layout.backgroundType === 'rive',
                             file: state.layout.riveFile || null,
                             inputs: state.layout.riveInputs || {},
+                            bindings: state.layout.riveBindings || {},
                             settings: {
                                 fit: 'cover',
                                 alignment: 'center',
                                 autoplay: true,
                                 loop: true
                             },
-                            // Store discovery data ONCE here
                             discovery: {
-                                machines: state.layout.riveConfiguration?.discoveredMachines || [],
-                                lastUpdate: state.layout.riveConfiguration?.lastDiscoveryUpdate || '',
-                                metadata: state.layout.riveConfiguration?.discoveryMetadata || {},
+                                machines: discoveredMachines.length > 0 ? discoveredMachines : (state.layout.riveConfiguration?.discoveredMachines || []),
+                                bindings: discoveredBindings.length > 0 ? discoveredBindings : (state.layout.riveConfiguration?.discoveredBindings || []),
+                                lastUpdate: discoveredMachines.length > 0 || discoveredBindings.length > 0 ? new Date().toISOString() : (state.layout.riveConfiguration?.lastDiscoveryUpdate || ''),
+                                metadata: discoveredMachines.length > 0 || discoveredBindings.length > 0 ? generateDiscoveryMetadata(discoveredMachines, discoveredBindings) : (state.layout.riveConfiguration?.discoveryMetadata || {}),
                                 activeStateMachine: state.layout.riveConfiguration?.activeStateMachine || state.layout.riveStateMachine,
                                 globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {}
                             }
                         }
                     } : {})
-                },
-
-                // Clean frameElements with minimal Rive connection data
-                frameElements: state.elements.map((element, index) => ({
-                    id: element.id,
-                    type: element.type,
-                    position: {
-                        x: element.x,
-                        y: element.y,
-                        width: element.width,
-                        height: element.height
-                    },
-                    display: {
-                        visible: element.visible ?? true,
-                        zIndex: element.zIndex || index,
-                        order: index
-                    },
-                    properties: element.properties || {},
-                    ...(element.sensorId ? { sensorId: element.sensorId } : {}),
-                    lastModified: new Date().toISOString(),
-
-                    // ONLY store actual mappings if they exist, not all available inputs
-                    ...(element.type === 'sensor' && element.properties.riveMapping ? {
-                        riveConnections: {
-                            mappedInputs: [element.properties.riveMapping], // Single mapping per sensor
-                            lastMappingUpdate: new Date().toISOString()
-                        }
-                    } : {})
-                }))
+                }
+                // frameElements removed - stored separately in jsonFrameElements
             };
 
-            // Build clean JsonFrameElements without duplication
+            // Build RUNTIME-ONLY config (stripped for devices, NO frameElements)
+            const runtimeFrameConfig = {
+                type: "rive_config",
+                screenId: state.layout.id?.toString() || "new",
+                frameConfig: {
+                    version: "1.0",
+                    lastConfigUpdate: new Date().toISOString(),
+
+                    canvas: {
+                        width: state.layout.width,
+                        height: state.layout.height,
+                        orientation: state.layout.orientation || 'landscape',
+                        settings: {
+                            // Grid settings removed - editor-only
+                            elementPadding: state.layout.canvasSettings?.elementPadding ?? 4
+                        }
+                    },
+
+                    background: {
+                        type: state.layout.backgroundType || 'color',
+                        color: state.layout.backgroundColor || '#FFFFFF',
+                        hasImageData: !!state.layout.backgroundImageData,
+                        opacity: state.layout.backgroundOpacity || 1.0
+                    },
+
+                    ...(state.layout.backgroundType === 'rive' || state.layout.riveFile ? {
+                        rive: {
+                            enabled: state.layout.backgroundType === 'rive',
+                            file: state.layout.riveFile || null,
+                            inputs: state.layout.riveInputs || {},
+                            bindings: state.layout.riveBindings || {},
+                            settings: {
+                                fit: 'cover',
+                                alignment: 'center',
+                                autoplay: true,
+                                loop: true
+                            },
+                            discovery: {
+                                // Clean machines - remove ref objects
+                                machines: (discoveredMachines.length > 0 ? discoveredMachines : (state.layout.riveConfiguration?.discoveredMachines || [])).map(machine => ({
+                                    name: machine.name,
+                                    inputNames: machine.inputNames,
+                                    inputs: machine.inputs.map(input => ({
+                                        name: input.name,
+                                        type: input.type,
+                                        currentValue: input.currentValue
+                                        // ref removed - causes massive bloat
+                                    }))
+                                })),
+                                // Clean bindings - remove ref objects
+                                bindings: (discoveredBindings.length > 0 ? discoveredBindings : (state.layout.riveConfiguration?.discoveredBindings || [])).map(binding => ({
+                                    name: binding.name,
+                                    type: binding.type,
+                                    currentValue: binding.currentValue
+                                    // ref removed - causes massive bloat
+                                })),
+                                lastUpdate: discoveredMachines.length > 0 || discoveredBindings.length > 0 ? new Date().toISOString() : (state.layout.riveConfiguration?.lastDiscoveryUpdate || ''),
+                                activeStateMachine: state.layout.riveConfiguration?.activeStateMachine || state.layout.riveStateMachine,
+                                globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {}
+                                // metadata removed - editor-only stats
+                            }
+                        }
+                    } : {})
+                }
+                // frameElements removed - stored separately in jsonFrameElements
+            };
+
+            // Build standalone frameElements array (used by both configs)
             const frameElements = state.elements.map((element, index) => ({
                 id: element.id,
                 type: element.type,
@@ -910,7 +1038,13 @@ const ConfigureFrame: React.FC = () => {
                 },
                 properties: element.properties || {},
                 ...(element.sensorId ? { sensorId: element.sensorId } : {}),
-                lastModified: new Date().toISOString()
+                lastModified: new Date().toISOString(),
+                ...(element.type === 'sensor' && element.properties.riveMapping ? {
+                    riveConnections: {
+                        mappedInputs: [element.properties.riveMapping],
+                        lastMappingUpdate: new Date().toISOString()
+                    }
+                } : {})
             }));
 
             // Prepare the save data
@@ -929,19 +1063,22 @@ const ConfigureFrame: React.FC = () => {
                 riveFile: state.layout.riveFile,
                 riveStateMachine: state.layout.riveStateMachine,
                 riveInputs: state.layout.riveInputs,
+                riveBindings: state.layout.riveBindings,
                 thumbnailOverride: customThumbnail ? true : state.layout.thumbnailOverride,
                 isTemplate: state.layout.isTemplate,
                 isDraft: state.layout.isDraft,
                 isPublished: state.layout.isPublished,
-                jsonFrameConfig: JSON.stringify(frameConfig),
-                jsonFrameElements: JSON.stringify(frameElements)
+                jsonFrameConfig: JSON.stringify(frameConfig), // Config only - no elements
+                jsonFrameConfigRuntime: JSON.stringify(runtimeFrameConfig), // Runtime config only - no elements
+                jsonFrameElements: JSON.stringify(frameElements) // Elements separate - shared by both
             };
 
-            console.log('Saving frame config with Rive discovery data:', {
-                riveFile: state.layout.riveFile,
-                discoveredMachines: state.layout.riveConfiguration?.discoveredMachines.length || 0,
-                frameElements: frameElements.length,
-                thumbnailOverride: saveData.thumbnailOverride
+            console.log('Saving frame configs:', {
+                fullConfigSize: JSON.stringify(frameConfig).length,
+                runtimeConfigSize: JSON.stringify(runtimeFrameConfig).length,
+                elementsSize: JSON.stringify(frameElements).length,
+                configReduction: `${Math.round((1 - JSON.stringify(runtimeFrameConfig).length / JSON.stringify(frameConfig).length) * 100)}%`,
+                elementCount: frameElements.length
             });
 
             const response = await fetch(`/api/frameengine/${state.layout.id}`, {
@@ -962,7 +1099,6 @@ const ConfigureFrame: React.FC = () => {
             if (customThumbnail) {
                 await uploadCustomThumbnail(customThumbnail);
             } else if (!state.layout.thumbnailOverride) {
-                // Auto-generate thumbnail if no override is set
                 await generateAndSaveThumbnail();
             }
 
@@ -1066,7 +1202,6 @@ const ConfigureFrame: React.FC = () => {
     };
 
     // Capture thumbnail from modal
-    // Capture thumbnail from modal
     const handleCaptureThumbnail = async () => {
         setModalState(prev => ({
             ...prev,
@@ -1114,7 +1249,7 @@ const ConfigureFrame: React.FC = () => {
         }
     };
 
-    // Load frame layout from API - ENHANCED to restore thumbnailOverride
+    // Load frame layout from API - ENHANCED to restore canvas settings
     const loadFrameLayout = async (layoutId: number) => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -1133,6 +1268,7 @@ const ConfigureFrame: React.FC = () => {
             // Parse Rive configuration from JsonFrameConfig discovery section
             let riveConfiguration: RiveConfiguration = {
                 discoveredMachines: [],
+                discoveredBindings: [],
                 lastDiscoveryUpdate: '',
                 globalInputMappings: {},
                 discoveryMetadata: {
@@ -1148,12 +1284,29 @@ const ConfigureFrame: React.FC = () => {
                 const discovery = frameConfig.frameConfig.rive.discovery;
                 riveConfiguration = {
                     discoveredMachines: discovery.machines || [],
+                    discoveredBindings: discovery.bindings || [],
                     lastDiscoveryUpdate: discovery.lastUpdate || '',
                     activeStateMachine: discovery.activeStateMachine,
                     globalInputMappings: discovery.globalInputMappings || {},
                     discoveryMetadata: discovery.metadata || riveConfiguration.discoveryMetadata
                 };
                 console.log('Restored Rive configuration from JsonFrameConfig:', riveConfiguration);
+            }
+
+            // Restore canvas settings from JsonFrameConfig or use defaults
+            let canvasSettings = {
+                grid: {
+                    snapToGrid: false,
+                    showGrid: false,
+                    gridSize: 10,
+                    gridColor: '#000000'
+                },
+                elementPadding: 4
+            };
+
+            if (frameConfig.frameConfig?.canvas?.settings) {
+                canvasSettings = frameConfig.frameConfig.canvas.settings;
+                console.log('Restored canvas settings from JsonFrameConfig:', canvasSettings);
             }
 
             // Parse and convert elements from nested format to flat format
@@ -1199,8 +1352,10 @@ const ConfigureFrame: React.FC = () => {
                     riveFile: frameConfig.frameConfig?.rive?.file || layoutData.riveFile,
                     riveStateMachine: frameConfig.frameConfig?.rive?.stateMachine || layoutData.riveStateMachine,
                     riveInputs: frameConfig.frameConfig?.rive?.inputs || layoutData.riveInputs,
+                    riveBindings: frameConfig.frameConfig?.rive?.bindings || layoutData.riveBindings,
                     riveConfiguration: riveConfiguration,
-                    thumbnailOverride: layoutData.thumbnailOverride || false, // NEW: Load thumbnail override setting
+                    canvasSettings: canvasSettings,
+                    thumbnailOverride: layoutData.thumbnailOverride || false,
                     jsonFrameConfig: layoutData.jsonFrameConfig,
                     jsonFrameElements: layoutData.jsonFrameElements,
                     isTemplate: frameConfig.frameConfig?.metadata?.isTemplate || layoutData.isTemplate,
@@ -1338,19 +1493,24 @@ const ConfigureFrame: React.FC = () => {
         addToHistory(action);
     }, [addToHistory]);
 
-    // Rive discovery state - lifted up from Canvas
+    // Rive discovery state
     const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredStateMachine[]>([]);
+    const [discoveredBindings, setDiscoveredBindings] = useState<DiscoveredDataBinding[]>([]);
 
     // ENHANCED: Handle Rive discovery from Canvas and persist to layout
-    const handleRiveDiscovery = useCallback((machines: DiscoveredStateMachine[]) => {
+    const handleRiveDiscovery = useCallback((machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => {
         console.log('ConfigureFrame received Rive discovery:', machines);
-        setDiscoveredMachines(machines);
+        console.log('ConfigureFrame received data bindings:', bindings);
 
-        // NEW: Automatically update the layout with discovered machines
-        if (machines.length > 0) {
-            const discoveryMetadata = generateDiscoveryMetadata(machines);
+        setDiscoveredMachines(machines);
+        setDiscoveredBindings(bindings);
+
+        // NEW: Automatically update the layout with discovered machines and bindings
+        if (machines.length > 0 || bindings.length > 0) {
+            const discoveryMetadata = generateDiscoveryMetadata(machines, bindings);
             const updatedRiveConfiguration: RiveConfiguration = {
                 discoveredMachines: machines,
+                discoveredBindings: bindings, // Add bindings to the configuration
                 lastDiscoveryUpdate: new Date().toISOString(),
                 activeStateMachine: state.layout.riveStateMachine || machines[0]?.name,
                 globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {},
@@ -1370,13 +1530,13 @@ const ConfigureFrame: React.FC = () => {
         }
     }, [state.layout.riveStateMachine, state.layout.riveConfiguration?.globalInputMappings]);
 
+    // UPDATED: Generate preview with preview mode toggle
     const generatePreview = async () => {
         try {
-            console.log('Generating preview for layout:', state.layout.id);
-            console.log('Including Rive discovery data:', state.layout.riveConfiguration);
-            alert('Preview generated with Rive discovery data!');
+            console.log('Toggling preview mode:', !state.previewMode);
+            togglePreviewMode();
         } catch (error) {
-            setState(prev => ({ ...prev, error: 'Failed to generate preview' }));
+            setState(prev => ({ ...prev, error: 'Failed to toggle preview mode' }));
         }
     };
 
@@ -1524,7 +1684,7 @@ const ConfigureFrame: React.FC = () => {
                 onClose={() => setModalState(prev => ({ ...prev, savingProgress: false }))}
             />
 
-            {/* Toolbar */}
+            {/* Toolbar - Pass preview mode state */}
             <div style={{ flexShrink: 0 }}>
                 <FrameEngine_Toolbar
                     layout={state.layout}
@@ -1535,43 +1695,47 @@ const ConfigureFrame: React.FC = () => {
                     isEditing={isEditing}
                     canUndo={state.historyIndex > 0}
                     canRedo={state.historyIndex < state.history.length - 1}
+                    previewMode={state.previewMode} // NEW: Pass preview mode
                     onQuickSave={handleQuickSave}
                     onSave={handleSave}
                     onUndo={handleUndo}
                     onRedo={handleRedo}
-                    onPreview={generatePreview}
+                    onPreview={generatePreview} // This now toggles preview mode
                     onExport={handleExport}
                     onPublish={handlePublish}
                 />
             </div>
 
-            {/* Main Content Area */}
+            {/* Main Content Area - Hide sidebars in preview mode */}
             <div style={{
                 flex: 1,
                 display: 'flex',
                 overflow: 'hidden',
                 minHeight: 0
             }}>
-                {/* Properties Panel */}
-                <div style={{
-                    width: '320px',
-                    flexShrink: 0
-                }}>
-                    <FrameEngine_PropertiesPanel
-                        layout={state.layout}
-                        selectedElements={selectedElements}
-                        onLayoutUpdate={updateLayout}
-                        onElementUpdate={updateElement}
-                        onElementDelete={removeElement}
-                        elements={state.elements}
-                        onElementSelect={selectElements}
-                        onElementDuplicate={handleElementDuplicate}
-                        onElementReorder={handleElementReorder}
-                        discoveredMachines={discoveredMachines}
-                    />
-                </div>
+                {/* Properties Panel - Hidden in preview mode */}
+                {!state.previewMode && (
+                    <div style={{
+                        width: '320px',
+                        flexShrink: 0
+                    }}>
+                        <FrameEngine_PropertiesPanel
+                            layout={state.layout}
+                            selectedElements={selectedElements}
+                            onLayoutUpdate={updateLayout}
+                            onElementUpdate={updateElement}
+                            onElementDelete={removeElement}
+                            elements={state.elements}
+                            onElementSelect={selectElements}
+                            onElementDuplicate={handleElementDuplicate}
+                            onElementReorder={handleElementReorder}
+                            discoveredMachines={discoveredMachines}
+                            discoveredBindings={discoveredBindings}
+                        />
+                    </div>
+                )}
 
-                {/* Canvas Area - Added ref for thumbnail capture and data attributes */}
+                {/* Canvas Area - Pass preview mode and fill full width when in preview */}
                 <div
                     ref={canvasRef}
                     style={{
@@ -1588,31 +1752,35 @@ const ConfigureFrame: React.FC = () => {
                         elements={state.elements}
                         selectedElementIds={state.selectedElementIds}
                         availableSensors={state.availableSensors}
+                        previewMode={state.previewMode}
                         onElementUpdate={updateElementSilent}
                         onElementSelect={selectElements}
                         onElementAdd={addElement}
                         onCanvasClick={clearSelection}
                         onStartElementOperation={startElementOperation}
                         onRiveDiscovery={handleRiveDiscovery}
+                        onCanvasSettingsChange={handleCanvasSettingsChange}
                     />
                 </div>
 
-                {/* Element Library */}
-                <div style={{
-                    width: '320px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minHeight: 0
-                }}>
-                    <FrameEngine_ElementLibrary
-                        selectedElements={state.selectedElementIds}
-                        selectedElementsData={selectedElements}
-                        onElementAdd={addElement}
-                        onElementUpdate={updateElement}
-                        onElementDelete={removeElement}
-                    />
-                </div>
+                {/* Element Library - Hidden in preview mode */}
+                {!state.previewMode && (
+                    <div style={{
+                        width: '320px',
+                        flexShrink: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minHeight: 0
+                    }}>
+                        <FrameEngine_ElementLibrary
+                            selectedElements={state.selectedElementIds}
+                            selectedElementsData={selectedElements}
+                            onElementAdd={addElement}
+                            onElementUpdate={updateElement}
+                            onElementDelete={removeElement}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

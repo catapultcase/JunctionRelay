@@ -354,6 +354,58 @@ export const SetupInstructions_Collectors: React.FC<SetupInstructions_Collectors
                     </Box>
                 );
 
+            case "SSH_Linux":
+                return (
+                    <Box>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                            SSH Linux Monitoring Setup:
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>1. Prerequisites:</strong><br />
+                            • Target device must be configured in the Devices section<br />
+                            • Device must have Heartbeat enabled with Protocol set to "SSH"<br />
+                            • SSH service must be running on the target Linux device<br />
+                            • Network connectivity between JunctionRelay and target device
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>2. SSH Connection URL Format:</strong><br />
+                            • Format: <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>ssh://username@hostname:port</code><br />
+                            • Example: <code style={{ backgroundColor: '#f5f5f5', padding: '2px 4px', borderRadius: '3px' }}>ssh://root@192.168.1.100:22</code><br />
+                            • Default SSH port is 22 if not specified<br />
+                            • Username must match what's configured in the Device
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>3. Authentication Methods:</strong><br />
+                            • <strong>Password:</strong> Simple SSH password authentication<br />
+                            • <strong>Private Key:</strong> More secure, uses SSH key pair (RSA, ED25519, etc.)<br />
+                            • Both are encrypted and stored securely
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>4. What it monitors:</strong><br />
+                            • CPU usage and core count<br />
+                            • Memory (total, used, free, percentage)<br />
+                            • Disk usage for root partition<br />
+                            • Network RX/TX bytes<br />
+                            • System load averages (1min, 5min, 15min)<br />
+                            • System uptime<br />
+                            • CPU temperature (if sensors package installed)
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>5. Device Configuration Required:</strong><br />
+                            • Go to Devices section<br />
+                            • Add or edit the target device<br />
+                            • Set Heartbeat Protocol to "SSH"<br />
+                            • Enter same IP, Port, Username as collector<br />
+                            • Enable heartbeat monitoring
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            <strong>Note:</strong> The SSH Manager service maintains persistent connections to devices.
+                            This collector reads sensor data from those connections, so both the device and collector
+                            must be configured with matching SSH credentials.
+                        </Typography>
+                    </Box>
+                );
+
             case "SystemTime":
                 return (
                     <Box>

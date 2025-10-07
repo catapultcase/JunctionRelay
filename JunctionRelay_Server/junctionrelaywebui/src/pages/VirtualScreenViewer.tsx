@@ -17,247 +17,428 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useParams, useLocation } from 'react-router-dom';
 import {
     Box,
-    Button,
     Typography,
     CircularProgress,
     Alert,
     IconButton,
-    Fab
 } from '@mui/material';
 import {
-    Fullscreen,
-    FullscreenExit,
-    ArrowBack,
+    Launch,
     Refresh,
-    Launch
 } from '@mui/icons-material';
 import {
-    useRive,
-    Layout,
-    Fit,
-    Alignment,
-} from '@rive-app/react-canvas';
-import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
+    VirtualDisplayDataProvider,
+    RiveConfig,
+    SensorPayload,
+} from '../interfaces/VirtualDisplayDataProvider';
+import { WebSocketDataProvider } from '../providers/WebSocketDataProvider';
+import {
+    FrameEngine_ElementRenderer,
+    BaseElement,
+    RendererConfig
+} from '../components/FrameEngine_ElementRenderer';
+import {
+    FrameEngine_BackgroundRenderer,
+    BackgroundConfig,
+    DiscoveredStateMachine,
+    DiscoveredDataBinding
+} from '../components/FrameEngine_BackgroundRenderer';
 
-// Add type declaration for window properties
-declare global {
-    interface Window {
-        puppeteerMode?: boolean;
-        forceStandaloneMode?: boolean;
-        targetWidth?: number;
-        targetHeight?: number;
-        forceFullscreen?: boolean;
-    }
-}
-
-// Google Fonts loader utility - EXACT COPY from FrameEngine_Canvas
-const loadGoogleFont = (fontFamily: string) => {
-    if (!fontFamily || fontFamily.includes('system') || fontFamily.includes('sans-serif') ||
-        document.querySelector(`link[href*="${fontFamily.replace(/\s+/g, '+')}"]`)) {
-        return;
-    }
-
-    const link = document.createElement('link');
-    link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/\s+/g, '+')}:wght@100;200;300;400;500;600;700;800;900&display=swap`;
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-};
-
-interface RiveConnection {
-    machineName: string;
-    inputName: string;
-    inputType: string;
-    currentValue: any;
-    fullKey: string;
-}
-
-interface RiveConfig {
-    type: "rive_config";
-    screenId: string;
-    frameConfig: {
-        frameConfig?: {
-            canvas: { width: number; height: number; orientation: string };
-            background: { color: string; type: string };
-            rive: {
-                enabled: boolean;
-                file: string;
-                fileUrl?: string;
-                discovery?: {
-                    machines: Array<{
-                        name: string;
-                        inputs: Array<{
-                            name: string;
-                            type: string;
-                            currentValue: any;
-                            ref?: any;
-                        }>;
-                    }>;
-                    metadata: {
-                        totalInputs: number;
-                        inputTypeBreakdown: Record<string, number>;
-                        discoveryAttempts: number;
-                        lastSuccessfulDiscovery: string;
-                    };
-                    activeStateMachine: string;
-                    globalInputMappings: Record<string, any>;
-                };
-            };
-        };
-        canvas?: { width: number; height: number; orientation: string };
-        background?: { color: string; type: string };
-        rive?: any;
-    };
-    frameElements?: Array<{
-        id: string;
-        type: string;
-        position: { x: number; y: number; width: number; height: number };
-        properties: {
-            sensorTag?: string;
-            placeholderValue?: string;
-            placeholderUnit?: string;
-            fontSize?: number;
-            fontFamily?: string;
-            fontWeight?: string;
-            textColor?: string;
-            showUnit?: boolean;
-            text?: string;
-            textAlign?: string;
-            placeholderSensorLabel?: string;
-            showLabel?: boolean;
-            lineHeight?: string;
-            backgroundColor?: string;
-            color?: string;
-            textShadow?: boolean;
-            textBorder?: boolean;
-        };
-        riveConnections?: {
-            availableInputs: RiveConnection[];
-            mappedInputs: RiveConnection[];
-            lastMappingUpdate: string;
-        };
-    }>;
-}
-
-interface SensorPayload {
-    type: "rive_sensor";
-    screenId: string;
-    sensors: Record<string, {
-        value: number;
-        unit: string;
-        displayValue: string;
-    }>;
-}
-
-interface DisplayElement {
-    id: string;
-    type: 'sensor' | 'text';
-    position: { x: number; y: number; width: number; height: number };
-    properties: Record<string, any>;
-    sensorTag?: string;
-    text?: string;
-    currentValue?: string;
-    currentUnit?: string;
-    riveConnections?: {
-        availableInputs: RiveConnection[];
-        mappedInputs: RiveConnection[];
-        lastMappingUpdate: string;
-    };
-}
-
-interface CanvasBounds {
-    left: number;
-    top: number;
+interface CanvasConfig {
     width: number;
     height: number;
-    scaleX: number;
-    scaleY: number;
+    backgroundColor: string;
+    elementPadding: number;
 }
 
 interface VirtualScreenViewerProps {
-    // For embedded mode
     deviceId?: string;
     containerHeight?: number;
+    deviceData?: any;
+    isStandalone?: boolean;
     showControls?: boolean;
     onFullscreenClick?: () => void;
-    deviceData?: any;
-
-    // For standalone mode (will use URL params if not provided)
-    isStandalone?: boolean;
 }
 
-const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
+interface VirtualScreenViewerComponentProps extends VirtualScreenViewerProps {
+    dataProvider: VirtualDisplayDataProvider;
+}
+
+export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponentProps> = ({
     deviceId: propDeviceId,
     containerHeight,
+    deviceData: providedDeviceData,
+    isStandalone = false,
     showControls = true,
     onFullscreenClick,
-    deviceData: providedDeviceData,
-    isStandalone = false
+    dataProvider
 }) => {
     const { deviceId: urlDeviceId } = useParams<{ deviceId: string }>();
-    const navigate = useNavigate();
     const location = useLocation();
-    const isFullscreenRoute = location.search.includes('fullscreen=true') || location.pathname.includes('/fullscreen');
 
-    // Determine mode and device ID
-    const isEmbedded = !isStandalone && containerHeight !== undefined;
     const deviceId = propDeviceId || urlDeviceId;
-
-    // NEW: Detect if we're on the fullscreen route for screenshot mode
     const isScreenshotMode = location.pathname.includes('/fullscreen');
+    const shouldShowControls = showControls && !isScreenshotMode;
+    const isEmbedded = !isStandalone && containerHeight !== undefined;
 
-    // Core state
+    const isPuppeteerMode = typeof window !== 'undefined' && (
+        window.navigator.userAgent.includes('HeadlessChrome') ||
+        window.navigator.webdriver ||
+        (window as any).puppeteerMode ||
+        isScreenshotMode
+    );
+
     const [device, setDevice] = useState<any>(null);
-    const [riveConfig, setRiveConfig] = useState<RiveConfig | null>(null);
-    const [displayElements, setDisplayElements] = useState<DisplayElement[]>([]);
-    const [currentSensorData, setSensorData] = useState<Record<string, any>>({});
-    const [riveFileBlob, setRiveFileBlob] = useState<string | null>(null);
-    const [isConfigured, setIsConfigured] = useState(false);
+    const [canvasConfig, setCanvasConfig] = useState<CanvasConfig | null>(null);
+    const [backgroundConfig, setBackgroundConfig] = useState<BackgroundConfig | null>(null);
+    const [isReady, setIsReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Fullscreen state (standalone only)
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const [riveConfig, setRiveConfig] = useState<RiveConfig | null>(null);
+    const [currentSensorData, setSensorData] = useState<Record<string, any>>({});
+    const [displayElements, setDisplayElements] = useState<BaseElement[]>([]);
+    const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredStateMachine[]>([]);
+    const [discoveredBindings, setDiscoveredBindings] = useState<DiscoveredDataBinding[]>([]);
 
-    // Canvas positioning state
-    const [canvasBounds, setCanvasBounds] = useState<CanvasBounds | null>(null);
-    const riveContainerRef = useRef<HTMLDivElement>(null);
+    const [currentBrightness, setCurrentBrightness] = useState<number>(1.0);
 
-    // State machine input refs for direct control
-    const stateMachineInputRefs = useRef<Record<string, any>>({});
+    // Use refs for binding values to avoid triggering re-renders
+    const backgroundInputs = useRef<Record<string, any>>({});
+    const backgroundBindings = useRef<Record<string, string | number | boolean>>({});
+    const isMountedRef = useRef(true);
 
-    // Rive state machine mappings - maps sensor tags to Rive inputs
-    const [sensorToRiveMap, setSensorToRiveMap] = useState<Record<string, string[]>>({});
+    const extractDisplayElements = useCallback((config: RiveConfig) => {
+        const elements = config.frameElements || [];
+        const baseElements: BaseElement[] = elements.map(element => ({
+            id: element.id,
+            type: element.type as BaseElement['type'],
+            position: {
+                x: element.position.x,
+                y: element.position.y,
+                width: element.position.width,
+                height: element.position.height,
+            },
+            properties: element.properties,
+        }));
 
-    // WebSocket connection for real-time data
-    const {
-        streams,
-        connectionStatus,
-        isConnected,
-        reconnect
-    } = useDashboardWebSocket({
-        enabled: true,
-        defaultPollRate: 250
-    });
+        setDisplayElements(baseElements);
+        return baseElements;
+    }, []);
 
-    // NEW: Override showControls based on screenshot mode
-    const shouldShowControls = showControls && !isScreenshotMode;
+    const hasOnscreenElement = useCallback((sensorTag: string) => {
+        return displayElements.some(element => {
+            if (element.type === 'sensor' && element.properties.sensorTag) {
+                return element.properties.sensorTag === sensorTag;
+            }
+            if (element.type === 'ecg' && element.properties.sensorTag) {
+                return element.properties.sensorTag === sensorTag;
+            }
+            return false;
+        });
+    }, [displayElements]);
 
-    // Load device details
+    const hasMatchingSensorData = useCallback((sensorTag: string, sensorPayload: SensorPayload) => {
+        if (sensorPayload.sensors[sensorTag]) {
+            return true;
+        }
+
+        return Object.keys(sensorPayload.sensors).some(key =>
+            key.includes(',') && key.split(',').map(tag => tag.trim()).includes(sensorTag)
+        );
+    }, []);
+
+    const processBrightnessSensor = useCallback((sensorPayload: SensorPayload) => {
+        let brightnessValue: number | null = null;
+
+        if (sensorPayload.sensors['jr_brightness']) {
+            brightnessValue = sensorPayload.sensors['jr_brightness'].value;
+        }
+
+        Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
+            if (sensorKey.includes(',')) {
+                const sensorTags = sensorKey.split(',').map(tag => tag.trim());
+                if (sensorTags.includes('jr_brightness')) {
+                    brightnessValue = sensorData.value;
+                }
+            }
+        });
+
+        if (brightnessValue !== null) {
+            const normalizedBrightness = Math.max(0, Math.min(1, brightnessValue / 255));
+
+            if (normalizedBrightness !== currentBrightness) {
+                setCurrentBrightness(normalizedBrightness);
+                console.log(`JR Brightness sensor updated: ${brightnessValue} (${Math.round(normalizedBrightness * 100)}%)`);
+                return true;
+            }
+        }
+
+        return false;
+    }, [currentBrightness]);
+
+    const updateBackgroundInputs = useCallback((sensorPayload: SensorPayload) => {
+        if (!discoveredMachines.length) return;
+
+        let hasChanges = false;
+
+        Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
+            const sensorTags = sensorKey.includes(',')
+                ? sensorKey.split(',').map(tag => tag.trim())
+                : [sensorKey];
+
+            sensorTags.forEach(sensorTag => {
+                const inputExists = discoveredMachines.some(machine =>
+                    machine.inputs.some(input => input.name === sensorTag)
+                );
+
+                if (inputExists) {
+                    const oldValue = backgroundInputs.current[sensorTag];
+                    const newValue = sensorData.value;
+
+                    if (oldValue !== newValue) {
+                        backgroundInputs.current[sensorTag] = newValue;
+                        hasChanges = true;
+                        console.log(`Background input "${sensorTag}" updated: ${oldValue} -> ${newValue}`);
+                    }
+                }
+            });
+        });
+
+        return hasChanges;
+    }, [discoveredMachines]);
+
+    const updateBackgroundBindings = useCallback((sensorPayload: SensorPayload) => {
+        if (!discoveredBindings.length) return;
+
+        let hasChanges = false;
+
+        Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
+            const sensorTags = sensorKey.includes(',')
+                ? sensorKey.split(',').map(tag => tag.trim())
+                : [sensorKey];
+
+            sensorTags.forEach(sensorTag => {
+                const bindingExists = discoveredBindings.some(binding => binding.name === sensorTag);
+
+                if (bindingExists) {
+                    const binding = discoveredBindings.find(b => b.name === sensorTag);
+                    if (!binding) return;
+
+                    const oldValue = backgroundBindings.current[sensorTag];
+                    let newValue: string | number | boolean;
+
+                    if (binding.type === 'boolean') {
+                        newValue = Boolean(sensorData.value);
+                    } else if (binding.type === 'string') {
+                        newValue = String(sensorData.value);
+                    } else if (binding.type === 'number') {
+                        newValue = Number(sensorData.value);
+                    } else if (binding.type === 'color') {
+                        const colorValue: any = sensorData.value;
+                        if (typeof colorValue === 'string' && colorValue.startsWith('#')) {
+                            const hexValue = parseInt(colorValue.slice(1), 16);
+                            const r = (hexValue >> 16) & 0xFF;
+                            const g = (hexValue >> 8) & 0xFF;
+                            const b = hexValue & 0xFF;
+                            newValue = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                            console.log(`Color sensor "${sensorTag}" converted from ${colorValue} to ARGB: ${newValue}`);
+                        } else {
+                            newValue = Number(colorValue) || 0;
+                        }
+                    } else {
+                        newValue = Number(sensorData.value) || 0;
+                    }
+
+                    if (oldValue !== newValue) {
+                        backgroundBindings.current[sensorTag] = newValue;
+                        hasChanges = true;
+                        console.log(`Background binding "${sensorTag}" (${binding.type}) updated: ${oldValue} -> ${newValue}`);
+                    }
+                }
+            });
+        });
+
+        return hasChanges;
+    }, [discoveredBindings]);
+
+    const processSensorData = useCallback((sensorPayload: SensorPayload) => {
+        if (!isMountedRef.current || !riveConfig || sensorPayload.screenId !== riveConfig.screenId) {
+            return;
+        }
+
+        setSensorData(sensorPayload.sensors);
+
+        const brightnessProcessed = processBrightnessSensor(sensorPayload);
+        const inputsChanged = updateBackgroundInputs(sensorPayload);
+        const bindingsChanged = updateBackgroundBindings(sensorPayload);
+
+        // Only update backgroundConfig if bindings or inputs actually changed
+        if (inputsChanged || bindingsChanged) {
+            setBackgroundConfig(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    riveInputs: { ...backgroundInputs.current },
+                    riveBindings: { ...backgroundBindings.current }
+                };
+            });
+        }
+
+        const processedSensors = new Set<string>();
+
+        if (brightnessProcessed) {
+            processedSensors.add('jr_brightness');
+        }
+
+        Object.keys(sensorPayload.sensors).forEach(sensorKey => {
+            if (sensorKey.includes(',')) {
+                const tags = sensorKey.split(',').map(tag => tag.trim());
+                tags.forEach(tag => {
+                    if (hasOnscreenElement(tag) ||
+                        backgroundInputs.current.hasOwnProperty(tag) ||
+                        backgroundBindings.current.hasOwnProperty(tag)) {
+                        processedSensors.add(tag);
+                    }
+                });
+            } else {
+                if (hasOnscreenElement(sensorKey) ||
+                    backgroundInputs.current.hasOwnProperty(sensorKey) ||
+                    backgroundBindings.current.hasOwnProperty(sensorKey)) {
+                    processedSensors.add(sensorKey);
+                }
+            }
+        });
+
+        console.log('New sensor data:');
+        Object.entries(sensorPayload.sensors).forEach(([tag, data]: [string, any], index) => {
+            console.log(`  ${index + 1}. "${tag}": ${data.displayValue || `${data.value} ${data.unit || ''}`}`);
+        });
+
+        const allSensorTags = new Set<string>();
+
+        Object.keys(sensorPayload.sensors).forEach(key => {
+            if (key.includes(',')) {
+                key.split(',').map(tag => tag.trim()).forEach(tag => allSensorTags.add(tag));
+            } else {
+                allSensorTags.add(key);
+            }
+        });
+
+        allSensorTags.forEach(sensorTag => {
+            if (!processedSensors.has(sensorTag)) {
+                const hasOnscreen = hasOnscreenElement(sensorTag);
+                const hasData = hasMatchingSensorData(sensorTag, sensorPayload);
+                const hasBackground = backgroundInputs.current.hasOwnProperty(sensorTag);
+                const hasBinding = backgroundBindings.current.hasOwnProperty(sensorTag);
+                console.log(`   Failed to process sensor "${sensorTag}" - no valid target found (hasOnscreen: ${hasOnscreen}, hasData: ${hasData}, hasBackground: ${hasBackground}, hasBinding: ${hasBinding})`);
+            }
+        });
+
+    }, [riveConfig, hasOnscreenElement, hasMatchingSensorData, updateBackgroundInputs, updateBackgroundBindings, processBrightnessSensor]);
+
+    const handleBackgroundDiscovery = useCallback((machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => {
+        console.log('Background discovered state machines:', machines);
+        console.log('Background discovered data bindings:', bindings);
+
+        setDiscoveredMachines(machines);
+        setDiscoveredBindings(bindings);
+
+        // Initialize the refs with discovered values
+        const initialInputs: Record<string, any> = {};
+        machines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                if (input.currentValue !== null) {
+                    initialInputs[input.name] = input.currentValue;
+                }
+            });
+        });
+        backgroundInputs.current = initialInputs;
+
+        const initialBindings: Record<string, string | number | boolean> = {};
+        bindings.forEach(binding => {
+            if (binding.currentValue !== null && binding.currentValue !== undefined) {
+                initialBindings[binding.name] = binding.currentValue;
+            }
+        });
+        backgroundBindings.current = initialBindings;
+    }, []);
+
+    useEffect(() => {
+        if (loading || error) return;
+
+        const processConfigData = (config: RiveConfig) => {
+            console.log('Processing config data:', config);
+
+            const canvas = config.frameConfig?.canvas;
+            const background = config.frameConfig?.background;
+
+            console.log('Canvas config:', canvas);
+            console.log('Background config:', background);
+
+            let elementPadding = 4;
+
+            if ((canvas as any)?.settings?.elementPadding !== undefined) {
+                elementPadding = (canvas as any).settings.elementPadding;
+                console.log('Found elementPadding in canvas.settings:', elementPadding);
+            } else if ((canvas as any)?.elementPadding !== undefined) {
+                elementPadding = (canvas as any).elementPadding;
+                console.log('Found elementPadding directly on canvas:', elementPadding);
+            } else {
+                console.log('No elementPadding found, using default:', elementPadding);
+            }
+
+            const canvasInfo: CanvasConfig = {
+                width: canvas?.width || 400,
+                height: canvas?.height || 1280,
+                backgroundColor: background?.color || '#000000',
+                elementPadding: elementPadding,
+            };
+
+            // Create background config with refs (these will be updated by sensor data)
+            const bgConfig: BackgroundConfig = {
+                type: (background?.type as 'color' | 'image' | 'rive') || 'color',
+                color: background?.color,
+                imageUrl: (background as any)?.imageUrl,
+                riveFile: config.frameConfig?.rive?.fileUrl,
+                riveStateMachine: (config as any).riveStateMachine || (background as any)?.riveStateMachine,
+                riveInputs: backgroundInputs.current,
+                riveBindings: backgroundBindings.current,
+            };
+
+            console.log('Final canvas info:', canvasInfo);
+            console.log('Final background config:', bgConfig);
+
+            setCanvasConfig(canvasInfo);
+            setBackgroundConfig(bgConfig);
+            setRiveConfig(config);
+            extractDisplayElements(config);
+            setIsReady(true);
+        };
+
+        const unsubscribeConfig = dataProvider.onConfigurationReceived(processConfigData);
+        const unsubscribeSensor = dataProvider.onSensorDataReceived(processSensorData);
+
+        dataProvider.connect();
+
+        return () => {
+            unsubscribeConfig();
+            unsubscribeSensor();
+        };
+    }, [loading, error, dataProvider, processSensorData, extractDisplayElements]);
+
     useEffect(() => {
         if (!deviceId) {
-            console.error('[VirtualScreenViewer] No device ID provided');
             setError('No device ID provided');
             setLoading(false);
             return;
         }
 
         if (providedDeviceData) {
-            console.log('[VirtualScreenViewer] Using provided device data:', providedDeviceData);
             setDevice(providedDeviceData);
             setLoading(false);
             return;
@@ -265,644 +446,46 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
 
         const loadDevice = async () => {
             try {
-                console.log('[VirtualScreenViewer] Loading device from API:', deviceId);
                 const response = await fetch(`/api/devices/${deviceId}`);
-
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('[VirtualScreenViewer] Device API error:', response.status, errorText);
-                    throw new Error(`Failed to load device: ${response.status} ${errorText}`);
+                    throw new Error(`Failed to load device: ${response.status}`);
                 }
-
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    const responseText = await response.text();
-                    console.error('[VirtualScreenViewer] Non-JSON response:', responseText.substring(0, 200));
-                    throw new Error(`API returned HTML instead of JSON. Check if the API endpoint exists.`);
-                }
-
                 const deviceData = await response.json();
-
-                if (deviceData.type !== 'Virtual Screen' && !isEmbedded) {
-                    throw new Error(`Device is not a virtual screen (type: ${deviceData.type})`);
-                }
-
                 setDevice(deviceData);
+                setLoading(false);
             } catch (err) {
-                console.error('[VirtualScreenViewer] Error loading device:', err);
                 setError(err instanceof Error ? err.message : 'Failed to load device');
-            } finally {
                 setLoading(false);
             }
         };
 
         loadDevice();
-    }, [deviceId, providedDeviceData, isEmbedded]);
+    }, [deviceId, providedDeviceData]);
 
-    // Monitor streams for this virtual screen's data
     useEffect(() => {
-        if (!device || !streams || !Array.isArray(streams)) {
-            return;
-        }
+        isMountedRef.current = true;
 
-        const matchingStream = streams.find(stream => {
-            return stream.screenId === parseInt(deviceId!) ||
-                stream.deviceName === device.name ||
-                stream.screenName === device.name ||
-                stream.deviceName === `Virtual-${deviceId}` ||
-                stream.deviceName === `Virtual--${Math.abs(parseInt(deviceId!))}`;
-        });
+        return () => {
+            isMountedRef.current = false;
+            dataProvider.disconnect();
+            setTimeout(() => {
+                dataProvider.cleanup();
+            }, 100);
+        };
+    }, [dataProvider]);
 
-        if (matchingStream && matchingStream.configPayloadJson) {
-            try {
-                const configData = JSON.parse(matchingStream.configPayloadJson);
+    const rendererConfig: RendererConfig = useMemo(() => ({
+        elementPadding: canvasConfig?.elementPadding || 4,
+        isInteractive: false,
+        showPlaceholders: false,
+    }), [canvasConfig?.elementPadding]);
 
-                if (configData.type === 'rive_config') {
-                    processConfig(configData);
-                }
-            } catch (err) {
-                console.error('[VirtualScreenViewer] Error parsing config:', err);
-            }
-        }
-
-        streams.forEach(stream => {
-            if (stream.lastSentPayloadJson) {
-                try {
-                    const sensorData = JSON.parse(stream.lastSentPayloadJson);
-                    if (sensorData.type === 'rive_sensor' &&
-                        (sensorData.screenId === parseInt(deviceId!) ||
-                            sensorData.screenId === device.uniqueIdentifier ||
-                            sensorData.screenId === deviceId ||
-                            sensorData.screenId === "virtual" ||
-                            sensorData.screenId === `blit_screen_${device.id}` ||
-                            sensorData.screenId.includes(`blit_screen_`) ||
-                            sensorData.screenId.includes(deviceId))) {
-                        console.log('[VirtualScreenViewer] Debug - Processing sensor data:', sensorData);
-                        processSensorData(sensorData);
-                    }
-                } catch (err) {
-                    console.error('[VirtualScreenViewer] Error parsing sensor data:', err);
-                }
-            }
-        });
-    }, [device, streams, deviceId]);
-
-    // Calculate canvas bounds and scaling for overlay positioning - FIXED VERSION
-    const calculateCanvasBounds = useCallback(() => {
-        if (!riveContainerRef.current || !riveConfig) {
-            return;
-        }
-
-        const container = riveContainerRef.current;
-        const containerRect = container.getBoundingClientRect();
-        const canvasConfig = getCanvasConfig(riveConfig);
-
-        // Detect if we're in Puppeteer mode
-        const isPuppeteerMode = window.puppeteerMode || window.forceStandaloneMode || isScreenshotMode;
-
-        if (isEmbedded) {
-            const containerWidth = containerRect.width;
-            const containerHeight = containerRect.height;
-
-            const scaleX = containerWidth / canvasConfig.width;
-            const scaleY = containerHeight / canvasConfig.height;
-            const scale = Math.min(scaleX, scaleY);
-
-            const scaledWidth = canvasConfig.width * scale;
-            const scaledHeight = canvasConfig.height * scale;
-
-            const canvasLeft = (containerWidth - scaledWidth) / 2;
-            const canvasTop = (containerHeight - scaledHeight) / 2;
-
-            setCanvasBounds({
-                left: canvasLeft,
-                top: canvasTop,
-                width: scaledWidth,
-                height: scaledHeight,
-                scaleX: scale,
-                scaleY: scale,
-            });
-        } else {
-            const canvasWidth = canvasConfig.width;
-            const canvasHeight = canvasConfig.height;
-
-            if (isPuppeteerMode) {
-                // CRITICAL FIX: In Puppeteer mode, the container is forced to fixed positioning
-                // So we need to calculate bounds based on the actual canvas size, not container positioning
-                setCanvasBounds({
-                    left: 0, // Puppeteer CSS forces container to top:0, left:0
-                    top: 0,  // Puppeteer CSS forces container to top:0, left:0
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    scaleX: 1,
-                    scaleY: 1,
-                });
-            } else if (isFullscreen) {
-                const canvasLeft = (containerRect.width - canvasWidth) / 2;
-                const canvasTop = (containerRect.height - canvasHeight) / 2;
-
-                setCanvasBounds({
-                    left: canvasLeft,
-                    top: canvasTop,
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    scaleX: 1,
-                    scaleY: 1,
-                });
-            } else {
-                const canvasLeft = (containerRect.width - canvasWidth) / 2;
-                const canvasTop = 20;
-
-                setCanvasBounds({
-                    left: canvasLeft,
-                    top: canvasTop,
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    scaleX: 1,
-                    scaleY: 1,
-                });
-            }
-        }
-    }, [riveConfig, isEmbedded, isFullscreen, isScreenshotMode]);
-
-    // Get canvas dimensions and background from config
-    const getCanvasConfig = (config: RiveConfig) => {
-        const canvas = config.frameConfig?.frameConfig?.canvas || config.frameConfig?.canvas;
-        const background = config.frameConfig?.frameConfig?.background || config.frameConfig?.background;
-
+    const brightnessStyle = useMemo(() => {
         return {
-            width: canvas?.width || 400,
-            height: canvas?.height || 1280,
-            orientation: canvas?.orientation || 'portrait',
-            backgroundColor: background?.color || '#000000',
-            backgroundType: background?.type || 'color'
+            filter: `brightness(${currentBrightness})`
         };
-    };
+    }, [currentBrightness]);
 
-    // Process Rive file data (URL download only)
-    const processRiveFileData = async (config: RiveConfig) => {
-        const riveConfig = config.frameConfig?.frameConfig?.rive || config.frameConfig?.rive;
-
-        if (riveConfig?.fileUrl) {
-            try {
-                const response = await fetch(riveConfig.fileUrl);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                setRiveFileBlob(blobUrl);
-                return blobUrl;
-            } catch (error) {
-                console.error('[VirtualScreenViewer] Download failed:', error);
-                return null;
-            }
-        } else if (riveConfig?.file) {
-            const fileUrl = `/api/frameengine/rive-files/${riveConfig.file}/content`;
-            setRiveFileBlob(fileUrl);
-            return fileUrl;
-        } else {
-            console.warn('[VirtualScreenViewer] No Rive file URL or file reference found in config');
-            return null;
-        }
-    };
-
-    // Extract display elements from config
-    const extractDisplayElements = (config: RiveConfig) => {
-        const elements = config.frameElements || [];
-
-        const displayElements: DisplayElement[] = elements.map(element => ({
-            id: element.id,
-            type: element.type as 'sensor' | 'text',
-            position: element.position,
-            properties: element.properties,
-            sensorTag: element.properties.sensorTag,
-            text: element.properties.text,
-            riveConnections: element.riveConnections,
-        }));
-
-        setDisplayElements(displayElements);
-        return displayElements;
-    };
-
-    // Build sensor tag to Rive input mapping from config
-    const buildSensorToRiveMapping = (config: RiveConfig) => {
-        const mapping: Record<string, string[]> = {};
-
-        const riveConfig = config.frameConfig?.frameConfig?.rive || config.frameConfig?.rive;
-        const discovery = riveConfig?.discovery;
-
-        if (discovery) {
-            const elements = config.frameElements || [];
-            elements.forEach(element => {
-                if (element.properties.sensorTag && element.riveConnections?.availableInputs) {
-                    const sensorTag = element.properties.sensorTag;
-                    const riveInputs: string[] = [];
-
-                    element.riveConnections.availableInputs.forEach(connection => {
-                        const fullKey = connection.fullKey || `${connection.machineName}.${connection.inputName}`;
-                        riveInputs.push(fullKey);
-                    });
-
-                    if (riveInputs.length > 0) {
-                        mapping[sensorTag] = riveInputs;
-                    }
-                }
-            });
-        }
-
-        setSensorToRiveMap(mapping);
-        return mapping;
-    };
-
-    // Process incoming config
-    const processConfig = async (config: RiveConfig) => {
-        setRiveConfig(config);
-        await processRiveFileData(config);
-        extractDisplayElements(config);
-        buildSensorToRiveMapping(config);
-
-        setIsConfigured(true);
-    };
-
-    // Process incoming sensor data with enhanced comma-separated sensor tag support
-    const processSensorData = (sensorPayload: SensorPayload) => {
-        if (!riveConfig) {
-            return;
-        }
-
-        if (sensorPayload.screenId !== riveConfig.screenId) {
-            return;
-        }
-
-        const expandedSensorData: Record<string, any> = {};
-        const newMappings: Record<string, string[]> = { ...sensorToRiveMap };
-
-        Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
-            const sensorTags = sensorKey.split(',').map(tag => tag.trim());
-
-            if (sensorTags.length > 1) {
-                const sensorTag = sensorTags[0];
-                const riveInputName = sensorTags[1];
-
-                const availableInputKeys = Object.keys(stateMachineInputRefs.current);
-                const fullRiveKey = availableInputKeys.find(key => key.endsWith(`.${riveInputName}`)) || riveInputName;
-
-                if (!newMappings[sensorTag]) {
-                    newMappings[sensorTag] = [];
-                }
-                if (!newMappings[sensorTag].includes(fullRiveKey)) {
-                    newMappings[sensorTag].push(fullRiveKey);
-                }
-
-                expandedSensorData[sensorTag] = sensorData;
-                expandedSensorData[riveInputName] = sensorData;
-            } else {
-                const tag = sensorTags[0];
-                expandedSensorData[tag] = sensorData;
-            }
-        });
-
-        if (Object.keys(newMappings).length > Object.keys(sensorToRiveMap).length) {
-            setSensorToRiveMap(newMappings);
-        }
-
-        setSensorData(expandedSensorData);
-
-        setDisplayElements(prev =>
-            prev.map(element => {
-                if (element.type === 'sensor' && element.sensorTag) {
-                    const sensorData = expandedSensorData[element.sensorTag];
-                    if (sensorData) {
-                        return {
-                            ...element,
-                            currentValue: sensorData.value.toString(),
-                            currentUnit: sensorData.unit,
-                        };
-                    }
-                }
-                return element;
-            })
-        );
-
-        updateRiveInputsFromSensorData(expandedSensorData, newMappings);
-    };
-
-    // Update Rive state machine inputs based on sensor data
-    const updateRiveInputsFromSensorData = (sensorData: Record<string, any>, mappings?: Record<string, string[]>) => {
-        if (!rive || Object.keys(stateMachineInputRefs.current).length === 0) {
-            return;
-        }
-
-        const currentMappings = mappings || sensorToRiveMap;
-
-        Object.entries(sensorData).forEach(([sensorTag, data]) => {
-            const riveInputKeys = currentMappings[sensorTag] || [];
-
-            riveInputKeys.forEach(riveInputKey => {
-                const inputRef = stateMachineInputRefs.current[riveInputKey];
-                if (inputRef) {
-                    try {
-                        const newValue = Number(data.value) || 0;
-                        inputRef.value = newValue;
-                    } catch (error) {
-                        console.error(`Error updating Rive input "${riveInputKey}":`, error);
-                    }
-                }
-            });
-
-            const directInputRef = stateMachineInputRefs.current[sensorTag];
-            if (directInputRef) {
-                try {
-                    const newValue = Number(data.value) || 0;
-                    directInputRef.value = newValue;
-                } catch (error) {
-                    console.error(`Error updating Rive input "${sensorTag}":`, error);
-                }
-            }
-        });
-    };
-
-    // Set up Rive with appropriate layout based on mode
-    const riveOptions = useMemo(() => ({
-        src: riveFileBlob || '',
-        autoplay: true,
-        layout: new Layout({
-            fit: isEmbedded ? Fit.Contain : Fit.None,
-            alignment: Alignment.Center
-        }),
-        onLoad: () => {
-            setTimeout(() => calculateCanvasBounds(), 100);
-            setTimeout(() => calculateCanvasBounds(), 300);
-            setTimeout(() => calculateCanvasBounds(), 500);
-        },
-        onLoadError: (error: any) => {
-            console.error('[VirtualScreenViewer] Rive load error:', error);
-        },
-    }), [riveFileBlob, calculateCanvasBounds, isEmbedded]);
-
-    const { rive, RiveComponent } = useRive(riveOptions);
-
-    // Build state machine input references when Rive loads
-    useEffect(() => {
-        if (!rive) return;
-
-        const buildInputRefs = () => {
-            const inputRefs: Record<string, any> = {};
-
-            try {
-                const stateMachineNames = rive.stateMachineNames || [];
-
-                stateMachineNames.forEach((machineName: string) => {
-                    try {
-                        rive.play(machineName);
-
-                        const inputs = rive.stateMachineInputs(machineName) || [];
-
-                        inputs.forEach((input: any) => {
-                            if (input && input.name) {
-                                const fullKey = `${machineName}.${input.name}`;
-                                inputRefs[fullKey] = input;
-                                inputRefs[input.name] = input;
-                            }
-                        });
-                    } catch (error) {
-                        console.error(`Error processing state machine "${machineName}":`, error);
-                    }
-                });
-
-                stateMachineInputRefs.current = inputRefs;
-
-                if (Object.keys(currentSensorData).length > 0) {
-                    updateRiveInputsFromSensorData(currentSensorData);
-                }
-            } catch (error) {
-                console.error('Error building state machine inputs:', error);
-            }
-        };
-
-        const timer = setTimeout(buildInputRefs, 100);
-        return () => clearTimeout(timer);
-    }, [rive, currentSensorData, sensorToRiveMap]);
-
-    // Use ResizeObserver for reliable resize detection
-    useEffect(() => {
-        if (!riveContainerRef.current || !riveConfig) return;
-
-        let timeoutId: NodeJS.Timeout;
-
-        const debouncedCalculate = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                calculateCanvasBounds();
-            }, 16);
-        };
-
-        const resizeObserver = new ResizeObserver((entries) => {
-            debouncedCalculate();
-        });
-
-        resizeObserver.observe(riveContainerRef.current);
-        setTimeout(calculateCanvasBounds, 200);
-
-        return () => {
-            resizeObserver.disconnect();
-            clearTimeout(timeoutId);
-        };
-    }, [riveConfig, calculateCanvasBounds]);
-
-    // Listen for window resize and orientation changes (standalone mode)
-    useEffect(() => {
-        if (isEmbedded) return;
-
-        let timeoutId: NodeJS.Timeout;
-
-        const debouncedCalculate = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                calculateCanvasBounds();
-            }, 16);
-        };
-
-        const handleResize = () => {
-            debouncedCalculate();
-        };
-
-        const handleOrientationChange = () => {
-            setTimeout(calculateCanvasBounds, 300);
-        };
-
-        window.addEventListener('resize', handleResize);
-        window.addEventListener('orientationchange', handleOrientationChange);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            window.removeEventListener('orientationchange', handleOrientationChange);
-            clearTimeout(timeoutId);
-        };
-    }, [calculateCanvasBounds, isEmbedded]);
-
-    // Fullscreen handlers (standalone only)
-    const toggleFullscreen = async () => {
-        if (isEmbedded || !containerRef.current) return;
-
-        try {
-            if (!isFullscreen) {
-                await containerRef.current.requestFullscreen();
-            } else {
-                await document.exitFullscreen();
-            }
-        } catch (err) {
-            console.error('Fullscreen error:', err);
-        }
-    };
-
-    // Listen for fullscreen changes and recalculate bounds (standalone only)
-    useEffect(() => {
-        if (isEmbedded) return;
-
-        const handleFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
-            setTimeout(() => calculateCanvasBounds(), 100);
-            setTimeout(() => calculateCanvasBounds(), 300);
-            setTimeout(() => calculateCanvasBounds(), 500);
-        };
-
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    }, [calculateCanvasBounds, isEmbedded]);
-
-    // Load Google Fonts when elements change
-    useEffect(() => {
-        const fontsToLoad = new Set<string>();
-
-        displayElements.forEach(element => {
-            const fontFamily = element.properties.fontFamily;
-            if (fontFamily && fontFamily !== 'Inter' && !fontFamily.includes('system')) {
-                fontsToLoad.add(fontFamily);
-            }
-        });
-
-        fontsToLoad.forEach(loadGoogleFont);
-    }, [displayElements]);
-
-    // Render overlay elements with canvas-relative positioning
-    const renderOverlayElements = () => {
-        if (!riveConfig || !canvasBounds) return null;
-
-        return displayElements.map((element) => {
-            let content = '';
-            let textColor = element.properties.textColor || element.properties.color || '#929e00';
-
-            if (element.type === 'sensor' && element.sensorTag) {
-                const sensorData = currentSensorData[element.sensorTag];
-                const value = sensorData?.value?.toString() || element.properties.placeholderValue || '--';
-                const unit = sensorData?.unit || element.properties.placeholderUnit || '';
-                const showUnit = element.properties.showUnit !== false;
-                const showLabel = element.properties.showLabel !== false;
-                const label = element.properties.placeholderSensorLabel || '';
-
-                let contentParts = [];
-
-                if (showLabel && label) {
-                    contentParts.push(label);
-                }
-
-                contentParts.push(value);
-
-                if (showUnit && unit) {
-                    contentParts.push(unit);
-                }
-
-                content = contentParts.join(' ');
-            } else if (element.type === 'text') {
-                content = element.properties.text || '';
-            }
-
-            const fontSize = element.properties.fontSize || 32;
-            const configuredFont = element.properties.fontFamily;
-            const fontFamily = configuredFont || 'system-ui';
-            const fontWeight = element.properties.fontWeight || '900';
-            const textAlign = element.properties.textAlign || 'left';
-
-            // Load Google Fonts properly
-            if (fontFamily &&
-                fontFamily !== 'system-ui' &&
-                fontFamily !== 'Arial' &&
-                fontFamily !== 'Helvetica' &&
-                !fontFamily.includes('system') &&
-                !fontFamily.includes('sans-serif') &&
-                !fontFamily.includes('serif') &&
-                !fontFamily.includes('monospace')) {
-                loadGoogleFont(fontFamily);
-            }
-
-            // Calculate position relative to canvas bounds
-            const scaledLeft = canvasBounds.left + (element.position.x * canvasBounds.scaleX);
-            const scaledTop = canvasBounds.top + (element.position.y * canvasBounds.scaleY);
-            const scaledWidth = element.position.width * canvasBounds.scaleX;
-            const scaledHeight = element.position.height * canvasBounds.scaleY;
-            const scaledFontSize = fontSize * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
-
-            // Calculate padding exactly like FrameEngine_Canvas
-            const basePadding = 4;
-            const scaledPadding = basePadding * Math.min(canvasBounds.scaleX, canvasBounds.scaleY);
-
-            // Build font stack that respects the configured font
-            let fontStack;
-            if (configuredFont) {
-                fontStack = `"${configuredFont}", system-ui, -apple-system, sans-serif`;
-            } else {
-                fontStack = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-            }
-
-            // Build styles object WITH padding to match builder
-            const elementStyles: React.CSSProperties = {
-                position: 'absolute',
-                left: scaledLeft,
-                top: scaledTop,
-                width: scaledWidth,
-                height: scaledHeight,
-                fontSize: `${scaledFontSize}px`,
-                fontFamily: fontStack,
-                color: textColor,
-                fontWeight: fontWeight,
-                pointerEvents: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: textAlign === 'center' ? 'center' :
-                    textAlign === 'right' ? 'flex-end' : 'flex-start',
-                justifyContent: 'center',
-                zIndex: element.properties.zIndex || 10,
-                padding: `${scaledPadding}px`,
-                boxSizing: 'border-box',
-                wordWrap: 'break-word',
-                overflow: 'hidden',
-                lineHeight: element.properties.lineHeight || '1.4',
-            };
-
-            // Add text effects only if explicitly defined
-            if (element.properties.textShadow === true) {
-                elementStyles.textShadow = '1px 1px 2px rgba(0,0,0,0.3)';
-            }
-
-            if (element.properties.textBorder === true) {
-                elementStyles.WebkitTextStroke = '1px rgba(0,0,0,0.5)';
-            }
-
-            return (
-                <div
-                    key={element.id}
-                    style={elementStyles}
-                >
-                    {content}
-                </div>
-            );
-        });
-    };
-
-    // Handle full-screen navigation or toggle
     const handleFullscreenClick = () => {
         if (isEmbedded) {
             if (onFullscreenClick) {
@@ -910,194 +493,128 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
             } else {
                 window.open(`/device/${deviceId}/virtual-screen`, "_blank");
             }
-        } else {
-            toggleFullscreen();
         }
     };
 
-    // Loading state
-    if (loading) {
-        const loadingHeight = isEmbedded ? containerHeight : '100vh';
+    const reconnect = () => {
+        dataProvider.connect();
+    };
 
+    if (loading) {
         return (
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: loadingHeight,
+                height: isEmbedded ? containerHeight : '100vh',
                 gap: 2,
-                backgroundColor: isEmbedded ? '#000' : 'inherit',
-                color: isEmbedded ? 'white' : 'inherit',
-                borderRadius: isEmbedded ? 1 : 0
             }}>
-                <CircularProgress size={isEmbedded ? 40 : 60} />
-                <Typography variant={isEmbedded ? "body2" : "h6"}>
-                    Loading virtual screen...
-                </Typography>
+                <CircularProgress size={40} />
+                <Typography variant="body2">Loading virtual screen...</Typography>
             </Box>
         );
     }
 
-    // Error state
     if (error) {
-        const errorHeight = isEmbedded ? containerHeight : 'auto';
-
         return (
-            <Box sx={{
-                height: errorHeight,
-                p: isEmbedded ? 2 : 3,
-                backgroundColor: isEmbedded ? '#000' : 'inherit',
-                color: isEmbedded ? 'white' : 'inherit',
-                borderRadius: isEmbedded ? 1 : 0,
-                display: isEmbedded ? 'flex' : 'block',
-                flexDirection: isEmbedded ? 'column' : 'row',
-                justifyContent: isEmbedded ? 'center' : 'flex-start'
-            }}>
-                <Alert
-                    severity="error"
-                    sx={{
-                        mb: 2,
-                        backgroundColor: isEmbedded ? 'rgba(244, 67, 54, 0.1)' : 'inherit',
-                        color: isEmbedded ? 'white' : 'inherit'
-                    }}
-                >
-                    {error}
-                </Alert>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                    <Button
-                        variant={isEmbedded ? "outlined" : "contained"}
-                        onClick={() => window.location.reload()}
-                        size={isEmbedded ? "small" : "medium"}
-                        sx={isEmbedded ? { color: 'white', borderColor: 'white', alignSelf: 'flex-start' } : {}}
-                    >
-                        Retry
-                    </Button>
-                </Box>
+            <Box sx={{ p: 2 }}>
+                <Alert severity="error">{error}</Alert>
             </Box>
         );
     }
 
-    // Not configured state
-    if (!isConfigured) {
-        const waitingHeight = isEmbedded ? containerHeight : '100vh';
-
+    if (!isReady || !canvasConfig || !backgroundConfig) {
         return (
             <Box sx={{
-                height: waitingHeight,
+                height: isEmbedded ? containerHeight : '100vh',
                 backgroundColor: '#000',
                 color: '#fff',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontFamily: 'system-ui, Arial, sans-serif',
                 fontSize: isEmbedded ? '14px' : '18px',
-                borderRadius: isEmbedded ? 1 : 0,
-                position: 'relative',
-                width: isEmbedded ? '100%' : '100vw',
-                ...(isEmbedded ? {} : { position: 'fixed', top: 0, left: 0 })
             }}>
-                <div style={{ textAlign: 'center', maxWidth: isEmbedded ? '300px' : '600px', padding: '20px' }}>
-                    <div style={{ marginBottom: isEmbedded ? '16px' : '20px', fontSize: isEmbedded ? '32px' : '48px' }}>⏳</div>
-                    <Typography variant={isEmbedded ? "subtitle2" : "h5"} gutterBottom>
-                        {device?.name || 'Virtual Screen'}
-                    </Typography>
-                    <Typography variant="body2" sx={{ mb: 2, fontSize: isEmbedded ? '12px' : 'inherit' }}>
-                        Waiting for stream configuration...
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: isEmbedded ? '11px' : 'inherit' }}>
-                        WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}
-                    </Typography>
-                    {!isConnected && (
-                        <Button
-                            variant="outlined"
-                            onClick={reconnect}
-                            size={isEmbedded ? "small" : "medium"}
-                            sx={{
-                                mt: isEmbedded ? 1 : 2,
-                                color: 'white',
-                                borderColor: 'white',
-                                fontSize: isEmbedded ? '11px' : 'inherit'
-                            }}
-                        >
-                            Reconnect
-                        </Button>
-                    )}
-                </div>
-
-                {shouldShowControls && (
-                    <Box sx={{
-                        position: 'absolute',
-                        top: isEmbedded ? 8 : 20,
-                        right: isEmbedded ? 8 : 20,
-                        display: 'flex',
-                        gap: 1
-                    }}>
-                        {!isEmbedded && (
-                            <Fab
-                                color="primary"
-                                onClick={() => navigate('/devices')}
-                                size={isEmbedded ? "small" : "medium"}
-                            >
-                                <ArrowBack />
-                            </Fab>
-                        )}
-                        <IconButton
-                            size="small"
-                            onClick={handleFullscreenClick}
-                            sx={{ color: 'white', backgroundColor: 'rgba(255,255,255,0.1)' }}
-                        >
-                            {isEmbedded ? <Launch fontSize="small" /> : <Fullscreen fontSize="small" />}
-                        </IconButton>
-                    </Box>
-                )}
+                <Typography variant={isEmbedded ? "subtitle2" : "h5"} gutterBottom>
+                    {device?.name || 'Virtual Screen'}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2 }}>
+                    Waiting for configuration...
+                </Typography>
             </Box>
         );
     }
 
-    // Main visualization view
-    const canvasConfig = riveConfig ? getCanvasConfig(riveConfig) : { width: 400, height: 1280, orientation: 'portrait', backgroundColor: '#000000', backgroundType: 'color' };
-
-    if (isEmbedded) {
-        // Embedded mode - render in container
+    if (isPuppeteerMode || isScreenshotMode) {
         return (
-            <Box
+            <div
                 data-testid="virtual-screen-container"
-                sx={{
-                    position: 'relative',
-                    width: '100%',
-                    height: containerHeight,
+                style={{
+                    width: canvasConfig.width,
+                    height: canvasConfig.height,
                     backgroundColor: canvasConfig.backgroundColor,
-                    borderRadius: 1,
-                    overflow: 'hidden'
+                    margin: 0,
+                    padding: 0,
+                    border: 'none',
+                    outline: 'none',
+                    overflow: 'hidden',
+                    position: 'relative',
+                    boxSizing: 'border-box',
+                    ...brightnessStyle
                 }}
             >
-                {/* Rive animation container */}
-                <div
-                    ref={riveContainerRef}
-                    style={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative'
-                    }}
-                >
-                    {riveFileBlob && riveConfig && (
-                        <RiveComponent style={{
-                            width: '100%',
-                            height: '100%',
-                            display: 'block'
-                        }} />
-                    )}
+                <FrameEngine_BackgroundRenderer
+                    config={backgroundConfig}
+                    width={canvasConfig.width}
+                    height={canvasConfig.height}
+                    fit="none"
+                    onRiveDiscovery={handleBackgroundDiscovery}
+                />
+
+                <FrameEngine_ElementRenderer
+                    elements={displayElements}
+                    config={rendererConfig}
+                    sensorData={currentSensorData}
+                />
+            </div>
+        );
+    }
+
+    if (isEmbedded) {
+        return (
+            <Box sx={{
+                position: 'relative',
+                width: '100%',
+                height: containerHeight,
+                backgroundColor: canvasConfig.backgroundColor,
+                borderRadius: 1,
+                overflow: 'hidden',
+                ...brightnessStyle
+            }}>
+                <FrameEngine_BackgroundRenderer
+                    config={backgroundConfig}
+                    width={containerHeight ? Math.round((containerHeight / canvasConfig.height) * canvasConfig.width) : canvasConfig.width}
+                    height={containerHeight || canvasConfig.height}
+                    fit="contain"
+                    onRiveDiscovery={handleBackgroundDiscovery}
+                />
+
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: 1,
+                }}>
+                    <FrameEngine_ElementRenderer
+                        elements={displayElements}
+                        config={rendererConfig}
+                        sensorData={currentSensorData}
+                    />
                 </div>
 
-                {/* Overlay elements positioned relative to canvas */}
-                {renderOverlayElements()}
-
-                {/* Control buttons */}
                 {shouldShowControls && (
                     <Box sx={{
                         position: 'absolute',
@@ -1123,153 +640,147 @@ const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = ({
                             size="small"
                             onClick={reconnect}
                             sx={{
-                                color: isConnected ? 'lightgreen' : 'orange',
+                                color: 'lightgreen',
                                 backgroundColor: 'rgba(0,0,0,0.7)',
                                 '&:hover': { backgroundColor: 'rgba(0,0,0,0.8)' }
                             }}
-                            title={isConnected ? 'Connected' : 'Reconnect'}
+                            title="Reconnect"
                         >
                             <Refresh fontSize="small" />
                         </IconButton>
                     </Box>
                 )}
 
-                {/* Status indicator */}
                 {shouldShowControls && (
                     <Box sx={{
                         position: 'absolute',
                         bottom: 8,
                         left: 8,
-                        backgroundColor: 'rgba(0,0,0,0.7)',
-                        color: 'white',
-                        padding: '4px 8px',
+                        backgroundColor: 'rgba(0,0,0,0.9)',
+                        color: '#00ff00',
+                        padding: '6px 10px',
                         borderRadius: 1,
-                        fontSize: '10px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
                         zIndex: 1000,
+                        border: '1px solid #00ff00',
                     }}>
-                        <Typography variant="caption" sx={{ fontSize: '10px' }}>
+                        <Typography variant="caption" sx={{ fontSize: '12px', fontWeight: 'bold', color: '#00ff00' }}>
                             {canvasConfig.width}×{canvasConfig.height}
                         </Typography>
-                        <br />
-                        <Typography variant="caption" color={isConnected ? 'lightgreen' : 'orange'} sx={{ fontSize: '9px' }}>
-                            {isConnected ? '🟢' : '🟡'} {Object.keys(currentSensorData).length} sensors
+                    </Box>
+                )}
+
+                {shouldShowControls && (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 8,
+                        left: 8,
+                        backgroundColor: 'rgba(0,0,0,0.9)',
+                        color: '#00ff00',
+                        padding: '6px 10px',
+                        borderRadius: 1,
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        zIndex: 1000,
+                        border: '1px solid #00ff00',
+                    }}>
+                        <Typography variant="caption" sx={{ fontSize: '12px', fontWeight: 'bold', color: '#00ff00' }}>
+                            Sensors: {Object.keys(currentSensorData).length} | Elements: {displayElements.length} | Bindings: {discoveredBindings.length} | Brightness: {Math.round(currentBrightness * 100)}%
                         </Typography>
                     </Box>
                 )}
             </Box>
         );
-    } else {
-        // Standalone mode - render fullscreen
-        return (
+    }
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            padding: 0,
+            backgroundColor: canvasConfig.backgroundColor,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+        }}>
             <div
-                ref={containerRef}
                 data-testid="virtual-screen-container"
                 style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100vw',
-                    height: '100vh',
-                    margin: 0,
-                    padding: 0,
-                    backgroundColor: canvasConfig.backgroundColor,
-                    overflow: (isFullscreen || isScreenshotMode) ? 'hidden' : 'auto',
-                    cursor: (isFullscreen || isScreenshotMode) ? 'none' : 'default',
+                    width: canvasConfig.width,
+                    height: canvasConfig.height,
+                    position: 'relative',
+                    ...brightnessStyle
                 }}
             >
-                {/* Rive animation - fixed size container */}
-                <div
-                    ref={riveContainerRef}
-                    style={{
-                        width: '100%',
-                        minHeight: (isFullscreen || isScreenshotMode) ? '100vh' : riveConfig ? `${getCanvasConfig(riveConfig).height}px` : '100vh',
-                        height: (isFullscreen || isScreenshotMode) ? '100vh' : 'auto',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        paddingTop: (isFullscreen || isScreenshotMode) ? 0 : '20px',
-                        paddingBottom: (isFullscreen || isScreenshotMode) ? 0 : '20px'
-                    }}
-                >
-                    {riveFileBlob && riveConfig && (
-                        <div style={{
-                            width: getCanvasConfig(riveConfig).width,
-                            height: getCanvasConfig(riveConfig).height,
-                            position: 'relative'
-                        }}>
-                            <RiveComponent style={{
-                                width: '100%',
-                                height: '100%',
-                                display: 'block'
-                            }} />
-                        </div>
-                    )}
+                <FrameEngine_BackgroundRenderer
+                    config={backgroundConfig}
+                    width={canvasConfig.width}
+                    height={canvasConfig.height}
+                    fit="none"
+                    onRiveDiscovery={handleBackgroundDiscovery}
+                />
+
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: 1,
+                }}>
+                    <FrameEngine_ElementRenderer
+                        elements={displayElements}
+                        config={rendererConfig}
+                        sensorData={currentSensorData}
+                    />
                 </div>
-
-                {/* Overlay elements positioned relative to canvas */}
-                {renderOverlayElements()}
-
-                {/* Control buttons - hidden in fullscreen and screenshot mode */}
-                {!isFullscreen && !isScreenshotMode && shouldShowControls && (
-                    <>
-                        <Fab
-                            color="primary"
-                            onClick={() => navigate('/devices')}
-                            sx={{
-                                position: 'fixed',
-                                top: 20,
-                                left: 20,
-                                zIndex: 1000,
-                            }}
-                        >
-                            <ArrowBack />
-                        </Fab>
-
-                        <Fab
-                            color="secondary"
-                            onClick={toggleFullscreen}
-                            sx={{
-                                position: 'fixed',
-                                top: 20,
-                                right: 20,
-                                zIndex: 1000,
-                            }}
-                        >
-                            <Fullscreen />
-                        </Fab>
-
-                        <Box sx={{
-                            position: 'fixed',
-                            bottom: 20,
-                            left: 20,
-                            backgroundColor: 'rgba(0,0,0,0.7)',
-                            color: 'white',
-                            padding: '8px 12px',
-                            borderRadius: 1,
-                            zIndex: 1000,
-                            fontSize: '12px'
-                        }}>
-                            <Typography variant="caption">
-                                {device?.name} • {canvasConfig.width}×{canvasConfig.height}
-                            </Typography>
-                            <br />
-                            <Typography variant="caption" color={isConnected ? 'lightgreen' : 'orange'}>
-                                {isConnected ? '🟢 Live' : '🟡 Connecting'}
-                            </Typography>
-                            <br />
-                            <Typography variant="caption" color="lightblue">
-                                Sensors: {Object.keys(currentSensorData).length} • Inputs: {Object.keys(stateMachineInputRefs.current).length}
-                            </Typography>
-                            <br />
-                            <Typography variant="caption" color="lightcyan">
-                                Mappings: {Object.keys(sensorToRiveMap).length}
-                            </Typography>
-                        </Box>
-                    </>
-                )}
             </div>
-        );
+        </div>
+    );
+};
+
+const VirtualScreenViewer: React.FC<VirtualScreenViewerProps> = (props) => {
+    const { deviceId: urlDeviceId } = useParams<{ deviceId: string }>();
+    const deviceId = props.deviceId || urlDeviceId;
+    const dataProviderRef = useRef<WebSocketDataProvider | null>(null);
+
+    if (!dataProviderRef.current) {
+        dataProviderRef.current = new WebSocketDataProvider({
+            deviceId,
+            enabled: true,
+            defaultPollRate: 250
+        });
     }
+
+    useEffect(() => {
+        return () => {
+            const provider = dataProviderRef.current;
+            if (provider) {
+                provider.disconnect();
+                setTimeout(() => {
+                    provider.cleanup();
+                    dataProviderRef.current = null;
+                }, 100);
+            }
+        };
+    }, [deviceId]);
+
+    if (!dataProviderRef.current) {
+        return null;
+    }
+
+    return (
+        <VirtualScreenViewerComponent
+            {...props}
+            deviceId={deviceId}
+            dataProvider={dataProviderRef.current}
+        />
+    );
 };
 
 export default VirtualScreenViewer;

@@ -35,7 +35,6 @@ namespace JunctionRelayServer.Services
         [JsonIgnore]
         public CancellationTokenSource Cts { get; set; } = new();
 
-        // Add a dedicated MQTT sender for this stream
         [JsonIgnore]
         public Service_Send_Data_MQTT? MqttSender { get; set; }
 
@@ -45,75 +44,102 @@ namespace JunctionRelayServer.Services
         public long Latency { get; set; }
         public DateTime LastSentTime { get; set; }
 
-        // Add health tracking
         public MqttStreamHealth Health { get; set; } = new MqttStreamHealth();
 
-        // Add compression setting
         [JsonIgnore]
         public bool CompressionEnabled { get; private set; }
 
-        // Uncompressed payload prefixes (8-digit length hints before the '{')
-        public string StandardConfigPayloadPrefix { get; set; } = string.Empty;
-        public string MqttConfigPayloadPrefix { get; set; } = string.Empty;
+        // Standard payload prefixes (for regular config payloads)
+        public string ConfigPayloadPrefix { get; set; } = string.Empty;
         public string LastSentPayloadPrefix { get; set; } = string.Empty;
 
-        // NEW: Compressed payload prefixes (8-digit LLLLTTRR format)
+        // MQTT-specific config payload prefixes
+        public string StandardConfigPayloadPrefix { get; set; } = string.Empty;
+        public string MqttConfigPayloadPrefix { get; set; } = string.Empty;
+
+        // Compressed payload prefixes
+        public string CompressedConfigPayloadPrefix { get; set; } = string.Empty;
+        public string CompressedLastSentPayloadPrefix { get; set; } = string.Empty;
         public string CompressedStandardConfigPayloadPrefix { get; set; } = string.Empty;
         public string CompressedMqttConfigPayloadPrefix { get; set; } = string.Empty;
-        public string CompressedLastSentPayloadPrefix { get; set; } = string.Empty;
 
-        // Parsed JSON docs (never null to avoid CS8602)
+        // JSON document storage
+        [JsonIgnore]
+        public JsonDocument ConfigPayloadDoc { get; set; } = JsonDocument.Parse("{}");
+        [JsonIgnore]
+        public JsonDocument LastSentPayloadDoc { get; set; } = JsonDocument.Parse("{}");
         [JsonIgnore]
         public JsonDocument StandardConfigPayloadDoc { get; set; } = JsonDocument.Parse("{}");
         [JsonIgnore]
         public JsonDocument MqttConfigPayloadDoc { get; set; } = JsonDocument.Parse("{}");
-        [JsonIgnore]
-        public JsonDocument LastSentPayloadDoc { get; set; } = JsonDocument.Parse("{}");
 
-        // Thread-safe cached JSON strings to avoid accessing disposed JsonDocuments
+        // Thread-safe cached JSON strings
+        private string _configPayloadJsonCache = "{}";
+        private string _lastSentPayloadJsonCache = "{}";
         private string _standardConfigPayloadJsonCache = "{}";
         private string _mqttConfigPayloadJsonCache = "{}";
-        private string _lastSentPayloadJsonCache = "{}";
 
-        // Compressed payload caches - store as hex strings for UI display
+        // Compressed payload caches as hex strings
+        private string? _compressedConfigHexCache;
+        private string? _compressedLastSentHexCache;
         private string? _compressedStandardConfigHexCache;
         private string? _compressedMqttConfigHexCache;
-        private string? _compressedLastSentHexCache;
 
-        private readonly object _jsonCacheLock = new object();
+        private readonly object _payloadLock = new object();
 
-        // Constructor to set compression state
         public Service_StreamInfo_MQTT(bool compressionEnabled = false)
         {
             CompressionEnabled = compressionEnabled;
         }
 
-        // Method to update compression setting (in case it changes during runtime)
         public void SetCompressionEnabled(bool enabled)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
                 CompressionEnabled = enabled;
 
-                // Clear compressed caches if compression is disabled
                 if (!enabled)
                 {
+                    _compressedConfigHexCache = null;
+                    _compressedLastSentHexCache = null;
                     _compressedStandardConfigHexCache = null;
                     _compressedMqttConfigHexCache = null;
-                    _compressedLastSentHexCache = null;
+                    CompressedConfigPayloadPrefix = string.Empty;
+                    CompressedLastSentPayloadPrefix = string.Empty;
                     CompressedStandardConfigPayloadPrefix = string.Empty;
                     CompressedMqttConfigPayloadPrefix = string.Empty;
-                    CompressedLastSentPayloadPrefix = string.Empty;
                 }
             }
         }
 
-        // Expose raw JSON strings so we never serialize a disposed JsonDocument/JsonElement
+        // JSON payload properties
+        public string ConfigPayloadJson
+        {
+            get
+            {
+                lock (_payloadLock)
+                {
+                    return _configPayloadJsonCache;
+                }
+            }
+        }
+
+        public string LastSentPayloadJson
+        {
+            get
+            {
+                lock (_payloadLock)
+                {
+                    return _lastSentPayloadJsonCache;
+                }
+            }
+        }
+
         public string StandardConfigPayloadJson
         {
             get
             {
-                lock (_jsonCacheLock)
+                lock (_payloadLock)
                 {
                     return _standardConfigPayloadJsonCache;
                 }
@@ -124,70 +150,78 @@ namespace JunctionRelayServer.Services
         {
             get
             {
-                lock (_jsonCacheLock)
+                lock (_payloadLock)
                 {
                     return _mqttConfigPayloadJsonCache;
                 }
             }
         }
 
-        public string LastSentPayloadJson
+        // Payload update methods
+        public void UpdateConfigPayload(string jsonString)
         {
-            get
+            lock (_payloadLock)
             {
-                lock (_jsonCacheLock)
-                {
-                    return _lastSentPayloadJsonCache;
-                }
+                ConfigPayloadDoc?.Dispose();
+                ConfigPayloadDoc = JsonDocument.Parse(jsonString);
+                _configPayloadJsonCache = jsonString;
+                _compressedConfigHexCache = null;
             }
         }
 
-        // Method to safely update the standard config payload and cache
-        public void UpdateStandardConfigPayload(string jsonString)
-        {
-            lock (_jsonCacheLock)
-            {
-                StandardConfigPayloadDoc?.Dispose();
-                StandardConfigPayloadDoc = JsonDocument.Parse(jsonString);
-                _standardConfigPayloadJsonCache = jsonString;
-
-                // Clear compressed cache so it gets regenerated on next access
-                _compressedStandardConfigHexCache = null;
-            }
-        }
-
-        // Method to safely update the MQTT config payload and cache
-        public void UpdateMqttConfigPayload(string jsonString)
-        {
-            lock (_jsonCacheLock)
-            {
-                MqttConfigPayloadDoc?.Dispose();
-                MqttConfigPayloadDoc = JsonDocument.Parse(jsonString);
-                _mqttConfigPayloadJsonCache = jsonString;
-
-                // Clear compressed cache so it gets regenerated on next access
-                _compressedMqttConfigHexCache = null;
-            }
-        }
-
-        // Method to safely update the last sent payload and cache
         public void UpdateLastSentPayload(string jsonString)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
                 LastSentPayloadDoc?.Dispose();
                 LastSentPayloadDoc = JsonDocument.Parse(jsonString);
                 _lastSentPayloadJsonCache = jsonString;
-
-                // Clear compressed cache so it gets regenerated on next access
                 _compressedLastSentHexCache = null;
             }
         }
 
-        // NEW: Methods to update compressed payload prefixes
+        public void UpdateStandardConfigPayload(string jsonString)
+        {
+            lock (_payloadLock)
+            {
+                StandardConfigPayloadDoc?.Dispose();
+                StandardConfigPayloadDoc = JsonDocument.Parse(jsonString);
+                _standardConfigPayloadJsonCache = jsonString;
+                _compressedStandardConfigHexCache = null;
+            }
+        }
+
+        public void UpdateMqttConfigPayload(string jsonString)
+        {
+            lock (_payloadLock)
+            {
+                MqttConfigPayloadDoc?.Dispose();
+                MqttConfigPayloadDoc = JsonDocument.Parse(jsonString);
+                _mqttConfigPayloadJsonCache = jsonString;
+                _compressedMqttConfigHexCache = null;
+            }
+        }
+
+        // Compressed prefix update methods
+        public void UpdateCompressedConfigPayloadPrefix(string prefix)
+        {
+            lock (_payloadLock)
+            {
+                CompressedConfigPayloadPrefix = prefix;
+            }
+        }
+
+        public void UpdateCompressedLastSentPayloadPrefix(string prefix)
+        {
+            lock (_payloadLock)
+            {
+                CompressedLastSentPayloadPrefix = prefix;
+            }
+        }
+
         public void UpdateCompressedStandardConfigPayloadPrefix(string prefix)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
                 CompressedStandardConfigPayloadPrefix = prefix;
             }
@@ -195,21 +229,53 @@ namespace JunctionRelayServer.Services
 
         public void UpdateCompressedMqttConfigPayloadPrefix(string prefix)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
                 CompressedMqttConfigPayloadPrefix = prefix;
             }
         }
 
-        public void UpdateCompressedLastSentPayloadPrefix(string prefix)
+        // Compressed payload preview methods
+        public string GetCompressedConfigPayloadPreview()
         {
-            lock (_jsonCacheLock)
+            if (!CompressionEnabled)
+                return "[Compression disabled]";
+
+            if (string.IsNullOrEmpty(ConfigPayloadJson))
+                return "";
+
+            lock (_payloadLock)
             {
-                CompressedLastSentPayloadPrefix = prefix;
+                if (_compressedConfigHexCache != null)
+                    return _compressedConfigHexCache;
+
+                var jsonBytes = Encoding.UTF8.GetBytes(ConfigPayloadJson);
+                var compressedBytes = CompressData(jsonBytes);
+                _compressedConfigHexCache = BytesToHex(compressedBytes);
+                return _compressedConfigHexCache;
             }
         }
 
-        // UPDATED: Methods to get hex views of compressed payloads (replaces base64)
+        public string GetCompressedLastSentPayloadPreview()
+        {
+            if (!CompressionEnabled)
+                return "[Compression disabled]";
+
+            if (string.IsNullOrEmpty(LastSentPayloadJson))
+                return "";
+
+            lock (_payloadLock)
+            {
+                if (_compressedLastSentHexCache != null)
+                    return _compressedLastSentHexCache;
+
+                var jsonBytes = Encoding.UTF8.GetBytes(LastSentPayloadJson);
+                var compressedBytes = CompressData(jsonBytes);
+                _compressedLastSentHexCache = BytesToHex(compressedBytes);
+                return _compressedLastSentHexCache;
+            }
+        }
+
         public string GetCompressedStandardConfigPayloadPreview()
         {
             if (!CompressionEnabled)
@@ -218,13 +284,11 @@ namespace JunctionRelayServer.Services
             if (string.IsNullOrEmpty(StandardConfigPayloadJson))
                 return "";
 
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                // Use cached version if available
                 if (_compressedStandardConfigHexCache != null)
                     return _compressedStandardConfigHexCache;
 
-                // Generate and cache compressed version as hex
                 var jsonBytes = Encoding.UTF8.GetBytes(StandardConfigPayloadJson);
                 var compressedBytes = CompressData(jsonBytes);
                 _compressedStandardConfigHexCache = BytesToHex(compressedBytes);
@@ -240,13 +304,11 @@ namespace JunctionRelayServer.Services
             if (string.IsNullOrEmpty(MqttConfigPayloadJson))
                 return "";
 
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                // Use cached version if available
                 if (_compressedMqttConfigHexCache != null)
                     return _compressedMqttConfigHexCache;
 
-                // Generate and cache compressed version as hex
                 var jsonBytes = Encoding.UTF8.GetBytes(MqttConfigPayloadJson);
                 var compressedBytes = CompressData(jsonBytes);
                 _compressedMqttConfigHexCache = BytesToHex(compressedBytes);
@@ -254,29 +316,7 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        public string GetCompressedLastSentPayloadPreview()
-        {
-            if (!CompressionEnabled)
-                return "[Compression disabled]";
-
-            if (string.IsNullOrEmpty(LastSentPayloadJson))
-                return "";
-
-            lock (_jsonCacheLock)
-            {
-                // Use cached version if available
-                if (_compressedLastSentHexCache != null)
-                    return _compressedLastSentHexCache;
-
-                // Generate and cache compressed version as hex
-                var jsonBytes = Encoding.UTF8.GetBytes(LastSentPayloadJson);
-                var compressedBytes = CompressData(jsonBytes);
-                _compressedLastSentHexCache = BytesToHex(compressedBytes);
-                return _compressedLastSentHexCache;
-            }
-        }
-
-        // Helper method for gzip compression
+        // Helper methods for compression
         private byte[] CompressData(byte[] data)
         {
             using var output = new MemoryStream();
@@ -287,37 +327,113 @@ namespace JunctionRelayServer.Services
             return output.ToArray();
         }
 
-        // Helper method to convert bytes to hex string with spaces for readability
         private string BytesToHex(byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0)
                 return "";
 
             var sb = new StringBuilder(bytes.Length * 3);
-            for (int i = 0; i < bytes.Length; i++)
+            for (int i = 0; i < Math.Min(bytes.Length, 256); i++)
             {
                 if (i > 0)
                     sb.Append(' ');
                 sb.Append(bytes[i].ToString("x2"));
             }
+
+            if (bytes.Length > 256)
+                sb.Append(" ...");
+
             return sb.ToString();
         }
 
-        // Updated dispose method to handle MQTT sender
+        // MQTT-specific status methods
+        public bool IsMqttConnected()
+        {
+            return Health.ConnectionState != "disconnected" && Status == "Active";
+        }
+
+        public string GetConnectionStatusSummary()
+        {
+            var summary = new StringBuilder();
+            summary.AppendLine($"Device: {DeviceName}");
+            summary.AppendLine($"Protocol: {Protocol}");
+            summary.AppendLine($"Status: {Status}");
+            summary.AppendLine($"Health: {Health.ConnectionState}");
+            summary.AppendLine($"Success Rate: {Health.SuccessRate:F1}%");
+            summary.AppendLine($"Publish Failures: {Health.PublishFailures}");
+
+            if (Health.LastErrorMessage != string.Empty)
+            {
+                summary.AppendLine($"Last Error: {Health.LastErrorMessage}");
+            }
+
+            return summary.ToString();
+        }
+
+        // Get MQTT-specific metrics for monitoring
+        public object GetMqttMetrics()
+        {
+            return new
+            {
+                DeviceName,
+                Protocol,
+                ConnectionHealth = new
+                {
+                    ConnectionState = Health.ConnectionState,
+                    SuccessRate = Health.SuccessRate,
+                    ConsecutiveFailures = Health.ConsecutiveFailures,
+                    ConsecutiveSuccesses = Health.ConsecutiveSuccesses,
+                    AverageLatency = Health.AverageLatency,
+                    ConnectionRecreated = Health.ConnectionRecreated,
+                    ConnectionRecreationCount = Health.ConnectionRecreationCount
+                },
+                MqttSpecific = new
+                {
+                    PublishFailures = Health.PublishFailures,
+                    AcknowledgmentTimeouts = Health.AcknowledgmentTimeouts,
+                    TopicLatencies = Health.TopicLatencies
+                },
+                PayloadInfo = new
+                {
+                    CompressionEnabled,
+                    ConfigPayloadPrefix,
+                    LastSentPayloadPrefix,
+                    StandardConfigPayloadPrefix,
+                    MqttConfigPayloadPrefix,
+                    CompressedConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix,
+                    CompressedStandardConfigPayloadPrefix,
+                    CompressedMqttConfigPayloadPrefix
+                },
+                PerformanceMetrics = new
+                {
+                    Latency,
+                    AverageLatency = Health.AverageLatency,
+                    MaxLatency = Health.MaxLatency,
+                    MinLatency = Health.MinLatency,
+                    LastSentTime
+                }
+            };
+        }
+
         public void Dispose()
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
+                ConfigPayloadDoc?.Dispose();
+                LastSentPayloadDoc?.Dispose();
                 StandardConfigPayloadDoc?.Dispose();
                 MqttConfigPayloadDoc?.Dispose();
-                LastSentPayloadDoc?.Dispose();
                 Cts?.Dispose();
-                MqttSender?.Dispose(); // Dispose the MQTT sender
+                MqttSender?.Dispose();
 
                 // Clear compressed caches
+                _compressedConfigHexCache = null;
+                _compressedLastSentHexCache = null;
                 _compressedStandardConfigHexCache = null;
                 _compressedMqttConfigHexCache = null;
-                _compressedLastSentHexCache = null;
+
+                Console.WriteLine($"[SERVICE_STREAMINFO_MQTT] Disposed stream info for {DeviceName}");
             }
         }
     }

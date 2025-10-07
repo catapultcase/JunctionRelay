@@ -17,20 +17,13 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using JunctionRelayServer.Models;
-using System.Text;
 
 namespace JunctionRelayServer.Services
 {
-    // Proper COM-specific result class
     public class ComOperationResult
     {
         public bool Success { get; set; }
@@ -39,36 +32,31 @@ namespace JunctionRelayServer.Services
         public long LatencyMs { get; set; }
         public int BytesSent { get; set; }
         public string ComPort { get; set; } = string.Empty;
-
-        // Frame-specific metrics
         public bool IsFramePayload { get; set; } = false;
         public int? FrameSizeBytes { get; set; }
         public long? FrameRenderTimeMs { get; set; }
         public string? FrameLayoutType { get; set; }
-        public string PayloadType { get; set; } = "JSON"; // "JSON", "Gzip", "Frame", "Composite Config", "Composite Sensor"
+        public string PayloadType { get; set; } = "JSON";
     }
 
-    // COM-specific health tracking
     public class ComStreamHealth
     {
-        public string ConnectionState { get; set; } = "good"; // "good", "poor", "disconnected"
+        public string ConnectionState { get; set; } = "good";
         public int ConsecutiveFailures { get; set; } = 0;
         public int ConsecutiveSuccesses { get; set; } = 0;
         public DateTime LastSuccessTime { get; set; } = DateTime.UtcNow;
         public DateTime LastFailureTime { get; set; } = DateTime.MinValue;
         public string LastErrorMessage { get; set; } = string.Empty;
-        public double SuccessRate { get; set; } = 100.0; // Rolling 10-attempt window
-        public List<bool> RecentAttempts { get; set; } = new(); // Last 10 attempts for rolling average
-        public string ErrorType { get; set; } = string.Empty; // Latest error type
+        public double SuccessRate { get; set; } = 100.0;
+        public List<bool> RecentAttempts { get; set; } = new();
+        public string ErrorType { get; set; } = string.Empty;
         public string ComPort { get; set; } = string.Empty;
 
-        // Performance metrics
         public double AverageLatency { get; set; } = 0.0;
         public long MaxLatency { get; set; } = 0;
         public long MinLatency { get; set; } = long.MaxValue;
         public long TotalBytesSent { get; set; } = 0;
 
-        // Frame-specific health metrics
         public bool IsFrameMode { get; set; } = false;
         public double AverageFrameSize { get; set; } = 0.0;
         public long MaxFrameSize { get; set; } = 0;
@@ -77,37 +65,32 @@ namespace JunctionRelayServer.Services
         public long MaxFrameRenderTime { get; set; } = 0;
         public long MinFrameRenderTime { get; set; } = long.MaxValue;
         public string CurrentFrameLayoutType { get; set; } = string.Empty;
-        public string PayloadType { get; set; } = "JSON"; // Track current payload type
+        public string PayloadType { get; set; } = "JSON";
         public int FramesSent { get; set; } = 0;
         public int PayloadsSent { get; set; } = 0;
 
         public void UpdateHealth(ComOperationResult result)
         {
-            // Update recent attempts (rolling window of 10)
             RecentAttempts.Add(result.Success);
             if (RecentAttempts.Count > 10)
                 RecentAttempts.RemoveAt(0);
 
-            // Calculate success rate
             SuccessRate = RecentAttempts.Count > 0 ?
                 RecentAttempts.Count(x => x) * 100.0 / RecentAttempts.Count : 100.0;
 
-            // Update latency metrics
             if (result.Success && result.LatencyMs > 0)
             {
                 AverageLatency = AverageLatency == 0 ? result.LatencyMs :
-                    (AverageLatency * 0.8) + (result.LatencyMs * 0.2); // Weighted average
+                    (AverageLatency * 0.8) + (result.LatencyMs * 0.2);
                 MaxLatency = Math.Max(MaxLatency, result.LatencyMs);
                 MinLatency = Math.Min(MinLatency, result.LatencyMs);
             }
 
-            // Update byte tracking
             if (result.Success && result.BytesSent > 0)
             {
                 TotalBytesSent += result.BytesSent;
             }
 
-            // Update frame-specific metrics
             if (result.IsFramePayload)
             {
                 IsFrameMode = true;
@@ -115,22 +98,20 @@ namespace JunctionRelayServer.Services
                 PayloadType = "Frame";
                 CurrentFrameLayoutType = result.FrameLayoutType ?? string.Empty;
 
-                // Track frame size metrics
                 if (result.FrameSizeBytes.HasValue && result.FrameSizeBytes.Value > 0)
                 {
                     var frameSize = result.FrameSizeBytes.Value;
                     AverageFrameSize = AverageFrameSize == 0 ? frameSize :
-                        (AverageFrameSize * 0.8) + (frameSize * 0.2); // Weighted average
+                        (AverageFrameSize * 0.8) + (frameSize * 0.2);
                     MaxFrameSize = Math.Max(MaxFrameSize, frameSize);
                     MinFrameSize = MinFrameSize == long.MaxValue ? frameSize : Math.Min(MinFrameSize, frameSize);
                 }
 
-                // Track frame render time metrics
                 if (result.FrameRenderTimeMs.HasValue && result.FrameRenderTimeMs.Value > 0)
                 {
                     var renderTime = result.FrameRenderTimeMs.Value;
                     AverageFrameRenderTime = AverageFrameRenderTime == 0 ? renderTime :
-                        (AverageFrameRenderTime * 0.8) + (renderTime * 0.2); // Weighted average
+                        (AverageFrameRenderTime * 0.8) + (renderTime * 0.2);
                     MaxFrameRenderTime = Math.Max(MaxFrameRenderTime, renderTime);
                     MinFrameRenderTime = MinFrameRenderTime == long.MaxValue ? renderTime : Math.Min(MinFrameRenderTime, renderTime);
                 }
@@ -160,52 +141,43 @@ namespace JunctionRelayServer.Services
                 LastErrorMessage = result.ErrorMessage;
             }
 
-            // Determine connection state
             DetermineConnectionState();
         }
 
         private void DetermineConnectionState()
         {
-            // Good: High success rate and no recent failures
             if (SuccessRate >= 95.0 && ConsecutiveFailures == 0)
             {
                 ConnectionState = "good";
             }
-            // Poor: Moderate success rate or some failures but still functional
             else if (SuccessRate >= 70.0 || (ConsecutiveFailures > 0 && ConsecutiveFailures < 3))
             {
                 ConnectionState = "poor";
             }
-            // Disconnected: Low success rate or sustained failures
             else
             {
                 ConnectionState = "disconnected";
             }
 
-            // COM-specific considerations
-            if (ConnectionState == "good" && AverageLatency > 200) // High latency for COM
+            if (ConnectionState == "good" && AverageLatency > 200)
             {
                 ConnectionState = "poor";
             }
 
-            // Frame-specific health considerations
             if (IsFrameMode && ConnectionState == "good")
             {
-                // Consider frame rendering performance in health assessment
-                if (AverageFrameRenderTime > 1000) // Frame rendering taking too long for COM
+                if (AverageFrameRenderTime > 1000)
                 {
                     ConnectionState = "poor";
                 }
 
-                // Large frames might indicate potential issues for COM
-                if (AverageFrameSize > 100000) // 100KB frames might be too large for COM
+                if (AverageFrameSize > 100000)
                 {
-                    Console.WriteLine($"[COM_STREAM_HEALTH] ⚠️ Large average frame size detected: {AverageFrameSize:F0} bytes on {ComPort}");
+                    Console.WriteLine($"[COM_STREAM_HEALTH] Large average frame size detected: {AverageFrameSize:F0} bytes on {ComPort}");
                 }
             }
         }
 
-        // Helper method to get frame-specific health summary
         public object GetFrameHealthSummary()
         {
             if (!IsFrameMode)
@@ -226,6 +198,11 @@ namespace JunctionRelayServer.Services
                 TotalBytesSent = $"{TotalBytesSent:N0} bytes"
             };
         }
+
+        public object GetGatewayHealthSummary()
+        {
+            return new { message = "Not in gateway mode" };
+        }
     }
 
     public class Service_Stream_Manager_COM
@@ -235,15 +212,18 @@ namespace JunctionRelayServer.Services
         private readonly ConcurrentDictionary<int, Service_StreamInfo_COM> _streamingTokens = new();
         private readonly ConcurrentDictionary<int, long> _latencies = new();
         private readonly Service_Stream_History_Manager _historyManager;
+        private readonly Service_Image_Processor _imageProcessor;
 
         public Service_Stream_Manager_COM(
             IServiceScopeFactory scopeFactory,
             IServiceProvider serviceProvider,
-            Service_Stream_History_Manager historyManager)
+            Service_Stream_History_Manager historyManager,
+            Service_Image_Processor imageProcessor)
         {
             _scopeFactory = scopeFactory;
             _serviceProvider = serviceProvider;
             _historyManager = historyManager;
+            _imageProcessor = imageProcessor;
         }
 
         public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
@@ -255,7 +235,7 @@ namespace JunctionRelayServer.Services
                 {
                     StreamKey = kvp.Key,
                     DeviceName = info.DeviceName,
-                    DeviceMac = "Unknown",
+                    DeviceMac = "COM",
                     ScreenId = info.ScreenId,
                     ScreenName = info.ScreenName,
                     Status = info.Status,
@@ -264,19 +244,12 @@ namespace JunctionRelayServer.Services
                     LastSentTime = info.LastSentTime,
                     Protocol = info.Protocol,
                     SensorsCount = info.SensorsCount,
-                    ComPort = info.ComPort,
-
-                    // Frame information
                     HasLastFrame = info.LastSentFrameBytes != null,
                     LastFrameSize = info.LastFrameSize,
                     LastFrameTime = info.LastFrameGeneratedTime,
                     LastFrameLayoutType = info.LastFrameLayoutType,
-
-                    // Gateway information
-                    IsGatewayMode = false,
-                    GatewayTarget = "Unknown",
-
-                    // Enhanced health information with proper COM typing
+                    IsGatewayMode = info.IsGatewayMode,
+                    GatewayTarget = info.GatewayTarget,
                     Health = new
                     {
                         ConnectionState = info.Health.ConnectionState,
@@ -289,12 +262,10 @@ namespace JunctionRelayServer.Services
                         LastWebSocketState = (string?)null,
                         AverageLatency = info.Health.AverageLatency,
                         MaxLatency = info.Health.MaxLatency,
-                        MinLatency = info.Health.MinLatency,
+                        MinLatency = info.Health.MinLatency == long.MaxValue ? 0L : info.Health.MinLatency,
                         LastSuccessTime = info.Health.LastSuccessTime,
                         LastFailureTime = info.Health.LastFailureTime,
                         ConnectionRecreationCount = 0,
-
-                        // Frame-specific health metrics  
                         IsFrameMode = info.Health.IsFrameMode,
                         PayloadType = info.Health.PayloadType,
                         FramesSent = info.Health.FramesSent,
@@ -307,21 +278,13 @@ namespace JunctionRelayServer.Services
                         MaxFrameRenderTime = info.Health.MaxFrameRenderTime,
                         MinFrameRenderTime = info.Health.MinFrameRenderTime == long.MaxValue ? 0L : info.Health.MinFrameRenderTime,
                         FrameHealthSummary = info.Health.GetFrameHealthSummary(),
-
-                        // Gateway-specific health metrics (not applicable for COM)
-                        IsGatewayMode = false,
-                        GatewayTarget = "Unknown",
-                        GatewayMessagesSent = 0,
-                        GatewayHealthSummary = new { message = "Not in gateway mode" }
+                        GatewayMessagesSent = info.Health.PayloadsSent,
+                        GatewayHealthSummary = info.Health.GetGatewayHealthSummary()
                     },
                     ConfigPayloadPrefix = info.ConfigPayloadPrefix,
-                    ConfigPayloadJson = showCompressed
-                        ? info.GetCompressedConfigPayloadPreview()
-                        : info.ConfigPayloadJson,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
                     LastSentPayloadPrefix = info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = showCompressed
-                        ? info.GetCompressedLastSentPayloadPreview()
-                        : info.LastSentPayloadJson,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
                     CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
                     CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
                     ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
@@ -330,7 +293,6 @@ namespace JunctionRelayServer.Services
             });
         }
 
-        // Get the last sent frame bytes for a specific screen
         public byte[]? GetLastFrameBytes(int screenId)
         {
             if (_streamingTokens.TryGetValue(screenId, out var streamInfo))
@@ -340,7 +302,6 @@ namespace JunctionRelayServer.Services
             return null;
         }
 
-        // Get frame information for a specific screen
         public object? GetFrameInfo(int screenId)
         {
             if (_streamingTokens.TryGetValue(screenId, out var streamInfo))
@@ -350,13 +311,14 @@ namespace JunctionRelayServer.Services
                     HasFrame = streamInfo.LastSentFrameBytes != null,
                     FrameSize = streamInfo.LastFrameSize,
                     FrameTime = streamInfo.LastFrameGeneratedTime,
-                    LayoutType = streamInfo.LastFrameLayoutType
+                    LayoutType = streamInfo.LastFrameLayoutType,
+                    IsGatewayMode = streamInfo.IsGatewayMode,
+                    GatewayTarget = streamInfo.GatewayTarget
                 };
             }
             return null;
         }
 
-        // Clear the last sent frame for a specific screen (to free memory)
         public bool ClearLastFrame(int screenId)
         {
             if (_streamingTokens.TryGetValue(screenId, out var streamInfo))
@@ -367,40 +329,6 @@ namespace JunctionRelayServer.Services
             return false;
         }
 
-        // Helper method to extract prefix from binary payload (for compressed payloads)
-        private string ExtractBinaryPrefix(byte[] payload)
-        {
-            if (payload == null || payload.Length < 8)
-                return string.Empty;
-
-            // Check if first 8 bytes are ASCII digits (valid prefix)
-            for (int i = 0; i < 8; i++)
-            {
-                if (payload[i] < '0' || payload[i] > '9')
-                    return string.Empty;
-            }
-
-            // Extract the 8-digit prefix
-            return Encoding.ASCII.GetString(payload, 0, 8);
-        }
-
-        // Helper method to extract prefix from string payload (for uncompressed payloads)
-        private string ExtractStringPrefix(string payload)
-        {
-            if (string.IsNullOrEmpty(payload) || payload.Length < 8)
-                return string.Empty;
-
-            // Check if first 8 characters are digits
-            for (int i = 0; i < 8; i++)
-            {
-                if (payload[i] < '0' || payload[i] > '9')
-                    return string.Empty;
-            }
-
-            return payload.Substring(0, 8);
-        }
-
-        // Helper method to get link ID for device
         private async Task<int?> GetLinkIdForDeviceAsync(int junctionId, int deviceId, IServiceScope scope)
         {
             try
@@ -412,7 +340,7 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] ⚠️ Could not get link ID for device {deviceId}: {ex.Message}");
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Could not get link ID for device {deviceId}: {ex.Message}");
                 return null;
             }
         }
@@ -434,55 +362,51 @@ namespace JunctionRelayServer.Services
                 return;
             }
 
-            CancellationTokenSource cts = new();
+            var cts = new CancellationTokenSource();
 
-            // —— INITIAL CONFIG SCOPE ——
-            using (IServiceScope scope = _scopeFactory.CreateScope())
+            using (var scope = _scopeFactory.CreateScope())
             {
-                Service_Database_Manager_Devices deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
-                Service_Manager_Payloads payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
-                Service_Database_Manager_Junctions junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
-                Service_Database_Manager_JunctionLinks junctionLinkDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
+                var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
+                var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
+                var junctionLinkDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
-                Model_Device? device = await deviceDb.GetDeviceByIdAsync(deviceId);
+                var device = await deviceDb.GetDeviceByIdAsync(deviceId);
                 if (device is null)
                 {
                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Device {deviceId} not found.");
                     return;
                 }
 
-                Model_Junction? junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+                var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
                 if (junction is null)
                 {
                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Junction {junctionId} not found.");
                     return;
                 }
 
-                // Determine rendering mode using new constants
                 var renderMode = junction.RenderingMode;
                 bool isPayloadMode = renderMode == RenderModes.Payload;
                 bool isBlitMode = renderMode == RenderModes.Blit;
                 bool isCompositeMode = renderMode == RenderModes.Composite;
                 bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
-                // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
                 var screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
 
-                string comPort;
+                bool isGatewayMode = !string.IsNullOrEmpty(junctionType) &&
+                                   junctionType.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase);
                 string? targetMacAddress = device.UniqueIdentifier;
 
-                if (!string.IsNullOrEmpty(junctionType) &&
-                    junctionType.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
+                string comPort;
+                if (isGatewayMode)
                 {
                     if (string.IsNullOrWhiteSpace(gatewayDestination))
                     {
                         Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Gateway junction requires gateway COM port.");
                         return;
                     }
-
                     comPort = gatewayDestination;
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Gateway junction: COM to {comPort}, ESP-NOW target: {targetMacAddress}");
                 }
                 else
                 {
@@ -491,16 +415,27 @@ namespace JunctionRelayServer.Services
                         Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No COM port selected for device {deviceId}.");
                         return;
                     }
-
                     comPort = device.COMPort;
                 }
 
-                Func<string, Service_Send_Data_COM> senderFactory =
-                    _serviceProvider.GetRequiredService<Func<string, Service_Send_Data_COM>>();
-                Service_Send_Data_COM comSender = senderFactory(comPort);
+                var senderFactory = _serviceProvider.GetRequiredService<Func<string, Service_Send_Data_COM>>();
+                var comSender = senderFactory(comPort);
                 comSender.OpenPortIfNotOpen(115200);
 
-                Service_StreamInfo_COM streamInfo = new(junction.CompressPayload)
+                string protocolString = isGatewayMode
+                    ? "COM (Gateway to ESP-NOW)"
+                    : "COM";
+
+                if (isBlitMode)
+                {
+                    protocolString += " (Pre-rendered Frames)";
+                }
+                else if (isCompositeMode)
+                {
+                    protocolString += " (Frame Assembly)";
+                }
+
+                var info = new Service_StreamInfo_COM(junction.CompressPayload, isGatewayMode, targetMacAddress)
                 {
                     DeviceName = device.Name,
                     Rate = rate,
@@ -513,34 +448,74 @@ namespace JunctionRelayServer.Services
                     SensorsCount = assignedSensors.Count,
                     Latency = 0,
                     LastSentTime = DateTime.UtcNow,
-                    Protocol = "COM",
-                    Health = new ComStreamHealth { ComPort = comPort }
+                    Protocol = protocolString
                 };
 
-                // Update protocol to indicate rendering mode
+                if (isAnyFrameMode)
+                {
+                    info.Health.IsFrameMode = true;
+                }
+
+                _streamingTokens[screen.Id] = info;
+
                 if (isBlitMode)
                 {
-                    streamInfo.Protocol = "COM (Pre-rendered Frames)";
-                    streamInfo.Health.IsFrameMode = true;
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Sending blit mode config for {screenKey}");
+
+                    var frameLayoutId = screenOverride?.FrameLayoutId ?? screen.FrameLayoutId;
+                    if (!frameLayoutId.HasValue)
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No frame layout ID for blit config");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
+
+                    var frameLayoutDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
+                    var frameLayout = await frameLayoutDb.GetFrameLayoutByIdAsync(frameLayoutId.Value);
+
+                    if (frameLayout == null)
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Frame layout not found for ID {frameLayoutId}");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
+
+                    var blitConfig = new
+                    {
+                        type = "blit_config",
+                        screenId = screenKey,
+                        mode = "blit",
+                        frameFormat = "RGB565",
+                        frameWidth = frameLayout.Width,
+                        frameHeight = frameLayout.Height,
+                        frameSize = frameLayout.Width * frameLayout.Height * 2,
+                        bytesPerPixel = 2,
+                        description = "Pre-rendered frame stream - expecting binary frame data"
+                    };
+
+                    string configJson = JsonSerializer.Serialize(blitConfig);
+
+                    var (success, _) = await comSender.SendPayloadAsync(configJson);
+                    if (!success)
+                    {
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send blit config.");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
+                    }
+
+                    info.ConfigPayloadPrefix = "BLIT_CONFIG";
+                    info.UpdateConfigPayload(configJson);
+
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Blit config sent to {device.Name}: {frameLayout.Width}x{frameLayout.Height} ({frameLayout.Width * frameLayout.Height * 2} bytes per frame)");
                 }
                 else if (isCompositeMode)
                 {
-                    streamInfo.Protocol = "COM (Frame Assembly)";
-                }
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Starting in Composite mode for {screenKey}");
 
-                _streamingTokens[screen.Id] = streamInfo;
-
-                // Send initial configuration based on rendering mode
-                if (isBlitMode)
-                {
-                    return;
-                }
-                else if (isCompositeMode)
-                {
-                    // COMPOSITE MODE: Generate and send initial composite config
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] 🎭 Starting in Composite (frame assembly) mode for {screenKey}");
-
-                    Dictionary<string, object> compositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
+                    var compositeConfigResult = await payloadService.GenerateFrameEngineConfigPayloadsAsync(
                         screenKey,
                         assignedSensors,
                         screen,
@@ -549,228 +524,88 @@ namespace JunctionRelayServer.Services
                         gatewayDestination: targetMacAddress,
                         compressPayload: junction.CompressPayload);
 
-                    if (!compositeConfig.TryGetValue(screenKey, out object rawCompositeConfig))
+                    var configPayload = compositeConfigResult.GetResult(screenKey);
+                    if (configPayload == null)
                     {
                         Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No composite config payload for screen {screenKey}.");
-                        streamInfo.Dispose();
+                        info.Dispose();
                         _streamingTokens.TryRemove(screen.Id, out _);
                         return;
                     }
 
-                    // Send the composite config and extract payload info
-                    bool configSent = false;
-                    if (rawCompositeConfig is byte[] compositeConfigBytes)
-                    {
-                        (bool success, _) = await comSender.SendPayloadAsync(compositeConfigBytes);
-                        configSent = success;
-
-                        // Extract payload info for UI
-                        if (configSent)
-                        {
-                            if (junction.CompressPayload)
-                            {
-                                // Extract binary prefix for compressed
-                                string compressedPrefix = ExtractBinaryPrefix(compositeConfigBytes);
-                                streamInfo.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
-
-                                // Get uncompressed version for UI display
-                                var uncompressedCompositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
-                                    screenKey, assignedSensors, screen, screenOverride,
-                                    junctionType: junctionType, gatewayDestination: targetMacAddress,
-                                    compressPayload: false);
-
-                                if (uncompressedCompositeConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
-                                    uncompressedRaw is string uncompressedString)
-                                {
-                                    string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
-                                    streamInfo.ConfigPayloadPrefix = uncompressedPrefix;
-                                    string jsonConfig = string.IsNullOrEmpty(uncompressedPrefix)
-                                        ? uncompressedString
-                                        : uncompressedString.Substring(8);
-                                    streamInfo.UpdateConfigPayload(jsonConfig);
-                                }
-                            }
-                            else
-                            {
-                                // Uncompressed byte array - convert to string
-                                string configString = Encoding.UTF8.GetString(compositeConfigBytes);
-                                string configPrefix = ExtractStringPrefix(configString);
-                                streamInfo.ConfigPayloadPrefix = configPrefix;
-                                string jsonConfig = string.IsNullOrEmpty(configPrefix)
-                                    ? configString
-                                    : configString.Substring(8);
-                                streamInfo.UpdateConfigPayload(jsonConfig);
-                            }
-                        }
-                    }
-                    else if (rawCompositeConfig is string compositeConfigString)
-                    {
-                        (bool success, _) = await comSender.SendPayloadAsync(compositeConfigString);
-                        configSent = success;
-
-                        // Extract payload info for UI
-                        if (configSent)
-                        {
-                            string configPrefix = ExtractStringPrefix(compositeConfigString);
-                            streamInfo.ConfigPayloadPrefix = configPrefix;
-                            string jsonConfig = string.IsNullOrEmpty(configPrefix)
-                                ? compositeConfigString
-                                : compositeConfigString.Substring(8);
-                            streamInfo.UpdateConfigPayload(jsonConfig);
-                        }
-                    }
-
-                    if (!configSent)
+                    var (success, _) = await comSender.SendPayloadAsync(configPayload.BinaryPayload);
+                    if (!success)
                     {
                         Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send composite config.");
-                        streamInfo.Dispose();
+                        info.Dispose();
                         _streamingTokens.TryRemove(screen.Id, out _);
                         return;
                     }
 
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_COM] " +
-                        $"Composite config sent to {device.Name} via COM port {comPort}.");
+                    info.ConfigPayloadPrefix = configPayload.UncompressedPrefix;
+                    info.UpdateConfigPayload(configPayload.UncompressedJson);
+                    if (configPayload.IsCompressed)
+                    {
+                        info.UpdateCompressedConfigPayloadPrefix(configPayload.CompressedPrefix);
+                    }
+
+                    string gatewayInfo = isGatewayMode ? $" via gateway {comPort} targeting {targetMacAddress}" : "";
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Composite config sent to {device.Name}{gatewayInfo}.");
                 }
                 else
                 {
-                    // PAYLOAD MODE: Generate and send config payload (existing logic)
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] 📄 Starting in Payload mode for {screenKey}");
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Starting in Payload mode for {screenKey}");
 
-                    // Prepare uncompressed JSON payload
-                    Dictionary<string, object> uncompressedConfig = await payloadService.GenerateConfigPayloadsAsync(
+                    var configResult = await payloadService.GenerateConfigPayloadsAsync(
                         screenKey,
                         assignedSensors,
                         screen,
                         overrideTemplate: null,
                         junctionType: junctionType,
                         gatewayDestination: targetMacAddress,
-                        compressPayload: false);
+                        compressPayload: junction.CompressPayload);
 
-                    if (!uncompressedConfig.TryGetValue(screenKey, out object rawUncompressed) ||
-                        rawUncompressed is not string uncompressedJson)
+                    var configPayload = configResult.GetResult(screenKey);
+                    if (configPayload == null)
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No uncompressed config payload for screen {screenKey}.");
-                        streamInfo.Dispose();
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No config payload for screen {screenKey}.");
+                        info.Dispose();
                         _streamingTokens.TryRemove(screen.Id, out _);
                         return;
                     }
 
-                    // Send compressed or uncompressed payload (existing logic)
-                    if (junction.CompressPayload)
+                    var (success, _) = await comSender.SendPayloadAsync(configPayload.BinaryPayload);
+                    if (!success)
                     {
-                        Dictionary<string, object> compressedConfig = await payloadService.GenerateConfigPayloadsAsync(
-                            screenKey,
-                            assignedSensors,
-                            screen,
-                            overrideTemplate: null,
-                            junctionType: junctionType,
-                            gatewayDestination: targetMacAddress,
-                            compressPayload: true);
-
-                        if (!compressedConfig.TryGetValue(screenKey, out object rawCompressed))
-                        {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No compressed config payload for screen {screenKey}.");
-                            streamInfo.Dispose();
-                            _streamingTokens.TryRemove(screen.Id, out _);
-                            return;
-                        }
-
-                        if (rawCompressed is byte[] compressedBytes)
-                        {
-                            string compressedPrefix = ExtractBinaryPrefix(compressedBytes);
-                            streamInfo.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
-
-                            (bool success, _) = await comSender.SendPayloadAsync(compressedBytes);
-                            if (!success)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send compressed config payload.");
-                                streamInfo.Dispose();
-                                _streamingTokens.TryRemove(screen.Id, out _);
-                                return;
-                            }
-                        }
-                        else if (rawCompressed is string compressedString)
-                        {
-                            string compressedPrefix = ExtractStringPrefix(compressedString);
-                            streamInfo.UpdateCompressedConfigPayloadPrefix(compressedPrefix);
-
-                            (bool success, _) = await comSender.SendPayloadAsync(compressedString);
-                            if (!success)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send compressed config payload as string.");
-                                streamInfo.Dispose();
-                                _streamingTokens.TryRemove(screen.Id, out _);
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Unexpected compressed config payload type for screen {screenKey}.");
-                            streamInfo.Dispose();
-                            _streamingTokens.TryRemove(screen.Id, out _);
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        (bool success, _) = await comSender.SendPayloadAsync(uncompressedJson);
-                        if (!success)
-                        {
-                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send uncompressed config payload.");
-                            streamInfo.Dispose();
-                            _streamingTokens.TryRemove(screen.Id, out _);
-                            return;
-                        }
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to send config payload.");
+                        info.Dispose();
+                        _streamingTokens.TryRemove(screen.Id, out _);
+                        return;
                     }
 
-                    // Extract uncompressed prefix and update StreamInfo
-                    string uncompressedPrefix = ExtractStringPrefix(uncompressedJson);
-                    streamInfo.ConfigPayloadPrefix = uncompressedPrefix;
-
-                    // Extract JSON part (after prefix)
-                    string jsonConfig = string.IsNullOrEmpty(uncompressedPrefix)
-                        ? uncompressedJson
-                        : uncompressedJson.Substring(8);
-                    streamInfo.UpdateConfigPayload(jsonConfig);
+                    info.ConfigPayloadPrefix = configPayload.UncompressedPrefix;
+                    info.UpdateConfigPayload(configPayload.UncompressedJson);
+                    if (configPayload.IsCompressed)
+                    {
+                        info.UpdateCompressedConfigPayloadPrefix(configPayload.CompressedPrefix);
+                    }
 
                     string compressionInfo = junction.CompressPayload ? " (compressed)" : "";
-                    string junctionInfo = !string.IsNullOrEmpty(junctionType) ? $" ({junctionType})" : "";
-                    if (!string.IsNullOrEmpty(junctionType) && junctionType.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_COM] Config sent to gateway {comPort} via COM connection, target: {targetMacAddress}{compressionInfo}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_COM] Config sent to {device.Name} via COM port {comPort}{junctionInfo}{compressionInfo}.");
-                    }
+                    string gatewayInfo = isGatewayMode ? $" via gateway {comPort} targeting {targetMacAddress}" : "";
+                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Config sent to {device.Name}{gatewayInfo}{compressionInfo}.");
                 }
-
-                // Log successful start with mode description
-                string modeDescription = junction.RenderingMode switch
-                {
-                    RenderModes.Blit => "Pre-rendered Frames",
-                    RenderModes.Composite => "Frame Assembly",
-                    RenderModes.Payload => "Payload",
-                    _ => junction.RenderingMode
-                };
-
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] ✅ COM stream started for screen {screenKey} (Mode: {modeDescription})");
             }
 
-            // —— SENSOR POLLING LOOP ——
             _ = Task.Run(async () =>
             {
-                using IServiceScope loopScope = _scopeFactory.CreateScope();
-                Service_Manager_Payloads loopPayloadService =
-                    loopScope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
-                Service_Database_Manager_Junctions junctionDb =
-                    loopScope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
-                Service_Database_Manager_JunctionLinks junctionLinkDb = loopScope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
+                using var loopScope = _scopeFactory.CreateScope();
+                var loopPayloadService = loopScope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
+                var junctionDb = loopScope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
+                var junctionLinkDb = loopScope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
-                Service_StreamInfo_COM streamInfo = _streamingTokens[screen.Id];
+                var info = _streamingTokens[screen.Id];
 
-                // Get junction for compression and rendering mode settings
-                Model_Junction? junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+                var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
                 if (junction is null)
                 {
                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Junction {junctionId} not found in sensor loop.");
@@ -782,22 +617,11 @@ namespace JunctionRelayServer.Services
                 bool isBlitMode = renderMode == RenderModes.Blit;
                 bool isCompositeMode = renderMode == RenderModes.Composite;
                 bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
+                bool isGatewayMode = info.IsGatewayMode;
+                string? targetMacAddress = info.GatewayTarget;
 
-                // Get screen layout override if exists
                 var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
                 var screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
-
-                // Get the target MAC address for this device (for ESP-NOW forwarding)
-                string? targetMacAddress = null;
-                if (!string.IsNullOrEmpty(junctionType) &&
-                    junctionType.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
-                {
-                    using IServiceScope deviceScope = _scopeFactory.CreateScope();
-                    Service_Database_Manager_Devices deviceDb =
-                        deviceScope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
-                    Model_Device? device = await deviceDb.GetDeviceByIdAsync(deviceId);
-                    targetMacAddress = device?.UniqueIdentifier;
-                }
 
                 await Task.Delay(500, cts.Token);
 
@@ -807,12 +631,137 @@ namespace JunctionRelayServer.Services
                     {
                         if (isBlitMode)
                         {
-                            return;
+                            try
+                            {
+                                using var frameScope = _scopeFactory.CreateScope();
+                                var virtualStreamManager = frameScope.ServiceProvider.GetRequiredService<Service_Stream_Manager_Virtual>();
+                                var frameLayoutDb = frameScope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
+
+                                var frameLayoutId = screenOverride?.FrameLayoutId ?? screen.FrameLayoutId;
+                                if (!frameLayoutId.HasValue)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No frame layout ID for screen {screen.Id}");
+                                    continue;
+                                }
+
+                                var frameLayout = await frameLayoutDb.GetFrameLayoutByIdAsync(frameLayoutId.Value);
+                                if (frameLayout == null)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Frame layout not found for ID {frameLayoutId}");
+                                    continue;
+                                }
+
+                                var actualLinkId = linkId > 0 ? linkId : await GetLinkIdForDeviceAsync(junctionId, deviceId, frameScope);
+
+                                Dictionary<string, object> sensorData = new();
+                                try
+                                {
+                                    var riveSensorResult = await loopPayloadService.GenerateFrameEngineSensorPayloadsAsync(
+                                        screenKey, assignedSensors, screen,
+                                        junctionType: junctionType, gatewayDestination: targetMacAddress,
+                                        compressPayload: false);
+
+                                    var sensorPayload = riveSensorResult.GetResult(screenKey);
+                                    if (sensorPayload != null)
+                                    {
+                                        var sensorObj = JsonSerializer.Deserialize<Dictionary<string, object>>(sensorPayload.UncompressedJson);
+                                        if (sensorObj?.ContainsKey("sensors") == true)
+                                        {
+                                            sensorData = sensorObj;
+                                        }
+                                    }
+                                }
+                                catch (Exception sensorEx)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Error generating sensor data: {sensorEx.Message}");
+                                }
+
+                                var pngBytes = await virtualStreamManager.CaptureFrameForBlitMode(
+                                    screen.Id, sensorData, frameLayout, junctionId, actualLinkId ?? 0, screenOverride);
+
+                                if (pngBytes == null || pngBytes.Length == 0)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Failed to capture frame from virtual screen");
+                                    continue;
+                                }
+
+                                var imageResult = await _imageProcessor.ConvertToRgb565Async(pngBytes, frameLayout.Width, frameLayout.Height);
+                                if (!imageResult.Success || imageResult.Data == null)
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] RGB565 conversion failed: {imageResult.ErrorMessage ?? "Unknown error"}");
+                                    continue;
+                                }
+
+                                var blitPayload = loopPayloadService.GenerateBlitFramePayload(
+                                    imageResult.Data,
+                                    junction.CompressPayload,
+                                    isGatewayMode);
+
+                                Stopwatch stopwatch = Stopwatch.StartNew();
+                                var (success, _) = await info.ComSender!.SendPayloadAsync(blitPayload);
+                                stopwatch.Stop();
+
+                                var result = new ComOperationResult
+                                {
+                                    Success = success,
+                                    LatencyMs = stopwatch.ElapsedMilliseconds,
+                                    ErrorType = success ? string.Empty : "com_frame_send_failed",
+                                    ErrorMessage = success ? string.Empty : "COM frame send failure",
+                                    ComPort = info.ComPort ?? string.Empty,
+                                    BytesSent = blitPayload.Length,
+                                    IsFramePayload = true,
+                                    FrameSizeBytes = imageResult.Data.Length,
+                                    FrameLayoutType = "BLIT_MODE",
+                                    PayloadType = "Frame"
+                                };
+
+                                info.Health.UpdateHealth(result);
+
+                                if (result.Success)
+                                {
+                                    info.UpdateLastSentFrame(pngBytes, "BLIT_MODE");
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Blit frame sent: {blitPayload.Length} bytes (original: {imageResult.Data.Length} bytes)");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Frame send failed: {result.ErrorType} - {result.ErrorMessage}");
+                                    if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
+                                    {
+                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
+                                        break;
+                                    }
+                                    if (info.Health.ConsecutiveFailures > 1)
+                                    {
+                                        await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                    }
+                                }
+
+                                info.Latency = result.LatencyMs;
+                                info.LastSentTime = DateTime.UtcNow;
+
+                                var historyEntry = _historyManager.CreateEntryFromCOM(info);
+                                _historyManager.AddHistoryEntry(historyEntry);
+
+                                _latencies[screen.Id] = result.LatencyMs;
+
+                                int calculatedPause = Math.Max(rate - (int)result.LatencyMs, 0);
+                                if (calculatedPause > 0)
+                                {
+                                    await Task.Delay(calculatedPause, cts.Token);
+                                }
+
+                                continue;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Error in blit mode frame capture: {ex.Message}");
+                                await Task.Delay(rate, cts.Token);
+                                continue;
+                            }
                         }
                         else if (isCompositeMode)
                         {
-                            // COMPOSITE MODE: Generate and send composite sensor data
-                            Dictionary<string, object> compositeSensorPayload = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
+                            var compositeSensorResult = await loopPayloadService.GenerateFrameEngineSensorPayloadsAsync(
                                 screenKey,
                                 assignedSensors,
                                 screen,
@@ -820,118 +769,57 @@ namespace JunctionRelayServer.Services
                                 gatewayDestination: targetMacAddress,
                                 compressPayload: junction.CompressPayload);
 
-                            if (!compositeSensorPayload.TryGetValue(screenKey, out object rawCompositeSensor))
+                            var sensorPayload = compositeSensorResult.GetResult(screenKey);
+                            if (sensorPayload == null)
                             {
                                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No composite sensor payload for screen {screenKey}. Exiting loop.");
                                 break;
                             }
 
-                            // Send composite sensor data
                             Stopwatch stopwatch = Stopwatch.StartNew();
-                            bool success = false;
-                            int bytesSent = 0;
-
-                            if (rawCompositeSensor is byte[] compositeSensorBytes)
-                            {
-                                (success, _) = await streamInfo.ComSender!.SendPayloadAsync(compositeSensorBytes);
-                                bytesSent = compositeSensorBytes.Length;
-
-                                // Extract payload info for UI after successful send
-                                if (success)
-                                {
-                                    if (junction.CompressPayload)
-                                    {
-                                        // Extract binary prefix for compressed
-                                        string compressedPrefix = ExtractBinaryPrefix(compositeSensorBytes);
-                                        streamInfo.UpdateCompressedLastSentPayloadPrefix(compressedPrefix);
-
-                                        // Get uncompressed version for UI display
-                                        var uncompressedCompositeSensor = await loopPayloadService.GenerateRiveSensorPayloadsAsync(
-                                            screenKey, assignedSensors, screen,
-                                            junctionType: junctionType, gatewayDestination: targetMacAddress,
-                                            compressPayload: false);
-
-                                        if (uncompressedCompositeSensor.TryGetValue(screenKey, out object uncompressedRaw) &&
-                                            uncompressedRaw is string uncompressedString)
-                                        {
-                                            string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
-                                            streamInfo.LastSentPayloadPrefix = uncompressedPrefix;
-                                            string jsonSensor = string.IsNullOrEmpty(uncompressedPrefix)
-                                                ? uncompressedString
-                                                : uncompressedString.Substring(8);
-                                            streamInfo.UpdateLastSentPayload(jsonSensor);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Uncompressed byte array - convert to string
-                                        string sensorString = Encoding.UTF8.GetString(compositeSensorBytes);
-                                        string sensorPrefix = ExtractStringPrefix(sensorString);
-                                        streamInfo.LastSentPayloadPrefix = sensorPrefix;
-                                        string jsonSensor = string.IsNullOrEmpty(sensorPrefix)
-                                            ? sensorString
-                                            : sensorString.Substring(8);
-                                        streamInfo.UpdateLastSentPayload(jsonSensor);
-                                    }
-                                }
-                            }
-                            else if (rawCompositeSensor is string compositeSensorString)
-                            {
-                                (success, _) = await streamInfo.ComSender!.SendPayloadAsync(compositeSensorString);
-                                bytesSent = Encoding.UTF8.GetByteCount(compositeSensorString);
-
-                                // Extract payload info for UI after successful send
-                                if (success)
-                                {
-                                    string sensorPrefix = ExtractStringPrefix(compositeSensorString);
-                                    streamInfo.LastSentPayloadPrefix = sensorPrefix;
-                                    string jsonSensor = string.IsNullOrEmpty(sensorPrefix)
-                                        ? compositeSensorString
-                                        : compositeSensorString.Substring(8);
-                                    streamInfo.UpdateLastSentPayload(jsonSensor);
-                                }
-                            }
-                            else
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Unexpected composite sensor payload type for screen {screenKey}. Exiting loop.");
-                                break;
-                            }
-
+                            var (success, _) = await info.ComSender!.SendPayloadAsync(sensorPayload.BinaryPayload);
                             stopwatch.Stop();
 
-                            // Create result with composite-specific metrics
                             var result = new ComOperationResult
                             {
                                 Success = success,
                                 LatencyMs = stopwatch.ElapsedMilliseconds,
                                 ErrorType = success ? string.Empty : "com_composite_send_failed",
                                 ErrorMessage = success ? string.Empty : "COM composite sensor send failure",
-                                ComPort = streamInfo.ComPort ?? string.Empty,
-                                BytesSent = bytesSent,
+                                ComPort = info.ComPort ?? string.Empty,
+                                BytesSent = sensorPayload.BinaryPayload.Length,
                                 PayloadType = "Composite Sensor"
                             };
 
-                            // Update health information
-                            streamInfo.Health.UpdateHealth(result);
+                            info.Health.UpdateHealth(result);
 
-                            if (!result.Success)
+                            if (result.Success)
+                            {
+                                info.LastSentPayloadPrefix = sensorPayload.UncompressedPrefix;
+                                info.UpdateLastSentPayload(sensorPayload.UncompressedJson);
+                                if (sensorPayload.IsCompressed)
+                                {
+                                    info.UpdateCompressedLastSentPayloadPrefix(sensorPayload.CompressedPrefix);
+                                }
+                            }
+                            else
                             {
                                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Composite sensor send failed: {result.ErrorType} - {result.ErrorMessage}");
-                                if (streamInfo.Health.ConnectionState == "disconnected" && streamInfo.Health.ConsecutiveFailures > 5)
+                                if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
                                 {
-                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Too many consecutive failures ({streamInfo.Health.ConsecutiveFailures}), stopping stream.");
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
                                     break;
                                 }
-                                if (streamInfo.Health.ConsecutiveFailures > 1)
+                                if (info.Health.ConsecutiveFailures > 1)
                                 {
-                                    await Task.Delay(Math.Min(streamInfo.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                    await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
                                 }
                             }
 
-                            streamInfo.Latency = result.LatencyMs;
-                            streamInfo.LastSentTime = DateTime.UtcNow;
+                            info.Latency = result.LatencyMs;
+                            info.LastSentTime = DateTime.UtcNow;
 
-                            StreamHistoryEntry historyEntry = _historyManager.CreateEntryFromCOM(streamInfo);
+                            var historyEntry = _historyManager.CreateEntryFromCOM(info);
                             _historyManager.AddHistoryEntry(historyEntry);
 
                             _latencies[screen.Id] = result.LatencyMs;
@@ -944,138 +832,66 @@ namespace JunctionRelayServer.Services
                         }
                         else
                         {
-                            // PAYLOAD MODE: Existing sensor payload logic
-                            // Build uncompressed sensor payload JSON
-                            Dictionary<string, object> uncompressedSensorPayload = screen.Template?.LayoutType switch
-                            {
-                                "MATRIX" => await loopPayloadService.GenerateMatrixSensorPayloadsAsync(
-                                    screenKey,
-                                    assignedSensors.Count,
-                                    assignedSensors,
-                                    screen,
-                                    startingYOffset: 0,
-                                    junctionType: junctionType,
-                                    gatewayDestination: targetMacAddress,
-                                    compressPayload: false),
-                                _ => await loopPayloadService.GenerateSensorPayloadsAsync(
-                                    screenKey,
-                                    assignedSensors.Count,
-                                    assignedSensors,
-                                    screen,
-                                    junctionType: junctionType,
-                                    gatewayDestination: targetMacAddress,
-                                    compressPayload: false)
-                            };
+                            var sensorResult = await loopPayloadService.GenerateSensorPayloadsAsync(
+                                screenKey,
+                                assignedSensors.Count,
+                                assignedSensors,
+                                screen,
+                                junctionType: junctionType,
+                                gatewayDestination: targetMacAddress,
+                                compressPayload: junction.CompressPayload);
 
-                            if (!uncompressedSensorPayload.TryGetValue(screenKey, out object rawUncompressedSensor) ||
-                                rawUncompressedSensor is not string uncompressedSensorJson)
+                            var sensorPayload = sensorResult.GetResult(screenKey);
+                            if (sensorPayload == null)
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No uncompressed sensor payload for screen {screenKey}. Exiting loop.");
+                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No sensor payload for screen {screenKey}. Exiting loop.");
                                 break;
                             }
 
-                            // Extract uncompressed sensor payload info FIRST (always needed for UI)
-                            string uncompressedSensorPrefix = ExtractStringPrefix(uncompressedSensorJson);
-                            streamInfo.LastSentPayloadPrefix = uncompressedSensorPrefix;
-
-                            string sensorJson = string.IsNullOrEmpty(uncompressedSensorPrefix)
-                                ? uncompressedSensorJson
-                                : uncompressedSensorJson.Substring(8);
-                            streamInfo.UpdateLastSentPayload(sensorJson);
-
                             Stopwatch stopwatch = Stopwatch.StartNew();
-                            bool success = false;
-                            string payloadType = junction.CompressPayload ? "Gzip" : "JSON";
-                            int bytesSent = 0;
-
-                            try
-                            {
-                                // If compression is enabled, send binary; otherwise send JSON string
-                                if (junction.CompressPayload)
-                                {
-                                    Dictionary<string, object> compressedSensorPayload = screen.Template?.LayoutType switch
-                                    {
-                                        "MATRIX" => await loopPayloadService.GenerateMatrixSensorPayloadsAsync(
-                                            screenKey,
-                                            assignedSensors.Count,
-                                            assignedSensors,
-                                            screen,
-                                            startingYOffset: 0,
-                                            junctionType: junctionType,
-                                            gatewayDestination: targetMacAddress,
-                                            compressPayload: true),
-                                        _ => await loopPayloadService.GenerateSensorPayloadsAsync(
-                                            screenKey,
-                                            assignedSensors.Count,
-                                            assignedSensors,
-                                            screen,
-                                            junctionType: junctionType,
-                                            gatewayDestination: targetMacAddress,
-                                            compressPayload: true)
-                                    };
-
-                                    if (compressedSensorPayload.TryGetValue(screenKey, out object rawCompressedSensor))
-                                    {
-                                        if (rawCompressedSensor is byte[] compressedSensorBytes)
-                                        {
-                                            streamInfo.UpdateCompressedLastSentPayloadPrefix(ExtractBinaryPrefix(compressedSensorBytes));
-                                            (success, _) = await streamInfo.ComSender!.SendPayloadAsync(compressedSensorBytes);
-                                            bytesSent = compressedSensorBytes.Length;
-                                        }
-                                        else if (rawCompressedSensor is string compressedSensorString)
-                                        {
-                                            streamInfo.UpdateCompressedLastSentPayloadPrefix(ExtractStringPrefix(compressedSensorString));
-                                            (success, _) = await streamInfo.ComSender!.SendPayloadAsync(compressedSensorString);
-                                            bytesSent = Encoding.UTF8.GetByteCount(compressedSensorString);
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    (success, _) = await streamInfo.ComSender!.SendPayloadAsync(uncompressedSensorJson);
-                                    bytesSent = Encoding.UTF8.GetByteCount(uncompressedSensorJson);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                success = false;
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] COM send failed: {ex.Message}");
-                            }
-
+                            var (success, _) = await info.ComSender!.SendPayloadAsync(sensorPayload.BinaryPayload);
                             stopwatch.Stop();
 
-                            ComOperationResult sendResult = new()
+                            var sendResult = new ComOperationResult
                             {
                                 Success = success,
                                 LatencyMs = stopwatch.ElapsedMilliseconds,
                                 ErrorType = success ? string.Empty : "com_send_failed",
                                 ErrorMessage = success ? string.Empty : "COM payload send failure",
-                                ComPort = streamInfo.ComPort ?? string.Empty,
-                                BytesSent = bytesSent,
-                                PayloadType = payloadType
+                                ComPort = info.ComPort ?? string.Empty,
+                                BytesSent = sensorPayload.BinaryPayload.Length,
+                                PayloadType = "JSON"
                             };
 
-                            streamInfo.Health.UpdateHealth(sendResult);
+                            info.Health.UpdateHealth(sendResult);
 
-                            if (!sendResult.Success)
+                            if (sendResult.Success)
+                            {
+                                info.LastSentPayloadPrefix = sensorPayload.UncompressedPrefix;
+                                info.UpdateLastSentPayload(sensorPayload.UncompressedJson);
+                                if (sensorPayload.IsCompressed)
+                                {
+                                    info.UpdateCompressedLastSentPayloadPrefix(sensorPayload.CompressedPrefix);
+                                }
+                            }
+                            else
                             {
                                 Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Send failed: {sendResult.ErrorType} - {sendResult.ErrorMessage}");
-                                if (streamInfo.Health.ConnectionState == "disconnected" &&
-                                    streamInfo.Health.ConsecutiveFailures > 5)
+                                if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
                                 {
-                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Too many consecutive failures ({streamInfo.Health.ConsecutiveFailures}), stopping stream.");
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
                                     break;
                                 }
-                                if (streamInfo.Health.ConsecutiveFailures > 1)
+                                if (info.Health.ConsecutiveFailures > 1)
                                 {
-                                    await Task.Delay(Math.Min(streamInfo.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                    await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
                                 }
                             }
 
-                            streamInfo.Latency = sendResult.LatencyMs;
-                            streamInfo.LastSentTime = DateTime.UtcNow;
+                            info.Latency = sendResult.LatencyMs;
+                            info.LastSentTime = DateTime.UtcNow;
 
-                            StreamHistoryEntry historyEntry = _historyManager.CreateEntryFromCOM(streamInfo);
+                            var historyEntry = _historyManager.CreateEntryFromCOM(info);
                             _historyManager.AddHistoryEntry(historyEntry);
 
                             _latencies[screen.Id] = sendResult.LatencyMs;
@@ -1087,54 +903,54 @@ namespace JunctionRelayServer.Services
                             }
                         }
                     }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Unexpected error in streaming loop: {exception.Message}");
+                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Unexpected error in streaming loop: {ex.Message}");
 
-                        // Update health with unexpected error
                         var errorResult = new ComOperationResult
                         {
                             Success = false,
                             ErrorType = "unexpected_error",
-                            ErrorMessage = exception.Message,
+                            ErrorMessage = ex.Message,
                             LatencyMs = 0,
-                            ComPort = streamInfo.ComPort ?? string.Empty,
+                            ComPort = info.ComPort ?? string.Empty,
                             PayloadType = isBlitMode ? "Frame" : (isCompositeMode ? "Composite Sensor" : "JSON")
                         };
-                        streamInfo.Health.UpdateHealth(errorResult);
+                        info.Health.UpdateHealth(errorResult);
 
-                        // Wait a bit before retrying on unexpected errors
                         await Task.Delay(1000, cts.Token);
                     }
                 }
 
-                // Update status when loop exits
-                if (_streamingTokens.TryGetValue(screen.Id, out Service_StreamInfo_COM finalInfo))
+                if (_streamingTokens.TryGetValue(screen.Id, out var finalInfo))
                 {
                     finalInfo.Status = "Inactive";
                     finalInfo.Health.ConnectionState = "disconnected";
                 }
 
             }, cts.Token);
+
+            var streamInfo = _streamingTokens[screen.Id];
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] COM stream started for screen {screenKey} ({streamInfo.Protocol})");
         }
 
         public void StopStreaming(int screenId)
         {
-            if (_streamingTokens.TryRemove(screenId, out Service_StreamInfo_COM info))
+            if (_streamingTokens.TryRemove(screenId, out var info))
             {
                 info.Cts.Cancel();
                 info.Dispose();
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Stopped stream for screen {screenId}.");
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] Stopped COM stream for screen {screenId}.");
             }
             else
             {
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No active stream for screen {screenId}.");
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_COM] No active COM stream for screen {screenId}.");
             }
         }
 
         public long GetLatestLatency(int screenId)
         {
-            _latencies.TryGetValue(screenId, out long latency);
+            _latencies.TryGetValue(screenId, out var latency);
             return latency;
         }
 
@@ -1173,24 +989,21 @@ namespace JunctionRelayServer.Services
             return _historyManager.GetConfiguration();
         }
 
-        public bool IsStreaming(int screenId)
-        {
-            return _streamingTokens.ContainsKey(screenId);
-        }
+        public bool IsStreaming(int screenId) => _streamingTokens.ContainsKey(screenId);
 
-        // Get COM-specific stream metrics
         public object GetComStreamMetrics()
         {
             return new
             {
                 TotalStreams = _streamingTokens.Count,
                 ActiveStreams = _streamingTokens.Values.Count(s => s.Status == "Active"),
-                StreamsByProtocol = _streamingTokens.Values
-                    .GroupBy(s => s.Protocol)
-                    .ToDictionary(g => g.Key, g => g.Count()),
-                FrameStreams = _streamingTokens.Values.Count(s => s.Health.IsFrameMode),
-                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Frame Assembly")),
                 ComPorts = _streamingTokens.Values.Select(s => s.ComPort).Distinct().Count(),
+                StreamsByProtocol = _streamingTokens.Values
+                    .GroupBy(s => s.Protocol ?? "Unknown")
+                    .ToDictionary(g => g.Key, g => g.Count()),
+                GatewayStreams = _streamingTokens.Values.Count(s => s.IsGatewayMode),
+                FrameStreams = _streamingTokens.Values.Count(s => s.Health.IsFrameMode),
+                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol?.Contains("Frame Assembly") == true),
                 HealthSummary = new
                 {
                     Good = _streamingTokens.Values.Count(s => s.Health.ConnectionState == "good"),

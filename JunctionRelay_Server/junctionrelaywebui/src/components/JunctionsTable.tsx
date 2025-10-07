@@ -80,6 +80,8 @@ export interface JunctionColumn {
     align: "left" | "right" | "center" | "inherit" | "justify";
     renderCell?: (junction: Junction) => React.ReactNode; // Custom cell renderer
     sortable?: boolean; // Whether this column can be sorted
+    width?: number | string; // Column width
+    minWidth?: number | string; // Column minimum width
 }
 
 // Type for sort direction
@@ -103,7 +105,7 @@ export interface Junction {
     allTargetsAllData?: boolean;
     sortOrder: number;
     gatewayDestination?: string;
-    gatewayDeviceId?: number; 
+    gatewayDeviceId?: number;
     selectedGatewayDeviceId?: string;
 }
 
@@ -116,11 +118,13 @@ interface JunctionsTableProps {
     onDeleteJunction: (id: number) => void;
     onUpdateSortOrders?: (updates: { junctionId: number, sortOrder: number }[]) => void;
     onJunctionAdded?: () => void;
-    onDashboardToggle?: (junctionId: number, showOnDashboard: boolean) => Promise<void>; // ADD THIS
+    onDashboardToggle?: (junctionId: number, showOnDashboard: boolean) => Promise<void>;
+    onAutoStartToggle?: (junctionId: number, autoStartOnLaunch: boolean) => Promise<void>;
     filteredJunctions?: Junction[];
     localStorageKey?: string;
     detailedConnections: boolean;
     setDetailedConnections: (value: boolean) => void;
+    detailedConnectionsStorageKey?: string; // NEW: Allow parent to specify storage key for detailed connections
     additionalColumns?: JunctionColumn[];
     devices?: any[];
     collectors?: any[];
@@ -130,6 +134,7 @@ interface JunctionsTableProps {
     viewMode?: ViewMode;
     onViewModeChange?: (mode: ViewMode) => void;
     viewModeStorageKey?: string;
+    showRunningOnlyStorageKey?: string; // NEW: Allow parent to specify storage key
 }
 
 const STORAGE_KEY_DEFAULT = "dashboard_visible_junction_cols";
@@ -261,8 +266,9 @@ const moveCol = (
 
 // Define column definitions outside the component to prevent recreation
 const defaultJunctionCols: JunctionColumn[] = [
+    { field: "autoStart", label: "Auto-Start", align: "left", sortable: true, width: 140 },   
     { field: "name", label: "Junction Name", align: "left", sortable: true },
-   // { field: "description", label: "Description", align: "left", sortable: true },
+    // { field: "description", label: "Description", align: "left", sortable: true },
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "renderingMode", label: "Rendering Mode", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
@@ -495,6 +501,7 @@ const JunctionTableRow = memo(({
     onStopJunction,
     onCloneJunction,
     onDeleteJunction,
+    onAutoStartToggle,
     detailedConnections,
     navigate,
     hyperlinkRows,
@@ -508,6 +515,7 @@ const JunctionTableRow = memo(({
     onStopJunction: (id: number) => void,
     onCloneJunction: (id: number) => void,
     onDeleteJunction: (id: number) => void,
+    onAutoStartToggle?: (e: React.ChangeEvent<HTMLInputElement>, junction: Junction) => void,
     detailedConnections: boolean,
     navigate: any,
     hyperlinkRows: boolean,
@@ -526,6 +534,23 @@ const JunctionTableRow = memo(({
         switch (field) {
             case "name":
                 return <Typography fontWeight="medium">{junction.name}</Typography>;
+            case "autoStart":
+                return (
+                    <Tooltip title={junction.autoStartOnLaunch ? "Auto-start enabled" : "Auto-start disabled"}>
+                        <Switch
+                            size="small"
+                            checked={junction.autoStartOnLaunch || false}
+                            onChange={(e) => {
+                                if (onAutoStartToggle) {
+                                    onAutoStartToggle(e, junction);
+                                }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            color="primary"
+                            aria-label="Auto-start on launch"
+                        />
+                    </Tooltip>
+                );
             case "description":
                 return junction.description || "";
             case "type":
@@ -658,6 +683,11 @@ const JunctionTableRow = memo(({
                     <TableCell
                         key={field}
                         align={colDef.align}
+                        sx={{
+                            width: colDef.width,
+                            minWidth: colDef.minWidth,
+                            maxWidth: colDef.width
+                        }}
                     >
                         {getJunctionCell(field)}
                     </TableCell>
@@ -676,7 +706,8 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     onDeleteJunction,
     onUpdateSortOrders,
     onJunctionAdded,
-    onDashboardToggle, // ADD THIS
+    onDashboardToggle,
+    onAutoStartToggle,
     filteredJunctions,
     localStorageKey = STORAGE_KEY_DEFAULT,
     detailedConnections,
@@ -689,7 +720,9 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     title = "Junctions",
     viewMode: externalViewMode,
     onViewModeChange: externalViewModeChange,
-    viewModeStorageKey = 'junctions_view_mode'
+    viewModeStorageKey = 'junctions_view_mode',
+    showRunningOnlyStorageKey = 'junctions_show_running_only', // NEW: Default storage key
+    detailedConnectionsStorageKey = 'junctions_detailed_connections' // NEW: Default storage key
 }) => {
     const navigate = useNavigate();
     const flags = useFeatureFlags();
@@ -698,6 +731,22 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
     const isInitialRender = useRef(true);
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    // NEW: Show Running Only state - use parent-provided storage key
+    const [showRunningOnly, setShowRunningOnly] = useState<boolean>(() => {
+        const stored = localStorage.getItem(showRunningOnlyStorageKey);
+        return stored ? JSON.parse(stored) : false;
+    });
+
+    // Persist showRunningOnly state
+    useEffect(() => {
+        localStorage.setItem(showRunningOnlyStorageKey, JSON.stringify(showRunningOnly));
+    }, [showRunningOnly, showRunningOnlyStorageKey]);
+
+    // NEW: Persist detailedConnections state - moved from parent components
+    useEffect(() => {
+        localStorage.setItem(detailedConnectionsStorageKey, JSON.stringify(detailedConnections));
+    }, [detailedConnections, detailedConnectionsStorageKey]);
 
     // Use external view mode if provided, otherwise use internal state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -843,8 +892,17 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
 
     // Use the filtered junctions or all junctions
     const displayJunctions = useMemo(() => {
-        return filteredJunctions || junctions;
-    }, [filteredJunctions, junctions]);
+        const baseJunctions = filteredJunctions || junctions;
+
+        // NEW: Apply running only filter if enabled
+        if (showRunningOnly) {
+            return baseJunctions.filter(junction =>
+                junction.status?.toLowerCase() === 'running'
+            );
+        }
+
+        return baseJunctions;
+    }, [filteredJunctions, junctions, showRunningOnly]);
 
     // State for sorting
     const [sortState, setSortState] = useState<{ orderBy: string, order: SortDirection }>(() => {
@@ -868,6 +926,10 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                 case 'name':
                     valueA = a.name?.toLowerCase() || '';
                     valueB = b.name?.toLowerCase() || '';
+                    break;
+                case 'autoStart':
+                    valueA = a.autoStartOnLaunch ? 1 : 0;
+                    valueB = b.autoStartOnLaunch ? 1 : 0;
                     break;
                 case 'description':
                     valueA = a.description?.toLowerCase() || '';
@@ -1169,6 +1231,19 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
         }
     }, [onDashboardToggle, showSnackbar]);
 
+    const handleAutoStartToggle = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, junction: Junction) => {
+        e.stopPropagation();
+
+        if (onAutoStartToggle) {
+            try {
+                await onAutoStartToggle(junction.id, e.target.checked);
+            } catch (error) {
+                console.error("Failed to toggle auto-start status:", error);
+                showSnackbar("Error updating junction auto-start status", "error");
+            }
+        }
+    }, [onAutoStartToggle, showSnackbar]);
+
     return (
         <>
             {/* Table header with view mode toggle and column selector - matching DevicesTable */}
@@ -1176,6 +1251,52 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                 <Typography variant="h6">{title}</Typography>
 
                 <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    {/* Show Details Switch - ONLY show in table mode */}
+                    {viewMode === 'table' && (
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={detailedConnections}
+                                    onChange={(e) => setDetailedConnections(e.target.checked)}
+                                    size="small"
+                                />
+                            }
+                            label={
+                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                    Show Details
+                                </Typography>
+                            }
+                            sx={{
+                                margin: 0,
+                                '& .MuiFormControlLabel-label': {
+                                    fontWeight: 500
+                                }
+                            }}
+                        />
+                    )}
+
+                    {/* Show Running Only Switch */}
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={showRunningOnly}
+                                onChange={(e) => setShowRunningOnly(e.target.checked)}
+                                size="small"
+                            />
+                        }
+                        label={
+                            <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                Show Running Only
+                            </Typography>
+                        }
+                        sx={{
+                            margin: 0,
+                            '& .MuiFormControlLabel-label': {
+                                fontWeight: 500
+                            }
+                        }}
+                    />
+
                     {/* View Mode Toggle - ONLY show on desktop */}
                     {!isMobile && (
                         <ToggleButtonGroup
@@ -1204,30 +1325,6 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                 </Typography>
                             </ToggleButton>
                         </ToggleButtonGroup>
-                    )}
-
-                    {/* Show Details Switch - ONLY show in table mode */}
-                    {viewMode === 'table' && (
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={detailedConnections}
-                                    onChange={(e) => setDetailedConnections(e.target.checked)}
-                                    size="small"
-                                />
-                            }
-                            label={
-                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-                                    Show Details
-                                </Typography>
-                            }
-                            sx={{
-                                margin: 0,
-                                '& .MuiFormControlLabel-label': {
-                                    fontWeight: 500
-                                }
-                            }}
-                        />
                     )}
 
                     {/* Columns Button - ONLY show in table mode */}
@@ -1323,6 +1420,11 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                             key={field}
                                             align={colDef.align}
                                             sortDirection={sortState.orderBy === field ? sortState.order : false}
+                                            sx={{
+                                                width: colDef.width,
+                                                minWidth: colDef.minWidth,
+                                                maxWidth: colDef.width
+                                            }}
                                         >
                                             {colDef.sortable !== false ? (
                                                 <TableSortLabel
@@ -1352,6 +1454,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                         onStopJunction={memoizedStopJunction}
                                         onCloneJunction={memoizedCloneJunction}
                                         onDeleteJunction={memoizedDeleteJunction}
+                                        onAutoStartToggle={handleAutoStartToggle}
                                         detailedConnections={detailedConnections}
                                         navigate={navigate}
                                         hyperlinkRows={hyperlinkRowsEnabled}
@@ -1362,7 +1465,9 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                             ) : (
                                 <TableRow>
                                     <TableCell colSpan={visibleJunctionCols.length} sx={{ textAlign: 'center', py: 3 }}>
-                                        <Typography color="textSecondary">No junctions to display</Typography>
+                                        <Typography color="textSecondary">
+                                            {showRunningOnly ? 'No running junctions to display' : 'No junctions to display'}
+                                        </Typography>
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -1580,7 +1685,9 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                             textAlign: 'center',
                             py: 3
                         }}>
-                            <Typography color="textSecondary">No junctions to display</Typography>
+                            <Typography color="textSecondary">
+                                {showRunningOnly ? 'No running junctions to display' : 'No junctions to display'}
+                            </Typography>
                         </Box>
                     )}
                 </Box>
@@ -1646,7 +1753,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                     name="rendermode"
                                     value={newJunction.renderingMode}
                                     onChange={handleChange}
-                                    required                                    
+                                    required
                                 />
 
                                 <FormControl fullWidth size="small">

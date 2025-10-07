@@ -63,6 +63,7 @@ const AddCollectorModal: React.FC<{
     const [loading, setLoading] = useState<boolean>(false);
     const [configureAfterAdd, setConfigureAfterAdd] = useState<boolean>(false);
     const [setupInstructionsMinimized, setSetupInstructionsMinimized] = useState<boolean>(false);
+    const [sshUseKeyAuth, setSshUseKeyAuth] = useState<boolean>(false);
     const [collector, setCollector] = useState<any>({
         name: "",
         url: "",
@@ -92,6 +93,7 @@ const AddCollectorModal: React.FC<{
         { value: "RateTester", name: "Rate Tester", desc: "Performance testing" },
         { value: "Render", name: "Render", desc: "Cloud platform metrics" },
         { value: "SonarrCalendar", name: "Sonarr Calendar", desc: "TV show schedule" },
+        { value: "SSH_Linux", name: "SSH Linux", desc: "Remote Linux system monitoring" },
         { value: "Stripe", name: "Stripe", desc: "Payment processing" },
         { value: "SystemTime", name: "System Time", desc: "Local system date and time" },
         { value: "Unraid", name: "Unraid", desc: "NAS server monitoring" },
@@ -113,6 +115,7 @@ const AddCollectorModal: React.FC<{
             setEncryptionPassword("");
             setError("");
             setServices([]);
+            setSshUseKeyAuth(false);
         }
     }, [open]);
 
@@ -155,6 +158,7 @@ const AddCollectorModal: React.FC<{
                 collector.collectorType === "HomeAssistant" ||
                 collector.collectorType === "LibreHardwareMonitor" ||
                 collector.collectorType === "Render" ||
+                collector.collectorType === "SSH_Linux" ||
                 collector.collectorType === "Stripe" ||
                 collector.collectorType === "Unraid" ||
                 collector.collectorType === "UptimeKuma") &&
@@ -173,6 +177,7 @@ const AddCollectorModal: React.FC<{
             collector.collectorType === "iCal" ||
             collector.collectorType === "Render" ||
             collector.collectorType === "SonarrCalendar" ||
+            collector.collectorType === "SSH_Linux" ||
             collector.collectorType === "Stripe" ||
             collector.collectorType === "Unraid") && !collector.accessToken) {
             setError("Access Token is required for this collector type.");
@@ -182,6 +187,8 @@ const AddCollectorModal: React.FC<{
 
         // URL pattern validation (only for collectors that still use URL field)
         const urlPattern = /^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i;
+        const sshUrlPattern = /^ssh:\/\/.+@.+/i;
+
         if (
             (collector.collectorType === "Cloudflare" ||
                 collector.collectorType === "GenericAPI" ||
@@ -198,6 +205,26 @@ const AddCollectorModal: React.FC<{
             setError("Please enter a valid URL.");
             setLoading(false);
             return;
+        }
+
+        // SSH_Linux validation
+        if (collector.collectorType === "SSH_Linux") {
+            if (!collector.url) {
+                setError("SSH connection URL is required (format: ssh://username@host:port).");
+                setLoading(false);
+                return;
+            }
+            if (!collector.accessToken) {
+                setError(sshUseKeyAuth ? "SSH Private Key is required." : "SSH Password is required.");
+                setLoading(false);
+                return;
+            }
+            // Validate SSH URL format
+            if (!sshUrlPattern.test(collector.url)) {
+                setError("SSH URL must be in format: ssh://username@host:port (e.g., ssh://root@192.168.1.100:22)");
+                setLoading(false);
+                return;
+            }
         }
 
         // Sonarr iCal URL validation
@@ -387,7 +414,7 @@ const AddCollectorModal: React.FC<{
         } else if (collector.collectorType === "HomeAssistant") {
             setCollector((prev: any) => ({
                 ...prev,
-                name: "HomeAssistant",
+                name: "Home Assistant",
                 url: "http://10.168.1.17:8123",
                 accessToken: "",
                 externalAccessToken: false,
@@ -457,6 +484,16 @@ const AddCollectorModal: React.FC<{
                 externalAccessToken: false,
                 pollRate: 60000,
             }));
+        } else if (collector.collectorType === "SSH_Linux") {
+            setCollector((prev: any) => ({
+                ...prev,
+                name: "SSH Linux Server",
+                url: "ssh://root@192.168.1.100:22",
+                accessToken: "",
+                externalAccessToken: false,
+                pollRate: 5000,
+            }));
+            setSshUseKeyAuth(false);
         } else if (collector.collectorType === "Stripe") {
             setCollector((prev: any) => ({
                 ...prev,
@@ -695,310 +732,423 @@ const AddCollectorModal: React.FC<{
                                                     />
                                                 )}
 
-                                            {/* Sonarr iCal Feed URL - Special handling */}
-                                            {collector.collectorType === "SonarrCalendar" && (
-                                                <>
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        label="Sonarr iCal Feed URL (with API Key)"
-                                                        name="accessToken"
-                                                        value={collector.accessToken}
-                                                        onChange={handleSonarrAccessTokenChange}
-                                                        required
-                                                        type="password"
-                                                        placeholder="http://your-sonarr:8989/feed/v3/calendar/Sonarr.ics?apikey=..."
-                                                        helperText="This URL contains your API key and will be stored securely"
-                                                    />
-
-                                                    {/* Show extracted base URL */}
-                                                    {collector.url && (
+                                                {/* SSH_Linux specific fields */}
+                                                {collector.collectorType === "SSH_Linux" && (
+                                                    <>
                                                         <TextField
                                                             fullWidth
                                                             size="small"
-                                                            label="Sonarr Base URL (Auto-extracted)"
+                                                            label="SSH Connection"
+                                                            name="url"
                                                             value={collector.url}
-                                                            disabled
-                                                            helperText="Base URL extracted from your iCal feed URL for display purposes"
+                                                            onChange={handleChange}
+                                                            required
+                                                            placeholder="ssh://username@192.168.1.100:22"
+                                                            helperText="Format: ssh://username@host:port (default port 22)"
                                                         />
-                                                    )}
-                                                </>
-                                            )}
 
-                                            {/* iCal Feed URL */}
-                                            {collector.collectorType === "iCal" && (
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="iCal Feed URL"
-                                                    name="accessToken"
-                                                    value={collector.accessToken}
-                                                    onChange={handleChange}
-                                                    required
-                                                    placeholder="https://calendar.google.com/calendar/ical/[email]/public/basic.ics"
-                                                    helperText="Public iCal feed URL from Google Calendar, Outlook, Apple Calendar, or any iCal-compatible service"
-                                                />
-                                            )}
+                                                        {/* SSH Authentication Type Toggle */}
+                                                        <FormControl component="fieldset">
+                                                            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                                                                Authentication Method
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                    <input
+                                                                        type="radio"
+                                                                        id="ssh-password-auth"
+                                                                        name="ssh-auth-method"
+                                                                        checked={!sshUseKeyAuth}
+                                                                        onChange={() => {
+                                                                            setSshUseKeyAuth(false);
+                                                                            setCollector({ ...collector, accessToken: "" });
+                                                                        }}
+                                                                        style={{ marginRight: '8px' }}
+                                                                    />
+                                                                    <label htmlFor="ssh-password-auth" style={{ cursor: 'pointer' }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                            Password Authentication
+                                                                        </Typography>
+                                                                    </label>
+                                                                </Box>
 
-                                            {/* Access Token for other collectors that need it */}
-                                            {(collector.collectorType === "Cloudflare" ||
-                                                collector.collectorType === "GenericAPI" ||
-                                                collector.collectorType === "Github" ||
-                                                collector.collectorType === "HomeAssistant" ||
-                                                collector.collectorType === "Render" ||
-                                                collector.collectorType === "Stripe" ||
-                                                collector.collectorType === "Unraid") && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                    <input
+                                                                        type="radio"
+                                                                        id="ssh-key-auth"
+                                                                        name="ssh-auth-method"
+                                                                        checked={sshUseKeyAuth}
+                                                                        onChange={() => {
+                                                                            setSshUseKeyAuth(true);
+                                                                            setCollector({ ...collector, accessToken: "" });
+                                                                        }}
+                                                                        style={{ marginRight: '8px' }}
+                                                                    />
+                                                                    <label htmlFor="ssh-key-auth" style={{ cursor: 'pointer' }}>
+                                                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                            Private Key Authentication
+                                                                        </Typography>
+                                                                    </label>
+                                                                </Box>
+                                                            </Box>
+                                                        </FormControl>
+
+                                                        {/* SSH Password or Private Key field */}
+                                                        {!sshUseKeyAuth ? (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label="SSH Password"
+                                                                name="accessToken"
+                                                                value={collector.accessToken.startsWith("PASS:") ? collector.accessToken.substring(5) : collector.accessToken}
+                                                                onChange={(e) => {
+                                                                    // Store with PASS: prefix
+                                                                    setCollector({ ...collector, accessToken: "PASS:" + e.target.value });
+                                                                }}
+                                                                required
+                                                                type="password"
+                                                                placeholder="Enter SSH password"
+                                                                helperText="Password for SSH authentication"
+                                                            />
+                                                        ) : (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label="SSH Private Key"
+                                                                name="accessToken"
+                                                                value={collector.accessToken.startsWith("KEY:") ? collector.accessToken.substring(4) : collector.accessToken}
+                                                                onChange={(e) => {
+                                                                    // Store with KEY: prefix
+                                                                    setCollector({ ...collector, accessToken: "KEY:" + e.target.value });
+                                                                }}
+                                                                required
+                                                                multiline
+                                                                rows={6}
+                                                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+                                                                helperText="Paste your private key (RSA, ED25519, etc.)"
+                                                            />
+                                                        )}
+
+                                                        <Alert severity="info" sx={{ mt: 1 }}>
+                                                            <Typography variant="body2">
+                                                                <strong>Note:</strong> JunctionRelay must have SSH access to the target device.
+                                                                Ensure the device is configured in the Devices section with heartbeat enabled (Protocol: SSH).
+                                                            </Typography>
+                                                        </Alert>
+                                                    </>
+                                                )}
+
+                                                {/* Sonarr iCal Feed URL - Special handling */}
+                                                {collector.collectorType === "SonarrCalendar" && (
+                                                    <>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Sonarr iCal Feed URL (with API Key)"
+                                                            name="accessToken"
+                                                            value={collector.accessToken}
+                                                            onChange={handleSonarrAccessTokenChange}
+                                                            required
+                                                            type="password"
+                                                            placeholder="http://your-sonarr:8989/feed/v3/calendar/Sonarr.ics?apikey=..."
+                                                            helperText="This URL contains your API key and will be stored securely"
+                                                        />
+
+                                                        {/* Show extracted base URL */}
+                                                        {collector.url && (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label="Sonarr Base URL (Auto-extracted)"
+                                                                value={collector.url}
+                                                                disabled
+                                                                helperText="Base URL extracted from your iCal feed URL for display purposes"
+                                                            />
+                                                        )}
+                                                    </>
+                                                )}
+
+                                                {/* iCal Feed URL */}
+                                                {collector.collectorType === "iCal" && (
                                                     <TextField
                                                         fullWidth
                                                         size="small"
-                                                        label={
-                                                            collector.collectorType === "GenericAPI" ? "Generic API Access Token" :
-                                                                collector.collectorType === "Github" ? "GitHub Personal Access Token" :
-                                                                    collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
-                                                                        collector.collectorType === "Render" ? "Render API Key" :
-                                                                            collector.collectorType === "Stripe" ? "Stripe Secret Key" :
-                                                                                collector.collectorType === "Unraid" ? "Unraid API Key" :
-                                                                                    "Access Token"
-                                                        }
+                                                        label="iCal Feed URL"
                                                         name="accessToken"
                                                         value={collector.accessToken}
                                                         onChange={handleChange}
                                                         required
-                                                        type="password"
-                                                        placeholder={
-                                                            collector.collectorType === "GenericAPI" ? "gapi_..." :
-                                                                collector.collectorType === "Github" ? "ghp_..." :
-                                                                    collector.collectorType === "Cloudflare" ? "cf_api_token..." :
-                                                                        collector.collectorType === "Render" ? "rnd_..." :
-                                                                            collector.collectorType === "Stripe" ? "sk_..." :
-                                                                                collector.collectorType === "Unraid" ? "your-api-key" :
-                                                                                    ""
-                                                        }
+                                                        placeholder="https://calendar.google.com/calendar/ical/[email]/public/basic.ics"
+                                                        helperText="Public iCal feed URL from Google Calendar, Outlook, Apple Calendar, or any iCal-compatible service"
                                                     />
                                                 )}
 
-                                            {/* MQTT Service Dropdown */}
-                                            {collector.collectorType === "MQTT" && (
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel id="service-select-label">Select Service</InputLabel>
-                                                    <Select
-                                                        labelId="service-select-label"
-                                                        value={collector.serviceId}
-                                                        onChange={handleChange}
-                                                        name="serviceId"
-                                                        required
-                                                        label="Select Service"
-                                                    >
-                                                        {services.length > 0 ? (
-                                                            services.map((service: any) => (
-                                                                <MenuItem key={service.id} value={service.id}>
-                                                                    {service.name}
-                                                                </MenuItem>
-                                                            ))
-                                                        ) : (
-                                                            <MenuItem disabled>No services available</MenuItem>
-                                                        )}
-                                                    </Select>
-                                                </FormControl>
-                                            )}
-                                        </>
-                                    )}
-                                </Box>
-
-                                {/* Security Options Section - Show for collectors that require access tokens (now includes Sonarr, iCal and Unraid) */}
-                                {collector.collectorType && (
-                                    collector.collectorType === "Cloudflare" ||
-                                    collector.collectorType === "GenericAPI" ||
-                                    collector.collectorType === "Github" ||
-                                    collector.collectorType === "HomeAssistant" ||
-                                    collector.collectorType === "iCal" ||
-                                    collector.collectorType === "Render" ||
-                                    collector.collectorType === "SonarrCalendar" ||
-                                    collector.collectorType === "Stripe" ||
-                                    collector.collectorType === "Unraid"
-                                ) && (
-                                        <Box sx={{ mt: 3 }}>
-                                            <Divider sx={{ mb: 2 }} />
-                                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
-                                                {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL Security" :
-                                                    collector.collectorType === "iCal" ? "iCal Feed URL Security" : "Access Token Security"}
-                                            </Typography>
-
-                                            <FormControl component="fieldset">
-                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <input
-                                                            type="radio"
-                                                            id="local-encryption"
-                                                            name="encryption-method"
-                                                            checked={!collector.externalAccessToken}
-                                                            onChange={() => setCollector({ ...collector, externalAccessToken: false })}
-                                                            style={{ marginRight: '8px' }}
+                                                {/* Access Token for other collectors that need it */}
+                                                {(collector.collectorType === "Cloudflare" ||
+                                                    collector.collectorType === "GenericAPI" ||
+                                                    collector.collectorType === "Github" ||
+                                                    collector.collectorType === "HomeAssistant" ||
+                                                    collector.collectorType === "Render" ||
+                                                    collector.collectorType === "Stripe" ||
+                                                    collector.collectorType === "Unraid") && (
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label={
+                                                                collector.collectorType === "GenericAPI" ? "Generic API Access Token" :
+                                                                    collector.collectorType === "Github" ? "GitHub Personal Access Token" :
+                                                                        collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
+                                                                            collector.collectorType === "Render" ? "Render API Key" :
+                                                                                collector.collectorType === "Stripe" ? "Stripe Secret Key" :
+                                                                                    collector.collectorType === "Unraid" ? "Unraid API Key" :
+                                                                                        "Access Token"
+                                                            }
+                                                            name="accessToken"
+                                                            value={collector.accessToken}
+                                                            onChange={handleChange}
+                                                            required
+                                                            type="password"
+                                                            placeholder={
+                                                                collector.collectorType === "GenericAPI" ? "gapi_..." :
+                                                                    collector.collectorType === "Github" ? "ghp_..." :
+                                                                        collector.collectorType === "Cloudflare" ? "cf_api_token..." :
+                                                                            collector.collectorType === "Render" ? "rnd_..." :
+                                                                                collector.collectorType === "Stripe" ? "sk_..." :
+                                                                                    collector.collectorType === "Unraid" ? "your-api-key" :
+                                                                                        ""
+                                                            }
                                                         />
-                                                        <label htmlFor="local-encryption" style={{ cursor: 'pointer' }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                                Save to local DB (Default)
-                                                            </Typography>
-                                                        </label>
-                                                    </Box>
+                                                    )}
 
-                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <input
-                                                            type="radio"
-                                                            id="external-encryption"
-                                                            name="encryption-method"
-                                                            checked={collector.externalAccessToken}
-                                                            onChange={() => setCollector({ ...collector, externalAccessToken: true })}
-                                                            style={{ marginRight: '8px' }}
-                                                        />
-                                                        <label htmlFor="external-encryption" style={{ cursor: 'pointer' }}>
-                                                            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                                                Encrypt with external password
-                                                            </Typography>
-                                                        </label>
-                                                    </Box>
-                                                </Box>
-                                            </FormControl>
-
-                                            {/* Encryption Password field - only show if external encryption is selected */}
-                                            {collector.externalAccessToken && (
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Encryption Password"
-                                                    type="password"
-                                                    value={encryptionPassword}
-                                                    onChange={(e) => setEncryptionPassword(e.target.value)}
-                                                    required
-                                                    sx={{ mt: 2 }}
-                                                    placeholder="Enter a strong password for encryption"
-                                                    helperText="This password will be required each time the application starts"
-                                                />
-                                            )}
-
-                                            {/* Help text - Hide on mobile */}
-                                            <Box sx={{
-                                                mt: 2,
-                                                p: 2,
-                                                bgcolor: 'action.hover',
-                                                borderRadius: 1,
-                                                display: { xs: 'none', md: 'block' }
-                                            }}>
-                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                    <strong>Local DB:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" :
-                                                        collector.collectorType === "iCal" ? "iCal Feed URL" :
-                                                            collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted but the encryption keys exist in the application directory.
-                                                    This is usually sufficient if you have secured your local network/docker environment and if the {collector.collectorType === "SonarrCalendar" ? "API key" :
-                                                        collector.collectorType === "iCal" ? "calendar feed" :
-                                                            collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} is not high value.
-                                                    The application will decrypt automatically on app start so you do not need to re-enter the {collector.collectorType === "SonarrCalendar" ? "URL" :
-                                                        collector.collectorType === "iCal" ? "URL" : "token"}.
-                                                </Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    <strong>External Password:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" :
-                                                        collector.collectorType === "iCal" ? "iCal Feed URL" :
-                                                            collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted using a password that is not saved in the DB -
-                                                    this provides maximum security for your {collector.collectorType === "SonarrCalendar" ? "API key" :
-                                                        collector.collectorType === "iCal" ? "calendar feed" :
-                                                            collector.collectorType === "Unraid" ? "API Key" : "AccessToken"}, but means you must enter the password on application start
-                                                    for each collector that is encrypted via this method before it can be used. If you lose your password,
-                                                    you will not be able to recover the collector and you will need to recreate it.
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    )}
-                            </Box>
-
-                            {/* Instructions - responsive height - Hide on mobile */}
-                            {collector.collectorType && (
-                                <Box sx={{
-                                    display: { xs: 'none', md: 'block' },
-                                    borderTop: '1px solid',
-                                    borderColor: 'divider'
-                                }}>
-                                    {/* Always Visible Header */}
-                                    <Box sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        p: 2,
-                                        bgcolor: 'action.hover',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            bgcolor: 'action.selected'
-                                        }
-                                    }}
-                                        onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
-                                    >
-                                        <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
-                                            Setup Instructions
-                                        </Typography>
-                                        <IconButton size="small" sx={{ p: 0 }}>
-                                            {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
-                                        </IconButton>
+                                                {/* MQTT Service Dropdown */}
+                                                {collector.collectorType === "MQTT" && (
+                                                    <FormControl fullWidth size="small">
+                                                        <InputLabel id="service-select-label">Select Service</InputLabel>
+                                                        <Select
+                                                            labelId="service-select-label"
+                                                            value={collector.serviceId}
+                                                            onChange={handleChange}
+                                                            name="serviceId"
+                                                            required
+                                                            label="Select Service"
+                                                        >
+                                                            {services.length > 0 ? (
+                                                                services.map((service: any) => (
+                                                                    <MenuItem key={service.id} value={service.id}>
+                                                                        {service.name}
+                                                                    </MenuItem>
+                                                                ))
+                                                            ) : (
+                                                                <MenuItem disabled>No services available</MenuItem>
+                                                            )}
+                                                        </Select>
+                                                    </FormControl>
+                                                )}
+                                            </>
+                                        )}
                                     </Box>
 
-                                    {/* Collapsible Content */}
-                                    {!setupInstructionsMinimized && (
-                                        <Box sx={{
-                                            maxHeight: '300px',
-                                            p: 3,
-                                            overflowY: 'auto',
-                                            bgcolor: 'background.default'
-                                        }}>
-                                            <SetupInstructions_Collectors collectorType={collector.collectorType} />
-                                        </Box>
-                                    )}
-                                </Box>
-                            )}
+                                    {/* Security Options Section - Show for collectors that require access tokens */}
+                                    {collector.collectorType && (
+                                        collector.collectorType === "Cloudflare" ||
+                                        collector.collectorType === "GenericAPI" ||
+                                        collector.collectorType === "Github" ||
+                                        collector.collectorType === "HomeAssistant" ||
+                                        collector.collectorType === "iCal" ||
+                                        collector.collectorType === "Render" ||
+                                        collector.collectorType === "SonarrCalendar" ||
+                                        collector.collectorType === "SSH_Linux" ||
+                                        collector.collectorType === "Stripe" ||
+                                        collector.collectorType === "Unraid"
+                                    ) && (
+                                            <Box sx={{ mt: 3 }}>
+                                                <Divider sx={{ mb: 2 }} />
+                                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                                    {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL Security" :
+                                                        collector.collectorType === "iCal" ? "iCal Feed URL Security" :
+                                                            collector.collectorType === "SSH_Linux" ? "SSH Credentials Security" : "Access Token Security"}
+                                                </Typography>
 
-                            {/* Action buttons - responsive layout */}
-                            <Box sx={{
-                                p: { xs: 2, md: 3 },
-                                borderTop: '1px solid',
-                                borderColor: 'divider',
-                                display: "flex",
-                                flexDirection: { xs: 'column', sm: 'row' },
-                                gap: { xs: 1, sm: 2 },
-                                flexShrink: 0
-                            }}>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleAddCollector(false)}
-                                    size="small"
-                                    startIcon={<AddIcon />}
-                                    disabled={loading || !collector.collectorType}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => handleAddCollector(true)}
-                                    size="small"
-                                    color="secondary"
-                                    startIcon={<EditIcon />}
-                                    disabled={loading || !collector.collectorType}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={onClose}
-                                    size="small"
-                                    disabled={loading}
-                                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                                >
-                                    Cancel
-                                </Button>
+                                                <FormControl component="fieldset">
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                            <input
+                                                                type="radio"
+                                                                id="local-encryption"
+                                                                name="encryption-method"
+                                                                checked={!collector.externalAccessToken}
+                                                                onChange={() => setCollector({ ...collector, externalAccessToken: false })}
+                                                                style={{ marginRight: '8px' }}
+                                                            />
+                                                            <label htmlFor="local-encryption" style={{ cursor: 'pointer' }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                    Save to local DB (Default)
+                                                                </Typography>
+                                                            </label>
+                                                        </Box>
+
+                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                            <input
+                                                                type="radio"
+                                                                id="external-encryption"
+                                                                name="encryption-method"
+                                                                checked={collector.externalAccessToken}
+                                                                onChange={() => setCollector({ ...collector, externalAccessToken: true })}
+                                                                style={{ marginRight: '8px' }}
+                                                            />
+                                                            <label htmlFor="external-encryption" style={{ cursor: 'pointer' }}>
+                                                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                                    Encrypt with external password
+                                                                </Typography>
+                                                            </label>
+                                                        </Box>
+                                                    </Box>
+                                                </FormControl>
+
+                                                {/* Encryption Password field - only show if external encryption is selected */}
+                                                {collector.externalAccessToken && (
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Encryption Password"
+                                                        type="password"
+                                                        value={encryptionPassword}
+                                                        onChange={(e) => setEncryptionPassword(e.target.value)}
+                                                        required
+                                                        sx={{ mt: 2 }}
+                                                        placeholder="Enter a strong password for encryption"
+                                                        helperText="This password will be required each time the application starts"
+                                                    />
+                                                )}
+
+                                                {/* Help text - Hide on mobile */}
+                                                <Box sx={{
+                                                    mt: 2,
+                                                    p: 2,
+                                                    bgcolor: 'action.hover',
+                                                    borderRadius: 1,
+                                                    display: { xs: 'none', md: 'block' }
+                                                }}>
+                                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                        <strong>Local DB:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" :
+                                                            collector.collectorType === "iCal" ? "iCal Feed URL" :
+                                                                collector.collectorType === "SSH_Linux" ? "SSH Credentials" :
+                                                                    collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted but the encryption keys exist in the application directory.
+                                                        This is usually sufficient if you have secured your local network/docker environment and if the {collector.collectorType === "SonarrCalendar" ? "API key" :
+                                                            collector.collectorType === "iCal" ? "calendar feed" :
+                                                                collector.collectorType === "SSH_Linux" ? "SSH credentials" :
+                                                                    collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} is not high value.
+                                                        The application will decrypt automatically on app start so you do not need to re-enter the {collector.collectorType === "SonarrCalendar" ? "URL" :
+                                                            collector.collectorType === "iCal" ? "URL" :
+                                                                collector.collectorType === "SSH_Linux" ? "credentials" : "token"}.
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        <strong>External Password:</strong> {collector.collectorType === "SonarrCalendar" ? "iCal Feed URL" :
+                                                            collector.collectorType === "iCal" ? "iCal Feed URL" :
+                                                                collector.collectorType === "SSH_Linux" ? "SSH Credentials" :
+                                                                    collector.collectorType === "Unraid" ? "API Key" : "AccessToken"} will be encrypted using a password that is not saved in the DB -
+                                                        this provides maximum security for your {collector.collectorType === "SonarrCalendar" ? "API key" :
+                                                            collector.collectorType === "iCal" ? "calendar feed" :
+                                                                collector.collectorType === "SSH_Linux" ? "SSH credentials" :
+                                                                    collector.collectorType === "Unraid" ? "API Key" : "AccessToken"}, but means you must enter the password on application start
+                                                        for each collector that is encrypted via this method before it can be used. If you lose your password,
+                                                        you will not be able to recover the collector and you will need to recreate it.
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                </Box>
+
+                                {/* Instructions - responsive height - Hide on mobile */}
+                                {collector.collectorType && (
+                                    <Box sx={{
+                                        display: { xs: 'none', md: 'block' },
+                                        borderTop: '1px solid',
+                                        borderColor: 'divider'
+                                    }}>
+                                        {/* Always Visible Header */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            p: 2,
+                                            bgcolor: 'action.hover',
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                bgcolor: 'action.selected'
+                                            }
+                                        }}
+                                            onClick={() => setSetupInstructionsMinimized(!setupInstructionsMinimized)}
+                                        >
+                                            <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                                                Setup Instructions
+                                            </Typography>
+                                            <IconButton size="small" sx={{ p: 0 }}>
+                                                {setupInstructionsMinimized ? <ExpandMoreIcon /> : <MinimizeIcon />}
+                                            </IconButton>
+                                        </Box>
+
+                                        {/* Collapsible Content */}
+                                        {!setupInstructionsMinimized && (
+                                            <Box sx={{
+                                                maxHeight: '300px',
+                                                p: 3,
+                                                overflowY: 'auto',
+                                                bgcolor: 'background.default'
+                                            }}>
+                                                <SetupInstructions_Collectors collectorType={collector.collectorType} />
+                                            </Box>
+                                        )}
+                                    </Box>
+                                )}
+
+                                {/* Action buttons - responsive layout */}
+                                <Box sx={{
+                                    p: { xs: 2, md: 3 },
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider',
+                                    display: "flex",
+                                    flexDirection: { xs: 'column', sm: 'row' },
+                                    gap: { xs: 1, sm: 2 },
+                                    flexShrink: 0
+                                }}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleAddCollector(false)}
+                                        size="small"
+                                        startIcon={<AddIcon />}
+                                        disabled={loading || !collector.collectorType}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        {loading && !configureAfterAdd ? "Adding..." : "Add Collector"}
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleAddCollector(true)}
+                                        size="small"
+                                        color="secondary"
+                                        startIcon={<EditIcon />}
+                                        disabled={loading || !collector.collectorType}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        {loading && configureAfterAdd ? "Adding..." : "Add & Configure"}
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={onClose}
+                                        size="small"
+                                        disabled={loading}
+                                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </Box>
                             </Box>
                         </Box>
-                    </Box>
-                )}
-            </Box>
-        </Modal>
-    );
-};
+                    )}
+                </Box>
+            </Modal>
+        );
+    };
 
 export default AddCollectorModal;

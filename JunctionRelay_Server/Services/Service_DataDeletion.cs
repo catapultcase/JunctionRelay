@@ -94,6 +94,23 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine("Deleted logs directory");
                 }
 
+                // Delete FrameEngine directories (in app folder)
+                var frameEngineDirectories = new[]
+                {
+            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "frames"),
+            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "rive"),
+            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "thumbnails")
+        };
+
+                foreach (var directory in frameEngineDirectories)
+                {
+                    if (Directory.Exists(directory))
+                    {
+                        Directory.Delete(directory, true);
+                        Console.WriteLine($"Deleted FrameEngine directory: {Path.GetFileName(Path.GetDirectoryName(directory))}/{Path.GetFileName(directory)}");
+                    }
+                }
+
                 // Remove the marker file
                 File.Delete(deleteMarkerPath);
                 Console.WriteLine("Removed deletion marker file");

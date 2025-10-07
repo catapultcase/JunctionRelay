@@ -52,7 +52,7 @@ namespace JunctionRelayServer.Collectors
                     ExternalId = "neopixel_color",
                     Name = "NeoPixel Color",
                     ComponentName = "NeoPixelColor",
-                    Value = $"{randomColor:X6}", // Force 6-digit hex with leading zeros
+                    Value = $"#{randomColor:X6}", // Force 6-digit hex with leading zeros
                     Unit = "RGB",
                     DecimalPlaces = 0,
                     SensorTag = "neopixel",

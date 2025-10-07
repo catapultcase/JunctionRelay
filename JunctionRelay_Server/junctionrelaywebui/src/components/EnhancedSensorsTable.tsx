@@ -41,14 +41,6 @@ import TableViewIcon from '@mui/icons-material/TableView';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 
-// Define the header styles to match your existing styling
-const headerStyle = {
-    padding: '8px 16px',
-    borderBottom: '2px solid #ddd',
-    fontWeight: 'bold',
-    backgroundColor: '#f5f5f5'
-};
-
 const cellStyle = {
     padding: '6px 16px'
 };
@@ -536,6 +528,13 @@ const EnhancedSensorsTable: React.FC<EnhancedSensorsTableProps> = ({
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    const headerStyle = {
+        padding: '8px 16px',
+        borderBottom: `2px solid ${theme.palette.divider}`,
+        fontWeight: 'bold',
+        backgroundColor: theme.palette.action.hover
+    };
 
     // State for search and filters
     const [searchQuery, setSearchQuery] = useState<string>('');

@@ -1098,7 +1098,7 @@ const ConfigureLayout: React.FC = () => {
                             <Tab icon={<SettingsIcon fontSize="small" />} label="Basic Settings" />
                             <Tab icon={<AspectRatioIcon fontSize="small" />} label="Layout & Sizing" />
                             <Tab icon={<PaletteIcon fontSize="small" />} label="Appearance" />
-                            <Tab icon={<TextFieldsIcon fontSize="small" />} label="Fonts & Text" />
+                                {/* <Tab icon={<TextFieldsIcon fontSize="small" />} label="Fonts & Text" /> */}
                             <Tab icon={<InsertChartIcon fontSize="small" />} label="Chart Options" />
                             <Tab icon={<AnimationIcon fontSize="small" />} label="Animation" />
                             <Tab icon={<PhoneAndroidIcon fontSize="small" />} label="Responsive" />
@@ -1602,7 +1602,7 @@ const ConfigureLayout: React.FC = () => {
                             </Box>
                         </TabPanel>
 
-                            {/* Fonts & Text Tab */}
+                            {/* Fonts & Text Tab 
                             <TabPanel value={currentTab} index={3}>
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                     <Typography variant="subtitle2" gutterBottom>Text Sizes</Typography>
@@ -1745,7 +1745,6 @@ const ConfigureLayout: React.FC = () => {
                                         </Box>
                                     </Box>
 
-                                    {/* Replace the single FormControlLabel with a flex container for both controls */}
                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
                                         <FormControlLabel
                                             control={
@@ -1776,6 +1775,7 @@ const ConfigureLayout: React.FC = () => {
                                     </Box>
                                 </Box>
                             </TabPanel>
+                            */}
 
                         {/* Chart Options Tab */}
                         <TabPanel value={currentTab} index={4}>

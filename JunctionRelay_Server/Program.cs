@@ -15,6 +15,9 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebSockets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.FileProviders;
+using JunctionRelay_Server.Services.BackgroundServices;
+using JunctionRelay_Server.Services;
+using JunctionRelayServer.Services.BackgroundServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -283,10 +286,13 @@ builder.Services.AddScoped<Service_Manager_OTA>();
 builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
+builder.Services.AddScoped<Service_Database_Manager_EventRules>();
 
 // Core singleton services
 builder.Services.AddSingleton<IService_Settings, Service_Settings>();
 builder.Services.AddSingleton<Service_Manager_Connections>();
+builder.Services.AddSingleton<Service_Manager_Inbound_Sensors>();
+builder.Services.AddSingleton<Service_Manager_Events>();
 builder.Services.AddSingleton<Service_Manager_Polling>();
 builder.Services.AddSingleton<Service_Manager_COM_Ports>();
 builder.Services.AddSingleton<Service_Manager_Network_Scan>();
@@ -302,10 +308,13 @@ builder.Services.AddSingleton<Service_Stream_History_Manager>();
 builder.Services.AddSingleton<StartupSignals>();
 builder.Services.AddSingleton<Service_Notifications>();
 builder.Services.AddSingleton<Service_CloudSync>();
+builder.Services.AddSingleton<Service_Image_Processor>();
+builder.Services.AddSingleton<Service_Events>();
+builder.Services.AddSingleton<Service_CloudBackup_Scheduler>();
 
 // Register WebSocket services
-builder.Services.AddSingleton<Service_Manager_WebSocket_Devices>();
-builder.Services.AddSingleton<Service_Manager_WebSocket_Dashboard>();
+builder.Services.AddSingleton<Service_Manager_WebSocket_Client>();
+builder.Services.AddSingleton<Service_Manager_WebSocket_Server>();
 
 // Register SSH services
 builder.Services.AddSingleton<Service_Manager_SSH>();
@@ -341,6 +350,7 @@ builder.Services.AddSingleton<Func<string, Service_Send_Data_COM>>(provider => c
 });
 
 builder.Services.AddTransient<DataCollector_Cloudflare>();
+builder.Services.AddTransient<DataCollector_EventEngine>();
 builder.Services.AddTransient<DataCollector_GenericAPI>();
 builder.Services.AddTransient<DataCollector_Github>();
 builder.Services.AddTransient<DataCollector_HomeAssistant>();
@@ -349,6 +359,7 @@ builder.Services.AddTransient<DataCollector_HWiNFO>();
 builder.Services.AddTransient<DataCollector_iCal>();
 builder.Services.AddTransient<DataCollector_InternetTime>();
 builder.Services.AddTransient<DataCollector_LibreHardwareMonitor>();
+builder.Services.AddTransient<DataCollector_SSH_Linux>();
 builder.Services.AddTransient<DataCollector_MQTT>();
 builder.Services.AddTransient<DataCollector_NeoPixelColor>();
 builder.Services.AddTransient<DataCollector_RateTester>();
@@ -359,11 +370,13 @@ builder.Services.AddTransient<DataCollector_SystemTime>();
 builder.Services.AddTransient<DataCollector_Unraid>();
 builder.Services.AddTransient<DataCollector_UptimeKuma>();
 
+
 builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 {
     var creatorMap = new Dictionary<string, Func<Model_Collector, IDataCollector>>(StringComparer.OrdinalIgnoreCase)
         {
             { "Cloudflare", c => { var i = provider.GetRequiredService<DataCollector_Cloudflare>(); i.ApplyConfiguration(c); return i; } },
+            { "EventEngine", c => { var i = provider.GetRequiredService<DataCollector_EventEngine>(); i.ApplyConfiguration(c); return i; } },
             { "GenericAPI", c => { var i = provider.GetRequiredService<DataCollector_GenericAPI>(); i.ApplyConfiguration(c); return i; } },
             { "Github", c => { var i = provider.GetRequiredService<DataCollector_Github>(); i.ApplyConfiguration(c); return i; } },
             { "HomeAssistant", c => { var i = provider.GetRequiredService<DataCollector_HomeAssistant>(); i.ApplyConfiguration(c); return i; } },
@@ -378,6 +391,7 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
             { "Render", c => { var i = provider.GetRequiredService<DataCollector_Render>(); i.ApplyConfiguration(c); return i; } },
             { "SonarrCalendar", c => { var i = provider.GetRequiredService<DataCollector_SonarrCalendar>(); i.ApplyConfiguration(c); return i; } },
             { "Stripe", c => { var i = provider.GetRequiredService<DataCollector_Stripe>(); i.ApplyConfiguration(c); return i; } },
+            { "SSH_Linux", c => { var i = provider.GetRequiredService<DataCollector_SSH_Linux>(); i.ApplyConfiguration(c); return i; } },
             { "SystemTime", c => { var i = provider.GetRequiredService<DataCollector_SystemTime>(); i.ApplyConfiguration(c); return i; } },
             { "Unraid", c => { var i = provider.GetRequiredService<DataCollector_Unraid>(); i.ApplyConfiguration(c); return i; } },
             { "UptimeKuma", c => { var i = provider.GetRequiredService<DataCollector_UptimeKuma>(); i.ApplyConfiguration(c); return i; } }
@@ -405,7 +419,7 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 builder.Services.AddHostedService<Service_Startup>();
 builder.Services.AddHostedService<Service_Heartbeats>();
 builder.Services.AddHostedService<Service_Connection_Status>();
-builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Devices>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Client>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
 
 builder.Services.AddControllersWithViews();
@@ -422,11 +436,16 @@ app.Lifetime.ApplicationStarted.Register(async () =>
     {
         await dbInitializer.InitializeAsync();
         startupSignals.DatabaseInitialized.TrySetResult(true);
+
+        var eventService = app.Services.GetRequiredService<Service_Events>();
+        await eventService.InitializeAsync();
+        startupSignals.EventEngineInitialized.TrySetResult(true);
     }
     catch (Exception ex)
     {
         Console.WriteLine($"Database initialization failed: {ex.Message}");
         startupSignals.DatabaseInitialized.TrySetException(ex);
+        startupSignals.EventEngineInitialized.TrySetException(ex);
     }
 });
 
