@@ -35,11 +35,9 @@ const NotificationPollingProvider: React.FC<{ children: React.ReactNode }> = ({ 
 const Main = () => {
     return (
         <ThemeContextProvider>
-            <NotificationProvider>
-                <NotificationPollingProvider>
-                    <InnerApp />
-                </NotificationPollingProvider>
-            </NotificationProvider>
+            <NotificationPollingProvider>
+                <InnerApp />
+            </NotificationPollingProvider>
         </ThemeContextProvider>
     );
 };

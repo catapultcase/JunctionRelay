@@ -93,7 +93,57 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // NEW: POST: /api/collectors/{id}/unlock
+        // PUT: /api/collectors/{id}
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateCollector(int id, [FromBody] UpdateCollectorRequest request)
+        {
+            try
+            {
+                // First check if collector exists
+                var existingCollector = await _collectorDb.GetCollectorByIdAsync(id);
+                if (existingCollector == null)
+                {
+                    return NotFound($"Collector with ID {id} not found.");
+                }
+
+                // Create updated collector model
+                var updatedCollector = new Model_Collector
+                {
+                    Id = id,
+                    Name = request.Name,
+                    CollectorType = existingCollector.CollectorType, // Don't allow changing type
+                    Description = request.Description,
+                    URL = request.URL, // Now allowing URL updates
+                    AccessToken = request.AccessToken, // Will be handled by database manager
+                    ExternalAccessToken = request.ExternalAccessToken,
+                    EncryptionPassword = request.EncryptionPassword, // For password-based encryption
+                    PollRate = request.PollRate,
+                    SendRate = request.SendRate,
+                    ServiceId = request.ServiceId,
+                    DecimalPlaces = request.DecimalPlaces,
+                    TestFrequency = request.TestFrequency, // NEW
+                    Status = request.Status ?? existingCollector.Status
+                };
+
+                var success = await _collectorDb.UpdateCollectorAsync(id, updatedCollector);
+
+                if (!success)
+                {
+                    return StatusCode(500, "Failed to update collector");
+                }
+
+                // Return updated collector (will have encrypted tokens, etc.)
+                var result = await _collectorDb.GetCollectorByIdAsync(id);
+                return Ok(result.ToResponse());
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error updating collector: {ex.Message}");
+            }
+        }
+
+
+        // POST: /api/collectors/{id}/unlock
         [HttpPost("{id}/unlock")]
         public async Task<IActionResult> UnlockCollector(int id, [FromBody] UnlockCollectorRequest request)
         {
@@ -168,6 +218,9 @@ namespace JunctionRelayServer.Controllers
             var collector = await _collectorDb.GetCollectorByIdAsync(id);
             if (collector == null) return NotFound();
 
+            bool testSuccessful = false;
+            string errorMessage = null;
+
             try
             {
                 // Use the factory to get the correct IDataCollector based on the collector type
@@ -177,11 +230,22 @@ namespace JunctionRelayServer.Controllers
                 dataCollector.ApplyConfiguration(collector);
 
                 // Test connection
-                var success = await dataCollector.TestConnectionAsync(collector);
-                return success ? Ok(new { status = "Connection successful" }) : StatusCode(500, new { status = "Connection failed" });
+                testSuccessful = await dataCollector.TestConnectionAsync(collector);
+
+                // Update the LastTested timestamp
+                await _collectorDb.UpdateLastTestedAsync(id, DateTime.UtcNow);
+
+                return testSuccessful ?
+                    Ok(new { status = "Connection successful" }) :
+                    StatusCode(500, new { status = "Connection failed" });
             }
             catch (Exception ex)
             {
+                errorMessage = ex.Message;
+
+                // Still update LastTested even if test failed
+                await _collectorDb.UpdateLastTestedAsync(id, DateTime.UtcNow);
+
                 return StatusCode(500, $"Error testing connection: {ex.Message}");
             }
         }
@@ -219,6 +283,11 @@ namespace JunctionRelayServer.Controllers
             var collector = await _collectorDb.GetCollectorByIdAsync(id);
             if (collector == null) return NotFound();
 
+            var currentSensors = new List<Model_Sensor>();
+            var storedSensors = new List<Model_Sensor>();
+            bool fetchSuccessful = false;
+            string errorMessage = null;
+
             try
             {
                 // Use the factory to get the correct IDataCollector based on the collector type
@@ -229,11 +298,12 @@ namespace JunctionRelayServer.Controllers
                 Console.WriteLine($"Configuration applied for collector: {collector.Name}");
 
                 // Fetch current sensors from the collector (external source)
-                var currentSensors = await dataCollector.FetchSensorsAsync(collector);
+                currentSensors = await dataCollector.FetchSensorsAsync(collector);
                 Console.WriteLine($"Fetched {currentSensors.Count} current sensors from the collector.");
+                fetchSuccessful = true;
 
                 // Fetch previously stored sensors from the database
-                var storedSensors = await _sensorDb.GetSensorsByCollectorIdAsync(id);
+                storedSensors = await _sensorDb.GetSensorsByCollectorIdAsync(id);
                 Console.WriteLine($"Fetched {storedSensors.Count} stored sensors from the database.");
 
                 // 1. Create a lookup for current values by ExternalId
@@ -252,44 +322,76 @@ namespace JunctionRelayServer.Controllers
                     }
                 }
 
-                // Detect deltas: sensors that exist in one but not the other
-                var deltaSensors = new List<Model_Sensor>();
+                // UPDATED: Separate new sensors from lost sensors
+                var newSensors = new List<Model_Sensor>();
+                var lostSensors = new List<Model_Sensor>();
 
-                // Add sensors from the collector (external source) that do not exist in the database
+                // Find new sensors (in collector but not in database)
                 foreach (var currentSensor in currentSensors)
                 {
                     var storedSensor = storedSensors.FirstOrDefault(s => s.ExternalId == currentSensor.ExternalId);
                     if (storedSensor == null)
                     {
-                        // If the sensor does not exist in the database, it's a new sensor (delta)
-                        // Console.WriteLine($"New delta sensor found (not in stored sensors): {currentSensor.Name}");
-                        deltaSensors.Add(currentSensor);
+                        newSensors.Add(currentSensor);
+                        Console.WriteLine($"New sensor found: {currentSensor.Name}");
                     }
                 }
 
-                // Add sensors from the database that do not exist in the collector (external source)
+                // Find lost sensors (in database but not in collector)
                 foreach (var storedSensor in storedSensors)
                 {
                     var currentSensor = currentSensors.FirstOrDefault(s => s.ExternalId == storedSensor.ExternalId);
                     if (currentSensor == null)
                     {
-                        // If the sensor does not exist in the collector, it's a missing sensor (delta)
-                        // Console.WriteLine($"Missing delta sensor found (not in current sensors): {storedSensor.Name}");
-                        deltaSensors.Add(storedSensor);
+                        lostSensors.Add(storedSensor);
+                        Console.WriteLine($"Lost sensor found: {storedSensor.Name}");
                     }
                 }
 
-                // Debug: Log number of delta sensors
-                Console.WriteLine($"Found {deltaSensors.Count} delta sensors.");
+                // Debug: Log counts
+                Console.WriteLine($"Found {newSensors.Count} new sensors and {lostSensors.Count} lost sensors.");
 
-                // Return delta sensors
-                return Ok(deltaSensors);
+                // Update collector with last fetch information
+                await _collectorDb.UpdateLastFetchInfoAsync(id, DateTime.UtcNow,
+                    currentSensors.Count, newSensors.Count, fetchSuccessful, null, lostSensors.Count);
+
+                // Return enhanced response with separate sensor types
+                return Ok(new
+                {
+                    deltaSensors = newSensors,    // Keep for backward compatibility
+                    newSensors = newSensors,      // Explicit new sensors
+                    lostSensors = lostSensors,    // NEW: Lost sensors
+                    totalFetched = currentSensors.Count,
+                    totalStored = storedSensors.Count,
+                    totalNew = newSensors.Count,
+                    totalLost = lostSensors.Count,
+                    fetchSuccessful = fetchSuccessful,
+                    errorMessage = (string)null
+                });
             }
             catch (Exception ex)
             {
                 // Log the error for debugging purposes
                 Console.WriteLine($"Error fetching delta sensors: {ex.Message}");
-                return StatusCode(500, $"Error fetching delta sensors: {ex.Message}");
+                errorMessage = ex.Message;
+
+                // Update collector with failed fetch information
+                await _collectorDb.UpdateLastFetchInfoAsync(id, DateTime.UtcNow,
+                    currentSensors.Count, 0, false, errorMessage, 0);
+
+                // Return error response with metadata
+                return Ok(new
+                {
+                    deltaSensors = new List<Model_Sensor>(),
+                    newSensors = new List<Model_Sensor>(),
+                    lostSensors = new List<Model_Sensor>(),
+                    totalFetched = currentSensors.Count,
+                    totalStored = storedSensors.Count,
+                    totalNew = 0,
+                    totalLost = 0,
+                    fetchSuccessful = false,
+                    errorMessage = errorMessage
+                });
             }
         }
 
@@ -314,5 +416,21 @@ namespace JunctionRelayServer.Controllers
     public class UnlockCollectorRequest
     {
         public string Password { get; set; } = string.Empty;
+    }
+
+    public class UpdateCollectorRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? URL { get; set; }
+        public string? AccessToken { get; set; }
+        public bool ExternalAccessToken { get; set; } = false;
+        public string? EncryptionPassword { get; set; } // Only used if ExternalAccessToken is true
+        public int PollRate { get; set; } = 5000;
+        public int? SendRate { get; set; }
+        public int? ServiceId { get; set; }
+        public int DecimalPlaces { get; set; } = 2;
+        public int? TestFrequency { get; set; }
+        public string? Status { get; set; }
     }
 }

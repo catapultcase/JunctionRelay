@@ -76,9 +76,9 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
         name: "",
         description: "",
         type: "COM Junction",
+        renderingMode: "Payload", // Add rendering mode
         showOnDashboard: true,
         autoStartOnLaunch: false,
-        allTargetsAllData: false,
         deviceLinks: [],
         collectorLinks: [],
         sortOrder: 0,
@@ -101,6 +101,31 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
         { value: "Gateway Junction (HTTP to ESP:NOW)", name: "Gateway Junction (HTTP to ESP:NOW)", desc: "HTTP to ESP:NOW gateway" },
         { value: "Gateway Junction (WebSocket to ESP:NOW)", name: "Gateway Junction (WebSocket to ESP:NOW)", desc: "WebSocket to ESP:NOW gateway" },
     ];
+
+    // Rendering mode options
+    const renderingModeOptions = [
+        { value: "Payload", name: "Data Payloads", desc: "Send raw data payloads to target devices" },
+        { value: "Blit", name: "FrameEngine: Pre-rendered Frames", desc: "Render complete images and push per-frame" },
+        { value: "Composite", name: "FrameEngine: Frame Reassembly", desc: "Reassemble complete frames at target" }
+    ];
+
+    // Function to check if junction type supports FrameEngine modes
+    const supportsFrameEngine = useCallback((junctionType: string): boolean => {
+        return [
+            "COM Junction",
+            "HTTP Junction",
+            "Virtual Junction",
+            "WebSocket Junction"
+        ].includes(junctionType);
+    }, []);
+
+    // Get available rendering modes based on junction type
+    const getAvailableRenderingModes = useCallback(() => {
+        if (!newJunction.type || !supportsFrameEngine(newJunction.type)) {
+            return renderingModeOptions.filter(mode => mode.value === "Payload");
+        }
+        return renderingModeOptions;
+    }, [newJunction.type, supportsFrameEngine]);
 
     // Load gateway devices when component mounts
     useEffect(() => {
@@ -134,9 +159,9 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
             name: "",
             description: "",
             type: "COM Junction",
+            renderingMode: "Payload", // Default rendering mode
             showOnDashboard: true,
             autoStartOnLaunch: false,
-            allTargetsAllData: false,
             deviceLinks: [],
             collectorLinks: [],
             sortOrder: highestSortOrder + 1,
@@ -170,6 +195,16 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
             }
         }
     }, [newJunction.type]);
+
+    // Reset rendering mode when junction type changes and doesn't support FrameEngine
+    useEffect(() => {
+        if (newJunction.type && !supportsFrameEngine(newJunction.type)) {
+            setNewJunction((prev) => ({
+                ...prev,
+                renderingMode: "Payload"
+            }));
+        }
+    }, [newJunction.type, supportsFrameEngine]);
 
     // Form handlers
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -256,9 +291,9 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                 name: newJunction.name,
                 description: newJunction.description,
                 type: newJunction.type,
+                renderingMode: newJunction.renderingMode, // Include rendering mode
                 showOnDashboard: newJunction.showOnDashboard,
                 autoStartOnLaunch: newJunction.autoStartOnLaunch,
-                allTargetsAllData: newJunction.allTargetsAllData,
                 sortOrder: newJunction.sortOrder,
                 status: "Idle",
                 // Only include gatewayDeviceId if this is a gateway junction
@@ -485,6 +520,32 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                                 placeholder="Optional description for this junction"
                                             />
 
+                                            {/* Rendering Mode Selection */}
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel id="rendering-mode-label">Rendering Mode</InputLabel>
+                                                <Select
+                                                    labelId="rendering-mode-label"
+                                                    name="renderingMode"
+                                                    value={newJunction.renderingMode || "Payload"}
+                                                    onChange={handleSelectChange}
+                                                    label="Rendering Mode"
+                                                    disabled={!supportsFrameEngine(newJunction.type || "")}
+                                                >
+                                                    {getAvailableRenderingModes().map((mode) => (
+                                                        <MenuItem key={mode.value} value={mode.value}>
+                                                            <Box>
+                                                                <Typography variant="body2" fontWeight="medium">
+                                                                    {mode.name}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {mode.desc}
+                                                                </Typography>
+                                                            </Box>
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+
                                             {/* Gateway Device Selection - only show for Gateway types */}
                                             {shouldShowGatewaySelection() && (
                                                 <>
@@ -547,7 +608,8 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                                 </>
                                             )}
 
-                                            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                                            {/* Configuration checkboxes - side by side */}
+                                            <Box sx={{ display: "flex", flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
                                                 <FormControlLabel
                                                     control={
                                                         <Checkbox
@@ -570,18 +632,6 @@ const AddJunctionModal: React.FC<AddJunctionModalProps> = ({
                                                         />
                                                     }
                                                     label="Auto Start on Launch"
-                                                />
-
-                                                <FormControlLabel
-                                                    control={
-                                                        <Checkbox
-                                                            checked={newJunction.allTargetsAllData || false}
-                                                            onChange={handleCheckboxChange}
-                                                            name="allTargetsAllData"
-                                                            size="small"
-                                                        />
-                                                    }
-                                                    label="All Targets All Data"
                                                 />
                                             </Box>
                                         </>

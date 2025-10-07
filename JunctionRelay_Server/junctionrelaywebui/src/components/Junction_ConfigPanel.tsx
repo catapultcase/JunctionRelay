@@ -22,7 +22,7 @@ import {
     Typography, Box, Button, Card, CardContent,
     TextField, Select, MenuItem, FormControl, InputLabel,
     FormControlLabel, Switch, Accordion, AccordionSummary,
-    AccordionDetails, SelectChangeEvent
+    AccordionDetails, SelectChangeEvent, Alert
 } from "@mui/material";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -77,6 +77,11 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
     const [gatewayDevices, setGatewayDevices] = useState<GatewayDevice[]>([]);
     const [displayGatewayDestination, setDisplayGatewayDestination] = useState<string>("");
 
+    // Determine if we're in a FrameEngine mode
+    const renderingMode = junctionData?.renderingMode || 'Payload';
+    const isFrameEngineMode = renderingMode === 'Blit' || renderingMode === 'Composite';
+    const compressionRequired = isFrameEngineMode;
+
     // Load gateway devices when component mounts
     useEffect(() => {
         const loadGatewayDevices = async () => {
@@ -115,6 +120,16 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
         }
     }, [junctionData?.gatewayDeviceId, junctionData?.type, gatewayDevices]);
 
+    // Auto-enable compression for FrameEngine modes
+    useEffect(() => {
+        if (compressionRequired && !junctionData?.compressPayload) {
+            setJunctionData({
+                ...junctionData,
+                compressPayload: true
+            });
+        }
+    }, [compressionRequired, junctionData?.compressPayload]);
+
     // Handle MQTT broker selection
     const handleMqttBrokerChange = (event: SelectChangeEvent<string>) => {
         setSelectedMqttBrokerId(event.target.value);
@@ -134,6 +149,15 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
         return junctionData?.type === "Gateway Junction (HTTP to ESP:NOW)" ||
             junctionData?.type === "Gateway Junction (COM to ESP:NOW)" ||
             junctionData?.type === "Gateway Junction (WebSocket to ESP:NOW)";
+    };
+
+    // Handle compression toggle with FrameEngine enforcement
+    const handleCompressionToggle = (checked: boolean) => {
+        if (compressionRequired && !checked) {
+            // Don't allow disabling compression in FrameEngine modes
+            return;
+        }
+        setJunctionData({ ...junctionData, compressPayload: checked });
     };
 
     return (
@@ -220,50 +244,67 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                 <FormControlLabel
                                     control={
                                         <Switch
-                                            checked={junctionData.compressPayload || false}
-                                            onChange={(e) => setJunctionData({ ...junctionData, compressPayload: e.target.checked })}
+                                            checked={compressionRequired || junctionData.compressPayload || false}
+                                            onChange={(e) => handleCompressionToggle(e.target.checked)}
                                             size="small"
+                                            disabled={junctionData.type === "MQTT Junction" || compressionRequired}
                                         />
                                     }
-                                    label="Enable Payload Compression"
+                                    label={
+                                        <Box component="span" sx={{
+                                            opacity: (junctionData.type === "MQTT Junction" || compressionRequired) ? 0.6 : 1
+                                        }}>
+                                            Enable Payload Compression
+                                            {compressionRequired && " (Required)"}
+                                        </Box>
+                                    }
                                 />
                             </Box>
 
+                            {compressionRequired && (
+                                <Alert severity="info" sx={{ mt: 2 }}>
+                                    <strong>Compression Required:</strong> Payload compression is automatically enabled and required for FrameEngine modes (Pre-rendered Frames and Frame Reassembly).
+                                    FrameEngine transmits rendered image data or Rive animation instructions which benefit significantly from compression to reduce bandwidth and improve transmission speed.
+                                </Alert>
+                            )}
+
                             <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={1} mt={1}>
-                                <TextField
-                                    fullWidth
-                                    label="Retry Count"
-                                    type="number"
-                                    value={junctionData.retryCount || 0}
-                                    onChange={(e) => setJunctionData({ ...junctionData, retryCount: parseInt(e.target.value) || 0 })}
-                                    size="small"
-                                />
-                                <TextField
-                                    fullWidth
-                                    label="Retry Interval (ms)"
-                                    type="number"
-                                    value={junctionData.retryIntervalMs || 0}
-                                    onChange={(e) => setJunctionData({ ...junctionData, retryIntervalMs: parseInt(e.target.value) || 0 })}
-                                    size="small"
-                                />
-                                <TextField
-                                    fullWidth
-                                    label="Stream Timeout (ms)"
-                                    type="number"
-                                    value={junctionData.streamAutoTimeoutMs || 0}
-                                    onChange={(e) => setJunctionData({ ...junctionData, streamAutoTimeoutMs: parseInt(e.target.value) || 0 })}
-                                    size="small"
-                                />
+                                {/* 
+                                    <TextField
+                                        fullWidth
+                                        label="Retry Count"
+                                        type="number"
+                                        value={junctionData.retryCount || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, retryCount: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Retry Interval (ms)"
+                                        type="number"
+                                        value={junctionData.retryIntervalMs || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, retryIntervalMs: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Stream Timeout (ms)"
+                                        type="number"
+                                        value={junctionData.streamAutoTimeoutMs || 0}
+                                        onChange={(e) => setJunctionData({ ...junctionData, streamAutoTimeoutMs: parseInt(e.target.value) || 0 })}
+                                        size="small"
+                                    />
+                                    */}
                             </Box>
                         </CardContent>
                     </Card>
 
                     {/* Gateway Configuration */}
-                    <Card>
-                        <CardContent sx={{ pb: 1 }}>
-                            <Typography variant="subtitle1" gutterBottom>Gateway Configuration</Typography>
+                    {shouldShowGatewaySelection() && (
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>Gateway Configuration</Typography>
 
-                            {shouldShowGatewaySelection() ? (
                                 <Box display="flex" flexDirection="column" gap={1}>
                                     <FormControl fullWidth size="small">
                                         <InputLabel id="gateway-device-label">Gateway Device</InputLabel>
@@ -293,7 +334,6 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                         </Select>
                                     </FormControl>
 
-                                    {/* Show the appropriate connection info that will be used - FOR DISPLAY ONLY */}
                                     {displayGatewayDestination && (
                                         <TextField
                                             fullWidth
@@ -301,16 +341,10 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                             label={junctionData?.type === "Gateway Junction (COM to ESP:NOW)" ? "Gateway COM Port" : "Gateway IP Address"}
                                             value={displayGatewayDestination}
                                             disabled
-                                            //helperText={
-                                            //    (junctionData?.type === "Gateway Junction (COM to ESP:NOW)"
-                                            //        ? "COM port of the selected gateway device (for display only)"
-                                            //        : "IP address of the selected gateway device (for display only)")
-                                            //}
                                         />
                                     )}
 
-                                    {/* Show message if gateway is required but not selected */}
-                                    {shouldShowGatewaySelection() && !junctionData?.gatewayDeviceId && (
+                                    {!junctionData?.gatewayDeviceId && (
                                         <TextField
                                             fullWidth
                                             size="small"
@@ -331,81 +365,57 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                         helperText="Only applies for UART protocol"
                                     />
                                 </Box>
-                            ) : (
-                                <Box display="flex" flexDirection="column" gap={1}>
-                                    <TextField
-                                        label="Gateway Device ID"
-                                        value={junctionData.gatewayDeviceId || ''}
-                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDeviceId: e.target.value })}
-                                        size="small"
-                                        helperText="This device will forward received payloads via ESP:NOW to selected target devices below"
-                                    />
-                                    <TextField
-                                        label="Gateway Destination"
-                                        value={junctionData.gatewayDestination || ''}
-                                        onChange={(e) => setJunctionData({ ...junctionData, gatewayDestination: e.target.value })}
-                                        placeholder=""
-                                        size="small"
-                                        helperText="For internet protocols, this will be the IP Address of the Gateway. For COM/USB/Serial, this should be a port e.g. COM3 or /dev/ttyUSB0"
-                                    />
-                                    <TextField
-                                        label="Baud Rate"
-                                        type="number"
-                                        value={junctionData.baudRate || 115200}
-                                        onChange={(e) => setJunctionData({ ...junctionData, baudRate: parseInt(e.target.value) || 115200 })}
-                                        size="small"
-                                        helperText="Only applies for UART protocol"
-                                    />
-                                </Box>
-                            )}
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
+                    )}
 
-                    <Card>
-                        <CardContent sx={{ pb: 1 }}>
-                            <Typography variant="subtitle1" gutterBottom>MQTT Broker Configuration</Typography>
+                    {junctionData.type === "MQTT Junction" && (
+                        <Card>
+                            <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" gutterBottom>MQTT Broker Configuration</Typography>
 
-                            <Box
-                                sx={{
-                                    display: 'flex',
-                                    flexDirection: { xs: 'column', md: 'row' },
-                                    gap: 1,
-                                    alignItems: { xs: 'stretch', md: 'flex-end' }
-                                }}
-                            >
-                                <FormControl fullWidth size="small">
-                                    <InputLabel>MQTT Broker</InputLabel>
-                                    <Select
-                                        value={selectedMqttBrokerId}
-                                        label="MQTT Broker"
-                                        onChange={handleMqttBrokerChange}
-                                    >
-                                        <MenuItem value="">
-                                            <em>None</em>
-                                        </MenuItem>
-                                        {mqttBrokers.map((broker) => (
-                                            <MenuItem key={broker.id} value={broker.id.toString()}>
-                                                {broker.name}
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        flexDirection: { xs: 'column', md: 'row' },
+                                        gap: 1,
+                                        alignItems: { xs: 'stretch', md: 'flex-end' }
+                                    }}
+                                >
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel>MQTT Broker</InputLabel>
+                                        <Select
+                                            value={selectedMqttBrokerId}
+                                            label="MQTT Broker"
+                                            onChange={handleMqttBrokerChange}
+                                        >
+                                            <MenuItem value="">
+                                                <em>None</em>
                                             </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
+                                            {mqttBrokers.map((broker) => (
+                                                <MenuItem key={broker.id} value={broker.id.toString()}>
+                                                    {broker.name}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
 
-                                <Box sx={{ width: { xs: '100%', md: 'auto' }, minWidth: { md: '120px' } }}>
-                                    <Button
-                                        fullWidth
-                                        variant="outlined"
-                                        onClick={onConnectToMQTTBroker}
-                                        startIcon={<LinkIcon />}
-                                        disabled={!selectedMqttBrokerId || loading}
-                                        size="small"
-                                    >
-                                        Connect
-                                    </Button>
+                                    <Box sx={{ width: { xs: '100%', md: 'auto' }, minWidth: { md: '120px' } }}>
+                                        <Button
+                                            fullWidth
+                                            variant="outlined"
+                                            onClick={onConnectToMQTTBroker}
+                                            startIcon={<LinkIcon />}
+                                            disabled={!selectedMqttBrokerId || loading}
+                                            size="small"
+                                        >
+                                            Connect
+                                        </Button>
+                                    </Box>
                                 </Box>
-                            </Box>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Save Button aligned right */}
                     <Box display="flex" justifyContent="flex-end">

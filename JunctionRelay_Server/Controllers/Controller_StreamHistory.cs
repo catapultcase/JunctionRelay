@@ -28,70 +28,56 @@ namespace JunctionRelay_Server.Controllers
     {
         private readonly Service_Stream_Manager_COM _comManager;
         private readonly Service_Stream_Manager_HTTP _httpManager;
+        private readonly Service_Stream_Manager_WebSocket _webSocketManager;
         private readonly Service_Stream_Manager_MQTT _mqttManager;
+        private readonly Service_Stream_Manager_Virtual _virtualManager;
         private readonly Service_Stream_History_Manager _historyManager;
 
         public Controller_StreamHistory(
             Service_Stream_Manager_COM comManager,
             Service_Stream_Manager_HTTP httpManager,
+            Service_Stream_Manager_WebSocket webSocketManager,
             Service_Stream_Manager_MQTT mqttManager,
+            Service_Stream_Manager_Virtual virtualManager,
             Service_Stream_History_Manager historyManager)
         {
             _comManager = comManager;
             _httpManager = httpManager;
+            _webSocketManager = webSocketManager;
             _mqttManager = mqttManager;
+            _virtualManager = virtualManager;
             _historyManager = historyManager;
         }
 
-        // NEW: Frame endpoint for last sent frame
         [HttpGet("stream/{screenId}/last-frame")]
         public IActionResult GetLastFrame(int screenId)
         {
             try
             {
-                // Check HTTP stream manager first
-                if (_httpManager.IsStreaming(screenId))
+                // Check stream managers that support frame data (MQTT does not support frames)
+                byte[]? frameBytes = null;
+                string protocol = "";
+
+                if (_webSocketManager.IsStreaming(screenId))
                 {
-                    var frameBytes = _httpManager.GetLastFrameBytes(screenId);
-                    if (frameBytes != null)
-                    {
-                        return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
-                    }
+                    frameBytes = _webSocketManager.GetLastFrameBytes(screenId);
+                    protocol = "WebSocket";
+                }
+                else if (_httpManager.IsStreaming(screenId))
+                {
+                    frameBytes = _httpManager.GetLastFrameBytes(screenId);
+                    protocol = "HTTP";
+                }
+                else if (_comManager.IsStreaming(screenId))
+                {
+                    frameBytes = _comManager.GetLastFrameBytes(screenId);
+                    protocol = "COM";
                 }
 
-                // Check COM stream manager
-                if (_comManager.IsStreaming(screenId))
+                if (frameBytes != null)
                 {
-                    var frameBytes = _comManager.GetLastFrameBytes(screenId);
-                    if (frameBytes != null)
-                    {
-                        return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
-                    }
+                    return File(frameBytes, "image/png", $"frame_{screenId}_{protocol}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
                 }
-
-                // Check MQTT stream manager if applicable
-                //try
-                //{
-                //    if (_mqttManager.IsStreaming(screenId))
-                //    {
-                //        // Note: You'll need to add GetLastFrameBytes method to MQTT manager if it supports frames
-                //        var frameBytes = _mqttManager.GetLastFrameBytes(screenId);
-                //        if (frameBytes != null)
-                //        {
-                //            return File(frameBytes, "image/png", $"frame_{screenId}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
-                //        }
-                //    }
-                //}
-                //catch (InvalidOperationException)
-                //{
-                //    // MQTT stream manager may not be registered or may not support frames yet
-                //    // This is fine, just continue to the next check
-                //}
-                //catch (System.MissingMethodException)
-                //{
-                //    // GetLastFrameBytes method may not exist on MQTT manager yet
-                //    // This is fine, just continue
-                //}
 
                 return NotFound(new
                 {
@@ -113,52 +99,31 @@ namespace JunctionRelay_Server.Controllers
             }
         }
 
-        // NEW: Get frame info for a specific stream
         [HttpGet("stream/{screenId}/frame-info")]
         public IActionResult GetFrameInfo(int screenId)
         {
             try
             {
-                // Check HTTP stream manager first
-                if (_httpManager.IsStreaming(screenId))
+                // Check stream managers that support frame data (MQTT does not support frames)
+                object? frameInfo = null;
+
+                if (_webSocketManager.IsStreaming(screenId))
                 {
-                    var frameInfo = _httpManager.GetFrameInfo(screenId);
-                    if (frameInfo != null)
-                    {
-                        return Ok(frameInfo);
-                    }
+                    frameInfo = _webSocketManager.GetFrameInfo(screenId);
+                }
+                else if (_httpManager.IsStreaming(screenId))
+                {
+                    frameInfo = _httpManager.GetFrameInfo(screenId);
+                }
+                else if (_comManager.IsStreaming(screenId))
+                {
+                    frameInfo = _comManager.GetFrameInfo(screenId);
                 }
 
-                // Check COM stream manager
-                if (_comManager.IsStreaming(screenId))
+                if (frameInfo != null)
                 {
-                    var frameInfo = _comManager.GetFrameInfo(screenId);
-                    if (frameInfo != null)
-                    {
-                        return Ok(frameInfo);
-                    }
+                    return Ok(frameInfo);
                 }
-
-                // Check MQTT stream manager if applicable
-                //try
-                //{
-                //    if (_mqttManager.IsStreaming(screenId))
-                //    {
-                //        var frameInfo = _mqttManager.GetFrameInfo(screenId);
-                //        if (frameInfo != null)
-                //        {
-                //            return Ok(frameInfo);
-                //        }
-                //    }
-                //}
-                //catch (InvalidOperationException)
-                //{
-                //    // MQTT stream manager may not support frames yet
-                //}
-                //catch (System.MissingMethodException)
-                //{
-                //    // GetFrameInfo method may not exist on MQTT manager yet
-                //}
 
                 return NotFound(new
                 {
@@ -180,45 +145,26 @@ namespace JunctionRelay_Server.Controllers
             }
         }
 
-        // NEW: Clear last frame for a specific stream (to free memory)
         [HttpDelete("stream/{screenId}/last-frame")]
         public IActionResult ClearLastFrame(int screenId)
         {
             try
             {
+                // Only check stream managers that support frame data (MQTT does not support frames)
                 bool cleared = false;
 
-                // Try HTTP stream manager
-                if (_httpManager.IsStreaming(screenId))
+                if (_webSocketManager.IsStreaming(screenId))
+                {
+                    cleared = _webSocketManager.ClearLastFrame(screenId);
+                }
+                else if (_httpManager.IsStreaming(screenId))
                 {
                     cleared = _httpManager.ClearLastFrame(screenId);
                 }
-
-                // Try COM stream manager
-                if (!cleared && _comManager.IsStreaming(screenId))
+                else if (_comManager.IsStreaming(screenId))
                 {
                     cleared = _comManager.ClearLastFrame(screenId);
                 }
-
-                //// Try MQTT stream manager if applicable
-                //if (!cleared)
-                //{
-                //    try
-                //    {
-                //        if (_mqttManager.IsStreaming(screenId))
-                //        {
-                //            cleared = _mqttManager.ClearLastFrame(screenId);
-                //        }
-                //    }
-                //    catch (InvalidOperationException)
-                //    {
-                //        // MQTT stream manager may not support frames yet
-                //    }
-                //    catch (System.MissingMethodException)
-                //    {
-                //        // ClearLastFrame method may not exist on MQTT manager yet
-                //    }
-                //}
 
                 return Ok(new
                 {
@@ -276,7 +222,6 @@ namespace JunctionRelay_Server.Controllers
         {
             var fullHistory = _historyManager.GetStreamHistory(screenId, fromTime, toTime, includeStatistics);
 
-            // Early exit if no sampling requested or not enough data
             if (!sample || fullHistory.Entries == null || fullHistory.Entries.Count <= maxPoints)
             {
                 return Ok(fullHistory);
@@ -288,13 +233,11 @@ namespace JunctionRelay_Server.Controllers
                 .Where((entry, index) => index % interval == 0)
                 .ToList();
 
-            // Ensure most recent entry is included
             if (sampledEntries.Count > 0 && sampledEntries[^1].Timestamp != allEntries[^1].Timestamp)
             {
                 sampledEntries.Add(allEntries[^1]);
             }
 
-            // Create a copy of the response with sampled entries and sampling metadata
             var sampledResponse = new
             {
                 fullHistory.ScreenId,
@@ -324,22 +267,6 @@ namespace JunctionRelay_Server.Controllers
             return Ok(histories);
         }
 
-        [HttpPost("memory-estimate")]
-        public IActionResult GetMemoryEstimate([FromBody] HistoryConfigurationRequest request)
-        {
-            var activeStreams = GetTotalActiveStreams();
-            var avgCollectionRate = CalculateAverageCollectionRate();
-
-            var estimatedMemory = CalculateMemoryUsage(
-                request.RetentionHours ?? 24,
-                request.MaxEntriesPerStream ?? 10000,
-                activeStreams,
-                avgCollectionRate
-            );
-
-            return Ok(new { estimatedMemoryUsage = estimatedMemory });
-        }
-
         [HttpPost("configuration")]
         public IActionResult UpdateConfiguration([FromBody] HistoryConfigurationRequest request)
         {
@@ -350,10 +277,6 @@ namespace JunctionRelay_Server.Controllers
             if (request.MaxEntriesPerStream.HasValue)
             {
                 _historyManager.UpdateMaxEntries(request.MaxEntriesPerStream.Value);
-            }
-            if (request.LoggingEnabled.HasValue)
-            {
-                _historyManager.UpdateLoggingEnabled(request.LoggingEnabled.Value);
             }
 
             var config = _historyManager.GetConfiguration();
@@ -413,24 +336,49 @@ namespace JunctionRelay_Server.Controllers
             return Ok(new { success, message = success ? "History cleared" : "Stream not found" });
         }
 
-        [HttpDelete("all")]
-        public IActionResult ClearAllHistory()
+        [HttpGet("metrics")]
+        public IActionResult GetStreamMetrics()
         {
-            _historyManager.ClearAllHistory();
-            return Ok(new { success = true, message = "All history cleared" });
-        }
+            try
+            {
+                var webSocketMetrics = _webSocketManager.GetWebSocketStreamMetrics();
+                var httpMetrics = _httpManager.GetHttpStreamMetrics();
+                var comMetrics = _comManager.GetComStreamMetrics();
+                var mqttMetrics = _mqttManager.GetMqttStreamMetrics();
 
-        // Private helper methods for calculations
+                return Ok(new
+                {
+                    webSocket = webSocketMetrics,
+                    http = httpMetrics,
+                    com = comMetrics,
+                    mqtt = mqttMetrics,
+                    totalActiveStreams = GetTotalActiveStreams(),
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CONTROLLER] Error retrieving stream metrics: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    message = "Error retrieving stream metrics",
+                    error = ex.Message,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
 
         private int GetTotalActiveStreams()
         {
             try
             {
-                var comStreams = _comManager?.GetActiveStreams()?.Count() ?? 0;
+                var webSocketStreams = _webSocketManager?.GetActiveStreams()?.Count() ?? 0;
                 var httpStreams = _httpManager?.GetActiveStreams()?.Count() ?? 0;
+                var comStreams = _comManager?.GetActiveStreams()?.Count() ?? 0;
                 var mqttStreams = _mqttManager?.GetActiveStreams()?.Count() ?? 0;
+                var virtualStreams = _virtualManager?.GetActiveStreams()?.Count() ?? 0;
 
-                return comStreams + httpStreams + mqttStreams;
+                return webSocketStreams + httpStreams + comStreams + mqttStreams + virtualStreams;
             }
             catch (Exception ex)
             {
@@ -443,65 +391,60 @@ namespace JunctionRelay_Server.Controllers
         {
             try
             {
-                var rates = new List<double>();
+                var rates = new List<int>();
 
-                // Get rates from COM streams
-                var comStreams = _comManager?.GetActiveStreams();
-                if (comStreams != null)
+                // WebSocket streams
+                var webSocketStreams = _webSocketManager?.GetActiveStreams();
+                if (webSocketStreams != null)
                 {
-                    foreach (var stream in comStreams)
+                    foreach (dynamic stream in webSocketStreams)
                     {
-                        // Assuming the stream objects have a Rate property
-                        // You may need to adjust this based on your actual stream object structure
-                        var rateProperty = stream.GetType().GetProperty("Rate");
-                        if (rateProperty != null)
+                        if (stream.Rate is int rate && rate > 0)
                         {
-                            var rate = rateProperty.GetValue(stream);
-                            if (rate is int intRate && intRate > 0)
-                            {
-                                rates.Add(intRate);
-                            }
+                            rates.Add(rate);
                         }
                     }
                 }
 
-                // Get rates from HTTP streams
+                // HTTP streams
                 var httpStreams = _httpManager?.GetActiveStreams();
                 if (httpStreams != null)
                 {
-                    foreach (var stream in httpStreams)
+                    foreach (dynamic stream in httpStreams)
                     {
-                        var rateProperty = stream.GetType().GetProperty("Rate");
-                        if (rateProperty != null)
+                        if (stream.Rate is int rate && rate > 0)
                         {
-                            var rate = rateProperty.GetValue(stream);
-                            if (rate is int intRate && intRate > 0)
-                            {
-                                rates.Add(intRate);
-                            }
+                            rates.Add(rate);
                         }
                     }
                 }
 
-                // Get rates from MQTT streams
+                // COM streams
+                var comStreams = _comManager?.GetActiveStreams();
+                if (comStreams != null)
+                {
+                    foreach (dynamic stream in comStreams)
+                    {
+                        if (stream.Rate is int rate && rate > 0)
+                        {
+                            rates.Add(rate);
+                        }
+                    }
+                }
+
+                // MQTT streams
                 var mqttStreams = _mqttManager?.GetActiveStreams();
                 if (mqttStreams != null)
                 {
-                    foreach (var stream in mqttStreams)
+                    foreach (dynamic stream in mqttStreams)
                     {
-                        var rateProperty = stream.GetType().GetProperty("Rate");
-                        if (rateProperty != null)
+                        if (stream.Rate is int rate && rate > 0)
                         {
-                            var rate = rateProperty.GetValue(stream);
-                            if (rate is int intRate && intRate > 0)
-                            {
-                                rates.Add(intRate);
-                            }
+                            rates.Add(rate);
                         }
                     }
                 }
 
-                // Return average rate in milliseconds, or default to 30 seconds if no data
                 return rates.Count > 0 ? rates.Average() : 30000; // 30 second default
             }
             catch (Exception ex)
@@ -515,41 +458,15 @@ namespace JunctionRelay_Server.Controllers
         {
             try
             {
-                // Approximate size per history entry in bytes
-                const int bytesPerEntry =
-                    50 +   // Timestamp (DateTime + serialization overhead)
-                    4 +    // ScreenId (int)
-                    40 +   // DeviceName (average string length)
-                    40 +   // ScreenName (average string length)
-                    20 +   // Protocol (string)
-                    15 +   // Status (string)
-                    8 +    // Latency (long)
-                    4 +    // SensorsCount (int)
-                    4 +    // Rate (int)
-                    20 +   // ConnectionState (string)
-                    8 +    // SuccessRate (double)
-                    4 +    // ConsecutiveFailures (int)
-                    4 +    // ConsecutiveSuccesses (int)
-                    8 +    // AverageLatency (double)
-                    100 +  // LastErrorMessage (nullable string, average when present)
-                    30 +   // ErrorType (nullable string, average when present)
-                    200;   // ProtocolSpecificData (Dictionary overhead + data)
+                const int bytesPerEntry = 500; // Conservative estimate for new binary architecture entries
 
-                // Calculate entries based on time and rate
-                var entriesPerHour = (3600 * 1000) / Math.Max(avgCollectionRateMs, 1000); // Convert ms to entries per hour
+                var entriesPerHour = (3600 * 1000) / Math.Max(avgCollectionRateMs, 1000);
                 var maxEntriesFromTime = (long)(retentionHours * entriesPerHour);
-
-                // Use the smaller of the two limits
                 var effectiveMaxEntries = Math.Min(maxEntriesPerStream, maxEntriesFromTime);
 
-                // Calculate total memory
                 var totalEntries = activeStreams * effectiveMaxEntries;
-                var totalBytes = totalEntries * bytesPerEntry;
+                var totalBytes = (long)(totalEntries * bytesPerEntry * 1.3); // 30% overhead
 
-                // Add overhead for data structures (approximately 30% overhead for collections, etc.)
-                totalBytes = (long)(totalBytes * 1.3);
-
-                // Format as human-readable string
                 return FormatBytes(totalBytes);
             }
             catch (Exception ex)
@@ -597,10 +514,9 @@ namespace JunctionRelay_Server.Controllers
         {
             var csv = new System.Text.StringBuilder();
 
-            // CSV Header
-            csv.AppendLine("Timestamp,ScreenId,DeviceName,ScreenName,Protocol,Status,Latency,SensorsCount,Rate,ConnectionState,SuccessRate,ConsecutiveFailures,ConsecutiveSuccesses,AverageLatency,LastErrorMessage,ErrorType,ProtocolSpecificData");
+            // Enhanced CSV header for new binary architecture
+            csv.AppendLine("Timestamp,ScreenId,DeviceName,ScreenName,Protocol,Status,Latency,SensorsCount,Rate,ConnectionState,SuccessRate,ConsecutiveFailures,ConsecutiveSuccesses,AverageLatency,LastErrorMessage,ErrorType,IsFrameMode,PayloadType,FramesSent,PayloadsSent,AverageFrameSize,AverageFrameRenderTime,IsGatewayMode,GatewayTarget,GatewayMessagesSent,ProtocolSpecificData");
 
-            // CSV Data
             foreach (var history in histories)
             {
                 foreach (var entry in history.Entries)
@@ -625,6 +541,15 @@ namespace JunctionRelay_Server.Controllers
                                   $"{entry.AverageLatency:F2}," +
                                   $"\"{EscapeCsvField(entry.LastErrorMessage ?? "")}\"," +
                                   $"\"{EscapeCsvField(entry.ErrorType ?? "")}\"," +
+                                  $"{entry.IsFrameMode}," +
+                                  $"\"{EscapeCsvField(entry.PayloadType)}\"," +
+                                  $"{entry.FramesSent}," +
+                                  $"{entry.PayloadsSent}," +
+                                  $"{entry.AverageFrameSize:F2}," +
+                                  $"{entry.AverageFrameRenderTime:F2}," +
+                                  $"{entry.IsGatewayMode}," +
+                                  $"\"{EscapeCsvField(entry.GatewayTarget ?? "")}\"," +
+                                  $"{entry.GatewayMessagesSent}," +
                                   $"\"{EscapeCsvField(protocolData)}\"");
                 }
             }
@@ -637,7 +562,6 @@ namespace JunctionRelay_Server.Controllers
             if (string.IsNullOrEmpty(field))
                 return "";
 
-            // Escape quotes by doubling them and wrap in quotes if contains comma, quote, or newline
             if (field.Contains("\"") || field.Contains(",") || field.Contains("\n") || field.Contains("\r"))
             {
                 return field.Replace("\"", "\"\"");

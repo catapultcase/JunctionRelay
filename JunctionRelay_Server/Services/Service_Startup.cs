@@ -20,6 +20,7 @@
 using JunctionRelayServer.Models;
 using JunctionRelayServer.Services.FactoryServices;
 using JunctionRelayServer.Utils;
+using JunctionRelayServer.Services.BackgroundServices;
 using System.Collections.Concurrent;
 
 namespace JunctionRelayServer.Services
@@ -29,6 +30,7 @@ namespace JunctionRelayServer.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly StartupSignals _startupSignals;
         private readonly ConcurrentDictionary<int, IService> _activeServices = new();
+        private Service_CloudBackup_Scheduler? _backupScheduler;
 
         public Service_Startup(
             IServiceProvider serviceProvider,
@@ -48,6 +50,10 @@ namespace JunctionRelayServer.Services
                 await _startupSignals.DatabaseInitialized.Task;
                 Console.WriteLine("[STARTUP] ✅ Database initialization confirmed");
 
+                // Wait for event engine to be initialized
+                await _startupSignals.EventEngineInitialized.Task;
+                Console.WriteLine("[STARTUP] ✅ Event engine initialization confirmed");
+
                 // Start services and junctions
                 await StartActiveServicesAsync();
 
@@ -64,6 +70,10 @@ namespace JunctionRelayServer.Services
                 {
                     Console.WriteLine("[STARTUP] ⏸️ Junction autostart is disabled - skipping auto-start junctions");
                 }
+
+                // Start cloud backup scheduler
+                _backupScheduler = scope.ServiceProvider.GetRequiredService<Service_CloudBackup_Scheduler>();
+                _ = _backupScheduler.StartAsync(stoppingToken); // Fire and forget
 
                 Console.WriteLine("[STARTUP] ✅ Service_Startup initialization complete");
 
@@ -262,6 +272,12 @@ namespace JunctionRelayServer.Services
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             Console.WriteLine("[STARTUP] 🛑 Service_Startup shutting down...");
+
+            // Stop cloud backup scheduler
+            if (_backupScheduler != null)
+            {
+                await _backupScheduler.StopAsync(cancellationToken);
+            }
 
             // Gracefully disconnect all services
             foreach (var kvp in _activeServices)

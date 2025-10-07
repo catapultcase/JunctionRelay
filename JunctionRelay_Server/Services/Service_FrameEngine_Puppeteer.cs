@@ -57,13 +57,13 @@ namespace JunctionRelayServer.Services
         }
 
         public async Task<byte[]> RenderFrame(
-    Model_Frame_Layout frameLayout,
-    Dictionary<string, object> sensorData,
-    string virtualScreenDeviceId,
-    int junctionId,
-    int linkId,
-    int screenId,
-    Model_JunctionScreenLayout? screenConfig = null)
+            Model_Frame_Layout frameLayout,
+            Dictionary<string, object> sensorData,
+            string virtualScreenDeviceId,
+            int junctionId,
+            int linkId,
+            int screenId,
+            Model_JunctionScreenLayout? screenConfig = null)
         {
             var browserKey = $"screen_{virtualScreenDeviceId}";
             var frameKey = $"frame_{virtualScreenDeviceId}_{screenId}";
@@ -75,7 +75,7 @@ namespace JunctionRelayServer.Services
                 // Brief wait for any real-time data updates
                 await Task.Delay(100);
 
-                // Use the improved CaptureScreenshot method
+                // Use the simplified CaptureScreenshot method
                 var screenshotBytes = await CaptureScreenshot(
                     virtualScreenDeviceId,
                     frameLayout.Width,
@@ -147,7 +147,7 @@ namespace JunctionRelayServer.Services
             {
                 if (!existingPage.IsClosed)
                 {
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Reusing existing page for key: {browserKey}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Reusing existing page for key: {browserKey}");
                     return existingPage;
                 }
                 else
@@ -178,16 +178,16 @@ namespace JunctionRelayServer.Services
                     page = await browser.NewPageAsync();
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page created successfully for key: {browserKey}");
 
-                    // CRITICAL FIX: Set exact viewport dimensions without device scaling
+                    // Set viewport to exact dimensions
                     await page.SetViewportAsync(new ViewPortOptions
                     {
                         Width = width,
                         Height = height,
-                        DeviceScaleFactor = 1.0, // Ensure 1:1 pixel mapping
+                        DeviceScaleFactor = 1.0,
                         IsMobile = false,
                         HasTouch = false
                     });
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Viewport set to {width}x{height} (1:1 scale) for key: {browserKey}");
+                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Viewport set to {width}x{height} for key: {browserKey}");
 
                     var virtualScreenUrl = GetVirtualScreenFullscreenUrl(virtualScreenDeviceId);
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Loading virtual screen fullscreen URL: {virtualScreenUrl}");
@@ -200,110 +200,43 @@ namespace JunctionRelayServer.Services
                             Timeout = 15000
                         });
 
+                        // Inject CSS to ensure content is flush to viewport edges
                         await page.AddStyleTagAsync(new AddTagOptions
                         {
-                            Content = $@"
-                                /* Force body to exact dimensions */
-                                html, body {{
+                            Content = @"
+                                html, body {
                                     margin: 0 !important;
                                     padding: 0 !important;
-                                    width: {width}px !important;
-                                    height: {height}px !important;
+                                    width: 100% !important;
+                                    height: 100% !important;
                                     overflow: hidden !important;
-                                }}
-        
-                                /* SURGICAL FIX: Size virtual screen container but preserve natural positioning */
-                                [data-testid='virtual-screen-container'] {{
-                                    width: {width}px !important;
-                                    height: {height}px !important;
-                                    margin: 0 !important;
-                                    padding: 0 !important;
-                                    border-radius: 0 !important;
-                                    overflow: hidden !important;
-                                    /* REMOVED: position: fixed !important; */
-                                    /* REMOVED: top: 0 !important; */
-                                    /* REMOVED: left: 0 !important; */
-                                }}
-        
-                                /* Ensure Rive container fills exactly */
-                                [data-testid='virtual-screen-container'] > div:first-child {{
-                                    width: {width}px !important;
-                                    height: {height}px !important;
-                                    margin: 0 !important;
-                                    padding: 0 !important;
-                                    display: block !important;
-                                    position: relative !important;
-                                }}
-        
-                                /* Force canvas to exact size */
-                                canvas {{
-                                    width: {width}px !important;
-                                    height: {height}px !important;
-                                    position: absolute !important;
+                                    position: fixed !important;
                                     top: 0 !important;
                                     left: 0 !important;
-                                    object-fit: fill !important;
-                                }}
-        
-                                /* Hide all control buttons for clean screenshot */
-                                button, .MuiFab-root, .MuiIconButton-root {{
-                                    display: none !important;
-                                }}
-        
-                                /* Ensure overlay elements maintain their React-calculated positioning */
-                                [data-testid='virtual-screen-container'] > div[style*='position: absolute'] {{
-                                    /* Let React handle positioning naturally */
-                                }}
+                                }
+                                [data-testid='virtual-screen-container'] {
+                                    position: fixed !important;
+                                    top: 0 !important;
+                                    left: 0 !important;
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                }
                             "
                         });
 
-                        Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Injected aggressive CSS for exact {width}x{height} rendering");
-
-                        // CRITICAL: Inject JavaScript to override React component logic
-                        await page.EvaluateExpressionAsync($@"
-                    // Override any embedded mode detection
-                    if (typeof window !== 'undefined') {{
-                        window.forceStandaloneMode = true;
-                        window.puppeteerMode = true;
-                        window.targetWidth = {width};
-                        window.targetHeight = {height};
-                        window.forceFullscreen = true;
-                        
-                        // Override any container height detection
-                        Object.defineProperty(window, 'innerWidth', {{
-                            value: {width},
-                            writable: false
-                        }});
-                        Object.defineProperty(window, 'innerHeight', {{
-                            value: {height}, 
-                            writable: false
-                        }});
-                        
-                        // Force fullscreen state
-                        Object.defineProperty(document, 'fullscreenElement', {{
-                            value: document.documentElement,
-                            writable: false
-                        }});
-                        
-                        console.log('Puppeteer fullscreen overrides applied: ' + {width} + 'x' + {height});
-                    }}
-                ");
-
-                        Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Injected JavaScript overrides for fullscreen {width}x{height} rendering");
-
-                        // Wait for virtual screen container and canvas to load
+                        // Wait for virtual screen container to load
                         try
                         {
                             await page.WaitForSelectorAsync("[data-testid='virtual-screen-container']", new WaitForSelectorOptions
                             {
-                                Timeout = 8000
+                                Timeout = 10000
                             });
                             Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Virtual screen container found for key: {browserKey}");
 
                             // Wait for canvas (Rive) to render
                             await page.WaitForSelectorAsync("canvas", new WaitForSelectorOptions
                             {
-                                Timeout = 8000
+                                Timeout = 10000
                             });
                             Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Canvas element found for key: {browserKey}");
                         }
@@ -312,7 +245,7 @@ namespace JunctionRelayServer.Services
                             Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Selector wait failed for key {browserKey}: {selectorEx.Message}");
                         }
 
-                        // CRITICAL: Additional wait for Rive content to fully render
+                        // Additional wait for Rive content to fully render
                         await Task.Delay(2000);
 
                         Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Successfully navigated to virtual screen fullscreen URL for key: {browserKey}");
@@ -336,9 +269,6 @@ namespace JunctionRelayServer.Services
                                 color: #fff;
                                 font-family: Arial;
                                 overflow: hidden;
-                                position: fixed;
-                                top: 0;
-                                left: 0;
                             }}
                             .container {{
                                 width: {width}px;
@@ -364,10 +294,9 @@ namespace JunctionRelayServer.Services
                         Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Loaded fallback content for key: {browserKey}");
                     }
 
-                    // CRITICAL: Store the page in dictionary BEFORE any potential exceptions
+                    // Store the page in dictionary
                     _pages[browserKey] = page;
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page stored successfully in _pages dictionary for key: {browserKey}");
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Total pages now: {_pages.Count}");
 
                     return page;
                 }
@@ -409,7 +338,7 @@ namespace JunctionRelayServer.Services
                     var baseUrl = serverAddress.Replace("0.0.0.0", "localhost").Replace("*", "localhost");
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Using actual server address: {baseUrl}");
 
-                    // CRITICAL FIX: Use dedicated fullscreen route instead of URL parameters
+                    // Use dedicated fullscreen route
                     return $"{baseUrl}/device/{virtualScreenDeviceId}/virtual-screen/fullscreen";
                 }
 
@@ -421,7 +350,6 @@ namespace JunctionRelayServer.Services
                     var baseUrl = firstUrl.Replace("0.0.0.0", "localhost").Replace("*", "localhost");
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Using ASPNETCORE_URLS: {baseUrl}");
 
-                    // CRITICAL FIX: Use dedicated fullscreen route instead of URL parameters
                     return $"{baseUrl}/device/{virtualScreenDeviceId}/virtual-screen/fullscreen";
                 }
 
@@ -432,7 +360,6 @@ namespace JunctionRelayServer.Services
                     var baseUrl = firstUrl.Replace("0.0.0.0", "localhost").Replace("*", "localhost");
                     Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Using config urls: {baseUrl}");
 
-                    // CRITICAL FIX: Use dedicated fullscreen route instead of URL parameters
                     return $"{baseUrl}/device/{virtualScreenDeviceId}/virtual-screen/fullscreen";
                 }
             }
@@ -443,8 +370,6 @@ namespace JunctionRelayServer.Services
 
             // Final fallback
             Console.WriteLine("[SERVICE_FRAMEENGINE_PUPPETEER] Using final fallback URL");
-
-            // CRITICAL FIX: Use dedicated fullscreen route instead of URL parameters
             return $"http://localhost:7180/device/{virtualScreenDeviceId}/virtual-screen/fullscreen";
         }
 
@@ -560,8 +485,7 @@ namespace JunctionRelayServer.Services
                 "--hide-scrollbars",
                 "--mute-audio",
                 "--memory-pressure-off",
-                "--max_old_space_size=512",
-                $"--window-size={1920},{1080}"
+                "--max_old_space_size=512"
             };
 
             // Additional args for ARM architecture
@@ -670,13 +594,7 @@ namespace JunctionRelayServer.Services
                 var errorBytes = await page.ScreenshotDataAsync(new ScreenshotOptions
                 {
                     Type = ScreenshotType.Png,
-                    Clip = new PuppeteerSharp.Media.Clip
-                    {
-                        X = 0,
-                        Y = 0,
-                        Width = width,
-                        Height = height
-                    }
+                    FullPage = false
                 });
 
                 await browser.CloseAsync();
@@ -735,7 +653,7 @@ namespace JunctionRelayServer.Services
                 CachedFrames = _lastSuccessfulFrames.Count,
                 BrowserKeys = _browsers.Keys.ToArray(),
                 PageKeys = _pages.Keys.ToArray(),
-                DetectedBaseUrl = GetVirtualScreenFullscreenUrl("test") // Show what URL pattern is being used
+                DetectedBaseUrl = GetVirtualScreenFullscreenUrl("test")
             };
         }
 
@@ -772,7 +690,7 @@ namespace JunctionRelayServer.Services
 
             try
             {
-                // Get or create page with exact dimensions
+                // Get existing page or create new one
                 IPage page;
                 if (_pages.TryGetValue(browserKey, out var existingPage) && !existingPage.IsClosed)
                 {
@@ -783,7 +701,7 @@ namespace JunctionRelayServer.Services
                     page = await GetOrCreatePage(browserKey, virtualScreenDeviceId, width, height);
                 }
 
-                // CRITICAL FIX: Ensure viewport is exactly the target size before screenshot
+                // Ensure viewport matches target dimensions
                 await page.SetViewportAsync(new ViewPortOptions
                 {
                     Width = width,
@@ -793,68 +711,24 @@ namespace JunctionRelayServer.Services
                     HasTouch = false
                 });
 
-                // Re-inject CSS to ensure exact sizing (in case page was reused)
-                await page.AddStyleTagAsync(new AddTagOptions
-                {
-                    Content = $@"
-                html, body {{
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    width: {width}px !important;
-                    height: {height}px !important;
-                    overflow: hidden !important;
-                    position: fixed !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                }}
-                
-                [data-testid='virtual-screen-container'] {{
-                    position: fixed !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    width: {width}px !important;
-                    height: {height}px !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    border-radius: 0 !important;
-                }}
-                
-                canvas {{
-                    width: {width}px !important;
-                    height: {height}px !important;
-                    position: absolute !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    object-fit: fill !important;
-                }}
-            "
-                });
-
                 // Small delay for rendering updates
                 await Task.Delay(200);
 
-                // CRITICAL FIX: Take screenshot of EXACT viewport size (no clipping needed)
+                // Take screenshot of exact viewport size
                 var screenshotBytes = await page.ScreenshotDataAsync(new ScreenshotOptions
                 {
                     Type = ScreenshotType.Png,
-                    FullPage = false, // Only capture viewport
+                    FullPage = false,
                     OptimizeForSpeed = false
                 });
-
-                // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Captured exact {width}x{height} screenshot: {screenshotBytes.Length} bytes");
 
                 // Store as last successful frame
                 _lastSuccessfulFrames[frameKey] = screenshotBytes;
 
-                // FIXED: Only save to disk if we have valid IDs (not default 0 values)
+                // Save to disk if we have valid IDs
                 if (junctionId > 0 && originalScreenId > 0)
                 {
-                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Saving frame with junctionId={junctionId}, linkId={linkId}, screenId={originalScreenId}");
                     await SaveFrameToDisk(junctionId, linkId, originalScreenId, screenshotBytes);
-                }
-                else
-                {
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Skipping disk save - invalid IDs: junctionId={junctionId}, linkId={linkId}, screenId={originalScreenId}");
                 }
 
                 return screenshotBytes;
@@ -881,13 +755,10 @@ namespace JunctionRelayServer.Services
                 var framesDirectory = Path.Combine(_dataDirectoryProvider.DataDirectory, "frameengine", "frames");
                 Directory.CreateDirectory(framesDirectory);
 
-                // Use consistent filename that overwrites the same file, matching the original behavior
                 var filename = $"junction-{junctionId}-link-{linkId}-screen-{originalScreenId}.png";
                 var filePath = Path.Combine(framesDirectory, filename);
 
                 await File.WriteAllBytesAsync(filePath, frameBytes);
-
-                // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Frame saved to file: {filePath} ({frameBytes.Length} bytes)");
             }
             catch (Exception ex)
             {

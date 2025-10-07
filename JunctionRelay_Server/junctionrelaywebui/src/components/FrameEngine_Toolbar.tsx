@@ -1,29 +1,24 @@
-﻿import React, { useState, useCallback } from 'react';
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
 
-interface FrameLayoutConfig {
-    id?: number;
-    displayName: string;
-    description?: string;
-    layoutType: string;
-    width: number;
-    height: number;
-    isTemplate: boolean;
-    isDraft?: boolean;
-    isPublished?: boolean;
-    created?: string;
-    lastModified?: string;
-}
-
-interface PlacedElement {
-    id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    properties: Record<string, any>;
-    sensorId?: string;
-}
+import React, { useState, useCallback } from 'react';
+import type { FrameLayoutConfig, PlacedElement } from './FrameEngine_Types';
 
 interface ToolbarProps {
     layout: FrameLayoutConfig;
@@ -34,6 +29,7 @@ interface ToolbarProps {
     isEditing: boolean;
     canUndo: boolean;
     canRedo: boolean;
+    previewMode: boolean;
     onQuickSave: () => Promise<void>;
     onSave: () => Promise<void>;
     onUndo: () => void;
@@ -52,6 +48,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     isEditing,
     canUndo,
     canRedo,
+    previewMode,
     onQuickSave,
     onSave,
     onUndo,
@@ -93,8 +90,10 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         handleAction('preview', onPreview);
     }, [handleAction, onPreview]);
 
-    // Keyboard shortcuts
+    // Keyboard shortcuts - disabled in preview mode
     React.useEffect(() => {
+        if (previewMode) return; // Don't register shortcuts in preview mode
+
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key) {
@@ -122,7 +121,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isDirty, canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo]);
+    }, [isDirty, canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo, previewMode]);
 
     const buttonStyle = {
         padding: '6px 12px',
@@ -158,32 +157,40 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         cursor: 'not-allowed'
     } as const;
 
+    // Preview mode button style
+    const previewActiveButtonStyle = {
+        ...buttonStyle,
+        background: '#ff9800',
+        color: 'white',
+        border: '1px solid #ff9800'
+    } as const;
+
     return (
         <div style={{
             height: '56px',
-            backgroundColor: '#fff',
+            backgroundColor: previewMode ? '#f8f9fa' : '#fff',
             borderBottom: '1px solid #e0e0e0',
             padding: '0 16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between'
         }}>
-            {/* Left Section - File Operations */}
+            {/* Left Section - File Operations (Always visible, disabled in preview mode) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <button
                     onClick={handleQuickSave}
-                    disabled={!isDirty || isLoading}
-                    style={isDirty && !isLoading ? primaryButtonStyle : disabledButtonStyle}
-                    title="Quick Save (Ctrl+S) - Save with current thumbnail settings"
+                    disabled={previewMode || !isDirty || isLoading}
+                    style={(previewMode || !isDirty || isLoading) ? disabledButtonStyle : primaryButtonStyle}
+                    title={previewMode ? "Quick Save (disabled in preview mode)" : "Quick Save (Ctrl+S) - Save with current thumbnail settings"}
                 >
                     {loadingAction === 'quickSave' ? '⏳' : '💾'} Quick Save
                 </button>
 
                 <button
                     onClick={handleSave}
-                    disabled={!isDirty || isLoading}
-                    style={isDirty && !isLoading ? secondaryButtonStyle : disabledButtonStyle}
-                    title="Save & Manage Thumbnail (Ctrl+Shift+S) - Review and update thumbnail"
+                    disabled={previewMode || !isDirty || isLoading}
+                    style={(previewMode || !isDirty || isLoading) ? disabledButtonStyle : secondaryButtonStyle}
+                    title={previewMode ? "Save (disabled in preview mode)" : "Save & Manage Thumbnail (Ctrl+Shift+S) - Review and update thumbnail"}
                 >
                     {loadingAction === 'save' ? '⏳' : '🖼️'} Save
                 </button>
@@ -193,28 +200,42 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 {/* Undo/Redo */}
                 <button
                     onClick={onUndo}
-                    disabled={!canUndo || isLoading}
-                    style={canUndo && !isLoading ? buttonStyle : disabledButtonStyle}
-                    title="Undo (Ctrl+Z)"
+                    disabled={previewMode || !canUndo || isLoading}
+                    style={(previewMode || !canUndo || isLoading) ? disabledButtonStyle : buttonStyle}
+                    title={previewMode ? "Undo (disabled in preview mode)" : "Undo (Ctrl+Z)"}
                 >
                     ↶
                 </button>
 
                 <button
                     onClick={onRedo}
-                    disabled={!canRedo || isLoading}
-                    style={canRedo && !isLoading ? buttonStyle : disabledButtonStyle}
-                    title="Redo (Ctrl+Shift+Z)"
+                    disabled={previewMode || !canRedo || isLoading}
+                    style={(previewMode || !canRedo || isLoading) ? disabledButtonStyle : buttonStyle}
+                    title={previewMode ? "Redo (disabled in preview mode)" : "Redo (Ctrl+Shift+Z)"}
                 >
                     ↷
                 </button>
             </div>
 
-            {/* Center Section - Layout Info */}
+            {/* Center Section - Layout Info with Preview Mode indicator */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px' }}>
+                {previewMode && (
+                    <div style={{
+                        backgroundColor: '#ff9800',
+                        color: 'white',
+                        padding: '4px 12px',
+                        borderRadius: '16px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                    }}>
+                        👁️ Preview Mode
+                    </div>
+                )}
                 <div style={{ color: '#666' }}>
                     <span style={{ fontWeight: 500 }}>{layout.displayName}</span>
-                    {isDirty && <span style={{ color: '#ff9800', marginLeft: '4px' }}>●</span>}
+                    {!previewMode && isDirty && <span style={{ color: '#ff9800', marginLeft: '4px' }}>●</span>}
                 </div>
                 <div style={{ color: '#999' }}>
                     {layout.width}×{layout.height}
@@ -222,51 +243,54 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 <div style={{ color: '#999' }}>
                     {elements.length} elements
                 </div>
-                {selectedElements.length > 0 && (
+                {!previewMode && selectedElements.length > 0 && (
                     <div style={{ color: '#1976d2' }}>
                         {selectedElements.length} selected
                     </div>
                 )}
             </div>
 
-            {/* Right Section - Actions */}
+            {/* Right Section - Actions (Always visible, some disabled in preview mode) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <button
-                    onClick={handleExport}
-                    disabled={isLoading || !layout.id}
-                    style={(isLoading || !layout.id) ? disabledButtonStyle : buttonStyle}
-                    title="Export Layout Package"
-                >
-                    {loadingAction === 'export' ? '⏳' : '📤'} Export
-                </button>
-
+                {/* Preview Button - Always visible with different text and styles */}
                 <button
                     onClick={handlePreview}
-                    disabled={isLoading || !layout.id}
-                    style={{
+                    disabled={isLoading}
+                    style={previewMode ? previewActiveButtonStyle : {
                         ...buttonStyle,
                         background: '#4caf50',
                         color: 'white',
                         border: '1px solid #4caf50',
-                        ...(isLoading || !layout.id ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
+                        ...(isLoading ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
                     }}
-                    title="Generate Live Preview"
+                    title={previewMode ? "Exit Preview Mode" : "Enter Preview Mode"}
                 >
-                    {loadingAction === 'preview' ? '⏳' : '👁️'} Preview
+                    {loadingAction === 'preview' ? '⏳' : previewMode ? '✏️' : '👁️'}
+                    {previewMode ? 'Edit' : 'Preview'}
+                </button>
+
+                <button
+                    onClick={handleExport}
+                    disabled={previewMode || isLoading || !layout.id}
+                    style={(previewMode || isLoading || !layout.id) ? disabledButtonStyle : buttonStyle}
+                    title={previewMode ? "Export Layout Package (disabled in preview mode)" : "Export Layout Package"}
+                >
+                    {loadingAction === 'export' ? '⏳' : '📤'} Export
                 </button>
 
                 {isEditing && !layout.isPublished && (
                     <button
                         onClick={handlePublish}
-                        disabled={isLoading || isDirty}
+                        disabled={previewMode || isLoading || isDirty}
                         style={{
                             ...buttonStyle,
-                            background: '#9c27b0',
-                            color: 'white',
-                            border: '1px solid #9c27b0',
-                            ...(isLoading || isDirty ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
+                            background: previewMode ? '#f5f5f5' : '#9c27b0',
+                            color: previewMode ? '#999' : 'white',
+                            border: previewMode ? '1px solid #ddd' : '1px solid #9c27b0',
+                            cursor: previewMode ? 'not-allowed' : 'pointer',
+                            ...((!previewMode && (isLoading || isDirty)) ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
                         }}
-                        title="Publish Layout"
+                        title={previewMode ? "Publish Layout (disabled in preview mode)" : "Publish Layout"}
                     >
                         {loadingAction === 'publish' ? '⏳' : '🚀'} Publish
                     </button>

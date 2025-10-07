@@ -283,6 +283,7 @@ const Navbar = () => {
         { text: "Services", path: "/services", icon: <ServiceIcon /> },
         { text: "Collectors", path: "/collectors", icon: <DataObjectIcon /> },
         { text: "FrameEngine", path: "/frameengine", icon: <PhotoIcon /> },
+        { text: "EventEngine", path: "/eventengine", icon: <LaunchIcon /> },
         { text: "Payloads", path: "/payloads", icon: <PayloadIcon /> },
     ];
 

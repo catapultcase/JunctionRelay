@@ -1,0 +1,3 @@
+- Main.ino adds LovyanGFX library
+- Helper_StartupScheduler.h and .cpp has the new Blit managers instead of LVGL
+- Helper_StreamProcessor.h has Increased Buffer Size: MAX_PAYLOAD_SIZE from 8KB to 1MB without PSRAM checks.

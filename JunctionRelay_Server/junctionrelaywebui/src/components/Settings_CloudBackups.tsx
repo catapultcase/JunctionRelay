@@ -248,7 +248,16 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
 
             if (response.ok) {
                 const data = await response.json();
-                setBackupSettings(data.settings);
+                // Parse the settings from the cloud response
+                setBackupSettings({
+                    enabled: data.settings?.enabled ?? false,
+                    frequency: data.settings?.frequency ?? 'daily',
+                    retentionDays: data.settings?.retentionDays ?? 30,
+                    includeKeys: data.settings?.includeKeys ?? true,
+                    includeIdentity: data.settings?.includeIdentity ?? true,
+                    includeFrameEngine: data.settings?.includeFrameEngine ?? false,
+                    lastBackup: data.settings?.lastBackup ? new Date(data.settings.lastBackup) : undefined
+                });
                 setBackupUsage(data.usage);
             } else if (response.status === 403) {
                 showSnackbar("Cloud backups require a valid Pro license", "error");
@@ -300,7 +309,14 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     'Authorization': `Bearer ${cloudToken}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ ...backupSettings, ...newSettings })
+                body: JSON.stringify({
+                    enabled: newSettings.enabled ?? backupSettings?.enabled ?? false,
+                    frequency: newSettings.frequency ?? backupSettings?.frequency ?? 'daily',
+                    retentionDays: newSettings.retentionDays ?? backupSettings?.retentionDays ?? 30,
+                    includeKeys: newSettings.includeKeys ?? backupSettings?.includeKeys ?? true,
+                    includeIdentity: newSettings.includeIdentity ?? backupSettings?.includeIdentity ?? true,
+                    includeFrameEngine: newSettings.includeFrameEngine ?? backupSettings?.includeFrameEngine ?? false
+                })
             });
 
             if (response.ok) {
@@ -333,9 +349,9 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    includeKeys: backupSettings?.includeKeys !== false,
-                    includeIdentity: backupSettings?.includeIdentity !== false,
-                    includeFrameEngine: backupSettings?.includeFrameEngine || false
+                    includeKeys: backupSettings?.includeKeys ?? true,
+                    includeIdentity: backupSettings?.includeIdentity ?? true,
+                    includeFrameEngine: backupSettings?.includeFrameEngine ?? false
                 })
             });
 
@@ -693,7 +709,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                     <FormControlLabel
                                         control={
                                             <Checkbox
-                                                checked={backupSettings?.includeKeys !== false}
+                                                checked={backupSettings?.includeKeys ?? true}
                                                 onChange={(e) => updateBackupSettings({ includeKeys: e.target.checked })}
                                                 disabled={savingSettings}
                                             />
@@ -705,7 +721,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                     <FormControlLabel
                                         control={
                                             <Checkbox
-                                                checked={backupSettings?.includeIdentity !== false}
+                                                checked={backupSettings?.includeIdentity ?? true}
                                                 onChange={(e) => updateBackupSettings({ includeIdentity: e.target.checked })}
                                                 disabled={savingSettings}
                                             />
@@ -717,12 +733,12 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                     <FormControlLabel
                                         control={
                                             <Checkbox
-                                                checked={backupSettings?.includeFrameEngine || false}
+                                                checked={backupSettings?.includeFrameEngine ?? false}
                                                 onChange={(e) => updateBackupSettings({ includeFrameEngine: e.target.checked })}
                                                 disabled={savingSettings}
                                             />
                                         }
-                                        label="Include Frame Engine files"
+                                        label="Include FrameEngine files"
                                         sx={{ display: 'block', mb: 0.5 }}
                                     />
                                 </Box>

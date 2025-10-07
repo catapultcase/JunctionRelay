@@ -96,12 +96,12 @@ namespace JunctionRelayServer.Services
             var sql = @"
 INSERT INTO Sensors (
     Name, SensorType, Value, DecimalPlaces, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
-    MQTTTopic, MQTTServiceId, MQTTQoS, Formula, IsMissing, IsStale, IsSelected, IsVisible, SensorOrder, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId,
+    MQTTTopic, MQTTServiceId, MQTTQoS, Formula, IsMissing, IsStale, IsSelected, IsVisible, IsCustomJunctionSensor, IsEventSensor, SensorOrder, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId,
     CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8, CustomAttribute9, CustomAttribute10
 )
 VALUES (
     @Name, @SensorType, @Value, @DecimalPlaces, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
-    @MQTTTopic, @MQTTServiceId, @MQTTQoS, @Formula, @IsMissing, @IsStale, @IsSelected, @IsVisible, @SensorOrder, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId,
+    @MQTTTopic, @MQTTServiceId, @MQTTQoS, @Formula, @IsMissing, @IsStale, @IsSelected, @IsVisible, @IsCustomJunctionSensor, @IsEventSensor, @SensorOrder, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId,
     @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8, @CustomAttribute9, @CustomAttribute10
 );
 SELECT last_insert_rowid();";
@@ -110,11 +110,104 @@ SELECT last_insert_rowid();";
             return newSensor;
         }
 
+        // Add Custom Junction Sensor
+
+        public async Task<Model_Sensor> CreateCustomJunctionSensorAsync(int junctionId, Model_Sensor customSensor)
+        {
+            var junctionData = await _db.QueryFirstOrDefaultAsync(
+                "SELECT Type, MQTTBrokerId FROM Junctions WHERE Id = @Id",
+                new { Id = junctionId });
+
+            if (junctionData == null)
+            {
+                throw new ArgumentException($"Junction with ID {junctionId} not found.");
+            }
+
+            string? junctionType = junctionData?.Type;
+            int? junctionMQTTBrokerId = junctionData?.MQTTBrokerId;
+
+            bool isMqttJunction = string.Equals(junctionType, "MQTT Junction", StringComparison.OrdinalIgnoreCase);
+
+            customSensor.JunctionId = junctionId;
+            customSensor.LastUpdated = DateTime.UtcNow;
+            customSensor.OriginalId = 0;
+            customSensor.IsSelected = true;
+            customSensor.IsVisible = true;
+            customSensor.IsCustomJunctionSensor = true; // Mark as custom junction sensor
+
+            if (isMqttJunction && junctionMQTTBrokerId.HasValue)
+            {
+                customSensor.MQTTServiceId = junctionMQTTBrokerId;
+
+                if (!string.IsNullOrEmpty(customSensor.ExternalId))
+                {
+                    customSensor.MQTTTopic = $"JunctionRelay/j{junctionId}/{customSensor.ExternalId.Replace("/", "")}";
+                }
+                else
+                {
+                    customSensor.MQTTTopic = $"JunctionRelay/j{junctionId}/custom_{customSensor.Name.Replace(" ", "_").ToLower()}";
+                }
+            }
+            else
+            {
+                customSensor.MQTTTopic = null;
+                customSensor.MQTTServiceId = null;
+            }
+
+            const string sql = @"
+INSERT INTO JunctionSensors (
+    OriginalId, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder,
+    MQTTServiceId, MQTTTopic, MQTTQoS, SensorType, 
+    IsMissing, IsStale, IsSelected, IsVisible, IsCustomJunctionSensor, IsEventSensor, ExternalId, DeviceId, ServiceId, CollectorId, 
+    DeviceName, Name, ComponentName, Category, Unit, Value, DecimalPlaces, SensorTag, Formula, 
+    LastUpdated, CustomAttribute1, CustomAttribute2, CustomAttribute3, 
+    CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, 
+    CustomAttribute8, CustomAttribute9, CustomAttribute10
+) VALUES (
+    @OriginalId, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder,
+    @MQTTServiceId, @MQTTTopic, @MQTTQoS, @SensorType, 
+    @IsMissing, @IsStale, @IsSelected, @IsVisible, @IsCustomJunctionSensor, @IsEventSensor, @ExternalId, @DeviceId, @ServiceId, @CollectorId, 
+    @DeviceName, @Name, @ComponentName, @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, 
+    @LastUpdated, @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, 
+    @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, 
+    @CustomAttribute8, @CustomAttribute9, @CustomAttribute10
+);
+SELECT last_insert_rowid();";
+
+            int newId = await _db.ExecuteScalarAsync<int>(sql, customSensor);
+            customSensor.Id = newId;
+
+            return customSensor;
+        }
+
+
+
         public async Task<bool> DeleteSensorAsync(int id)
         {
             const string sql = "DELETE FROM Sensors WHERE Id = @Id;";
             var rows = await _db.ExecuteAsync(sql, new { Id = id });
             return rows > 0;
+        }
+
+        public async Task<bool> DeleteCustomJunctionSensorAsync(int junctionId, int sensorId)
+        {
+            // First remove all sensor targets
+            await RemoveAllSensorTargetsAsync(junctionId, sensorId);
+
+            // Then delete the sensor
+            const string sql = @"
+        DELETE FROM JunctionSensors 
+        WHERE Id = @SensorId 
+        AND JunctionId = @JunctionId 
+        AND IsCustomJunctionSensor = 1;";
+
+            var rowsAffected = await _db.ExecuteAsync(sql, new
+            {
+                SensorId = sensorId,
+                JunctionId = junctionId
+            });
+
+            return rowsAffected > 0;
         }
 
         // Update a sensor's data in the database
@@ -173,6 +266,8 @@ SELECT last_insert_rowid();";
                     IsStale = @IsStale,
                     IsSelected = @IsSelected,
                     IsVisible = @IsVisible,
+                    IsCustomJunctionSensor = @IsCustomJunctionSensor,
+                    IsEventSensor = @IsEventSensor,
                     SensorOrder = @SensorOrder,
                     JunctionId = @JunctionId,
                     JunctionDeviceLinkId = @JunctionDeviceLinkId,
@@ -192,7 +287,7 @@ SELECT last_insert_rowid();";
 
             await _db.ExecuteAsync(sql, updatedSensor);
             return true;
-        }        
+        }
 
         // Fetch all sensors for a specific device from the database
         public async Task<List<Model_Sensor>> GetSensorsByDeviceIdAsync(int deviceId)
@@ -253,7 +348,7 @@ SELECT last_insert_rowid();";
 INSERT INTO JunctionSensors (
     OriginalId, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId, SensorOrder,
     MQTTServiceId, MQTTTopic, MQTTQoS, SensorType, 
-    IsMissing, IsStale, IsSelected, IsVisible, ExternalId, DeviceId, ServiceId, CollectorId, 
+    IsMissing, IsStale, IsSelected, IsVisible, IsCustomJunctionSensor, IsEventSensor, ExternalId, DeviceId, ServiceId, CollectorId, 
     DeviceName, Name, ComponentName, Category, Unit, Value, DecimalPlaces, SensorTag, Formula, 
     LastUpdated, CustomAttribute1, CustomAttribute2, CustomAttribute3, 
     CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, 
@@ -261,7 +356,7 @@ INSERT INTO JunctionSensors (
 ) VALUES (
     @OriginalId, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId, @SensorOrder,
     @MQTTServiceId, @MQTTTopic, @MQTTQoS, @SensorType, 
-    @IsMissing, @IsStale, @IsSelected, @IsVisible, @ExternalId, @DeviceId, @ServiceId, @CollectorId, 
+    @IsMissing, @IsStale, @IsSelected, @IsVisible, @IsCustomJunctionSensor, @IsEventSensor, @ExternalId, @DeviceId, @ServiceId, @CollectorId, 
     @DeviceName, @Name, @ComponentName, @Category, @Unit, @Value, @DecimalPlaces, @SensorTag, @Formula, 
     @LastUpdated, @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, 
     @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, 
@@ -360,6 +455,8 @@ INSERT INTO JunctionSensors (
             IsStale = @IsStale,
             IsSelected = @IsSelected,
             IsVisible = @IsVisible,
+            IsCustomJunctionSensor = @IsCustomJunctionSensor,
+            IsEventSensor = @IsEventSensor,
             ExternalId = @ExternalId,
             DeviceId = @DeviceId,
             ServiceId = @ServiceId,
@@ -450,7 +547,7 @@ INSERT INTO JunctionSensors (
             });
 
             Console.WriteLine($"[SERVICE_DATABASE_MANAGER_SENSORS] Removed {affectedRows} sensor targets for device {deviceId} in junction {junctionId}");
-        }        
+        }
 
         public async Task<Dictionary<int, List<Model_JunctionSensorTarget>>> GetAllSensorTargetsForJunctionGroupedAsync(int junctionId)
         {

@@ -98,18 +98,12 @@ namespace JunctionRelayServer.Services
                     LastSentTime = info.LastSentTime,
                     Protocol = info.Protocol,
                     SensorsCount = info.SensorsCount,
-
-                    // Frame information (not applicable for MQTT)
                     HasLastFrame = false,
                     LastFrameSize = 0,
                     LastFrameTime = (DateTime?)null,
                     LastFrameLayoutType = "",
-
-                    // Gateway information (not applicable for MQTT)
                     IsGatewayMode = false,
-                    GatewayTarget = "Unknown",
-
-                    // Enhanced health information matching other managers
+                    GatewayTarget = "",
                     Health = new
                     {
                         ConnectionState = info.Health.ConnectionState,
@@ -126,104 +120,39 @@ namespace JunctionRelayServer.Services
                         LastSuccessTime = info.Health.LastSuccessTime,
                         LastFailureTime = info.Health.LastFailureTime,
                         ConnectionRecreationCount = info.Health.ConnectionRecreationCount,
-
-                        // Frame-specific health metrics (not applicable for MQTT)
                         IsFrameMode = false,
                         PayloadType = "JSON",
                         FramesSent = 0,
-                        PayloadsSent = info.Health.PublishFailures, // Use existing MQTT metric
+                        PayloadsSent = 0, // MQTT doesn't track total payloads sent
                         CurrentFrameLayoutType = "",
                         AverageFrameSize = 0.0,
-                        MaxFrameSize = 0L,
-                        MinFrameSize = 0L,
+                        MaxFrameSize = 0,
+                        MinFrameSize = 0,
                         AverageFrameRenderTime = 0.0,
-                        MaxFrameRenderTime = 0L,
-                        MinFrameRenderTime = 0L,
-                        FrameHealthSummary = new { message = "Not in frame mode" },
-
-                        // Gateway-specific health metrics (not applicable for MQTT)
-                        IsGatewayMode = false,
-                        GatewayTarget = "Unknown",
+                        MaxFrameRenderTime = 0.0,
+                        MinFrameRenderTime = 0.0,
+                        FrameHealthSummary = "",
                         GatewayMessagesSent = 0,
-                        GatewayHealthSummary = new { message = "Not in gateway mode" },
-
-                        // MQTT-specific metrics
+                        GatewayHealthSummary = "",
                         AcknowledgmentTimeouts = info.Health.AcknowledgmentTimeouts,
                         PublishFailures = info.Health.PublishFailures,
                         TopicLatencies = info.Health.TopicLatencies
                     },
-
-                    // MQTT has dual config payloads - maintain existing structure
                     ConfigPayloadPrefix = info.StandardConfigPayloadPrefix,
                     ConfigPayloadJson = showCompressed ? info.GetCompressedStandardConfigPayloadPreview() : info.StandardConfigPayloadJson,
                     LastSentPayloadPrefix = info.LastSentPayloadPrefix,
                     LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
-
-                    // Compressed prefix fields
                     CompressedConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
                     CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
-
-                    // Always include compressed views
                     ConfigPayloadCompressed = info.GetCompressedStandardConfigPayloadPreview(),
                     LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
-
-                    // MQTT-specific dual config structure
-                    ConfigPayloadPrefixes = new[]
-                    {
-                        info.StandardConfigPayloadPrefix,
-                        info.MqttConfigPayloadPrefix
-                    },
-                    ConfigPayloadsJson = showCompressed ? new[]
-                    {
-                        info.GetCompressedStandardConfigPayloadPreview(),
-                        info.GetCompressedMqttConfigPayloadPreview()
-                    } : new[]
-                    {
-                        info.StandardConfigPayloadJson,
-                        info.MqttConfigPayloadJson
-                    },
-                    CompressedStandardConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
+                    // MQTT-specific fields
+                    MqttConfigPayloadPrefix = info.MqttConfigPayloadPrefix,
+                    MqttConfigPayloadJson = info.MqttConfigPayloadJson,
                     CompressedMqttConfigPayloadPrefix = info.CompressedMqttConfigPayloadPrefix,
-                    ConfigPayloadsCompressed = new[]
-                    {
-                        info.GetCompressedStandardConfigPayloadPreview(),
-                        info.GetCompressedMqttConfigPayloadPreview()
-                    }
+                    MqttConfigPayloadCompressed = info.GetCompressedMqttConfigPayloadPreview()
                 };
             });
-        }
-
-        // Helper method to extract prefix from binary payload (for compressed payloads)
-        private string ExtractBinaryPrefix(byte[] payload)
-        {
-            if (payload == null || payload.Length < 8)
-                return string.Empty;
-
-            // Check if first 8 bytes are ASCII digits (valid prefix)
-            for (int i = 0; i < 8; i++)
-            {
-                if (payload[i] < '0' || payload[i] > '9')
-                    return string.Empty;
-            }
-
-            // Extract the 8-digit prefix
-            return Encoding.ASCII.GetString(payload, 0, 8);
-        }
-
-        // Helper method to extract prefix from string payload (for uncompressed payloads)
-        private string ExtractStringPrefix(string payload)
-        {
-            if (string.IsNullOrEmpty(payload) || payload.Length < 8)
-                return string.Empty;
-
-            // Check if first 8 characters are digits
-            for (int i = 0; i < 8; i++)
-            {
-                if (payload[i] < '0' || payload[i] > '9')
-                    return string.Empty;
-            }
-
-            return payload.Substring(0, 8);
         }
 
         public async Task ConnectAsync(Model_Service service)
@@ -319,17 +248,18 @@ namespace JunctionRelayServer.Services
             int rate,
             string screenKey,
             List<Model_Sensor> assignedSensors,
-            Model_Device_Screens screen)
+            Model_Device_Screens screen,
+            string? junctionType = null,
+            string? gatewayDestination = null,
+            int linkId = 0)
         {
             var cts = new CancellationTokenSource();
 
-            // Initial resolution & config
             using var scope = _scopeFactory.CreateScope();
             var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
             var payloadService = scope.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
             var serviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Services>();
             var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
-            var junctionLinkDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
             var device = await deviceDb.GetDeviceByIdAsync(deviceId)
                                          ?? throw new InvalidOperationException($"Device {deviceId} not found");
@@ -348,18 +278,14 @@ namespace JunctionRelayServer.Services
                 return;
             }
 
-            // Determine rendering mode using new constants
             var renderMode = junction.RenderingMode;
             bool isPayloadMode = renderMode == RenderModes.Payload;
-            bool isBlitMode = renderMode == RenderModes.Blit;
-            bool isCompositeMode = renderMode == RenderModes.Composite;
-            bool isAnyFrameMode = RenderModes.IsFrameMode(renderMode);
 
-            // Get screen layout override if exists
-            var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
-            var screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
+            if (renderMode == RenderModes.Blit || renderMode == RenderModes.Composite)
+            {
+                throw new InvalidOperationException("MQTT does not support frame engine modes (Blit/Composite)");
+            }
 
-            // Create enhanced MQTT sender with health tracking
             var mqttSender = new Service_Send_Data_MQTT(mqtt);
 
             var info = new Service_StreamInfo_MQTT(junction.CompressPayload)
@@ -377,639 +303,178 @@ namespace JunctionRelayServer.Services
                 LastSentTime = DateTime.UtcNow
             };
 
-            // Update protocol to indicate rendering mode
-            if (isBlitMode)
-            {
-                info.Protocol = "MQTT (Pre-rendered Frames)";
-            }
-            else if (isCompositeMode)
-            {
-                info.Protocol = "MQTT (Frame Assembly)";
-            }
-
             _streamingTokens[screen.Id] = info;
 
-            // Send initial configuration based on rendering mode
-            if (isBlitMode)
+            // Generate config payloads using new binary protocol architecture
+            var standardConfigResult = await payloadService.GenerateConfigPayloadsAsync(
+                screenKey,
+                assignedSensors,
+                screen,
+                compressPayload: junction.CompressPayload);
+
+            var mqttConfigResult = await payloadService.GenerateMQTTSubscriptionConfigPayloadsAsync(
+                screenKey,
+                assignedSensors,
+                screen,
+                compressPayload: junction.CompressPayload);
+
+            var standardConfigPayload = standardConfigResult.GetResult(screenKey);
+            var mqttConfigPayload = mqttConfigResult.GetResult(screenKey);
+
+            if (standardConfigPayload == null || mqttConfigPayload == null)
             {
+                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Missing config payloads for screen {screenKey}");
+                info.Dispose();
+                _streamingTokens.TryRemove(screen.Id, out _);
                 return;
             }
-            else if (isCompositeMode)
+
+            // Update StreamInfo with config details
+            info.StandardConfigPayloadPrefix = standardConfigPayload.UncompressedPrefix;
+            info.UpdateStandardConfigPayload(standardConfigPayload.UncompressedJson);
+            if (standardConfigPayload.IsCompressed)
             {
-                // COMPOSITE MODE: Generate and send initial composite config
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 🎭 Starting in Composite (frame assembly) mode for {screenKey}");
-
-                Dictionary<string, object> compositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
-                    screenKey,
-                    assignedSensors,
-                    screen,
-                    screenOverride,
-                    junctionType: null,
-                    gatewayDestination: null,
-                    compressPayload: junction.CompressPayload);
-
-                if (!compositeConfig.TryGetValue(screenKey, out object rawCompositeConfig))
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] No composite config payload for screen {screenKey}.");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
-
-                // Send the composite config via HTTP and extract payload info for UI
-                string compositeConfigTransmissionPayload;
-                bool configSent = false;
-
-                if (rawCompositeConfig is byte[] compositeConfigBytes)
-                {
-                    if (junction.CompressPayload)
-                    {
-                        // Extract binary prefix for compressed
-                        string compressedPrefix = ExtractBinaryPrefix(compositeConfigBytes);
-                        info.UpdateCompressedStandardConfigPayloadPrefix(compressedPrefix);
-                        compositeConfigTransmissionPayload = Convert.ToBase64String(compositeConfigBytes);
-
-                        // Get uncompressed version for UI display
-                        var uncompressedCompositeConfig = await payloadService.GenerateRiveConfigPayloadsAsync(
-                            screenKey, assignedSensors, screen, screenOverride,
-                            junctionType: null, gatewayDestination: null, compressPayload: false);
-
-                        if (uncompressedCompositeConfig.TryGetValue(screenKey, out object uncompressedRaw) &&
-                            uncompressedRaw is string uncompressedString)
-                        {
-                            string uncompressedPrefix = ExtractStringPrefix(uncompressedString);
-                            info.StandardConfigPayloadPrefix = uncompressedPrefix;
-                            var idxStd = uncompressedString.IndexOf('{');
-                            var jsonStd = idxStd > 0 ? uncompressedString.Substring(idxStd) : uncompressedString;
-                            info.UpdateStandardConfigPayload(jsonStd);
-                        }
-                    }
-                    else
-                    {
-                        // Uncompressed byte array - convert to string
-                        string configString = Encoding.UTF8.GetString(compositeConfigBytes);
-                        string configPrefix = ExtractStringPrefix(configString);
-                        info.StandardConfigPayloadPrefix = configPrefix;
-                        var idxStd = configString.IndexOf('{');
-                        var jsonStd = idxStd > 0 ? configString.Substring(idxStd) : configString;
-                        info.UpdateStandardConfigPayload(jsonStd);
-                        compositeConfigTransmissionPayload = configString;
-                    }
-
-                    var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                    var (success, _) = await httpSender.SendPayloadAsync(compositeConfigTransmissionPayload);
-                    configSent = success;
-                }
-                else if (rawCompositeConfig is string compositeConfigString)
-                {
-                    // Extract payload info for UI
-                    string configPrefix = ExtractStringPrefix(compositeConfigString);
-                    info.StandardConfigPayloadPrefix = configPrefix;
-                    var idxStd = compositeConfigString.IndexOf('{');
-                    var jsonStd = idxStd > 0 ? compositeConfigString.Substring(idxStd) : compositeConfigString;
-                    info.UpdateStandardConfigPayload(jsonStd);
-
-                    var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                    var (success, _) = await httpSender.SendPayloadAsync(compositeConfigString);
-                    configSent = success;
-                }
-
-                if (!configSent)
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Failed to send composite config via HTTP.");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
-
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [SERVICE_STREAM_MANAGER_MQTT] " +
-                    $"Composite config sent to {device.Name} via HTTP for MQTT junction.");
-            }
-            else
-            {
-                // PAYLOAD MODE: Generate and send config payloads (existing logic)
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] 📄 Starting in Payload mode for {screenKey}");
-
-                // Generate UNCOMPRESSED payloads first for display/caching
-                var uncompressedStdCfgs = await payloadService.GenerateConfigPayloadsAsync(
-                    screenKey,
-                    assignedSensors,
-                    screen,
-                    compressPayload: false);
-                var uncompressedMqttCfgs = await payloadService.GenerateMQTTSubscriptionConfigPayloadsAsync(
-                    screenKey,
-                    assignedSensors,
-                    screen,
-                    compressPayload: false);
-
-                if (!uncompressedStdCfgs.TryGetValue(screenKey, out var uncompressedStdObj) || uncompressedStdObj is not string uncompressedStdRaw ||
-                    !uncompressedMqttCfgs.TryGetValue(screenKey, out var uncompressedMqttObj) || uncompressedMqttObj is not string uncompressedMqttRaw)
-                {
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Missing uncompressed config payloads for screen {screenKey}");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
-
-                // Now get the transmission payloads (compressed or uncompressed based on junction setting)
-                string stdTransmissionPayload;
-                string mqttTransmissionPayload;
-
-                if (junction.CompressPayload)
-                {
-                    var compressedStdCfgs = await payloadService.GenerateConfigPayloadsAsync(
-                        screenKey,
-                        assignedSensors,
-                        screen,
-                        compressPayload: true);
-                    var compressedMqttCfgs = await payloadService.GenerateMQTTSubscriptionConfigPayloadsAsync(
-                        screenKey,
-                        assignedSensors,
-                        screen,
-                        compressPayload: true);
-
-                    if (!compressedStdCfgs.TryGetValue(screenKey, out var compressedStdObj) ||
-                        !compressedMqttCfgs.TryGetValue(screenKey, out var compressedMqttObj))
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Missing compressed config payloads for screen {screenKey}");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
-
-                    // Handle standard config compression
-                    if (compressedStdObj is byte[] stdCompressedBytes)
-                    {
-                        // Extract compressed prefix from binary payload
-                        string compressedStdPrefix = ExtractBinaryPrefix(stdCompressedBytes);
-                        info.UpdateCompressedStandardConfigPayloadPrefix(compressedStdPrefix);
-
-                        stdTransmissionPayload = Convert.ToBase64String(stdCompressedBytes);
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Standard config compressed ({stdCompressedBytes.Length} bytes)");
-                    }
-                    else if (compressedStdObj is string stdCompressedString)
-                    {
-                        // Extract compressed prefix from string payload
-                        string compressedStdPrefix = ExtractStringPrefix(stdCompressedString);
-                        info.UpdateCompressedStandardConfigPayloadPrefix(compressedStdPrefix);
-
-                        stdTransmissionPayload = stdCompressedString;
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected standard config compressed payload type for screen {screenKey}");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
-
-                    // Handle MQTT config compression
-                    if (compressedMqttObj is byte[] mqttCompressedBytes)
-                    {
-                        // Extract compressed prefix from binary payload
-                        string compressedMqttPrefix = ExtractBinaryPrefix(mqttCompressedBytes);
-                        info.UpdateCompressedMqttConfigPayloadPrefix(compressedMqttPrefix);
-
-                        mqttTransmissionPayload = Convert.ToBase64String(mqttCompressedBytes);
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] MQTT config compressed ({mqttCompressedBytes.Length} bytes)");
-                    }
-                    else if (compressedMqttObj is string mqttCompressedString)
-                    {
-                        // Extract compressed prefix from string payload
-                        string compressedMqttPrefix = ExtractStringPrefix(mqttCompressedString);
-                        info.UpdateCompressedMqttConfigPayloadPrefix(compressedMqttPrefix);
-
-                        mqttTransmissionPayload = mqttCompressedString;
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected MQTT config compressed payload type for screen {screenKey}");
-                        info.Dispose();
-                        _streamingTokens.TryRemove(screen.Id, out _);
-                        return;
-                    }
-                }
-                else
-                {
-                    // Use uncompressed payloads for transmission
-                    stdTransmissionPayload = uncompressedStdRaw;
-                    mqttTransmissionPayload = uncompressedMqttRaw;
-                }
-
-                // Use the UNCOMPRESSED payloads for display/caching (keeps existing functionality)
-                var idxStd = uncompressedStdRaw.IndexOf('{');
-                if (idxStd > 0) info.StandardConfigPayloadPrefix = uncompressedStdRaw.Substring(0, idxStd);
-                var jsonStd = idxStd > 0 ? uncompressedStdRaw.Substring(idxStd) : uncompressedStdRaw;
-                info.UpdateStandardConfigPayload(jsonStd);
-
-                var idxM = uncompressedMqttRaw.IndexOf('{');
-                if (idxM > 0) info.MqttConfigPayloadPrefix = uncompressedMqttRaw.Substring(0, idxM);
-                var jsonM = idxM > 0 ? uncompressedMqttRaw.Substring(idxM) : uncompressedMqttRaw;
-                info.UpdateMqttConfigPayload(jsonM);
-
-                // Send both TRANSMISSION payloads via HTTP (which may be compressed)
-                var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
-                var (sentStd, _) = await httpSender.SendPayloadAsync(stdTransmissionPayload);
-                var (sentMqtt, _) = await httpSender.SendPayloadAsync(mqttTransmissionPayload);
-                if (!sentStd || !sentMqtt)
-                {
-                    Console.WriteLine("[SERVICE_STREAM_MANAGER_MQTT] Failed to send one or both config payloads");
-                    info.Dispose();
-                    _streamingTokens.TryRemove(screen.Id, out _);
-                    return;
-                }
-
-                string compressionInfo = junction.CompressPayload ? " (compressed)" : "";
-                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Both config payloads sent{compressionInfo}");
+                info.UpdateCompressedStandardConfigPayloadPrefix(standardConfigPayload.CompressedPrefix);
             }
 
-            // Log successful start with mode description
-            string modeDescription = junction.RenderingMode switch
+            info.MqttConfigPayloadPrefix = mqttConfigPayload.UncompressedPrefix;
+            info.UpdateMqttConfigPayload(mqttConfigPayload.UncompressedJson);
+            if (mqttConfigPayload.IsCompressed)
             {
-                RenderModes.Blit => "Pre-rendered Frames",
-                RenderModes.Composite => "Frame Assembly",
-                RenderModes.Payload => "Payload",
-                _ => junction.RenderingMode
-            };
+                info.UpdateCompressedMqttConfigPayloadPrefix(mqttConfigPayload.CompressedPrefix);
+            }
 
-            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] ✅ MQTT stream started for screen {screenKey} (Mode: {modeDescription})");
+            // Send config payloads via HTTP
+            var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
+            var (sentStd, _) = await httpSender.SendPayloadAsync(standardConfigPayload.BinaryPayload);
+            var (sentMqtt, _) = await httpSender.SendPayloadAsync(mqttConfigPayload.BinaryPayload);
 
-            // Start streaming loop based on rendering mode
+            if (!sentStd || !sentMqtt)
+            {
+                Console.WriteLine("[SERVICE_STREAM_MANAGER_MQTT] Failed to send one or both config payloads");
+                info.Dispose();
+                _streamingTokens.TryRemove(screen.Id, out _);
+                return;
+            }
+
+            string compressionInfo = junction.CompressPayload ? " (compressed)" : "";
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Both config payloads sent{compressionInfo}");
+            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] MQTT stream started for screen {screenKey} (Mode: Payload)");
+
             _ = Task.Run(async () =>
             {
                 using var ls = _scopeFactory.CreateScope();
                 var devDb = ls.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
                 var plSvc = ls.ServiceProvider.GetRequiredService<Service_Manager_Payloads>();
                 var jDb = ls.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
-                var junctionLinkDb = ls.ServiceProvider.GetRequiredService<Service_Database_Manager_JunctionLinks>();
 
                 var dev = await devDb.GetDeviceByIdAsync(deviceId)
                             ?? throw new InvalidOperationException("Device missing in loop");
                 var junc = await jDb.GetJunctionByIdAsync(junctionId)
                             ?? throw new InvalidOperationException("Junction missing in loop");
 
-                var renderModeLoop = junc.RenderingMode;
-                bool isPayloadModeLoop = renderModeLoop == RenderModes.Payload;
-                bool isBlitModeLoop = renderModeLoop == RenderModes.Blit;
-                bool isCompositeModeLoop = renderModeLoop == RenderModes.Composite;
-                bool isAnyFrameModeLoop = RenderModes.IsFrameMode(renderModeLoop);
-
-                // Get screen layout override if exists
-                var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
-                var screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
-
                 await Task.Delay(500, cts.Token);
 
-                if (isBlitModeLoop)
-                {
-                    return;
-                }
-                else if (isCompositeModeLoop)
-                {
-                    // COMPOSITE MODE: Generate and publish composite sensor data to MQTT topics
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Starting Composite sensor publishing loop for {screenKey}");
+                var lastSentPayloads = new Dictionary<int, string>();
 
-                    // Dictionary to store the last sent payload for each sensor
-                    var lastSentPayloads = new Dictionary<int, string>();
-
-                    while (!cts.Token.IsCancellationRequested)
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    foreach (var sensor in assignedSensors)
                     {
-                        foreach (var sensor in assignedSensors)
+                        try
                         {
-                            try
+                            var sensorPayloadResult = await plSvc.GenerateSensorPayloadsAsync(
+                                screenKey,
+                                1,
+                                new[] { sensor }.ToList(),
+                                screen,
+                                compressPayload: junc.CompressPayload);
+
+                            var sensorPayload = sensorPayloadResult.GetResult(screenKey);
+                            if (sensorPayload == null)
+                                continue;
+
+                            // Update StreamInfo with sensor payload details
+                            info.LastSentPayloadPrefix = sensorPayload.UncompressedPrefix;
+                            info.UpdateLastSentPayload(sensorPayload.UncompressedJson);
+                            if (sensorPayload.IsCompressed)
                             {
-                                // Generate UNCOMPRESSED composite sensor payload first for display/caching
-                                Dictionary<string, object> uncompressedCompositeSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
-                                    screenKey,
-                                    assignedSensors,
-                                    screen,
-                                    junctionType: null,
-                                    gatewayDestination: null,
-                                    compressPayload: false);
+                                info.UpdateCompressedLastSentPayloadPrefix(sensorPayload.CompressedPrefix);
+                            }
+                           
+                            string transmissionPayload = sensorPayload.UncompressedJson;
 
-                                if (!uncompressedCompositeSensor.TryGetValue(screenKey, out var uncompressedObj) || uncompressedObj is not string uncompressedRaw)
-                                    continue;
-
-                                // Extract uncompressed sensor payload info FIRST (always needed for UI)
-                                string uncompressedSensorPrefix = ExtractStringPrefix(uncompressedRaw);
-                                info.LastSentPayloadPrefix = uncompressedSensorPrefix;
-
-                                var i2 = uncompressedRaw.IndexOf('{');
-                                var js = i2 > 0 ? uncompressedRaw.Substring(i2) : uncompressedRaw;
-                                info.UpdateLastSentPayload(js);
-
-                                // Now get the transmission payload (compressed or uncompressed based on junction setting)
-                                string transmissionPayload;
-                                if (junc.CompressPayload)
+                            if (!lastSentPayloads.TryGetValue(sensor.Id, out var lastPayload) || lastPayload != transmissionPayload)
+                            {
+                                if (!string.IsNullOrEmpty(sensor.MQTTTopic))
                                 {
-                                    Dictionary<string, object> compressedCompositeSensor = await plSvc.GenerateRiveSensorPayloadsAsync(
-                                        screenKey,
-                                        assignedSensors,
-                                        screen,
-                                        junctionType: null,
-                                        gatewayDestination: null,
-                                        compressPayload: true);
+                                    var result = await mqttSender.PublishTopicWithHealthAsync(sensor.MQTTTopic, transmissionPayload, sensor.MQTTQoS ?? 0);
 
-                                    if (!compressedCompositeSensor.TryGetValue(screenKey, out var compressedObj))
-                                        continue;
+                                    info.Health.UpdateHealth(result);
 
-                                    if (compressedObj is byte[] compressedBytes)
+                                    if (!result.Success)
                                     {
-                                        // Extract compressed prefix from binary payload
-                                        string compressedSensorPrefix = ExtractBinaryPrefix(compressedBytes);
-                                        info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
+                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Publish failed: {result.ErrorType} - {result.ErrorMessage}");
 
-                                        transmissionPayload = Convert.ToBase64String(compressedBytes);
-                                    }
-                                    else if (compressedObj is string compressedString)
-                                    {
-                                        // Extract compressed prefix from string payload
-                                        string compressedSensorPrefix = ExtractStringPrefix(compressedString);
-                                        info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
+                                        if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
+                                        {
+                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
+                                            break;
+                                        }
 
-                                        transmissionPayload = compressedString;
+                                        if (info.Health.ConsecutiveFailures > 1)
+                                        {
+                                            await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
+                                        }
                                     }
                                     else
                                     {
-                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected compressed composite payload type for sensor {sensor.Id}");
-                                        continue;
+                                        if (result.ConnectionRecreated)
+                                        {
+                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] MQTT connection recreated for {info.DeviceName}");
+                                        }
                                     }
+
+                                    info.Latency = result.LatencyMs;
+                                    info.LastSentTime = DateTime.UtcNow;
+
+                                    var historyEntry = CreateMQTTHistoryEntry(info, sensor.MQTTTopic ?? "", sensor.MQTTQoS ?? 0);
+                                    _historyManager.AddHistoryEntry(historyEntry);
+
+                                    _deviceLatencies[screen.Id] = result.LatencyMs;
+                                    lastSentPayloads[sensor.Id] = transmissionPayload;
                                 }
                                 else
                                 {
-                                    // Use uncompressed payload for transmission
-                                    transmissionPayload = uncompressedRaw;
-                                }
-
-                                // Check if payload has changed and needs to be sent (use transmission payload for comparison)
-                                if (!lastSentPayloads.TryGetValue(sensor.Id, out var lastPayload) || lastPayload != transmissionPayload)
-                                {
-                                    // Check if MQTT topic is not null or empty before publishing
-                                    if (!string.IsNullOrEmpty(sensor.MQTTTopic))
-                                    {
-                                        // Send the TRANSMISSION payload (which may be compressed)
-                                        var result = await mqttSender.PublishTopicWithHealthAsync(sensor.MQTTTopic, transmissionPayload, sensor.MQTTQoS ?? 0);
-
-                                        // Update health information
-                                        info.Health.UpdateHealth(result);
-
-                                        if (!result.Success)
-                                        {
-                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Composite sensor publish failed: {result.ErrorType} - {result.ErrorMessage}");
-
-                                            // Don't immediately break - let health state determine if we should continue
-                                            // Only stop if we're truly disconnected with many consecutive failures
-                                            if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
-                                            {
-                                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
-                                                break;
-                                            }
-
-                                            // Add a small delay on failures to prevent rapid retry spam
-                                            if (info.Health.ConsecutiveFailures > 1)
-                                            {
-                                                await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // Log connection recreation events for debugging
-                                            if (result.ConnectionRecreated)
-                                            {
-                                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] MQTT connection recreated for {info.DeviceName}");
-                                            }
-                                        }
-
-                                        // Update latency from the actual send result
-                                        info.Latency = result.LatencyMs;
-                                        info.LastSentTime = DateTime.UtcNow;
-
-                                        var historyEntry = _historyManager.CreateEntryFromMQTT(info);
-                                        _historyManager.AddHistoryEntry(historyEntry);
-
-                                        // Store latency in the existing dictionary for backward compatibility
-                                        _deviceLatencies[screen.Id] = result.LatencyMs;
-
-                                        // Update last sent payload (use transmission payload)
-                                        lastSentPayloads[sensor.Id] = transmissionPayload;
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Skipping sensor {sensor.Id} ({sensor.Name}) - MQTT topic is null or empty");
-                                    }
-                                }
-
-                                // Calculate delay, accounting for processing time
-                                int pause = Math.Max(rate - (int)info.Latency, 0);
-                                if (pause > 0)
-                                {
-                                    await Task.Delay(pause, cts.Token);
+                                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Skipping sensor {sensor.Id} ({sensor.Name}) - MQTT topic is null or empty");
                                 }
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException)
+
+                            int pause = Math.Max(rate - (int)info.Latency, 0);
+                            if (pause > 0)
                             {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in Composite streaming loop: {ex.Message}");
-
-                                // Update health with unexpected error
-                                var errorResult = new MqttSendResult
-                                {
-                                    Success = false,
-                                    ErrorType = "unexpected_error",
-                                    ErrorMessage = ex.Message,
-                                    LatencyMs = 0,
-                                    Topic = sensor.MQTTTopic ?? "unknown"
-                                };
-                                info.Health.UpdateHealth(errorResult);
-
-                                // Wait a bit before retrying on unexpected errors
-                                await Task.Delay(1000, cts.Token);
+                                await Task.Delay(pause, cts.Token);
                             }
                         }
-                    }
-                }
-                else
-                {
-                    // PAYLOAD MODE: MQTT-polling loop with health tracking and compression support
-                    Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Starting sensor payload publishing loop for {screenKey}");
-
-                    // Dictionary to store the last sent payload for each sensor
-                    var lastSentPayloads = new Dictionary<int, string>();
-
-                    while (!cts.Token.IsCancellationRequested)
-                    {
-                        foreach (var sensor in assignedSensors)
+                        catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            try
+                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in streaming loop: {ex.Message}");
+
+                            var errorResult = new MqttSendResult
                             {
-                                // Generate UNCOMPRESSED payload first for display/caching
-                                Dictionary<string, object> uncompressedSp = screen.Template?.LayoutType switch
-                                {
-                                    "MATRIX" => await plSvc.GenerateMatrixSensorPayloadsAsync(
-                                        screenKey,
-                                        1,
-                                        new[] { sensor }.ToList(),
-                                        screen,
-                                        0,
-                                        compressPayload: false),
-                                    _ => await plSvc.GenerateSensorPayloadsAsync(
-                                        screenKey,
-                                        1,
-                                        new[] { sensor }.ToList(),
-                                        screen,
-                                        compressPayload: false)
-                                };
+                                Success = false,
+                                ErrorType = "unexpected_error",
+                                ErrorMessage = ex.Message,
+                                LatencyMs = 0,
+                                Topic = sensor.MQTTTopic ?? "unknown"
+                            };
+                            info.Health.UpdateHealth(errorResult);
 
-                                if (!uncompressedSp.TryGetValue(screenKey, out var uncompressedObj) || uncompressedObj is not string uncompressedRaw)
-                                    continue;
-
-                                // Extract uncompressed sensor payload info FIRST (always needed for UI)
-                                string uncompressedSensorPrefix = ExtractStringPrefix(uncompressedRaw);
-                                info.LastSentPayloadPrefix = uncompressedSensorPrefix;
-
-                                var i2 = uncompressedRaw.IndexOf('{');
-                                var js = i2 > 0 ? uncompressedRaw.Substring(i2) : uncompressedRaw;
-                                info.UpdateLastSentPayload(js);
-
-                                // Now get the transmission payload (compressed or uncompressed based on junction setting)
-                                string transmissionPayload;
-                                if (junc.CompressPayload)
-                                {
-                                    Dictionary<string, object> compressedSp = screen.Template?.LayoutType switch
-                                    {
-                                        "MATRIX" => await plSvc.GenerateMatrixSensorPayloadsAsync(
-                                            screenKey,
-                                            1,
-                                            new[] { sensor }.ToList(),
-                                            screen,
-                                            0,
-                                            compressPayload: true),
-                                        _ => await plSvc.GenerateSensorPayloadsAsync(
-                                            screenKey,
-                                            1,
-                                            new[] { sensor }.ToList(),
-                                            screen,
-                                            compressPayload: true)
-                                    };
-
-                                    if (!compressedSp.TryGetValue(screenKey, out var compressedObj))
-                                        continue;
-
-                                    if (compressedObj is byte[] compressedBytes)
-                                    {
-                                        // Extract compressed prefix from binary payload
-                                        string compressedSensorPrefix = ExtractBinaryPrefix(compressedBytes);
-                                        info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
-
-                                        transmissionPayload = Convert.ToBase64String(compressedBytes);
-                                    }
-                                    else if (compressedObj is string compressedString)
-                                    {
-                                        // Extract compressed prefix from string payload
-                                        string compressedSensorPrefix = ExtractStringPrefix(compressedString);
-                                        info.UpdateCompressedLastSentPayloadPrefix(compressedSensorPrefix);
-
-                                        transmissionPayload = compressedString;
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected compressed payload type for sensor {sensor.Id}");
-                                        continue;
-                                    }
-                                }
-                                else
-                                {
-                                    // Use uncompressed payload for transmission
-                                    transmissionPayload = uncompressedRaw;
-                                }
-
-                                // Check if payload has changed and needs to be sent (use transmission payload for comparison)
-                                if (!lastSentPayloads.TryGetValue(sensor.Id, out var lastPayload) || lastPayload != transmissionPayload)
-                                {
-                                    // Check if MQTT topic is not null or empty before publishing
-                                    if (!string.IsNullOrEmpty(sensor.MQTTTopic))
-                                    {
-                                        // Send the TRANSMISSION payload (which may be compressed)
-                                        var result = await mqttSender.PublishTopicWithHealthAsync(sensor.MQTTTopic, transmissionPayload, sensor.MQTTQoS ?? 0);
-
-                                        // Update health information
-                                        info.Health.UpdateHealth(result);
-
-                                        if (!result.Success)
-                                        {
-                                            Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Publish failed: {result.ErrorType} - {result.ErrorMessage}");
-
-                                            // Don't immediately break - let health state determine if we should continue
-                                            // Only stop if we're truly disconnected with many consecutive failures
-                                            if (info.Health.ConnectionState == "disconnected" && info.Health.ConsecutiveFailures > 5)
-                                            {
-                                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Too many consecutive failures ({info.Health.ConsecutiveFailures}), stopping stream.");
-                                                break;
-                                            }
-
-                                            // Add a small delay on failures to prevent rapid retry spam
-                                            if (info.Health.ConsecutiveFailures > 1)
-                                            {
-                                                await Task.Delay(Math.Min(info.Health.ConsecutiveFailures * 100, 1000), cts.Token);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // Log connection recreation events for debugging
-                                            if (result.ConnectionRecreated)
-                                            {
-                                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] MQTT connection recreated for {info.DeviceName}");
-                                            }
-                                        }
-
-                                        // Update latency from the actual send result
-                                        info.Latency = result.LatencyMs;
-                                        info.LastSentTime = DateTime.UtcNow;
-
-                                        var historyEntry = _historyManager.CreateEntryFromMQTT(info);
-                                        _historyManager.AddHistoryEntry(historyEntry);
-
-                                        // Store latency in the existing dictionary for backward compatibility
-                                        _deviceLatencies[screen.Id] = result.LatencyMs;
-
-                                        // Update last sent payload (use transmission payload)
-                                        lastSentPayloads[sensor.Id] = transmissionPayload;
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Skipping sensor {sensor.Id} ({sensor.Name}) - MQTT topic is null or empty");
-                                    }
-                                }
-
-                                // Calculate delay, accounting for processing time
-                                int pause = Math.Max(rate - (int)info.Latency, 0);
-                                if (pause > 0)
-                                {
-                                    await Task.Delay(pause, cts.Token);
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException)
-                            {
-                                Console.WriteLine($"[SERVICE_STREAM_MANAGER_MQTT] Unexpected error in streaming loop: {ex.Message}");
-
-                                // Update health with unexpected error
-                                var errorResult = new MqttSendResult
-                                {
-                                    Success = false,
-                                    ErrorType = "unexpected_error",
-                                    ErrorMessage = ex.Message,
-                                    LatencyMs = 0,
-                                    Topic = sensor.MQTTTopic ?? "unknown"
-                                };
-                                info.Health.UpdateHealth(errorResult);
-
-                                // Wait a bit before retrying on unexpected errors
-                                await Task.Delay(1000, cts.Token);
-                            }
+                            await Task.Delay(1000, cts.Token);
                         }
                     }
                 }
 
-                // Update status when loop exits
                 if (_streamingTokens.TryGetValue(screen.Id, out var finalInfo))
                 {
                     finalInfo.Status = "Inactive";
@@ -1017,6 +482,55 @@ namespace JunctionRelayServer.Services
                 }
 
             }, cts.Token);
+        }
+
+        private StreamHistoryEntry CreateMQTTHistoryEntry(Service_StreamInfo_MQTT info, string topic, int qos)
+        {
+            return new StreamHistoryEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ScreenId = info.ScreenId,
+                DeviceName = info.DeviceName,
+                ScreenName = info.ScreenName,
+                Protocol = "MQTT",
+                Status = info.Status,
+                Latency = info.Latency,
+                SensorsCount = info.SensorsCount,
+                Rate = info.Rate,
+                ConnectionState = info.Health.ConnectionState,
+                SuccessRate = info.Health.SuccessRate,
+                ConsecutiveFailures = info.Health.ConsecutiveFailures,
+                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
+                AverageLatency = info.Health.AverageLatency,
+                LastErrorMessage = info.Health.LastErrorMessage,
+                ErrorType = info.Health.ErrorType,
+                IsFrameMode = false, // MQTT doesn't support frame mode
+                PayloadType = info.CompressionEnabled ? "JSON_COMPRESSED" : "JSON",
+                FramesSent = 0,
+                PayloadsSent = 0, // MQTT doesn't track total payloads sent in health
+                AverageFrameSize = 0,
+                AverageFrameRenderTime = 0,
+                IsGatewayMode = false,
+                GatewayTarget = null,
+                GatewayMessagesSent = 0,
+                ProtocolSpecificData = new Dictionary<string, object>
+                {
+                    ["Topic"] = topic,
+                    ["QoS"] = qos,
+                    ["Compressed"] = info.CompressionEnabled,
+                    ["PayloadPrefix"] = info.CompressionEnabled ? info.CompressedLastSentPayloadPrefix : info.LastSentPayloadPrefix,
+                    ["PublishLatencyMs"] = info.Latency,
+                    ["ConnectionRecreated"] = info.Health.ConnectionRecreated,
+                    ["ConnectionRecreationCount"] = info.Health.ConnectionRecreationCount,
+                    ["MinLatency"] = info.Health.MinLatency == long.MaxValue ? 0L : info.Health.MinLatency,
+                    ["MaxLatency"] = info.Health.MaxLatency,
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O") ?? "",
+                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O") ?? "",
+                    ["AcknowledgmentTimeouts"] = info.Health.AcknowledgmentTimeouts,
+                    ["PublishFailures"] = info.Health.PublishFailures,
+                    ["TopicLatencies"] = info.Health.TopicLatencies
+                }
+            };
         }
 
         public void StopStreaming(int screenId)
@@ -1077,7 +591,6 @@ namespace JunctionRelayServer.Services
         public bool IsStreaming(int screenId)
             => _streamingTokens.ContainsKey(screenId);
 
-        // Get MQTT-specific stream metrics
         public object GetMqttStreamMetrics()
         {
             return new
@@ -1087,8 +600,6 @@ namespace JunctionRelayServer.Services
                 StreamsByProtocol = _streamingTokens.Values
                     .GroupBy(s => s.Protocol)
                     .ToDictionary(g => g.Key, g => g.Count()),
-                FrameStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Pre-rendered Frames")),
-                CompositeStreams = _streamingTokens.Values.Count(s => s.Protocol.Contains("Frame Assembly")),
                 MqttInstances = _mqttInstances.Count,
                 ConnectedInstances = _mqttInstances.Values.Count(m => m.IsConnected),
                 HealthSummary = new

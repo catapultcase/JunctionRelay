@@ -41,6 +41,14 @@ import {
     Checkbox,
     ToggleButtonGroup,
     ToggleButton,
+    Switch,
+    FormControlLabel,
+    MenuItem,
+    Select,
+    FormControl,
+    InputLabel,
+    Tooltip,
+    Divider,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 // Icon imports
@@ -50,6 +58,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import TableViewIcon from '@mui/icons-material/TableView';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import DashboardIcon from '@mui/icons-material/Dashboard';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useTheme, useMediaQuery } from "@mui/material";
 
 // Import sub-components
@@ -86,6 +95,17 @@ const defaultCollectorColumns: CollectorColumn[] = [
 // Default visible columns
 const defaultVisibleColumns = ["name", "type", "url", "accessToken", "status", "actions"];
 
+// Frequency options for auto-testing (1 hour, then 6 hour increments up to 24hrs, then days)
+const frequencyOptions = [
+    { value: 1, label: '1 hour' },
+    { value: 6, label: '6 hours' },
+    { value: 12, label: '12 hours' },
+    { value: 18, label: '18 hours' },
+    { value: 24, label: '24 hours' },
+    { value: 72, label: '3 days' },
+    { value: 168, label: '7 days' },
+];
+
 // Main Collectors Component
 const Collectors = () => {
     const [collectors, setCollectors] = useState<any[]>([]);
@@ -93,6 +113,11 @@ const Collectors = () => {
     const [addCollectorModalOpen, setAddCollectorModalOpen] = useState(false);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
+
+    // Auto-testing configuration state
+    const [autoTestingEnabled, setAutoTestingEnabled] = useState<boolean>(false);
+    const [testingFrequency, setTestingFrequency] = useState<number>(6);
+    const [loadingTestingSettings, setLoadingTestingSettings] = useState<boolean>(false);
 
     // View mode and table management state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -140,6 +165,78 @@ const Collectors = () => {
         setSnackbarSeverity(severity);
     };
 
+    // Fetch auto-testing settings
+    const fetchAutoTestingSettings = useCallback(async () => {
+        try {
+            const response = await fetch('/api/settings/collector-testing');
+            if (response.ok) {
+                const settings = await response.json();
+                setAutoTestingEnabled(settings.enabled || false);
+                setTestingFrequency(settings.frequency || 6);
+            }
+        } catch (error) {
+            console.error('Error fetching auto-testing settings:', error);
+        }
+    }, []);
+
+    // Update auto-testing setting
+    const updateAutoTestingSetting = useCallback(async (key: string, value: boolean | number) => {
+        setLoadingTestingSettings(true);
+        try {
+            const response = await fetch('/api/settings/collector-testing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [key]: value })
+            });
+
+            if (response.ok) {
+                let message = '';
+                if (key === 'enabled') {
+                    message = `Collector auto-testing ${value ? 'enabled' : 'disabled'}`;
+                } else if (key === 'frequency') {
+                    const freqOption = frequencyOptions.find(opt => opt.value === value);
+                    message = `Testing frequency set to ${freqOption?.label || value + ' days'}`;
+                }
+                showSnackbar(message, "info");
+            } else {
+                const error = await response.json();
+                showSnackbar(`Failed to update setting: ${error.message}`, "error");
+
+                // Revert the local state on error
+                if (key === 'enabled') {
+                    setAutoTestingEnabled(!value as boolean);
+                } else if (key === 'frequency') {
+                    await fetchAutoTestingSettings();
+                }
+            }
+        } catch (error) {
+            console.error('Error updating auto-testing setting:', error);
+            showSnackbar('Error updating auto-testing setting', "error");
+
+            // Revert the local state on error
+            if (key === 'enabled') {
+                setAutoTestingEnabled(!value as boolean);
+            } else if (key === 'frequency') {
+                await fetchAutoTestingSettings();
+            }
+        } finally {
+            setLoadingTestingSettings(false);
+        }
+    }, [showSnackbar, fetchAutoTestingSettings]);
+
+    // Auto-testing setting change handlers
+    const handleAutoTestingToggle = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = event.target.checked;
+        setAutoTestingEnabled(newValue);
+        await updateAutoTestingSetting('enabled', newValue);
+    }, [updateAutoTestingSetting]);
+
+    const handleFrequencyChange = useCallback(async (event: any) => {
+        const newValue = event.target.value as number;
+        setTestingFrequency(newValue);
+        await updateAutoTestingSetting('frequency', newValue);
+    }, [updateAutoTestingSetting]);
+
     const fetchCollectors = async () => {
         try {
             setLoading(true);
@@ -158,8 +255,14 @@ const Collectors = () => {
     };
 
     useEffect(() => {
-        fetchCollectors();
-    }, []);
+        const init = async () => {
+            await Promise.all([
+                fetchCollectors(),
+                fetchAutoTestingSettings()
+            ]);
+        };
+        init();
+    }, [fetchAutoTestingSettings]);
 
     // Listen for view mode changes from bottom action bar (mobile only) 
     useEffect(() => {
@@ -270,6 +373,11 @@ const Collectors = () => {
         return {};
     };
 
+    // Helper function to check if collector is EventEngine (managed by event system)
+    const isFrameEngine = (collector: any) => {
+        return collector.collectorType === 'EventEngine';
+    };
+
     // Event handlers
     const handleAddCollector = () => {
         setAddCollectorModalOpen(true);
@@ -285,8 +393,17 @@ const Collectors = () => {
         navigate(`/configure-collector/${collectorId}`);
     };
 
+    // Modified delete handler - prevent deletion of FrameEngine collectors
     const handleDelete = async (e: React.MouseEvent, collectorId: number) => {
         e.stopPropagation();
+
+        // Find the collector to check its type
+        const collector = collectors.find(c => c.id === collectorId);
+        if (isFrameEngine(collector)) {
+            // Don't allow deletion of FrameEngine collectors
+            return;
+        }
+
         if (window.confirm("Are you sure you want to delete this collector?")) {
             try {
                 const response = await fetch(`/api/collectors/${collectorId}`, {
@@ -305,9 +422,26 @@ const Collectors = () => {
         }
     };
 
+    // Modified edit handler - redirect FrameEngine collectors to /eventengine
     const handleEdit = (e: React.MouseEvent, collector: any) => {
         e.stopPropagation();
-        navigate(`/configure-collector/${collector.id}`);
+
+        if (isFrameEngine(collector)) {
+            // Redirect FrameEngine collectors to /eventengine
+            navigate('/eventengine');
+        } else {
+            // Normal edit behavior for other collectors
+            navigate(`/configure-collector/${collector.id}`);
+        }
+    };
+
+    // Modified card click handler - handle FrameEngine redirection
+    const handleCardClick = (collector: any) => {
+        if (isFrameEngine(collector)) {
+            navigate('/eventengine');
+        } else {
+            navigate(`/configure-collector/${collector.id}`);
+        }
     };
 
     // View mode change handler
@@ -380,6 +514,58 @@ const Collectors = () => {
                         Add Collector
                     </Button>
                 </Box>
+            )}
+
+            {/* Auto-Testing Control Panel - Hide on mobile */}
+            {!isMobile && (
+                <Paper sx={{ p: 2, mb: 3 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <SettingsIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                        <Typography variant="h6">
+                            Auto-Testing Configuration
+                        </Typography>
+                        {loadingTestingSettings && (
+                            <CircularProgress size={16} sx={{ ml: 1 }} />
+                        )}
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={autoTestingEnabled}
+                                    onChange={handleAutoTestingToggle}
+                                    disabled={loadingTestingSettings}
+                                    color="primary"
+                                />
+                            }
+                            label={
+                                <Tooltip title="Enable automatic testing of collectors at regular intervals">
+                                    <Typography variant="body2">
+                                        Enable Collector Testing
+                                    </Typography>
+                                </Tooltip>
+                            }
+                        />
+
+                        <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <InputLabel id="testing-frequency-label">Frequency</InputLabel>
+                            <Select
+                                labelId="testing-frequency-label"
+                                value={testingFrequency}
+                                label="Frequency"
+                                onChange={handleFrequencyChange}
+                                disabled={loadingTestingSettings || !autoTestingEnabled}
+                            >
+                                {frequencyOptions.map((option) => (
+                                    <MenuItem key={option.value} value={option.value}>
+                                        {option.label}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
+                </Paper>
             )}
 
             {/* Table header with view mode toggle and column selector */}
@@ -558,6 +744,9 @@ const Collectors = () => {
                                         allColumns={defaultCollectorColumns}
                                         onDelete={handleDelete}
                                         onEdit={handleEdit}
+                                        // Pass additional props to handle FrameEngine special behavior
+                                        isFrameEngine={isFrameEngine(collector)}
+                                        onCardClick={() => handleCardClick(collector)}
                                     />
                                 ))
                             ) : (
@@ -586,6 +775,9 @@ const Collectors = () => {
                                 viewMode={viewMode as 'standard' | 'mini'}
                                 onDelete={handleDelete}
                                 onEdit={handleEdit}
+                                // Pass additional props to handle FrameEngine special behavior
+                                isFrameEngine={isFrameEngine(collector)}
+                                onCardClick={() => handleCardClick(collector)}
                             />
                         ))
                     ) : (

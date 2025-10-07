@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
     Typography, Box, Table, TableHead,
     TableRow, TableCell, TableBody, Paper,
@@ -36,7 +36,6 @@ interface Sensor {
     decimalPlaces: number;
     sensorOrder: number;
     lastUpdated?: string;
-    // Add other fields from Model_Sensor
     sensorType?: string;
     category?: string;
     formula?: string;
@@ -59,24 +58,27 @@ interface Sensor {
     customAttribute8?: string;
     customAttribute9?: string;
     customAttribute10?: string;
-    [key: string]: any; // Allow additional dynamic properties
+    [key: string]: any;
 }
 
 interface DeviceScreenLayoutsCardProps {
     junctionId: number;
-    junction: any; // Junction object with renderingMode property
-    deviceLinks: any[]; // Device links with role="Target"
+    junction: any;
+    deviceLinks: any[];
     loading: boolean;
     showSnackbar: (message: string, severity: "success" | "info" | "warning" | "error") => void;
-    onJunctionUpdate?: (updatedJunction: any) => void; // Callback to update parent component
-    availableSensors: Sensor[]; // New prop for sensor data
+    onJunctionUpdate?: (updatedJunction: any) => void;
+    availableSensors: Sensor[];
+    onRiveInputsUpdate?: (riveInputs: RiveInput[]) => void;
+    onValidationUpdate?: (isValid: boolean, message: string) => void;
 }
 
 const headerStyle = {
     padding: '8px 16px',
-    borderBottom: '2px solid #ddd',
+    borderBottom: 2,
+    borderColor: 'divider',
     fontWeight: 'bold',
-    backgroundColor: '#f5f5f5'
+    backgroundColor: 'action.hover'
 };
 
 const cellStyle = {
@@ -87,13 +89,13 @@ interface ScreenLayoutConfig {
     id?: number;
     junctionId?: number;
     deviceScreenId: number;
-    screenLayoutId?: number; // For payload mode
-    frameLayoutId?: number; // For frame modes
+    screenLayoutId?: number;
+    frameLayoutId?: number;
     targetPollRate?: number;
     onlySendIfChanged: boolean;
-    enableUrlAccess?: boolean; // New field
-    urlPath?: string; // New field
-    lastRequested?: string; // New field
+    enableUrlAccess?: boolean;
+    urlPath?: string;
+    lastRequested?: string;
 }
 
 interface FrameElement {
@@ -129,18 +131,19 @@ interface SensorTag {
     showUnit: boolean;
     placeholderValue: string;
     placeholderUnit: string;
-    isConnected: boolean; // Now uses real sensor mapping logic
+    isConnected: boolean;
 }
 
-// Rive Input interfaces
 interface RiveInput {
-    machineName: string;
-    inputName: string;
-    inputType: 'number' | 'boolean' | 'trigger' | 'unknown';
-    fullKey: string; // "StateMachine.InputName" format
+    name: string;
+    type: 'number' | 'boolean' | 'trigger' | 'string' | 'unknown';
+    fullKey: string;
     currentValue?: any;
-    mappedSensorTags: string[]; // Array of sensor tags mapped to this input
-    isConfigured: boolean; // Whether this input has sensor mappings
+    mappedSensorTags: string[];
+    isConfigured: boolean;
+    elementType: 'input' | 'binding';
+    machineName?: string;
+    sourceLayoutId?: number;
 }
 
 interface DiscoveredRiveData {
@@ -153,60 +156,126 @@ interface DiscoveredRiveData {
             currentValue?: any;
         }>;
     }>;
+    bindings: Array<{
+        name: string;
+        type: 'string' | 'number' | 'boolean';
+        currentValue?: any;
+    }>;
     lastUpdate: string;
     metadata: {
         totalInputs: number;
+        totalBindings: number;
         inputTypeBreakdown: Record<string, number>;
+        bindingTypeBreakdown: Record<string, number>;
     };
+    globalInputMappings: Record<string, string[]>;
 }
 
-// Render mode display names with proper typing
-const renderModeDisplayNames: Record<string, string> = {
-    'Payload': 'Payloads',
-    'Blit': 'FrameEngine - Blit (Pre-Rendered Frames)',
-    'Composite': 'FrameEngine - Composite (Reassembly at Target)'
+const getRenderModeDisplayName = (mode: string): string => {
+    const option = renderingModeOptions.find(opt => opt.value === mode);
+    return option?.name || mode;
 };
 
-// Function to extract Rive inputs from JsonFrameConfig
+const renderingModeOptions = [
+    { value: "Payload", name: "Data Payloads", desc: "Send raw data payloads to target devices" },
+    { value: "Blit", name: "FrameEngine: Pre-rendered Frames", desc: "Render complete images and push per-frame" },
+    { value: "Composite", name: "FrameEngine: Frame Reassembly", desc: "Reassemble complete frames at target" }
+];
+
+const supportsFrameEngine = (junctionType: string): boolean => {
+    return [
+        "COM Junction",
+        "HTTP Junction",
+        "Virtual Junction",
+        "WebSocket Junction"
+    ].includes(junctionType);
+};
+
 const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensors: Sensor[]): RiveInput[] => {
     const allRiveInputs: RiveInput[] = [];
     const inputMap = new Map<string, RiveInput>();
 
     availableLayouts.forEach(layout => {
-        if (!layout.jsonFrameConfig) return;
+        if (!layout.jsonFrameConfig) {
+            return;
+        }
 
         try {
             const frameConfig = JSON.parse(layout.jsonFrameConfig);
-            const riveDiscovery: DiscoveredRiveData = frameConfig.frameConfig?.rive?.discovery;
+            const riveConfig = frameConfig.frameConfig?.rive;
 
-            if (!riveDiscovery?.machines) return;
+            if (!riveConfig?.discovery) {
+                return;
+            }
 
-            riveDiscovery.machines.forEach(machine => {
-                machine.inputs.forEach(input => {
-                    const fullKey = `${machine.name}.${input.name}`;
+            const discovery: DiscoveredRiveData = riveConfig.discovery;
 
-                    if (!inputMap.has(fullKey)) {
-                        // Check if any selected sensors are mapped to this input
-                        // Look for sensor tags that match the input name or full key
-                        // Support comma-separated sensor tags with EXACT matching
+            if (discovery.machines && Array.isArray(discovery.machines)) {
+                discovery.machines.forEach((machine) => {
+                    if (machine.inputs && Array.isArray(machine.inputs)) {
+                        machine.inputs.forEach((input) => {
+                            const fullKey = `${machine.name}.${input.name}`;
+                            const uniqueKey = `${layout.id}-${fullKey}`;
+
+                            if (!inputMap.has(uniqueKey)) {
+                                const mappedSensors = availableSensors.filter(sensor => {
+                                    if (!sensor.IsSelected) return false;
+                                    const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+                                    return sensorTags.some(tag =>
+                                        tag === input.name ||
+                                        tag === fullKey
+                                    );
+                                });
+
+                                const mappedSensorTags: string[] = [];
+                                mappedSensors.forEach(sensor => {
+                                    const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+                                    sensorTags.forEach(tag => {
+                                        if (tag === input.name || tag === fullKey) {
+                                            if (!mappedSensorTags.includes(tag)) {
+                                                mappedSensorTags.push(tag);
+                                            }
+                                        }
+                                    });
+                                });
+
+                                const riveInput: RiveInput = {
+                                    name: input.name,
+                                    type: input.type,
+                                    fullKey,
+                                    currentValue: input.currentValue,
+                                    mappedSensorTags: mappedSensorTags,
+                                    isConfigured: mappedSensorTags.length > 0,
+                                    elementType: 'input',
+                                    machineName: machine.name,
+                                    sourceLayoutId: layout.id
+                                };
+
+                                inputMap.set(uniqueKey, riveInput);
+                                allRiveInputs.push(riveInput);
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (discovery.bindings && Array.isArray(discovery.bindings)) {
+                discovery.bindings.forEach((binding) => {
+                    const bindingKey = binding.name;
+                    const uniqueKey = `${layout.id}-${bindingKey}`;
+
+                    if (!inputMap.has(uniqueKey)) {
                         const mappedSensors = availableSensors.filter(sensor => {
                             if (!sensor.IsSelected) return false;
-
-                            // Split sensor tag by comma and check each part
                             const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
-
-                            return sensorTags.some(tag =>
-                                tag === input.name ||
-                                tag === fullKey
-                            );
+                            return sensorTags.some(tag => tag === binding.name);
                         });
 
-                        // Get all sensor tags that could map to this input (exact matches only)
                         const mappedSensorTags: string[] = [];
                         mappedSensors.forEach(sensor => {
                             const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
                             sensorTags.forEach(tag => {
-                                if (tag === input.name || tag === fullKey) {
+                                if (tag === binding.name) {
                                     if (!mappedSensorTags.includes(tag)) {
                                         mappedSensorTags.push(tag);
                                     }
@@ -215,105 +284,145 @@ const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensor
                         });
 
                         const riveInput: RiveInput = {
-                            machineName: machine.name,
-                            inputName: input.name,
-                            inputType: input.type,
-                            fullKey,
-                            currentValue: input.currentValue,
+                            name: binding.name,
+                            type: binding.type || 'string',
+                            fullKey: bindingKey,
+                            currentValue: binding.currentValue,
                             mappedSensorTags: mappedSensorTags,
-                            isConfigured: mappedSensorTags.length > 0
+                            isConfigured: mappedSensorTags.length > 0,
+                            elementType: 'binding',
+                            sourceLayoutId: layout.id
                         };
 
-                        inputMap.set(fullKey, riveInput);
+                        inputMap.set(uniqueKey, riveInput);
                         allRiveInputs.push(riveInput);
                     }
                 });
-            });
+            }
+
         } catch (error) {
-            console.error('Error parsing JsonFrameConfig for layout:', layout.displayName, error);
+            console.error(`Error parsing JsonFrameConfig for layout ${layout.id}:`, error);
         }
     });
 
     return allRiveInputs;
 };
 
-// Rive Input Mapping Section Component
-const RiveInputMappingSection: React.FC<{
+const RiveInputsForLayout: React.FC<{
+    layoutId: number;
+    layoutName: string;
     riveInputs: RiveInput[];
     availableSensors: Sensor[];
     onInputMappingChange: (inputKey: string, sensorTags: string[]) => void;
-}> = ({ riveInputs, availableSensors, onInputMappingChange }) => {
+}> = ({ layoutId, layoutName, riveInputs, availableSensors, onInputMappingChange }) => {
 
-    if (riveInputs.length === 0) {
+    const layoutInputs = riveInputs.filter(input => {
+        const inputLayoutId = Number(input.sourceLayoutId);
+        const targetLayoutId = Number(layoutId);
+        return inputLayoutId === targetLayoutId;
+    });
+
+    if (layoutInputs.length === 0) {
         return (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-                No Rive inputs discovered from current templates. Rive inputs will appear here when you configure Composite layouts.
+                No Rive inputs found in "{layoutName}"
             </Typography>
         );
     }
 
-    // Group inputs by state machine
-    const inputsByMachine = riveInputs.reduce((acc, input) => {
-        if (!acc[input.machineName]) {
-            acc[input.machineName] = [];
-        }
-        acc[input.machineName].push(input);
-        return acc;
-    }, {} as Record<string, RiveInput[]>);
+    const inputs = layoutInputs.filter(input => input.elementType === 'input');
+    const bindings = layoutInputs.filter(input => input.elementType === 'binding');
+
+    const renderInputTable = (elements: RiveInput[], title: string) => {
+        if (elements.length === 0) return null;
+
+        const groupedElements = elements.reduce((acc, element) => {
+            const key = element.machineName || 'Bindings';
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(element);
+            return acc;
+        }, {} as Record<string, RiveInput[]>);
+
+        return (
+            <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                    {title}:
+                </Typography>
+                {Object.entries(groupedElements).map(([groupName, groupElements]) => (
+                    <Box key={groupName} sx={{ mb: 2 }}>
+                        {groupName !== 'Bindings' && (
+                            <Typography variant="body2" sx={{ mb: 1, fontStyle: 'italic', color: 'text.secondary' }}>
+                                {groupName}
+                            </Typography>
+                        )}
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Name</TableCell>
+                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
+                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Type</TableCell>
+                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Default Value</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {groupElements.map((element) => (
+                                    <TableRow
+                                        key={`${element.elementType}-${element.fullKey}-${element.sourceLayoutId}`}
+                                        hover
+                                    >
+                                        <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                            <Box display="flex" alignItems="center">
+                                                <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                                                <Typography variant="body2" fontWeight="medium">
+                                                    {element.name}
+                                                </Typography>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                            <Chip
+                                                size="small"
+                                                label={element.isConfigured ? "Mapped" : "Not Mapped"}
+                                                color={element.isConfigured ? "success" : "error"}
+                                                icon={element.isConfigured ? <CheckCircleIcon /> : <CancelIcon />}
+                                                variant="outlined"
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                            <Chip
+                                                size="small"
+                                                label={element.type}
+                                                color={
+                                                    element.type === 'number' ? 'primary' :
+                                                        element.type === 'boolean' ? 'secondary' :
+                                                            element.type === 'string' ? 'info' :
+                                                                element.type === 'trigger' ? 'warning' : 'default'
+                                                }
+                                                variant="outlined"
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {element.currentValue !== undefined ? String(element.currentValue) : 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </Box>
+                ))}
+            </Box>
+        );
+    };
 
     return (
         <Box sx={{ mt: 2 }}>
-            {Object.entries(inputsByMachine).map(([machineName, inputs]) => (
-                <Box key={machineName} sx={{ mb: 3 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                        {machineName}:
-                    </Typography>
-                    <Table size="small">
-                        <TableHead>
-                            <TableRow>
-                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Input Name</TableCell>
-                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
-                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Type</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {inputs.map((input) => (
-                                <TableRow key={input.fullKey} hover>
-                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                        <Box display="flex" alignItems="center">
-                                            <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {input.inputName}
-                                            </Typography>
-                                        </Box>
-                                    </TableCell>
-                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                        <Chip
-                                            size="small"
-                                            label={input.isConfigured ? "Mapped" : "Not Mapped"}
-                                            color={input.isConfigured ? "success" : "error"}
-                                            icon={input.isConfigured ? <CheckCircleIcon /> : <CancelIcon />}
-                                            variant="outlined"
-                                        />
-                                    </TableCell>
-                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                        <Chip
-                                            size="small"
-                                            label={input.inputType}
-                                            color={
-                                                input.inputType === 'number' ? 'primary' :
-                                                    input.inputType === 'boolean' ? 'secondary' :
-                                                        input.inputType === 'trigger' ? 'warning' : 'default'
-                                            }
-                                            variant="outlined"
-                                        />
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </Box>
-            ))}
+            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                <SensorsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                Rive Elements in "{layoutName}"
+            </Typography>
+            {renderInputTable(inputs, "State Machine Inputs")}
+            {renderInputTable(bindings, "Text Bindings")}
         </Box>
     );
 };
@@ -325,83 +434,67 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     loading,
     showSnackbar,
     onJunctionUpdate,
-    availableSensors
+    availableSensors,
+    onRiveInputsUpdate,
+    onValidationUpdate
 }) => {
-    // State for screens, layouts, and configurations
     const [deviceScreens, setDeviceScreens] = useState<{ [deviceId: number]: any[] }>({});
-    const [screenLayouts, setScreenLayouts] = useState<any[]>([]); // Legacy layouts
-    const [frameLayouts, setFrameLayouts] = useState<any[]>([]); // Frame layouts
+    const [screenLayouts, setScreenLayouts] = useState<any[]>([]);
+    const [frameLayouts, setFrameLayouts] = useState<any[]>([]);
     const [screenConfigs, setScreenConfigs] = useState<{ [key: string]: ScreenLayoutConfig }>({});
     const [loadingState, setLoadingState] = useState<{ [key: string]: boolean }>({});
     const [savingRenderingMode, setSavingRenderingMode] = useState<boolean>(false);
-
-    // State for Rive input mappings
     const [riveInputMappings, setRiveInputMappings] = useState<Record<string, string[]>>({});
 
-    // Determine rendering mode using new constants
     const renderingMode = junction?.renderingMode || 'Payload';
     const isPayloadMode = renderingMode === 'Payload';
     const isBlitMode = renderingMode === 'Blit';
     const isCompositeMode = renderingMode === 'Composite';
     const isAnyFrameMode = isBlitMode || isCompositeMode;
 
-    console.log('[DEBUG] Junction object:', junction);
-    console.log('[DEBUG] Rendering mode from junction:', junction?.renderingMode);
-    console.log('[DEBUG] Final renderingMode:', renderingMode);
-    console.log('[DEBUG] isPayloadMode:', isPayloadMode);
-    console.log('[DEBUG] isBlitMode:', isBlitMode);
-    console.log('[DEBUG] isCompositeMode:', isCompositeMode);
-    console.log('[DEBUG] isAnyFrameMode:', isAnyFrameMode);
+    const getAvailableRenderingModes = useCallback(() => {
+        if (!junction?.type || !supportsFrameEngine(junction.type)) {
+            return renderingModeOptions.filter(mode => mode.value === "Payload");
+        }
+        return renderingModeOptions;
+    }, [junction?.type]);
 
-    // Filter layouts based on rendering mode
-    const getFilteredLayouts = () => {
-        console.log('[DEBUG] getFilteredLayouts called - renderingMode:', renderingMode);
-        console.log('[DEBUG] isBlitMode || isCompositeMode:', isBlitMode || isCompositeMode);
-
+    const getFilteredLayouts = useCallback(() => {
         if (isBlitMode || isCompositeMode) {
-            console.log('[DEBUG] Returning frame layouts:', frameLayouts);
             return frameLayouts;
         } else {
-            console.log('[DEBUG] Returning screen layouts:', screenLayouts);
             return screenLayouts;
         }
-    };
+    }, [isBlitMode, isCompositeMode, frameLayouts, screenLayouts]);
 
     const availableLayouts = getFilteredLayouts();
 
-    // Filter to only include device links that are targets
-    const targetDeviceLinks = deviceLinks.filter(link =>
-        link.type === "device" && link.role === "Target"
-    );
+    const targetDeviceLinks = useMemo(() =>
+        deviceLinks.filter(link => link.type === "device" && link.role === "Target")
+        , [deviceLinks]);
 
-    // Function to check if a sensor tag is mapped to a selected sensor (updated to handle comma-separated tags)
-    const isSensorTagMapped = (sensorTag: string): boolean => {
+    const isSensorTagMapped = useCallback((sensorTag: string): boolean => {
         return availableSensors.some(sensor => {
             if (!sensor.IsSelected) return false;
-
-            // Split sensor tag by comma and check each part for exact match
             const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
             return sensorTags.includes(sensorTag);
         });
-    };
+    }, [availableSensors]);
 
-    // Get base URL for frame access
-    const getBaseUrl = () => {
+    const getBaseUrl = useCallback(() => {
         return `${window.location.protocol}//${window.location.host}`;
-    };
+    }, []);
 
-    // Copy URL to clipboard
-    const copyToClipboard = async (text: string) => {
+    const copyToClipboard = useCallback(async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
             showSnackbar("URL copied to clipboard", "success");
         } catch (err) {
             showSnackbar("Failed to copy URL", "error");
         }
-    };
+    }, [showSnackbar]);
 
-    // Extract sensor tags from template JSON
-    const extractSensorTagsFromTemplate = (layoutId: number): SensorTag[] => {
+    const extractSensorTagsFromTemplate = useCallback((layoutId: number): SensorTag[] => {
         const layout = availableLayouts.find(l => String(l.id) === String(layoutId));
         if (!layout || !layout.jsonFrameElements) {
             return [];
@@ -409,41 +502,183 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
         try {
             const elements: FrameElement[] = JSON.parse(layout.jsonFrameElements);
-            const sensorElements = elements.filter(element =>
-                element.type === 'sensor' &&
-                element.properties?.sensorTag
-            );
+            const sensorTags: SensorTag[] = [];
 
-            return sensorElements.map(element => {
-                const sensorTag = element.properties.sensorTag!;
-                const isConnected = isSensorTagMapped(sensorTag);
+            elements.forEach(element => {
+                // Extract main sensor tag (for data display)
+                if ((element.type === 'sensor' || element.type === 'ecg') && element.properties?.sensorTag) {
+                    const sensorTag = element.properties.sensorTag;
+                    const isConnected = isSensorTagMapped(sensorTag);
 
-                return {
-                    sensorTag: sensorTag,
-                    placeholderSensorLabel: element.properties.placeholderSensorLabel || 'Unknown',
-                    showLabel: element.properties.showLabel ?? false,
-                    showUnit: element.properties.showUnit ?? false,
-                    placeholderValue: element.properties.placeholderValue || '',
-                    placeholderUnit: element.properties.placeholderUnit || '',
-                    isConnected: isConnected
-                };
+                    sensorTags.push({
+                        sensorTag: sensorTag,
+                        placeholderSensorLabel: element.properties.placeholderSensorLabel || 'Unknown',
+                        showLabel: element.properties.showLabel ?? false,
+                        showUnit: element.properties.showUnit ?? false,
+                        placeholderValue: element.properties.placeholderValue || '',
+                        placeholderUnit: element.properties.placeholderUnit || '',
+                        isConnected: isConnected
+                    });
+                }
+
+                // Extract visibility sensor tag (for visibility control) - for ALL element types
+                if (element.properties?.visibilitySensorTag) {
+                    const visibilityTag = element.properties.visibilitySensorTag;
+                    const isConnected = isSensorTagMapped(visibilityTag);
+
+                    // Only add if not already in the list
+                    if (!sensorTags.find(st => st.sensorTag === visibilityTag)) {
+                        sensorTags.push({
+                            sensorTag: visibilityTag,
+                            placeholderSensorLabel: `[Visibility Control for ${element.type}]`,
+                            showLabel: false,
+                            showUnit: false,
+                            placeholderValue: 'true/false',
+                            placeholderUnit: '',
+                            isConnected: isConnected
+                        });
+                    }
+                }
             });
+
+            return sensorTags;
         } catch (error) {
             console.error('Error parsing template JSON:', error);
             return [];
         }
-    };
+    }, [availableLayouts, isSensorTagMapped]);
 
-    // Calculate Rive inputs when layouts or sensors change - now for both frame modes
-    const riveInputs = React.useMemo(() => {
-        if (!isAnyFrameMode) return [];
-        return extractRiveInputsFromTemplates(availableLayouts, availableSensors);
-    }, [availableLayouts, availableSensors, isAnyFrameMode]);
+    const getSelectedLayoutIds = useCallback((): number[] => {
+        const selectedIds = new Set<number>();
 
-    // Handle Rive input mapping changes
-    const handleRiveInputMappingChange = async (inputKey: string, sensorTags: string[]) => {
+        targetDeviceLinks.forEach(link => {
+            const linkId = link.linkId;
+            const deviceId = link.id;
+            const screens = deviceScreens[deviceId] || [];
+
+            screens.forEach(screen => {
+                const screenId = screen.id;
+                const key = `${linkId}-${screenId}`;
+                const config = screenConfigs[key];
+
+                let selectedLayoutId: number | null = null;
+
+                if (config) {
+                    const configLayoutId = isAnyFrameMode ? config.frameLayoutId : config.screenLayoutId;
+                    selectedLayoutId = configLayoutId ?? null;
+                } else {
+                    selectedLayoutId = screen.screenLayoutId ?? null;
+                }
+
+                if (selectedLayoutId !== null) {
+                    selectedIds.add(selectedLayoutId);
+                }
+            });
+        });
+
+        return Array.from(selectedIds);
+    }, [targetDeviceLinks, deviceScreens, screenConfigs, isAnyFrameMode]);
+
+    const sensorSelectionHash = useMemo(() => {
+        return availableSensors
+            .filter(s => s.IsSelected)
+            .map(s => `${s.Id}-${s.sensorTag}`)
+            .sort()
+            .join(',');
+    }, [availableSensors]);
+
+    const riveInputs = useMemo(() => {
+        if (!isAnyFrameMode) {
+            return [];
+        }
+
+        const selectedLayoutIds = getSelectedLayoutIds();
+        const selectedLayouts = availableLayouts.filter(layout => {
+            const layoutIdAsNumber = parseInt(String(layout.id), 10);
+            return selectedLayoutIds.includes(layoutIdAsNumber);
+        });
+
+        return extractRiveInputsFromTemplates(selectedLayouts, availableSensors);
+    }, [
+        isAnyFrameMode,
+        availableLayouts.length,
+        Object.keys(screenConfigs).join(','),
+        Object.keys(deviceScreens).join(','),
+        targetDeviceLinks.length,
+        sensorSelectionHash,
+        getSelectedLayoutIds
+    ]);
+
+    const previousRiveInputsRef = useRef<string>('');
+
+    useEffect(() => {
+        if (onRiveInputsUpdate) {
+            const currentInputsHash = JSON.stringify(riveInputs.map(input => ({
+                fullKey: input.fullKey,
+                isConfigured: input.isConfigured,
+                sourceLayoutId: input.sourceLayoutId
+            })));
+
+            if (currentInputsHash !== previousRiveInputsRef.current) {
+                previousRiveInputsRef.current = currentInputsHash;
+                onRiveInputsUpdate(riveInputs);
+            }
+        }
+    }, [riveInputs, onRiveInputsUpdate]);
+
+    // VALIDATION EFFECT - NEW
+    useEffect(() => {
+        if (!onValidationUpdate) return;
+
+        const targetDevices = deviceLinks.filter(link => link.type === "device" && link.role === "Target");
+
+        if (targetDevices.length === 0) {
+            onValidationUpdate(true, "");
+            return;
+        }
+
+        let hasUnassignedScreens = false;
+        let unassignedCount = 0;
+
+        for (const link of targetDevices) {
+            const linkId = link.linkId;
+            const deviceId = link.id;
+            const screens = deviceScreens[deviceId] || [];
+
+            for (const screen of screens) {
+                const screenId = screen.id;
+                const key = `${linkId}-${screenId}`;
+                const config = screenConfigs[key];
+
+                const layoutId = isAnyFrameMode
+                    ? (config?.frameLayoutId ?? screen.screenLayoutId)
+                    : (config?.screenLayoutId ?? screen.screenLayoutId);
+
+                if (!layoutId) {
+                    hasUnassignedScreens = true;
+                    unassignedCount++;
+                }
+            }
+        }
+
+        if (hasUnassignedScreens) {
+            onValidationUpdate(
+                false,
+                `${unassignedCount} screen${unassignedCount > 1 ? 's' : ''} need${unassignedCount === 1 ? 's' : ''} a layout assigned`
+            );
+        } else {
+            onValidationUpdate(true, "");
+        }
+    }, [
+        deviceLinks,
+        deviceScreens,
+        screenConfigs,
+        isAnyFrameMode,
+        onValidationUpdate
+    ]);
+
+    const handleRiveInputMappingChange = useCallback(async (inputKey: string, sensorTags: string[]) => {
         try {
-            // Update local state immediately
             setRiveInputMappings(prev => ({
                 ...prev,
                 [inputKey]: sensorTags
@@ -453,18 +688,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 `Updated mapping for ${inputKey}: ${sensorTags.length ? sensorTags.join(', ') : 'cleared'}`,
                 "success"
             );
-
         } catch (error) {
             console.error('Error updating Rive input mapping:', error);
             showSnackbar('Failed to update Rive input mapping', 'error');
         }
-    };
+    }, [showSnackbar]);
 
-    // Fetch screen layouts (legacy)
-    const fetchScreenLayouts = async () => {
+    const fetchScreenLayouts = useCallback(async () => {
         try {
             setLoadingState(prev => ({ ...prev, screenLayouts: true }));
-            console.log('[DEBUG] Fetching screen layouts from /api/layouts');
             const response = await fetch('/api/layouts');
 
             if (!response.ok) {
@@ -472,7 +704,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const data = await response.json();
-            console.log('[DEBUG] Screen layouts from API:', data);
             setScreenLayouts(data);
         } catch (error) {
             console.error("Error fetching screen layouts:", error);
@@ -480,10 +711,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         } finally {
             setLoadingState(prev => ({ ...prev, screenLayouts: false }));
         }
-    };
+    }, [showSnackbar]);
 
-    // Fetch frame layouts
-    const fetchFrameLayouts = async () => {
+    const fetchFrameLayouts = useCallback(async () => {
         try {
             setLoadingState(prev => ({ ...prev, frameLayouts: true }));
             const response = await fetch('/api/frameengine');
@@ -493,7 +723,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             }
 
             const data = await response.json();
-            console.log('[DEBUG] Frame layouts from API:', data);
             setFrameLayouts(data);
         } catch (error) {
             console.error("Error fetching frame layouts:", error);
@@ -501,40 +730,31 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         } finally {
             setLoadingState(prev => ({ ...prev, frameLayouts: false }));
         }
-    };
+    }, [showSnackbar]);
 
-    // Fetch screen configurations for a specific device link
-    const fetchScreenConfigs = async (junctionId: number, linkId: number) => {
+    const fetchScreenConfigs = useCallback(async (junctionId: number, linkId: number) => {
         try {
             setLoadingState(prev => ({ ...prev, [`configs-${linkId}`]: true }));
 
-            console.log(`[DEBUG] Fetching screen configs for junction ${junctionId}, link ${linkId}`);
             const response = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts`);
 
             if (response.ok) {
                 const data = await response.json();
-                console.log(`[DEBUG] Screen config response for link ${linkId}:`, data);
 
-                // Store device screens from this response
                 if (data.deviceScreens && data.deviceScreens.length > 0) {
                     const deviceId = data.deviceScreens[0].deviceId;
-                    console.log(`[DEBUG] Storing device screens for device ${deviceId}:`, data.deviceScreens);
                     setDeviceScreens(prev => ({
                         ...prev,
                         [deviceId]: data.deviceScreens
                     }));
                 }
 
-                // Process screen configurations
                 const configs = data.screenLayoutOverrides || [];
-                console.log(`[DEBUG] Processing ${configs.length} screen layout overrides:`, configs);
-
                 const newConfigs = { ...screenConfigs };
 
                 configs.forEach((config: any) => {
                     const screenId = config.deviceScreenId;
                     const key = `${linkId}-${screenId}`;
-                    console.log(`[DEBUG] Creating config key "${key}" for screen ${screenId}:`, config);
 
                     newConfigs[key] = {
                         id: config.id,
@@ -550,22 +770,18 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                     };
                 });
 
-                console.log(`[DEBUG] Final screenConfigs state:`, newConfigs);
                 setScreenConfigs(prev => ({
                     ...prev,
                     ...newConfigs
                 }));
-            } else {
-                console.error(`[DEBUG] Failed to fetch screen configurations: ${response.status}`);
             }
         } catch (error) {
-            console.error(`[DEBUG] Error fetching screen configurations for link ${linkId}:`, error);
+            console.error(`Error fetching screen configurations for link ${linkId}:`, error);
         } finally {
             setLoadingState(prev => ({ ...prev, [`configs-${linkId}`]: false }));
         }
-    };
+    }, [screenConfigs]);
 
-    // Load data on component mount
     useEffect(() => {
         fetchScreenLayouts();
         fetchFrameLayouts();
@@ -577,19 +793,11 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         });
     }, [targetDeviceLinks.map(link => `${link.id}-${link.linkId}`).join(','), junction?.renderingMode]);
 
-    // Handle layout change
-    const handleLayoutChange = async (linkId: number, screenId: number, layoutId: number | null, defaultLayoutId: number | null) => {
+    const handleLayoutChange = useCallback(async (linkId: number, screenId: number, layoutId: number | null, defaultLayoutId: number | null) => {
         const key = `${linkId}-${screenId}`;
-        console.log(`[DEBUG] handleLayoutChange called - linkId: ${linkId}, screenId: ${screenId}, key: "${key}"`);
-        console.log(`[DEBUG] Current screenConfigs:`, screenConfigs);
-        console.log(`[DEBUG] Looking for config with key "${key}":`, screenConfigs[key]);
-
         const existingConfig = screenConfigs[key];
 
         if (!existingConfig?.id) {
-            console.error(`[DEBUG] No existing screen layout config found for key "${key}"`);
-            console.error(`[DEBUG] Available keys in screenConfigs:`, Object.keys(screenConfigs));
-            console.error(`[DEBUG] All screenConfigs:`, screenConfigs);
             showSnackbar("Screen layout configuration not found", "error");
             return;
         }
@@ -597,11 +805,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         try {
             setLoadingState(prev => ({ ...prev, [key]: true }));
 
-            // Check if this is actually a change
             const currentEffectiveLayoutId = isAnyFrameMode ? existingConfig.frameLayoutId : existingConfig.screenLayoutId;
 
             if (currentEffectiveLayoutId === layoutId) {
-                console.log(`[DEBUG] Layout ID ${layoutId} unchanged for screen ${screenId}, skipping update`);
                 return;
             }
 
@@ -614,14 +820,12 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 urlPath: existingConfig.urlPath
             };
 
-            // Set the appropriate layout ID based on rendering mode
             if (isAnyFrameMode) {
                 payload.frameLayoutId = layoutId;
             } else {
                 payload.screenLayoutId = layoutId;
             }
 
-            // Always UPDATE since record exists from auto-creation
             payload.id = existingConfig.id;
             payload.junctionId = existingConfig.junctionId;
 
@@ -637,7 +841,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
             const data = { ...payload, id: existingConfig.id };
 
-            // Update state with updated configuration
             setScreenConfigs(prev => ({
                 ...prev,
                 [key]: {
@@ -654,19 +857,18 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 }
             }));
 
-            const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
+            const modeDescription = getRenderModeDisplayName(renderingMode);
             showSnackbar(`${modeDescription} layout configuration updated successfully`, "success");
         } catch (error) {
             console.error("Error updating layout configuration:", error);
-            const modeDescription = renderModeDisplayNames[renderingMode] || renderingMode;
+            const modeDescription = getRenderModeDisplayName(renderingMode);
             showSnackbar(`Failed to update ${modeDescription} layout configuration`, "error");
         } finally {
             setLoadingState(prev => ({ ...prev, [key]: false }));
         }
-    };
+    }, [screenConfigs, junctionId, showSnackbar, isAnyFrameMode, renderingMode]);
 
-    // Handle URL access toggle
-    const handleUrlAccessToggle = async (linkId: number, screenId: number) => {
+    const handleUrlAccessToggle = useCallback(async (linkId: number, screenId: number) => {
         const key = `${linkId}-${screenId}`;
 
         try {
@@ -680,7 +882,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             const newValue = !existingConfig.enableUrlAccess;
             let newUrlPath = existingConfig.urlPath;
 
-            // Generate URL path if enabling and none exists
             if (newValue && !newUrlPath) {
                 newUrlPath = `junction-${junctionId}-link-${linkId}-screen-${screenId}.png`;
             }
@@ -706,7 +907,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 throw new Error(`Failed to update URL access: ${response.status}`);
             }
 
-            // Update local state
             setScreenConfigs(prev => ({
                 ...prev,
                 [key]: {
@@ -722,10 +922,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             console.error("Error updating URL access:", error);
             showSnackbar("Failed to update URL access", "error");
         }
-    };
+    }, [screenConfigs, junctionId, showSnackbar]);
 
-    // Handle poll rate change
-    const handlePollRateChange = async (linkId: number, screenId: number, pollRate: string) => {
+    const handlePollRateChange = useCallback(async (linkId: number, screenId: number, pollRate: string) => {
         const key = `${linkId}-${screenId}`;
         const numericRate = pollRate === "" ? undefined : parseInt(pollRate, 10);
 
@@ -758,7 +957,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 throw new Error(`Failed to update poll rate: ${response.status}`);
             }
 
-            // Update local state
             setScreenConfigs(prev => ({
                 ...prev,
                 [key]: {
@@ -771,10 +969,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             console.error("Error updating poll rate:", error);
             showSnackbar("Failed to update poll rate", "error");
         }
-    };
+    }, [screenConfigs, junctionId, showSnackbar]);
 
-    // Handle "only send if changed" toggle
-    const handleOnlySendIfChangedToggle = async (linkId: number, screenId: number) => {
+    const handleOnlySendIfChangedToggle = useCallback(async (linkId: number, screenId: number) => {
         const key = `${linkId}-${screenId}`;
 
         try {
@@ -808,7 +1005,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 throw new Error(`Failed to update send option: ${response.status}`);
             }
 
-            // Update local state
             setScreenConfigs(prev => ({
                 ...prev,
                 [key]: {
@@ -821,10 +1017,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             console.error("Error updating send option:", error);
             showSnackbar("Failed to update send option", "error");
         }
-    };
+    }, [screenConfigs, junctionId, showSnackbar]);
 
-    // Handle rendering mode change
-    const handleRenderingModeChange = async (newMode: string) => {
+    const handleRenderingModeChange = useCallback(async (newMode: string) => {
         try {
             setSavingRenderingMode(true);
 
@@ -841,18 +1036,14 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 throw new Error(`Failed to update rendering mode: ${response.status}`);
             }
 
-            // Update local junction state
             const updatedJunction = { ...junction, renderingMode: newMode };
 
-            // Call parent callback if provided
             if (onJunctionUpdate) {
                 onJunctionUpdate(updatedJunction);
             }
 
-            const modeLabel = renderModeDisplayNames[newMode] || newMode;
+            const modeLabel = getRenderModeDisplayName(newMode);
             showSnackbar(`Switched to ${modeLabel} successfully`, "success");
-
-            // Refresh screen configurations since they may be different for the new mode
             targetDeviceLinks.forEach(link => {
                 if (link.linkId) {
                     fetchScreenConfigs(junctionId, link.linkId);
@@ -865,39 +1056,26 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         } finally {
             setSavingRenderingMode(false);
         }
-    };
+    }, [junction, junctionId, onJunctionUpdate, showSnackbar, targetDeviceLinks, fetchScreenConfigs]);
 
-    // Get layout name by ID
-    const getLayoutName = (layoutId: number) => {
+    const getLayoutName = useCallback((layoutId: number) => {
         const layout = availableLayouts.find(l => l.id === layoutId);
         return layout ? layout.displayName : "Unknown Layout";
-    };
+    }, [availableLayouts]);
 
-    // Helper function to get consistent layout ID selection (matches auto-creation logic)
-    const getDefaultLayoutId = (screen: any, availableLayouts: any[]) => {
-        return screen.screenLayoutId || availableLayouts[0]?.id;
-    };
-   
-    // Get current layout ID (configuration or default)
-    const getCurrentLayoutId = (screenId: number, defaultLayoutId: number | null, linkId: number) => {
+    const getCurrentLayoutId = useCallback((screenId: number, defaultLayoutId: number | null, linkId: number) => {
         const key = `${linkId}-${screenId}`;
         const config = screenConfigs[key];
 
-        console.log(`[DEBUG] getCurrentLayoutId - screenId: ${screenId}, linkId: ${linkId}, key: "${key}"`);
-        console.log(`[DEBUG] Config found:`, config);
-
         if (config) {
             const layoutId = isAnyFrameMode ? config.frameLayoutId : config.screenLayoutId;
-            console.log(`[DEBUG] Returning layout ID from config: ${layoutId} (frameMode: ${isAnyFrameMode})`);
             return layoutId;
         }
 
-        console.log(`[DEBUG] No config found, returning default: ${defaultLayoutId}`);
         return defaultLayoutId;
-    };
+    }, [screenConfigs, isAnyFrameMode]);
 
-    // Generate frame URL for display (only relevant for pre-rendered frames)
-    const generateFrameUrl = (linkId: number, screenId: number) => {
+    const generateFrameUrl = useCallback((linkId: number, screenId: number) => {
         const key = `${linkId}-${screenId}`;
         const config = screenConfigs[key];
 
@@ -906,14 +1084,18 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         }
 
         return `${getBaseUrl()}/frames/${config.urlPath}`;
-    };
+    }, [screenConfigs, getBaseUrl]);
 
-    // Render sensor tags table
-    const renderSensorTagsTable = (sensorTags: SensorTag[], layoutName: string) => {
+    const generateVirtualDisplayUrl = useCallback((linkId: number, screenId: number, deviceId: number) => {
+        const virtualDeviceId = -(Math.abs(deviceId + 10000));
+        return `${getBaseUrl()}/device/${virtualDeviceId}/virtual-screen`;
+    }, [getBaseUrl]);
+
+    const renderSensorTagsTable = useCallback((sensorTags: SensorTag[], layoutName: string) => {
         if (sensorTags.length === 0) {
             return (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-                    No sensor tags found in this template
+                    No SensorTags found in this template
                 </Typography>
             );
         }
@@ -921,12 +1103,12 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         return (
             <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                    Sensor Tags in "{layoutName}":
+                    SensorTags in "{layoutName}":
                 </Typography>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Sensor Tag</TableCell>
+                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>SensorTag</TableCell>
                             <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
                             <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Label</TableCell>
                             <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Units</TableCell>
@@ -972,21 +1154,16 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                 </TableCell>
                                 <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
                                     <Typography variant="body2">
-                                        {/* Show label if showLabel is true */}
                                         {sensorTag.showLabel && sensorTag.placeholderSensorLabel && (
                                             <span style={{ marginRight: '4px' }}>
                                                 {sensorTag.placeholderSensorLabel}
                                             </span>
                                         )}
-
-                                        {/* Always show the value */}
                                         <span>
                                             {sensorTag.placeholderValue}
                                         </span>
-
-                                        {/* Show unit if showUnit is true */}
                                         {sensorTag.showUnit && sensorTag.placeholderUnit && (
-                                            <span style={{ color: '#666', marginLeft: '2px' }}>
+                                            <span style={{ color: 'text.secondary', marginLeft: '2px' }}>
                                                 {sensorTag.placeholderUnit}
                                             </span>
                                         )}
@@ -998,7 +1175,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </Table>
             </Box>
         );
-    };
+    }, []);
 
     if (loading || loadingState.screenLayouts || loadingState.frameLayouts) {
         return (
@@ -1010,7 +1187,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
     return (
         <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-            {/* Rendering Mode Configuration Card */}
             <Card sx={{ mb: 3 }}>
                 <CardContent>
                     <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1025,15 +1201,24 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                 value={renderingMode}
                                 label="Rendering Mode"
                                 onChange={(e) => handleRenderingModeChange(e.target.value)}
-                                disabled={savingRenderingMode || loading}
+                                disabled={savingRenderingMode || loading || !supportsFrameEngine(junction?.type || "")}
                             >
-                                <MenuItem value="Payload">Data Payloads</MenuItem>
-                                <MenuItem value="Blit">Pre-rendered Frames</MenuItem>
-                                <MenuItem value="Composite">Frame Assembly</MenuItem>
+                                {getAvailableRenderingModes().map((mode) => (
+                                    <MenuItem key={mode.value} value={mode.value}>
+                                        <Box>
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {mode.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {mode.desc}
+                                            </Typography>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
                             </Select>
                         </FormControl>
                         <Chip
-                            label={`${renderModeDisplayNames[renderingMode] || renderingMode} Active`}
+                            label={`${getRenderModeDisplayName(renderingMode)} Active`}
                             color={isAnyFrameMode ? "primary" : "default"}
                             size="small"
                             icon={<ImageIcon />}
@@ -1041,6 +1226,13 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
                         {savingRenderingMode && <CircularProgress size={20} />}
                     </Box>
+
+                    {!supportsFrameEngine(junction?.type || "") && (
+                        <Typography variant="body2" color="warning.main" sx={{ mt: 2, fontStyle: 'italic' }}>
+                            <strong>Note:</strong> This junction type ({junction?.type}) only supports Data Payloads mode.
+                            FrameEngine modes (Pre-rendered Frames, Frame Assembly) are available for COM, HTTP, Virtual, and WebSocket junctions only.
+                        </Typography>
+                    )}
 
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                         {isBlitMode ? (
@@ -1064,7 +1256,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </CardContent>
             </Card>
 
-            {/* Screen Configurations */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                 <Typography variant="h6" sx={{
                     display: 'flex',
@@ -1135,24 +1326,16 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                 </TableRow>
                                             </TableHead>
                                             <TableBody>
-                                                        {screens.map((screen: any) => {
-                                                            const screenId = screen.id;
-                                                            const key = `${linkId}-${screenId}`;
-                                                            console.log(`[DEBUG] Rendering screen ${screenId}, linkId: ${linkId}, key: "${key}"`);
-                                                            console.log(`[DEBUG] Screen object:`, screen);
-                                                            console.log(`[DEBUG] Config for this key:`, screenConfigs[key]);
-
-                                                            const defaultLayoutId = screen.screenLayoutId;
-                                                            const currentLayoutId = getCurrentLayoutId(screenId, defaultLayoutId, linkId);
-                                                            const config = screenConfigs[key];
-                                                            const isConfigured = Boolean(config);
-
-                                                            console.log(`[DEBUG] Screen ${screenId} - isConfigured: ${isConfigured}, config exists: ${!!config}`);
-
+                                                {screens.map((screen: any) => {
+                                                    const screenId = screen.id;
+                                                    const key = `${linkId}-${screenId}`;
+                                                    const defaultLayoutId = screen.screenLayoutId;
+                                                    const currentLayoutId = getCurrentLayoutId(screenId, defaultLayoutId, linkId);
+                                                    const config = screenConfigs[key];
+                                                    const isConfigured = Boolean(config);
                                                     const isLoading = loadingState[key] || false;
                                                     const frameUrl = generateFrameUrl(linkId, screenId);
 
-                                                    // Extract sensor tags if a layout is selected
                                                     const sensorTags = currentLayoutId && isAnyFrameMode
                                                         ? extractSensorTagsFromTemplate(currentLayoutId)
                                                         : [];
@@ -1160,15 +1343,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                     const selectedLayout = currentLayoutId
                                                         ? availableLayouts.find(l => String(l.id) === String(currentLayoutId))
                                                         : null;
-
-                                                    // Debug logging
-                                                    if (currentLayoutId && isAnyFrameMode) {
-                                                        console.log('Debug - Layout ID:', currentLayoutId);
-                                                        console.log('Debug - Available Layouts:', availableLayouts);
-                                                        console.log('Debug - Selected Layout:', selectedLayout);
-                                                        console.log('Debug - Sensor Tags:', sensorTags);
-                                                        console.log('Debug - JsonFrameElements:', selectedLayout?.jsonFrameElements);
-                                                    }
 
                                                     return (
                                                         <React.Fragment key={`screen-${screenId}`}>
@@ -1180,7 +1354,24 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                 </TableCell>
                                                                 <TableCell sx={cellStyle}>
                                                                     <Box display="flex" alignItems="center">
-                                                                        <FormControl fullWidth size="small">
+                                                                        <FormControl
+                                                                            fullWidth
+                                                                            size="small"
+                                                                            error={!currentLayoutId}
+                                                                            sx={{
+                                                                                '& .MuiOutlinedInput-root': {
+                                                                                    '&.Mui-error': {
+                                                                                        '& fieldset': {
+                                                                                            borderColor: 'error.main',
+                                                                                            borderWidth: 2
+                                                                                        }
+                                                                                    }
+                                                                                },
+                                                                                '& .MuiSelect-select': {
+                                                                                    color: !currentLayoutId ? 'error.main' : 'inherit'
+                                                                                }
+                                                                            }}
+                                                                        >
                                                                             <Select
                                                                                 value={String(getCurrentLayoutId(screenId, defaultLayoutId, linkId) || "")}
                                                                                 onChange={(e: SelectChangeEvent) => {
@@ -1192,7 +1383,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                     }
                                                                                 }}
                                                                                 disabled={isLoading || availableLayouts.length === 0}
+                                                                                displayEmpty
                                                                             >
+                                                                                {!currentLayoutId && (
+                                                                                    <MenuItem value="" disabled>
+                                                                                        <Typography variant="body2" color="error">
+                                                                                            Select a layout...
+                                                                                        </Typography>
+                                                                                    </MenuItem>
+                                                                                )}
                                                                                 {availableLayouts.map((layout: any) => (
                                                                                     <MenuItem
                                                                                         key={`layout-${layout.id}`}
@@ -1290,19 +1489,86 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                     </Tooltip>
                                                                                 </Box>
                                                                             )}
+                                                                            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <DevicesIcon fontSize="small" color="secondary" />
+                                                                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                                                    Virtual Display:
+                                                                                </Typography>
+                                                                                <Link
+                                                                                    href={generateVirtualDisplayUrl(linkId, screenId, link.id)}
+                                                                                    target="_blank"
+                                                                                    rel="noopener"
+                                                                                    sx={{ fontSize: '0.75rem', wordBreak: 'break-all' }}
+                                                                                >
+                                                                                    {generateVirtualDisplayUrl(linkId, screenId, link.id)}
+                                                                                </Link>
+                                                                                <Tooltip title="Copy Virtual Display URL">
+                                                                                    <IconButton
+                                                                                        size="small"
+                                                                                        onClick={() => copyToClipboard(generateVirtualDisplayUrl(linkId, screenId, link.id))}
+                                                                                        sx={{ ml: 1 }}
+                                                                                    >
+                                                                                        <ContentCopyIcon fontSize="small" />
+                                                                                    </IconButton>
+                                                                                </Tooltip>
+                                                                            </Box>
                                                                         </Box>
                                                                     </TableCell>
                                                                 )}
                                                             </TableRow>
-                                                            {/* Sensor Tags Expansion Row */}
+
+                                                            {/* SensorTags Expansion Row */}
                                                             {sensorTags.length > 0 && isAnyFrameMode && (
                                                                 <TableRow>
                                                                     <TableCell
-                                                                        colSpan={isCompositeMode ? 2 : (isBlitMode ? 5 : 4)}
+                                                                        colSpan={
+                                                                            isCompositeMode ? 2 :
+                                                                                isBlitMode ? 5 :
+                                                                                    4
+                                                                        }
                                                                         sx={{ p: 0, border: 'none' }}
                                                                     >
-                                                                        <Box sx={{ p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 1 }}>
+                                                                        <Box sx={{
+                                                                            p: 2,
+                                                                            backgroundColor: 'action.hover',
+                                                                            border: 1,
+                                                                            borderColor: 'divider',
+                                                                            borderRadius: 1
+                                                                        }}>
                                                                             {renderSensorTagsTable(sensorTags, selectedLayout?.displayName || 'Unknown Layout')}
+                                                                        </Box>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )}
+
+                                                            {/* Rive Inputs Expansion Row */}
+                                                            {isAnyFrameMode && currentLayoutId && (
+                                                                <TableRow>
+                                                                    <TableCell
+                                                                        colSpan={
+                                                                            isCompositeMode ? 2 :
+                                                                                isBlitMode ? 5 :
+                                                                                    4
+                                                                        }
+                                                                        sx={{ p: 0, border: 'none' }}
+                                                                    >
+                                                                        <Box sx={{
+                                                                            p: 2,
+                                                                            backgroundColor: 'action.hover',
+                                                                            border: 1,
+                                                                            borderColor: 'divider',
+                                                                            borderRadius: 1,
+                                                                            '& .MuiTypography-root': {
+                                                                                color: 'text.primary'
+                                                                            }
+                                                                        }}>
+                                                                            <RiveInputsForLayout
+                                                                                layoutId={currentLayoutId}
+                                                                                layoutName={selectedLayout?.displayName || 'Unknown Layout'}
+                                                                                riveInputs={riveInputs}
+                                                                                availableSensors={availableSensors}
+                                                                                onInputMappingChange={handleRiveInputMappingChange}
+                                                                            />
                                                                         </Box>
                                                                     </TableCell>
                                                                 </TableRow>
@@ -1318,27 +1584,6 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                         );
                     })}
                 </Box>
-            )}
-
-            {/* Rive Input Mapping Section - show for both frame modes */}
-            {isAnyFrameMode && (
-                <Paper
-                    variant="outlined"
-                    sx={{ mb: 2, p: { xs: 1, sm: 2 } }}
-                >
-                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                        <SensorsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                        Rive Input Mappings
-                    </Typography>
-
-                    <Box sx={{ p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 1 }}>
-                        <RiveInputMappingSection
-                            riveInputs={riveInputs}
-                            availableSensors={availableSensors}
-                            onInputMappingChange={handleRiveInputMappingChange}
-                        />
-                    </Box>
-                </Paper>
             )}
         </Paper>
     );

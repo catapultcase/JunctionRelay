@@ -25,7 +25,6 @@ namespace JunctionRelayServer.Models
         public string? DisplayName { get; set; }
         public string? Description { get; set; }
         public string LayoutType { get; set; } = "Pre-Rendered Image"; // "Pre-Rendered Image" or "Composite Mode"
-
         // Status and Metadata
         public bool IsTemplate { get; set; } = false;
         public bool IsDraft { get; set; } = true;
@@ -34,31 +33,28 @@ namespace JunctionRelayServer.Models
         public DateTime? LastModified { get; set; }
         public string? CreatedBy { get; set; }
         public string? Version { get; set; } = "1.0";
-
         // Frame Dimensions and Orientation
         public int Width { get; set; } = 792;
         public int Height { get; set; } = 272;
         public string Orientation { get; set; } = "landscape"; // "landscape" or "portrait"
-
         // Background Configuration
         public string BackgroundType { get; set; } = "color"; // "none", "color", "image", "rive"
         public string? BackgroundColor { get; set; } = "#FFFFFF";
         public string? BackgroundImageUrl { get; set; }
         public byte[]? BackgroundImageData { get; set; } // For uploaded images
         public double BackgroundOpacity { get; set; } = 1.0;
-
         // Rive Configuration
         public string? RiveFile { get; set; }
-        
+
         // Thumbnail Configuration
         public string? ThumbnailPath { get; set; } // Relative path to thumbnail file (e.g., "frameengine/thumbnails/123.png")
         public DateTime? ThumbnailGeneratedAt { get; set; } // When thumbnail was last generated
         public bool HasThumbnail { get; set; } = false; // Quick check if thumbnail exists
         public string? ThumbnailFormat { get; set; } = "png"; // "png", "jpg", "webp"
         public bool ThumbnailOverride { get; set; } = false;
-
         // Frame Configuration (JSON)
-        public string? JsonFrameConfig { get; set; } // Frame-specific settings (fonts, colors, layout rules, rive state machine mapping etc)
+        public string? JsonFrameConfig { get; set; } // Full config with discovery data for editor use
+        public string? JsonFrameConfigRuntime { get; set; } // Optimized config for device runtime (stripped of discovery metadata, flattened structure)
         public string? JsonFrameElements { get; set; } // Positioned elements (sensors, text, images)             
     }
 }

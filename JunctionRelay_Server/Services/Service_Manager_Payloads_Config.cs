@@ -19,15 +19,11 @@
 
 using JunctionRelayServer.Models;
 using System.Text.Json;
-using System.IO.Compression;
-using System.Text;
 using Microsoft.AspNetCore.Http;
+using System.Text;
 
 namespace JunctionRelayServer.Services
 {
-    /// <summary>
-    /// Specialized generator for configuration payloads, MQTT configs, frame payloads, and gateway commands
-    /// </summary>
     public class Service_Manager_Payloads_Config
     {
         private readonly Service_Database_Manager_Layouts _layoutsDb;
@@ -36,6 +32,7 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_JunctionLinks _junctionLinksService;
         private readonly Service_Manager_Connections _serviceManagerConnections;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly Service_Manager_Payloads_Prefix _prefixService;
 
         public Service_Manager_Payloads_Config(
             Service_Database_Manager_Layouts layoutsDb,
@@ -43,7 +40,8 @@ namespace JunctionRelayServer.Services
             Service_Database_Manager_FrameEngine frameLayoutDb,
             Service_Database_Manager_JunctionLinks junctionLinksService,
             Service_Manager_Connections serviceManagerConnections,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            Service_Manager_Payloads_Prefix prefixService)
         {
             _layoutsDb = layoutsDb;
             _frameEngine = frameEngine;
@@ -51,9 +49,10 @@ namespace JunctionRelayServer.Services
             _junctionLinksService = junctionLinksService;
             _serviceManagerConnections = serviceManagerConnections;
             _httpContextAccessor = httpContextAccessor;
+            _prefixService = prefixService;
         }
 
-        public async Task<Dictionary<string, object>> GenerateConfigPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -62,16 +61,14 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null,
             bool compressPayload = false)
         {
-            var result = new Dictionary<string, object>();
+            var result = new Model_PayloadResultCollection();
 
-            // 1) Ensure there's a ScreenLayoutId
             if (screen.ScreenLayoutId == null)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_CONFIG] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
                 return result;
             }
 
-            // 2) Load template - use override if provided, otherwise load from database
             Model_Screen_Layout? template;
             if (overrideTemplate != null)
             {
@@ -87,12 +84,10 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // 3) Sort sensors (treat null as empty list)
             var sortedSensors = (assignedSensors ?? new List<Model_Sensor>())
                 .OrderBy(s => s.SensorOrder)
                 .ToList();
 
-            // 4) Build base config dictionary from JsonLayoutConfig + template props
             var configDict = new Dictionary<string, object>();
             if (!string.IsNullOrWhiteSpace(template.JsonLayoutConfig))
             {
@@ -112,7 +107,6 @@ namespace JunctionRelayServer.Services
             }
             AddAllTemplateProperties(template, configDict);
 
-            // 5) Determine layoutKey (CUSTOM stays special)
             string layoutKey;
             if (template.LayoutType.Equals("CUSTOM", StringComparison.OrdinalIgnoreCase))
             {
@@ -125,7 +119,6 @@ namespace JunctionRelayServer.Services
                 layoutKey = template.LayoutType.ToLowerInvariant();
             }
 
-            // 6) Build a 'layout' array only if there are sensors
             List<object>? layoutItems = null;
             if (sortedSensors.Any())
             {
@@ -141,7 +134,6 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // 7) Assemble the payload dictionary
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "config",
@@ -149,7 +141,6 @@ namespace JunctionRelayServer.Services
                 [layoutKey] = configDict
             };
 
-            // 8) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
@@ -160,18 +151,39 @@ namespace JunctionRelayServer.Services
                 payloadDict["layout"] = layoutItems;
             }
 
-            // 9) Determine routing hint and serialize with optional prefix and compression
-            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
-            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "config", compressPayload, routingHint);
+            // Generate uncompressed JSON first
+            string uncompressedJson = JsonSerializer.Serialize(payloadDict);
+            string uncompressedPrefix = ExtractStringPrefix(uncompressedJson);
 
-            // 10) Return under the screenKey
-            result[screenKey] = finalPayload;
+            // Generate binary payload
+            var routing = _prefixService.DetermineRouting(junctionType);
+            byte[] binaryPayload = _prefixService.CreateDataMessage(payloadDict, routing,
+                Service_Manager_Payloads_Prefix.SerializationFormat.Json, compressPayload);
+
+            // Extract compressed prefix if compression was used
+            string compressedPrefix = string.Empty;
+            if (compressPayload)
+            {
+                compressedPrefix = ExtractBinaryPrefix(binaryPayload);
+            }
+
+            var payloadResult = new Model_PayloadResult
+            {
+                BinaryPayload = binaryPayload,
+                UncompressedJson = uncompressedJson,
+                UncompressedPrefix = uncompressedPrefix,
+                CompressedPrefix = compressedPrefix,
+                IsCompressed = compressPayload,
+                PayloadType = "config"
+            };
+
+            result.AddResult(screenKey, payloadResult);
             Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_CONFIG] ✅ Created {template.LayoutType} config payload for {screenKey}");
 
             return result;
         }
 
-        public async Task<Dictionary<string, object>> GenerateMQTTSubscriptionConfigPayloadsAsync(
+        public async Task<Model_PayloadResultCollection> GenerateMQTTSubscriptionConfigPayloadsAsync(
             string screenKey,
             List<Model_Sensor> assignedSensors,
             Model_Device_Screens screen,
@@ -179,16 +191,14 @@ namespace JunctionRelayServer.Services
             string? gatewayDestination = null,
             bool compressPayload = false)
         {
-            var result = new Dictionary<string, object>();
+            var result = new Model_PayloadResultCollection();
 
-            // 1) If no sensors are assigned, skip
             if (assignedSensors.Count == 0)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_CONFIG] ⚠️ Screen {screen.Id} has no assigned sensors. Skipping.");
                 return result;
             }
 
-            // 2) Load template to get prefix setting
             if (screen.ScreenLayoutId == null)
             {
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_CONFIG] ❌ Screen {screen.Id} is missing ScreenLayoutId.");
@@ -202,7 +212,6 @@ namespace JunctionRelayServer.Services
                 return result;
             }
 
-            // 3) Create a list of subscriptions based on MQTTTopic from each sensor
             var subscriptions = new List<string>();
             foreach (var sensor in assignedSensors)
             {
@@ -216,7 +225,6 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // 4) Generate the payload object for MQTT subscriptions
             var payloadDict = new Dictionary<string, object>
             {
                 ["type"] = "MQTT_Subscription_Request",
@@ -224,33 +232,49 @@ namespace JunctionRelayServer.Services
                 ["subscriptions"] = subscriptions
             };
 
-            // 5) Add gateway destination if applicable
             if (!string.IsNullOrEmpty(junctionType))
             {
                 AddGatewayDestination(payloadDict, junctionType, gatewayDestination, screenKey);
             }
 
-            // 6) Determine routing hint and serialize with optional prefix and compression
-            string routingHint = (!string.IsNullOrEmpty(junctionType) && junctionType.Contains("Gateway", StringComparison.OrdinalIgnoreCase)) ? "01" : "00";
-            object finalPayload = SerializeWithOptionalPrefix(payloadDict, template.IncludePrefixConfig, "MQTT config", compressPayload, routingHint);
+            // Generate uncompressed JSON first
+            string uncompressedJson = JsonSerializer.Serialize(payloadDict);
+            string uncompressedPrefix = ExtractStringPrefix(uncompressedJson);
 
-            // 7) Return under the screenKey
-            result[screenKey] = finalPayload;
+            // Generate binary payload
+            var routing = _prefixService.DetermineRouting(junctionType);
+            byte[] binaryPayload = _prefixService.CreateDataMessage(payloadDict, routing,
+                Service_Manager_Payloads_Prefix.SerializationFormat.Json, compressPayload);
+
+            // Extract compressed prefix if compression was used
+            string compressedPrefix = string.Empty;
+            if (compressPayload)
+            {
+                compressedPrefix = ExtractBinaryPrefix(binaryPayload);
+            }
+
+            var payloadResult = new Model_PayloadResult
+            {
+                BinaryPayload = binaryPayload,
+                UncompressedJson = uncompressedJson,
+                UncompressedPrefix = uncompressedPrefix,
+                CompressedPrefix = compressedPrefix,
+                IsCompressed = compressPayload,
+                PayloadType = "mqtt_subscription"
+            };
+
+            result.AddResult(screenKey, payloadResult);
             Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_CONFIG] ✅ Created MQTT subscription payload for {screenKey}");
 
             return result;
-        }       
+        }
 
-        public string SerializeGatewayCommand(
+        public byte[] SerializeGatewayCommand(
             object command,
-            bool includePrefix,
-            bool compressPayload = false,
-            string routingHint = "01") // Default to forward for gateway commands
+            bool compressPayload = false)
         {
-            // Convert command object to dictionary format
             var commandDict = new Dictionary<string, object>();
 
-            // Handle the command object (could be anonymous object or dictionary)
             var json = JsonSerializer.Serialize(command);
             using var doc = JsonDocument.Parse(json);
             foreach (var prop in doc.RootElement.EnumerateObject())
@@ -260,26 +284,8 @@ namespace JunctionRelayServer.Services
                     commandDict[prop.Name] = clonedValue;
             }
 
-            // Use the existing SerializeWithOptionalPrefix method
-            var result = SerializeWithOptionalPrefix(commandDict, includePrefix, "gateway command", compressPayload, routingHint);
-
-            // Gateway commands are always strings (not binary), so cast appropriately
-            return result as string ?? throw new InvalidOperationException("Gateway command serialization failed");
-        }
-
-        // Helper methods
-        private string MapScreenLayoutToFrameLayout(string screenLayoutType)
-        {
-            return screenLayoutType.ToUpperInvariant() switch
-            {
-                "MATRIX" => "PRE_RENDERED_IMAGE",
-                "DASHBOARD" => "PRE_RENDERED_IMAGE",
-                "CHART" => "PRE_RENDERED_IMAGE",
-                "QUAD" => "PRE_RENDERED_IMAGE",
-                "CALENDAR" => "PRE_RENDERED_IMAGE",
-                "IMAGE" => "PRE_RENDERED_IMAGE",
-                _ => "PRE_RENDERED_IMAGE" // Default fallback for pre-rendered frames
-            };
+            return _prefixService.CreateCommandMessage(commandDict,
+                Service_Manager_Payloads_Prefix.RoutingMode.GATEWAY, compressPayload);
         }
 
         private void AddIfPresent<T>(Dictionary<string, object> dictionary, string key, T? value)
@@ -287,15 +293,13 @@ namespace JunctionRelayServer.Services
             if (value == null)
                 return;
 
-            // For booleans, only add if true
             if (value is bool boolValue)
             {
-                if (boolValue) // Only add if true
+                if (boolValue)
                     dictionary[key] = value!;
                 return;
             }
 
-            // For numbers, only add if non-zero
             if (value is int intValue)
             {
                 if (intValue != 0)
@@ -310,7 +314,6 @@ namespace JunctionRelayServer.Services
                 return;
             }
 
-            // For strings, only add if not empty
             if (value is string stringValue)
             {
                 if (!string.IsNullOrEmpty(stringValue))
@@ -318,13 +321,11 @@ namespace JunctionRelayServer.Services
                 return;
             }
 
-            // For any other type (nested dicts/lists), add if not null
             dictionary[key] = value!;
         }
 
         private void AddAllTemplateProperties(Model_Screen_Layout template, Dictionary<string, object> dictionary)
         {
-            // Add all model properties with appropriate snake_case naming for the API
             AddIfPresent(dictionary, "rows", template.Rows);
             AddIfPresent(dictionary, "columns", template.Columns);
             AddIfPresent(dictionary, "top_margin", template.TopMargin);
@@ -351,11 +352,6 @@ namespace JunctionRelayServer.Services
             AddIfPresent(dictionary, "text_size", template.TextSize);
             AddIfPresent(dictionary, "label_size", template.LabelSize);
             AddIfPresent(dictionary, "value_size", template.ValueSize);
-            AddIfPresent(dictionary, "title_font_id", template.TitleFontId);
-            AddIfPresent(dictionary, "sub_heading_font_id", template.SubHeadingFontId);
-            AddIfPresent(dictionary, "sensor_labels_font_id", template.SensorLabelsFontId);
-            AddIfPresent(dictionary, "sensor_values_font_id", template.SensorValuesFontId);
-            AddIfPresent(dictionary, "sensor_units_font_id", template.SensorUnitsFontId);
             AddIfPresent(dictionary, "chart_outline_visible", template.ChartOutlineVisible);
             AddIfPresent(dictionary, "chart_scroll_speed", template.ChartScrollSpeed);
             AddIfPresent(dictionary, "show_legend", template.ShowLegend);
@@ -387,7 +383,6 @@ namespace JunctionRelayServer.Services
             AddIfPresent(dictionary, "max_height", template.MaxHeight);
         }
 
-        // Shared utility methods
         private object? CloneJsonValue(JsonElement element)
         {
             switch (element.ValueKind)
@@ -448,62 +443,47 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        private byte[] CompressData(string data)
+        private string ExtractStringPrefix(string payload)
         {
-            var bytes = Encoding.UTF8.GetBytes(data);
-            using var output = new MemoryStream();
-            using (var gzip = new GZipStream(output, CompressionMode.Compress))
-            {
-                gzip.Write(bytes, 0, bytes.Length);
-            }
-            return output.ToArray();
+            // For uncompressed JSON, create a readable summary
+            if (string.IsNullOrEmpty(payload))
+                return string.Empty;
+
+            return $"JSON: {payload.Length} chars";
         }
 
-        private object SerializeWithOptionalPrefix(Dictionary<string, object> payloadDict, bool includePrefix, string payloadType, bool compressPayload = false, string routingHint = "00")
+        private string ExtractBinaryPrefix(byte[] payload)
         {
-            var json = JsonSerializer.Serialize(payloadDict, new JsonSerializerOptions
+            if (payload == null || payload.Length < 8)
+                return string.Empty;
+
+            try
             {
-                WriteIndented = false
-            });
+                // Parse the binary header to create human-readable prefix
+                var (length, type, routing) = Service_Manager_Payloads_Prefix.ParseHeader(payload.Take(8).ToArray());
 
-            if (compressPayload)
-            {
-                var compressedData = CompressData(json);
-
-                if (includePrefix)
+                string typeName = type switch
                 {
-                    var lengthHint = Math.Min(compressedData.Length, 9999).ToString("D4");
-                    var typeField = "01"; // Gzip
-                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
-                    var prefix = lengthHint + typeField + cleanRoutingHint;
+                    Service_Manager_Payloads_Prefix.MessageType.DATA => "DATA",
+                    Service_Manager_Payloads_Prefix.MessageType.COMMAND => "COMMAND",
+                    Service_Manager_Payloads_Prefix.MessageType.BLIT_RGB565 => "BLIT_RGB565",
+                    Service_Manager_Payloads_Prefix.MessageType.BLIT_COMPRESSED => "BLIT_COMPRESSED",
+                    _ => $"UNKNOWN(0x{(ushort)type:04x})"
+                };
 
-                    var prefixBytes = Encoding.UTF8.GetBytes(prefix);
-                    var result = new byte[prefixBytes.Length + compressedData.Length];
-                    Array.Copy(prefixBytes, 0, result, 0, prefixBytes.Length);
-                    Array.Copy(compressedData, 0, result, prefixBytes.Length, compressedData.Length);
-
-                    return result;
-                }
-                else
+                string routingName = routing switch
                 {
-                    return compressedData;
-                }
+                    Service_Manager_Payloads_Prefix.RoutingMode.LOCAL => "LOCAL",
+                    Service_Manager_Payloads_Prefix.RoutingMode.GATEWAY => "GATEWAY",
+                    var r when (ushort)r >= 0x0100 => $"SCREEN_{(ushort)r - 0x0100}",
+                    _ => $"UNKNOWN(0x{(ushort)routing:04x})"
+                };
+
+                return $"Len={length}, Type={typeName}, Route={routingName}";
             }
-            else
+            catch
             {
-                if (includePrefix)
-                {
-                    var lengthHint = Math.Min(json.Length, 9999).ToString("D4");
-                    var typeField = "00"; // JSON
-                    var cleanRoutingHint = routingHint.Substring(0, Math.Min(2, routingHint.Length)).PadLeft(2, '0');
-                    var prefix = lengthHint + typeField + cleanRoutingHint;
-
-                    return prefix + json;
-                }
-                else
-                {
-                    return json;
-                }
+                return $"BINARY: {payload.Length} bytes";
             }
         }
     }

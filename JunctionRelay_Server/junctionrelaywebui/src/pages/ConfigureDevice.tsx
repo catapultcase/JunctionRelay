@@ -111,6 +111,9 @@ const ConfigureDevice: React.FC = () => {
     const [selectedComPort, setSelectedComPort] = useState<string>("");
     const [initialFirmwareInfo, setInitialFirmwareInfo] = useState<FirmwareInfo | null>(null);
 
+    // Control virtual screen mounting for clean navigation
+    const [mountVirtualScreen, setMountVirtualScreen] = useState(true);
+
     // Sync/Edit modals
     const [syncModalOpen, setSyncModalOpen] = useState(false);
     const [editModeModalOpen, setEditModeModalOpen] = useState(false);
@@ -238,6 +241,68 @@ const ConfigureDevice: React.FC = () => {
             [panel]: isExpanded
         }));
     };
+
+    useEffect(() => {
+        console.log('ConfigureDevice MOUNTED for device:', id);
+        return () => {
+            console.log('ConfigureDevice UNMOUNTING for device:', id);
+        };
+    }, [id]);
+
+    // Intercept navigation to unmount virtual screen first
+    useEffect(() => {
+        const handleNavigation = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+
+            // Find the closest link or button
+            const link = target.closest('a');
+            const button = target.closest('button');
+
+            // Check if this is a navigation event
+            const isNavbarLink = link && (
+                link.hasAttribute('data-navbar-link') || // Navbar links have this attribute
+                link.closest('[role="navigation"]') ||
+                link.getAttribute('href')?.startsWith('/') // Any internal link
+            );
+
+            const isBackButton = button && (
+                button.textContent?.includes('Back') ||
+                button.querySelector('svg[data-testid*="ArrowBack"]')
+            );
+
+            if (isNavbarLink || isBackButton) {
+                console.log('Navigation detected - unmounting virtual screen');
+
+                // Unmount the virtual screen first
+                setMountVirtualScreen(false);
+
+                // Prevent default navigation
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Small delay to let unmount complete, then navigate
+                setTimeout(() => {
+                    if (isNavbarLink && link) {
+                        const href = link.getAttribute('href');
+                        if (href) {
+                            console.log('Navigating to:', href);
+                            navigate(href);
+                        }
+                    } else if (isBackButton) {
+                        console.log('Navigating back to devices');
+                        navigate('/devices');
+                    }
+                }, 100);
+            }
+        };
+
+        // Use capture phase to catch events before they bubble up
+        document.addEventListener('click', handleNavigation, true);
+
+        return () => {
+            document.removeEventListener('click', handleNavigation, true);
+        };
+    }, [navigate]);
 
     // Save accordion states to localStorage
     useEffect(() => {
@@ -536,9 +601,11 @@ const ConfigureDevice: React.FC = () => {
     // Dispatch bottom action bar configuration for mobile
     useEffect(() => {
         if (isMobile && deviceData) {
+            const isVirtualDevice = deviceData.type === "Virtual Screen";
+
             const event = new CustomEvent('configure-device-bottom-actions', {
                 detail: {
-                    secondaryActions: [
+                    secondaryActions: isVirtualDevice ? [] : [
                         ...(deviceData.type !== "Host Device" ? [{
                             icon: <SyncIcon />,
                             label: 'Resync',
@@ -608,6 +675,7 @@ const ConfigureDevice: React.FC = () => {
 
     const isCustom = deviceData.type === "Custom";
     const isJunctionRelayDevice = deviceData.isJunctionRelayDevice || false;
+    const isVirtualDevice = deviceData.type === "Virtual Screen";
 
     // Define accordion panels configuration - UPDATED with new Heartbeat History panel
     const accordionPanels = [
@@ -626,6 +694,7 @@ const ConfigureDevice: React.FC = () => {
                     setSelectedComPort={setSelectedComPort}
                     onAutoSave={handleAutoSave}
                     deviceId={id}
+                    mountVirtualScreen={mountVirtualScreen}
                 />
             )
         },
@@ -814,54 +883,7 @@ const ConfigureDevice: React.FC = () => {
                     </Box>
 
                     <Box display="flex" gap={2} alignItems="center">
-                        {/* NEW: Edit Mode Button - Only for non-Custom devices */}
-                        {!isCustom && (
-                            <Button
-                                variant="outlined"
-                                startIcon={<EditIcon />}
-                                size="small"
-                                onClick={handleEnableEditMode}
-                                color="warning"
-                            >
-                                Edit
-                            </Button>
-                        )}
-
-                        {deviceData.type !== "Host Device" && (
-                            <>
-                                {/* RENAMED: Old Resync Device button becomes Resync IP */}
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<SyncIcon />}
-                                    size="small"
-                                    onClick={handleResyncIP}
-                                >
-                                    Resync IP
-                                </Button>
-
-                                {/* NEW: Full Device Sync button */}
-                                <Button
-                                    variant="contained"
-                                    startIcon={<SyncIcon />}
-                                    size="small"
-                                    onClick={handleDeviceSync}
-                                    color="primary"
-                                >
-                                    Resync Device
-                                </Button>
-                            </>
-                        )}
-
-                        <Button
-                            variant="outlined"
-                            startIcon={<RefreshIcon />}
-                            size="small"
-                            onClick={handleRefreshSensors}
-                        >
-                            Refresh Sensors
-                        </Button>
-
-                        {deviceData.type !== "Host Device" && (
+                        {isVirtualDevice ? (
                             <Button
                                 variant="outlined"
                                 color="error"
@@ -871,6 +893,64 @@ const ConfigureDevice: React.FC = () => {
                             >
                                 Delete Device
                             </Button>
+                        ) : (
+                            <>
+                                {!isCustom && (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<EditIcon />}
+                                        size="small"
+                                        onClick={handleEnableEditMode}
+                                        color="warning"
+                                    >
+                                        Edit
+                                    </Button>
+                                )}
+
+                                {deviceData.type !== "Host Device" && (
+                                    <>
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<SyncIcon />}
+                                            size="small"
+                                            onClick={handleResyncIP}
+                                        >
+                                            Resync IP
+                                        </Button>
+
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<SyncIcon />}
+                                            size="small"
+                                            onClick={handleDeviceSync}
+                                            color="primary"
+                                        >
+                                            Resync Device
+                                        </Button>
+                                    </>
+                                )}
+
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<RefreshIcon />}
+                                    size="small"
+                                    onClick={handleRefreshSensors}
+                                >
+                                    Refresh Sensors
+                                </Button>
+
+                                {deviceData.type !== "Host Device" && (
+                                    <Button
+                                        variant="outlined"
+                                        color="error"
+                                        startIcon={<DeleteIcon />}
+                                        size="small"
+                                        onClick={handleDeleteDevice}
+                                    >
+                                        Delete Device
+                                    </Button>
+                                )}
+                            </>
                         )}
 
                         {/* Auto-save status indicator */}
@@ -984,58 +1064,7 @@ const ConfigureDevice: React.FC = () => {
 
                     {/* Action Buttons Row */}
                     <Box display="flex" gap={1} flexWrap="wrap">
-                        {/* Edit Mode Button - Only for non-Custom devices */}
-                        {!isCustom && (
-                            <Button
-                                variant="outlined"
-                                startIcon={<EditIcon />}
-                                size="small"
-                                onClick={handleEnableEditMode}
-                                color="warning"
-                                sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
-                            >
-                                Edit
-                            </Button>
-                        )}
-
-                        {deviceData.type !== "Host Device" && (
-                            <>
-                                {/* Resync IP button */}
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<SyncIcon />}
-                                    size="small"
-                                    onClick={handleResyncIP}
-                                    sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
-                                >
-                                    Resync IP
-                                </Button>
-
-                                {/* Full Device Sync button */}
-                                <Button
-                                    variant="contained"
-                                    startIcon={<SyncIcon />}
-                                    size="small"
-                                    onClick={handleDeviceSync}
-                                    color="primary"
-                                    sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
-                                >
-                                    Resync Device
-                                </Button>
-                            </>
-                        )}
-
-                        <Button
-                            variant="outlined"
-                            startIcon={<RefreshIcon />}
-                            size="small"
-                            onClick={handleRefreshSensors}
-                            sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
-                        >
-                            Refresh Sensors
-                        </Button>
-
-                        {deviceData.type !== "Host Device" && (
+                        {isVirtualDevice ? (
                             <Button
                                 variant="outlined"
                                 color="error"
@@ -1046,13 +1075,76 @@ const ConfigureDevice: React.FC = () => {
                             >
                                 Delete
                             </Button>
+                        ) : (
+                            <>
+                                {!isCustom && (
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<EditIcon />}
+                                        size="small"
+                                        onClick={handleEnableEditMode}
+                                        color="warning"
+                                        sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                    >
+                                        Edit
+                                    </Button>
+                                )}
+
+                                {deviceData.type !== "Host Device" && (
+                                    <>
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<SyncIcon />}
+                                            size="small"
+                                            onClick={handleResyncIP}
+                                            sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                        >
+                                            Resync IP
+                                        </Button>
+
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<SyncIcon />}
+                                            size="small"
+                                            onClick={handleDeviceSync}
+                                            color="primary"
+                                            sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                        >
+                                            Resync Device
+                                        </Button>
+                                    </>
+                                )}
+
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<RefreshIcon />}
+                                    size="small"
+                                    onClick={handleRefreshSensors}
+                                    sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                >
+                                    Refresh Sensors
+                                </Button>
+
+                                {deviceData.type !== "Host Device" && (
+                                    <Button
+                                        variant="outlined"
+                                        color="error"
+                                        startIcon={<DeleteIcon />}
+                                        size="small"
+                                        onClick={handleDeleteDevice}
+                                        sx={{ minWidth: 'auto', fontSize: '0.75rem' }}
+                                    >
+                                        Delete
+                                    </Button>
+                                )}
+                            </>
                         )}
                     </Box>
                 </Paper>
             )}
 
             {/* Delta Sensors Notification */}
-            {newSensors.length > 0 && (
+            {!isVirtualDevice && newSensors.length > 0 && (
                 <Paper elevation={2} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
                     <Alert severity="info" sx={{ mb: 1 }}>
                         <Typography variant="subtitle1">
@@ -1066,61 +1158,77 @@ const ConfigureDevice: React.FC = () => {
             )}
 
             {isMobile ? (
-                // Mobile Accordion View - FIXED STYLING
+                // Mobile Accordion View
                 <Box sx={{
                     mb: 4,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 1  // Add gap between accordions like Settings
+                    gap: 1
                 }}>
-                    {accordionPanels.map((panel) => (
-                        <Accordion
-                            key={panel.id}
-                            expanded={accordionStates[panel.id] || false}
-                            onChange={handleAccordionChange(panel.id)}
-                            elevation={isMobile ? 1 : 2}  // Match Settings elevation
-                            sx={{
-                                // Remove individual accordion margins and borders
-                                mb: 0,  // Remove margin bottom
-                                '&:before': {
-                                    display: 'none',  // Remove default MUI before element
-                                },
-                                '&.Mui-expanded': {
-                                    margin: 0,  // Remove expanded margin
-                                },
-                                // No border radius - let the container handle it
-                                borderRadius: 0,
-                                overflow: 'visible'  // Don't clip content
-                            }}
-                        >
-                            <AccordionSummary
-                                expandIcon={<ExpandMoreIcon />}
-                                aria-controls={`${panel.id}-content`}
-                                id={`${panel.id}-header`}
+                    {accordionPanels
+                        .filter(panel => isVirtualDevice ? panel.id === 'panel0' : true)
+                        .map((panel) => (
+                            <Accordion
+                                key={panel.id}
+                                expanded={accordionStates[panel.id] || false}
+                                onChange={handleAccordionChange(panel.id)}
+                                elevation={isMobile ? 1 : 2}
+                                sx={{
+                                    mb: 0,
+                                    '&:before': {
+                                        display: 'none',
+                                    },
+                                    '&.Mui-expanded': {
+                                        margin: 0,
+                                    },
+                                    borderRadius: 0,
+                                    overflow: 'visible'
+                                }}
                             >
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    {panel.badge ? (
-                                        <Badge badgeContent={panel.badge} color="error" sx={{ mr: 1 }}>
-                                            {panel.icon}
-                                        </Badge>
-                                    ) : (
-                                        <Box sx={{ mr: 1 }}>
-                                            {panel.icon}
-                                        </Box>
-                                    )}
-                                    <Typography variant="h6">
-                                        {panel.title}
-                                    </Typography>
-                                </Box>
-                            </AccordionSummary>
-                            <AccordionDetails sx={{
-                                px: isMobile ? 1 : 3  // Match Settings padding
-                            }}>
-                                {panel.content}
-                            </AccordionDetails>
-                        </Accordion>
-                    ))}
+                                <AccordionSummary
+                                    expandIcon={<ExpandMoreIcon />}
+                                    aria-controls={`${panel.id}-content`}
+                                    id={`${panel.id}-header`}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                        {panel.badge ? (
+                                            <Badge badgeContent={panel.badge} color="error" sx={{ mr: 1 }}>
+                                                {panel.icon}
+                                            </Badge>
+                                        ) : (
+                                            <Box sx={{ mr: 1 }}>
+                                                {panel.icon}
+                                            </Box>
+                                        )}
+                                        <Typography variant="h6">
+                                            {panel.title}
+                                        </Typography>
+                                    </Box>
+                                </AccordionSummary>
+                                <AccordionDetails sx={{
+                                    px: isMobile ? 1 : 3
+                                }}>
+                                    {panel.content}
+                                </AccordionDetails>
+                            </Accordion>
+                        ))
+                    }
                 </Box>
+            ) : isVirtualDevice ? (
+                // Virtual Screen - No tabs, just Device Details
+                <Paper sx={{ width: '100%', mb: 4, p: 3 }} elevation={2}>
+                    <DeviceInfoPanel
+                        deviceData={deviceData}
+                        setDeviceData={setDeviceData}
+                        isCustom={isCustom}
+                        comPorts={comPorts}
+                        selectedComPort={selectedComPort}
+                        setSelectedComPort={setSelectedComPort}
+                        onAutoSave={handleAutoSave}
+                        deviceId={id}
+                        mountVirtualScreen={mountVirtualScreen}
+                    />
+                </Paper>
             ) : (
                 // Desktop Tabs View - UPDATED with new Heartbeat History tab
                 <Paper sx={{ width: '100%', mb: 4 }} elevation={2}>
@@ -1207,6 +1315,7 @@ const ConfigureDevice: React.FC = () => {
                             setSelectedComPort={setSelectedComPort}
                             onAutoSave={handleAutoSave}
                             deviceId={id}
+                            mountVirtualScreen={mountVirtualScreen}
                         />
                     </TabPanel>
 

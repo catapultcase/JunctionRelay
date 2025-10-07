@@ -1,4 +1,23 @@
-﻿import React, { useState } from 'react';
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import React, { useState } from 'react';
 import {
     Sensors as SensorsIcon,
     TextFields as TextIcon,
@@ -10,20 +29,13 @@ import {
     VisibilityOff as VisibilityOffIcon,
     Delete as DeleteIcon,
     ContentCopy as DuplicateIcon,
+    ShowChart as EcgIcon,
+    Schedule as ClockIcon,
+    Grain as OscilloscopeIcon,
+    Explore as TunnelIcon,
+    Cloud as WeatherIcon,
 } from '@mui/icons-material';
-
-interface PlacedElement {
-    id: string;
-    type: 'sensor' | 'text' | 'chart' | 'image' | 'container';
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    properties: Record<string, any>;
-    sensorId?: string;
-    visible?: boolean;
-    zIndex?: number;
-}
+import type { PlacedElement, ElementType } from './FrameEngine_Types';
 
 interface ElementListProps {
     elements: PlacedElement[];
@@ -44,23 +56,25 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
     onElementReorder,
     onElementVisibilityToggle,
 }) => {
-    // Drag and drop state for reordering
     const [draggedElement, setDraggedElement] = useState<string | null>(null);
     const [dragOverElement, setDragOverElement] = useState<string | null>(null);
 
-    // Get element icon
-    const getElementIcon = (type: PlacedElement['type']) => {
+    const getElementIcon = (type: ElementType) => {
         switch (type) {
             case 'sensor': return <SensorsIcon fontSize="small" />;
             case 'text': return <TextIcon fontSize="small" />;
             case 'chart': return <ChartIcon fontSize="small" />;
             case 'image': return <ImageIcon fontSize="small" />;
             case 'container': return <ContainerIcon fontSize="small" />;
+            case 'ecg': return <EcgIcon fontSize="small" />;
+            case 'clock': return <ClockIcon fontSize="small" />;
+            case 'oscilloscope': return <OscilloscopeIcon fontSize="small" />;
+            case 'tunnel': return <TunnelIcon fontSize="small" />;
+            case 'weather': return <WeatherIcon fontSize="small" />;
             default: return <SensorsIcon fontSize="small" />;
         }
     };
 
-    // Get element display name
     const getElementDisplayName = (element: PlacedElement): string => {
         switch (element.type) {
             case 'sensor':
@@ -74,40 +88,46 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 return element.properties.alt || 'Image';
             case 'container':
                 return element.properties.title || 'Container';
+            case 'ecg':
+                return element.properties.sensorTag || 'ECG Waveform';
+            case 'clock':
+                return element.properties.timezone ? `Clock (${element.properties.timezone})` : 'Clock';
+            case 'oscilloscope':
+                return element.properties.sensorTag || `Oscilloscope (${element.properties.mode || 'glow'})`;
+            case 'tunnel':
+                const mode = element.properties.renderMode === '3d' ? '3D' : '2D';
+                return `Tunnel (${element.properties.tunnelType || 'circular'}, ${mode})`;
+            case 'weather':
+                return `Weather (${element.properties.weatherType || 'clear'})`;
             default:
                 const elementType = element.type as string;
                 return elementType.charAt(0).toUpperCase() + elementType.slice(1);
         }
     };
 
-    // Handle element selection from list
     const handleElementSelect = (elementId: string, event: React.MouseEvent) => {
         const isCtrlClick = event.ctrlKey || event.metaKey;
         onElementSelect([elementId], isCtrlClick);
     };
 
-    // Handle element duplication
     const handleElementDuplicate = (elementId: string) => {
         if (onElementDuplicate) {
             onElementDuplicate(elementId);
         }
     };
 
-    // Handle drag start for reordering
     const handleDragStart = (event: React.DragEvent, elementId: string) => {
         setDraggedElement(elementId);
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', elementId);
     };
 
-    // Handle drag over for reordering
     const handleDragOver = (event: React.DragEvent, elementId: string) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
         setDragOverElement(elementId);
     };
 
-    // Handle drop for reordering
     const handleDrop = (event: React.DragEvent, targetElementId: string) => {
         event.preventDefault();
 
@@ -125,9 +145,19 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-            {/* Elements List Header */}
-            <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
+        <div style={{
+            height: '100%',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+        }}>
+            {/* Fixed Header */}
+            <div style={{
+                padding: '12px',
+                backgroundColor: '#f8f9fa',
+                borderBottom: '1px solid #e0e0e0',
+                flexShrink: 0
+            }}>
                 <div style={{ fontSize: '12px', fontWeight: 500, color: '#333' }}>
                     Canvas Elements ({elements.length})
                 </div>
@@ -136,8 +166,12 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 </div>
             </div>
 
-            {/* Elements List */}
-            <div style={{ flex: 1, overflow: 'auto' }}>
+            {/* Scrollable Content */}
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                minHeight: 0
+            }}>
                 {elements.length === 0 ? (
                     <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
                         <div style={{ fontSize: '32px', marginBottom: '8px' }}>📦</div>
@@ -184,15 +218,12 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                     }
                                 }}
                             >
-                                {/* Drag Handle */}
                                 <DragIcon style={{ color: '#999', fontSize: '16px', cursor: 'grab' }} />
 
-                                {/* Element Icon */}
                                 <div style={{ color: isSelected ? '#1976d2' : '#666' }}>
                                     {getElementIcon(element.type)}
                                 </div>
 
-                                {/* Element Info */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{
                                         fontSize: '12px',
@@ -209,7 +240,6 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                     </div>
                                 </div>
 
-                                {/* Action Buttons */}
                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                                     <button
                                         onClick={(e) => {

@@ -16,7 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using System.Data;
@@ -26,55 +25,72 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using JunctionRelayServer.Models;
 using JunctionRelayServer.Interfaces;
+using JunctionRelayServer.Services;
 
 [ApiController]
 [Route("api/settings")]
 public class Controller_Settings : ControllerBase
 {
-    private readonly IDbConnection _db;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _memoryCache;
+    private readonly IService_Settings _settingsService;
 
-    public Controller_Settings(IDbConnection db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache)
+    public Controller_Settings(IWebHostEnvironment env, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, IService_Settings settingsService)
     {
-        _db = db;
         _env = env;
         _httpClientFactory = httpClientFactory;
         _memoryCache = memoryCache;
+        _settingsService = settingsService;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetSettings() =>
-    Ok(await _db.QueryAsync<Model_Setting>(
-        "SELECT * FROM Settings WHERE Key != 'authentication_enabled' ORDER BY Key ASC"));
+    public async Task<IActionResult> GetSettings()
+    {
+        var allSettings = await _settingsService.GetAllSettingsWithMetadataAsync();
+        // Filter out authentication_enabled like the original
+        var filteredSettings = allSettings.Where(s => s.Key != "authentication_enabled").ToList();
+        return Ok(filteredSettings);
+    }
 
     [HttpPost]
     public async Task<IActionResult> AddSetting([FromBody] Model_Setting setting)
     {
-        var id = await _db.ExecuteScalarAsync<long>(
-            @"INSERT INTO Settings (Key, Value, Description) VALUES (@Key, @Value, @Description);
-              SELECT last_insert_rowid();",
-            setting);
-        setting.Id = (int)id;
+        await _settingsService.SetSettingAsync(setting.Key, setting.Value ?? "", setting.Description);
+
+        // Return the setting with a mock ID (since we don't track IDs in the cache)
+        setting.Id = setting.Key.GetHashCode(); // Simple ID generation for API compatibility
         return Ok(setting);
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateSetting(int id, [FromBody] Model_Setting setting)
     {
-        setting.Id = id;
-        await _db.ExecuteAsync(
-            "UPDATE Settings SET Key = @Key, Value = @Value, Description = @Description WHERE Id = @Id",
-            setting);
+        await _settingsService.SetSettingAsync(setting.Key, setting.Value ?? "", setting.Description);
+
+        setting.Id = id; // Preserve the ID for API compatibility
         return Ok(setting);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteSetting(int id)
     {
-        await _db.ExecuteAsync("DELETE FROM Settings WHERE Id = @id", new { id });
-        return Ok();
+        // Since we don't have ID-based lookups in the service, we need to find the key first
+        // This is a limitation of the current approach - you might want to enhance the service
+        // For now, we'll need to get all settings and find the one with matching ID
+        var allSettings = await _settingsService.GetAllSettingsWithMetadataAsync();
+        var settingToDelete = allSettings.FirstOrDefault(s => s.Id == id);
+
+        if (settingToDelete != null)
+        {
+            var deleted = await _settingsService.DeleteSettingAsync(settingToDelete.Key);
+            if (deleted)
+            {
+                return Ok();
+            }
+        }
+
+        return NotFound();
     }
 
     // New route for application version
@@ -280,17 +296,18 @@ public class Controller_Settings : ControllerBase
     [HttpGet("flags")]
     public async Task<IActionResult> GetFeatureFlags()
     {
-        var settings = await _db.QueryAsync<Model_Setting>("SELECT * FROM Settings");
+        var settingsDict = await _settingsService.GetAllSettingsAsync();
 
         var flags = new Dictionary<string, object>();
 
-        foreach (var setting in settings)
+        foreach (var setting in settingsDict)
         {
             // Handle boolean flags
             if (setting.Key == "top_bar_show_host_charts" ||
                 setting.Key == "device_custom_firmware_flashing" ||
                 setting.Key == "junction_hyperlink_rows" ||
-                setting.Key == "junction_import_export")
+                setting.Key == "junction_import_export" ||
+                setting.Key == "service_eventengine_enabled")
             {
                 flags[setting.Key] = string.Equals(setting.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
             }
@@ -331,6 +348,12 @@ public class Controller_Settings : ControllerBase
             flags["junction_actions_alignment"] = "right";
         }
 
+        // Ensure service_eventengine_enabled exists with default if not in database
+        if (!flags.ContainsKey("service_eventengine_enabled"))
+        {
+            flags["service_eventengine_enabled"] = false;
+        }
+
         return Ok(flags);
     }
 
@@ -341,26 +364,7 @@ public class Controller_Settings : ControllerBase
     {
         var newValue = req.Enabled.ToString().ToLower();
 
-        var updateSql = @"
-        UPDATE Settings
-           SET Value = @Value
-         WHERE [Key] = @Key;
-    ";
-        var rows = await _db.ExecuteAsync(updateSql, new { Key = key, Value = newValue });
-
-        if (rows == 0)
-        {
-            var insertSql = @"
-            INSERT INTO Settings ([Key], Value, Description)
-            VALUES (@Key, @Value, @Description);
-        ";
-            await _db.ExecuteAsync(insertSql, new
-            {
-                Key = key,
-                Value = newValue,
-                Description = $"Auto-created flag for '{key}'"
-            });
-        }
+        await _settingsService.SetSettingAsync(key, newValue, $"Auto-created flag for '{key}'");
 
         if (key == "authentication_enabled")
         {

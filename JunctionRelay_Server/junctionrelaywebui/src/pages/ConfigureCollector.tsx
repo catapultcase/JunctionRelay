@@ -42,6 +42,10 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
+    FormControlLabel,
+    Radio,
+    RadioGroup,
+    FormLabel,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -75,6 +79,10 @@ import MonitorIcon from '@mui/icons-material/Monitor';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import TvIcon from '@mui/icons-material/Tv';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import InfoIcon from '@mui/icons-material/Info';
+import MissingLocationIcon from '@mui/icons-material/LocationOff';
 
 const ConfigureCollector = () => {
     const { id } = useParams<{ id: string }>();
@@ -83,17 +91,22 @@ const ConfigureCollector = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [collector, setCollector] = useState<any>(null);
-    const [originalCollector, setOriginalCollector] = useState<any>(null); // Store original values
+    const [originalCollector, setOriginalCollector] = useState<any>(null);
     const [storedSensors, setStoredSensors] = useState<any[]>([]);
     const [fetchedSensors, setFetchedSensors] = useState<any[]>([]);
+    const [lostSensors, setLostSensors] = useState<any[]>([]); // NEW: Lost sensors state
     const [fetchingSensors, setFetchingSensors] = useState(false);
     const [services, setServices] = useState<any[]>([]);
     const [error, setError] = useState("");
-    const [activeTab, setActiveTab] = useState<"stored" | "delta">("stored");
+    const [activeTab, setActiveTab] = useState<"stored" | "delta" | "lost">("stored"); // UPDATED: Add "lost" tab
     const [editMode, setEditMode] = useState(false);
     const [accessTokenChanged, setAccessTokenChanged] = useState(false);
 
-    // NEW: Unlock/Lock state
+    // NEW: Encryption method state
+    const [encryptionPassword, setEncryptionPassword] = useState<string>("");
+    const [originalEncryptionMethod, setOriginalEncryptionMethod] = useState<boolean>(false);
+
+    // Unlock/Lock state
     const [isLocked, setIsLocked] = useState(false);
     const [requiresPassword, setRequiresPassword] = useState(false);
     const [unlocking, setUnlocking] = useState(false);
@@ -104,8 +117,25 @@ const ConfigureCollector = () => {
     const [snackbarMessage, setSnackbarMessage] = useState("");
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error" | "info" | "warning">("success");
 
-    // Define the default columns for each view
-    const getDefaultVisibleColumns = (viewType: "stored" | "delta") => {
+    // NEW: Enhanced sensor fetch state
+    const [sensorFetchError, setSensorFetchError] = useState<string | null>(null);
+    const [lastFetchStats, setLastFetchStats] = useState<{
+        totalFetched: number;
+        totalStored: number;
+        newSensors: number;
+        lostSensors: number; // UPDATED: Add lost sensors count
+        fetchSuccessful: boolean;
+        lastFetchTime: Date | null;
+    }>({
+        totalFetched: 0,
+        totalStored: 0,
+        newSensors: 0,
+        lostSensors: 0, // UPDATED: Add lost sensors count
+        fetchSuccessful: false,
+        lastFetchTime: null
+    });
+
+    const getDefaultVisibleColumns = (viewType: "stored" | "delta" | "lost") => { // UPDATED: Add "lost"
         return [
             "id",
             "externalId",
@@ -125,7 +155,6 @@ const ConfigureCollector = () => {
         setSnackbarOpen(true);
     };
 
-    // Get collector type icon
     const getCollectorIcon = (type: string) => {
         switch (type) {
             case "Cloudflare": return <CloudIcon />;
@@ -144,7 +173,6 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Get collector type color
     const getCollectorColor = (type: string): "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error" => {
         switch (type) {
             case "Cloudflare": return "primary";
@@ -163,7 +191,6 @@ const ConfigureCollector = () => {
         }
     };
 
-    // NEW: Check unlock status
     const checkUnlockStatus = useCallback(async () => {
         try {
             const response = await fetch(`/api/collectors/${id}/unlock-status`);
@@ -177,7 +204,6 @@ const ConfigureCollector = () => {
         }
     }, [id]);
 
-    // NEW: Unlock collector with password
     const handleUnlockCollector = async () => {
         if (!unlockPassword.trim()) {
             showSnackbar("Please enter the encryption password", "error");
@@ -192,44 +218,30 @@ const ConfigureCollector = () => {
                 body: JSON.stringify({ password: unlockPassword }),
             });
 
-            console.log("Unlock response status:", response.status, response.ok);
-
-            // Parse response first
             let responseData;
             try {
                 responseData = await response.json();
-                console.log("Unlock response data:", responseData);
             } catch (parseError) {
-                console.error("Failed to parse response JSON:", parseError);
                 throw new Error("Invalid response from server");
             }
 
-            // Only close modal and update state if we got a successful response (200)
             if (response.status === 200 && response.ok) {
-                console.log("Password correct - unlocking");
                 setIsLocked(false);
                 setShowUnlockDialog(false);
                 setUnlockPassword("");
                 showSnackbar("Collector unlocked successfully", "success");
-                // Refresh data now that it's unlocked
                 await fetchStoredSensors();
             } else {
-                // Password was wrong or other error - keep modal open
-                console.log("Password incorrect - keeping modal open");
                 const errorMessage = responseData?.status || "Invalid password or error occurred";
                 showSnackbar(errorMessage, "error");
-                // DO NOT close modal, DO NOT clear password, DO NOT change lock state
             }
         } catch (err) {
-            console.error("Network or other error during unlock:", err);
             showSnackbar("Error communicating with server", "error");
-            // Keep modal open on network errors too
         } finally {
             setUnlocking(false);
         }
     };
 
-    // NEW: Lock collector
     const handleLockCollector = async () => {
         try {
             const response = await fetch(`/api/collectors/${id}/lock`, {
@@ -248,7 +260,6 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Update collector field
     const updateCollectorField = (field: string, value: any) => {
         if (field === 'accessToken') {
             setAccessTokenChanged(true);
@@ -256,24 +267,27 @@ const ConfigureCollector = () => {
         setCollector({ ...collector, [field]: value });
     };
 
-    // Check if form has changes
     const hasChanges = useMemo(() => {
         if (!originalCollector || !collector) return false;
-        return Object.keys(collector).some(key => {
+
+        const encryptionMethodChanged = (collector.externalAccessToken || false) !== originalEncryptionMethod;
+
+        const fieldsChanged = Object.keys(collector).some(key => {
             if (key === 'accessToken' && !accessTokenChanged) {
-                return false; // Don't consider unchanged access token as a change
+                return false;
             }
             return collector[key] !== originalCollector[key];
         });
-    }, [collector, originalCollector, accessTokenChanged]);
 
-    // Get access token display value
+        return fieldsChanged || encryptionMethodChanged;
+    }, [collector, originalCollector, accessTokenChanged, originalEncryptionMethod]);
+
     const getAccessTokenDisplay = () => {
         const isExisting = originalCollector?.accessToken;
         if (isExisting && !accessTokenChanged) {
-            return '••••••••••••••••'; // Show masked value for existing token
+            return '••••••••••••••••';
         }
-        return collector?.accessToken || ''; // Show actual value for new/changed tokens
+        return collector?.accessToken || '';
     };
 
     const getAccessTokenHelperText = () => {
@@ -284,15 +298,36 @@ const ConfigureCollector = () => {
         return "Access token (will be encrypted when saved)";
     };
 
-    // Save collector changes
+    const isEncryptionPasswordRequired = () => {
+        if (!editMode) return false;
+
+        // If changing to password encryption and token is being changed
+        if (collector?.externalAccessToken && accessTokenChanged) {
+            return !encryptionPassword.trim();
+        }
+
+        return false;
+    };
+
     const handleSaveCollector = async () => {
         setSaving(true);
         try {
-            const payload = { ...collector };
+            const payload: any = { ...collector };
 
-            // If access token wasn't changed, remove it from payload to avoid overwriting
+            // Only include access token if it's been changed
             if (!accessTokenChanged && originalCollector?.accessToken) {
                 delete payload.accessToken;
+            }
+
+            // Include encryption password if using password-based encryption for new/changed tokens
+            if (collector.externalAccessToken && accessTokenChanged && encryptionPassword.trim()) {
+                payload.encryptionPassword = encryptionPassword;
+            }
+
+            // If switching from password to database encryption, ensure we clear external flag
+            if (!collector.externalAccessToken && originalEncryptionMethod) {
+                payload.externalAccessToken = false;
+                delete payload.encryptionPassword;
             }
 
             const response = await fetch(`/api/collectors/${id}`, {
@@ -302,48 +337,60 @@ const ConfigureCollector = () => {
             });
 
             if (!response.ok) {
-                throw new Error("Failed to save collector");
+                const errorText = await response.text();
+                throw new Error(`Failed to save collector: ${errorText}`);
             }
 
-            // Refresh collector data
             await fetchCollector();
+            await checkUnlockStatus();
             setEditMode(false);
             setAccessTokenChanged(false);
+            setEncryptionPassword("");
             showSnackbar("Collector updated successfully", "success");
-        } catch (err) {
-            showSnackbar("Error saving collector", "error");
+        } catch (err: any) {
+            showSnackbar(`Error saving collector: ${err.message}`, "error");
             console.error("Error saving collector:", err);
         } finally {
             setSaving(false);
         }
     };
 
-    // Cancel edit mode
     const handleCancelEdit = () => {
         setCollector({ ...originalCollector });
         setAccessTokenChanged(false);
+        setEncryptionPassword("");
         setEditMode(false);
     };
 
-    // Fetch the collector details
     const fetchCollector = useCallback(async () => {
         try {
             const rsp = await fetch(`/api/collectors/${id}`);
             if (!rsp.ok) throw new Error();
             const data = await rsp.json();
             setCollector(data);
-            setOriginalCollector({ ...data }); // Store original values
+            setOriginalCollector({ ...data });
+            setOriginalEncryptionMethod(data.externalAccessToken || false);
+
+            // Use persisted lastFetchLostSensors count
+            if (data.lastFetchTime) {
+                setLastFetchStats({
+                    totalFetched: data.lastFetchTotalSensors || 0,
+                    totalStored: data.lastFetchTotalSensors - (data.lastFetchNewSensors || 0),
+                    newSensors: data.lastFetchNewSensors || 0,
+                    lostSensors: data.lastFetchLostSensors || 0, // UPDATED: Add lost sensors from backend
+                    fetchSuccessful: data.lastFetchSuccessful ?? false,
+                    lastFetchTime: new Date(data.lastFetchTime)
+                });
+            }
         } catch {
             setError("Error fetching collector data.");
         }
     }, [id]);
 
-    // Fetch sensors already stored in the database
     const fetchStoredSensors = useCallback(async () => {
         try {
             const rsp = await fetch(`/api/collectors/${id}/sensors`);
             if (!rsp.ok) {
-                // If it's a 500 error and collector might be locked, just set empty sensors
                 if (rsp.status === 500) {
                     setStoredSensors([]);
                     return;
@@ -355,7 +402,7 @@ const ConfigureCollector = () => {
             const transformedSensors = (data.storedSensors || []).map((sensor: any) => ({
                 Id: sensor.id,
                 name: sensor.name,
-                sensorTag: sensor.externalId,
+                sensorTag: sensor.sensorTag,
                 deviceName: "Collector",
                 componentName: sensor.sensorType,
                 externalId: sensor.externalId,
@@ -380,13 +427,17 @@ const ConfigureCollector = () => {
             }));
 
             setStoredSensors(transformedSensors);
+
+            // Update stored sensor count in stats
+            setLastFetchStats(prev => ({
+                ...prev,
+                totalStored: transformedSensors.length
+            }));
         } catch {
-            // Don't set error state for sensor fetching issues - just set empty sensors
             setStoredSensors([]);
         }
     }, [id]);
 
-    // Fetch available services
     const fetchServices = async () => {
         try {
             const rsp = await fetch(`/api/services`);
@@ -397,14 +448,13 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Initial data loading
     useEffect(() => {
         const load = async () => {
             try {
                 await fetchCollector();
                 await fetchStoredSensors();
                 await fetchServices();
-                await checkUnlockStatus(); // NEW: Check unlock status
+                await checkUnlockStatus();
             } catch (err) {
                 console.error("Error during initial load:", err);
             } finally {
@@ -420,7 +470,6 @@ const ConfigureCollector = () => {
         }
     }, [id, fetchCollector, fetchStoredSensors, checkUnlockStatus]);
 
-    // MODIFIED: Fetch new sensors from the collector that are not already in the DB
     const fetchDeltaSensors = async () => {
         if (isLocked) {
             showSnackbar("Please unlock the collector first", "warning");
@@ -429,18 +478,52 @@ const ConfigureCollector = () => {
         }
 
         setFetchingSensors(true);
+        setSensorFetchError(null);
+
         try {
             const rsp = await fetch(`/api/collectors/${id}/sensors/delta`);
-            if (!rsp.ok) throw new Error();
-            const data = await rsp.json();
-            const newOnes = data.filter(
-                (s: any) => !storedSensors.some((st) => st.externalId === s.externalId)
-            );
+            if (!rsp.ok) throw new Error(`HTTP ${rsp.status}: ${rsp.statusText}`);
 
-            const transformedSensors = newOnes.map((sensor: any) => ({
+            const response = await rsp.json();
+            const deltaSensors = response.deltaSensors || response.newSensors || [];
+            const lostSensorsData = response.lostSensors || []; // NEW: Extract lost sensors
+            const totalFetched = response.totalFetched || 0;
+            const totalStored = response.totalStored || 0;
+            const totalLost = response.totalLost || 0; // NEW: Extract lost count
+            const fetchSuccessful = response.fetchSuccessful || false;
+            const errorMessage = response.errorMessage;
+
+            // UPDATED: Include lost sensors in fetch statistics
+            setLastFetchStats({
+                totalFetched,
+                totalStored,
+                newSensors: deltaSensors.length,
+                lostSensors: totalLost, // NEW: Set lost sensors count
+                fetchSuccessful,
+                lastFetchTime: new Date()
+            });
+
+            if (!fetchSuccessful || errorMessage) {
+                setSensorFetchError(errorMessage || "Failed to fetch sensors from the collector. Please check the collector configuration, network connectivity, and ensure the target service is accessible.");
+                showSnackbar("Error fetching sensors from collector", "error");
+                setFetchedSensors([]);
+                setLostSensors([]); // NEW: Clear lost sensors on error
+                return;
+            }
+
+            if (totalFetched === 0) {
+                setSensorFetchError("No sensors were returned from the collector. This could indicate a connection issue, incorrect configuration, or the collector service may not be running properly.");
+                showSnackbar("No sensors found - please check collector configuration", "warning");
+                setFetchedSensors([]);
+                setLostSensors([]); // NEW: Clear lost sensors
+                return;
+            }
+
+            // Transform the delta sensors for display
+            const transformedNewSensors = deltaSensors.map((sensor: any) => ({
                 Id: sensor.id || `temp-${Math.random().toString(36).substring(2, 11)}`,
                 name: sensor.name,
-                sensorTag: sensor.externalId,
+                sensorTag: sensor.sensorTag,
                 deviceName: "Collector (New)",
                 componentName: sensor.sensorType,
                 externalId: sensor.externalId,
@@ -464,20 +547,78 @@ const ConfigureCollector = () => {
                 customAttribute10: sensor.customAttribute10
             }));
 
-            setFetchedSensors(transformedSensors);
-            setActiveTab("delta");
+            // NEW: Transform the lost sensors for display
+            const transformedLostSensors = lostSensorsData.map((sensor: any) => ({
+                Id: sensor.id,
+                name: sensor.name,
+                sensorTag: sensor.sensorTag,
+                deviceName: "Collector (Lost)",
+                componentName: sensor.sensorType,
+                externalId: sensor.externalId,
+                IsSelected: false,
+                unit: sensor.unit,
+                value: sensor.value,
+                decimalPlaces: sensor.decimalPlaces,
+                sensorOrder: sensor.sensorOrder || 0,
+                lastUpdated: sensor.lastUpdated,
+                mqttTopic: sensor.mqttTopic,
+                mqttQoS: sensor.mqttQoS,
+                customAttribute1: sensor.customAttribute1,
+                customAttribute2: sensor.customAttribute2,
+                customAttribute3: sensor.customAttribute3,
+                customAttribute4: sensor.customAttribute4,
+                customAttribute5: sensor.customAttribute5,
+                customAttribute6: sensor.customAttribute6,
+                customAttribute7: sensor.customAttribute7,
+                customAttribute8: sensor.customAttribute8,
+                customAttribute9: sensor.customAttribute9,
+                customAttribute10: sensor.customAttribute10
+            }));
+
+            setFetchedSensors(transformedNewSensors);
+            setLostSensors(transformedLostSensors); // NEW: Set lost sensors
+
+            // NEW: Auto-switch to appropriate tab based on what was found
+            if (transformedLostSensors.length > 0) {
+                setActiveTab("lost");
+            } else if (transformedNewSensors.length > 0) {
+                setActiveTab("delta");
+            } else {
+                setActiveTab("stored");
+            }
+
             await fetchStoredSensors();
 
-            showSnackbar(`Found ${transformedSensors.length} new sensors`, transformedSensors.length > 0 ? "info" : "success");
-        } catch {
-            setError("Error fetching delta sensors.");
+            // Clear any previous errors since fetch was successful
+            setSensorFetchError(null);
+
+            // NEW: Enhanced notification messages
+            if (deltaSensors.length === 0 && lostSensorsData.length === 0) {
+                showSnackbar("No new or lost sensors detected", "info");
+            } else {
+                const messages = [];
+                if (deltaSensors.length > 0) messages.push(`${deltaSensors.length} new sensors`);
+                if (lostSensorsData.length > 0) messages.push(`${lostSensorsData.length} lost sensors`);
+                showSnackbar(`Found: ${messages.join(', ')}`, "success");
+            }
+        } catch (err: any) {
+            console.error("Error fetching delta sensors:", err);
+            setSensorFetchError(`Failed to fetch sensors from the collector: ${err.message}`);
             showSnackbar("Error fetching new sensors", "error");
+            setFetchedSensors([]);
+            setLostSensors([]); // NEW: Clear lost sensors on error
+
+            // Update stats to reflect the failure
+            setLastFetchStats(prev => ({
+                ...prev,
+                fetchSuccessful: false,
+                lastFetchTime: new Date()
+            }));
         } finally {
             setFetchingSensors(false);
         }
     };
 
-    // Handle adding a sensor
     const handleAddSensor = async (sensorId: number | string) => {
         try {
             const sensor = fetchedSensors.find((s) => s.Id === sensorId);
@@ -530,6 +671,13 @@ const ConfigureCollector = () => {
 
             setFetchedSensors(fetchedSensors.filter((s) => s.Id !== sensorId));
             await fetchStoredSensors();
+            setSensorFetchError(null);
+
+            // Update fetch stats
+            setLastFetchStats(prev => ({
+                ...prev,
+                newSensors: prev.newSensors - 1
+            }));
 
             showSnackbar("Sensor added successfully.", "success");
         } catch (error) {
@@ -538,7 +686,6 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Handle adding all sensors
     const handleAddAllSensors = async () => {
         if (fetchedSensors.length === 0) {
             showSnackbar("No new sensors to add", "info");
@@ -603,6 +750,13 @@ const ConfigureCollector = () => {
             setFetchedSensors([]);
             await fetchStoredSensors();
             setActiveTab("stored");
+            setSensorFetchError(null);
+
+            // Update fetch stats
+            setLastFetchStats(prev => ({
+                ...prev,
+                newSensors: 0
+            }));
 
             if (failureCount === 0) {
                 showSnackbar(`Successfully added all ${successCount} sensors`, "success");
@@ -619,7 +773,6 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Handle deleting a sensor from the database
     const handleDeleteSensor = async (sensorId: number) => {
         try {
             const rsp = await fetch(`/api/sensors/${sensorId}`, { method: "DELETE" });
@@ -632,7 +785,22 @@ const ConfigureCollector = () => {
         }
     };
 
-    // Navigation and collector management
+    // NEW: Handle removing lost sensor from database
+    const handleRemoveLostSensor = async (sensorId: number) => {
+        if (window.confirm("Are you sure you want to remove this lost sensor from the database? This action cannot be undone.")) {
+            try {
+                const rsp = await fetch(`/api/sensors/${sensorId}`, { method: "DELETE" });
+                if (!rsp.ok) throw new Error();
+
+                setLostSensors(lostSensors.filter((s) => s.Id !== sensorId));
+                await fetchStoredSensors(); // Refresh stored sensors count
+                showSnackbar("Lost sensor removed from database.", "success");
+            } catch {
+                showSnackbar("Error removing lost sensor.", "error");
+            }
+        }
+    };
+
     const handleBack = () => navigate("/collectors");
 
     const handleDeleteCollector = async () => {
@@ -645,7 +813,6 @@ const ConfigureCollector = () => {
 
                 if (response.ok) {
                     showSnackbar("Collector deleted successfully", "success");
-                    // Give user time to see the success message before navigating
                     setTimeout(() => {
                         navigate("/collectors");
                     }, 1500);
@@ -657,12 +824,11 @@ const ConfigureCollector = () => {
             } catch (err: any) {
                 console.error("Error deleting collector:", err);
                 showSnackbar(`Error deleting collector: ${err.message}`, "error");
-                setLoading(false); // Reset loading state on error
+                setLoading(false);
             }
         }
     };
 
-    // NEW: Listen for bottom action bar events
     useEffect(() => {
         const handleBottomActionBack = () => {
             handleBack();
@@ -680,9 +846,7 @@ const ConfigureCollector = () => {
 
         const handleBottomActionTestConnection = () => {
             if (!isLocked) {
-                // Implement test connection logic
                 showSnackbar("Testing connection...", "info");
-                // You can add actual test connection API call here
             } else {
                 showSnackbar("Please unlock the collector first", "warning");
                 setShowUnlockDialog(true);
@@ -693,14 +857,12 @@ const ConfigureCollector = () => {
             handleDeleteCollector();
         };
 
-        // Add event listeners
         window.addEventListener('bottom-action-back', handleBottomActionBack);
         window.addEventListener('bottom-action-refresh', handleBottomActionRefresh);
         window.addEventListener('bottom-action-save', handleBottomActionSave);
         window.addEventListener('bottom-action-test-connection', handleBottomActionTestConnection);
         window.addEventListener('bottom-action-delete', handleBottomActionDelete);
 
-        // Cleanup
         return () => {
             window.removeEventListener('bottom-action-back', handleBottomActionBack);
             window.removeEventListener('bottom-action-refresh', handleBottomActionRefresh);
@@ -710,11 +872,9 @@ const ConfigureCollector = () => {
         };
     }, [editMode, hasChanges, isLocked, handleSaveCollector, handleDeleteCollector, handleBack]);
 
-    // Mock functions required by EnhancedSensorsTable but not used in this context
-    const noopAsync = async () => { /* Do nothing */ };
-    const noop = () => { /* Do nothing */ };
+    const noopAsync = async () => { };
+    const noop = () => { };
 
-    // Custom action renderers for the EnhancedSensorsTable
     const renderStoredSensorActions = (sensor: any) => (
         <Button
             size="small"
@@ -739,17 +899,33 @@ const ConfigureCollector = () => {
         </Button>
     );
 
-    // Filter and customize sensors for the active tab
-    const displaySensors = useMemo(() => {
-        return activeTab === "stored" ? storedSensors : fetchedSensors;
-    }, [activeTab, storedSensors, fetchedSensors]);
+    // NEW: Actions for lost sensors
+    const renderLostSensorActions = (sensor: any) => (
+        <Button
+            size="small"
+            variant="contained"
+            color="error"
+            onClick={() => handleRemoveLostSensor(sensor.Id)}
+            startIcon={<DeleteIcon />}
+        >
+            Remove from DB
+        </Button>
+    );
 
-    // Render collector configuration fields based on type
+    const displaySensors = useMemo(() => {
+        switch (activeTab) {
+            case "stored": return storedSensors;
+            case "delta": return fetchedSensors;
+            case "lost": return lostSensors; // NEW: Return lost sensors for lost tab
+            default: return storedSensors;
+        }
+    }, [activeTab, storedSensors, fetchedSensors, lostSensors]); // UPDATED: Include lostSensors dependency
+
     const renderCollectorFields = () => {
         if (!collector) return null;
 
-        const needsUrl = ["Cloudflare", "Github", "HomeAssistant", "LibreHardwareMonitor", "Render", "SonarrCalendar", "Stripe", "UptimeKuma"].includes(collector.collectorType);
-        const needsAccessToken = ["Cloudflare", "Github", "HomeAssistant", "Render", "Stripe"].includes(collector.collectorType);
+        const needsUrl = ["Cloudflare", "GenericAPI", "Github", "HomeAssistant", "LibreHardwareMonitor", "Render", "SonarrCalendar", "Stripe", "UptimeKuma"].includes(collector.collectorType);
+        const needsAccessToken = ["Cloudflare", "GenericAPI", "Github", "HomeAssistant", "Render", "Stripe", "SonarrCalendar", "iCal", "Unraid"].includes(collector.collectorType);
         const needsService = collector.collectorType === "MQTT";
 
         return (
@@ -769,9 +945,10 @@ const ConfigureCollector = () => {
                             collector.collectorType === "Github" ? "GitHub Repository URL" :
                                 collector.collectorType === "Cloudflare" ? "Cloudflare Zone URL" :
                                     collector.collectorType === "Render" ? "Render Service URL" :
-                                        collector.collectorType === "SonarrCalendar" ? "Sonarr iCal Feed URL" :
+                                        collector.collectorType === "SonarrCalendar" ? "Sonarr Base URL" :
                                             collector.collectorType === "Stripe" ? "Stripe API Base URL" :
-                                                "URL"
+                                                collector.collectorType === "Unraid" ? "Unraid IP Address" :
+                                                    "URL"
                         }
                         value={collector.url || ''}
                         onChange={(e) => updateCollectorField('url', e.target.value)}
@@ -782,39 +959,123 @@ const ConfigureCollector = () => {
                             collector.collectorType === "Github" ? "https://github.com/owner/repo" :
                                 collector.collectorType === "Cloudflare" ? "https://dash.cloudflare.com/account_id/zone_id" :
                                     collector.collectorType === "Render" ? "https://dashboard.render.com/web/srv-abc123" :
-                                        collector.collectorType === "SonarrCalendar" ? "http://your-sonarr:8989/feed/v3/calendar/Sonarr.ics?apikey=..." :
+                                        collector.collectorType === "SonarrCalendar" ? "http://your-sonarr:8989" :
                                             collector.collectorType === "Stripe" ? "https://api.stripe.com" :
-                                                ""
+                                                collector.collectorType === "Unraid" ? "https://your-unraid-ip" :
+                                                    ""
                         }
                     />
                 )}
 
                 {needsAccessToken && (
-                    <TextField
-                        label={
-                            collector.collectorType === "Github" ? "GitHub Personal Access Token" :
-                                collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
-                                    collector.collectorType === "Render" ? "Render API Key" :
-                                        collector.collectorType === "Stripe" ? "Stripe Secret Key" :
-                                            "Access Token"
-                        }
-                        type="password"
-                        value={getAccessTokenDisplay()}
-                        onChange={(e) => updateCollectorField('accessToken', e.target.value)}
-                        disabled={!editMode || isLocked}
-                        size="small"
-                        required
-                        helperText={editMode ? getAccessTokenHelperText() : ""}
-                        placeholder={
-                            originalCollector?.accessToken && !accessTokenChanged
-                                ? "Enter new token to change existing"
-                                : collector.collectorType === "Github" ? "ghp_..." :
-                                    collector.collectorType === "Cloudflare" ? "cf_api_token..." :
-                                        collector.collectorType === "Render" ? "rnd_..." :
-                                            collector.collectorType === "Stripe" ? "sk_..." :
-                                                ""
-                        }
-                    />
+                    <Box>
+                        <TextField
+                            label={
+                                collector.collectorType === "Github" ? "GitHub Personal Access Token" :
+                                    collector.collectorType === "Cloudflare" ? "Cloudflare API Token" :
+                                        collector.collectorType === "Render" ? "Render API Key" :
+                                            collector.collectorType === "SonarrCalendar" ? "Sonarr iCal Feed URL" :
+                                                collector.collectorType === "iCal" ? "iCal Feed URL" :
+                                                    collector.collectorType === "Stripe" ? "Stripe Secret Key" :
+                                                        collector.collectorType === "Unraid" ? "Unraid API Key" :
+                                                            "Access Token"
+                            }
+                            type="password"
+                            value={getAccessTokenDisplay()}
+                            onChange={(e) => updateCollectorField('accessToken', e.target.value)}
+                            disabled={!editMode || isLocked}
+                            size="small"
+                            required
+                            helperText={editMode ? getAccessTokenHelperText() : ""}
+                            placeholder={
+                                originalCollector?.accessToken && !accessTokenChanged
+                                    ? "Enter new token to change existing"
+                                    : collector.collectorType === "Github" ? "ghp_..." :
+                                        collector.collectorType === "Cloudflare" ? "cf_api_token..." :
+                                            collector.collectorType === "Render" ? "rnd_..." :
+                                                collector.collectorType === "SonarrCalendar" ? "http://sonarr:8989/feed/v3/calendar/Sonarr.ics?apikey=..." :
+                                                    collector.collectorType === "iCal" ? "https://calendar.google.com/calendar/ical/..." :
+                                                        collector.collectorType === "Stripe" ? "sk_..." :
+                                                            collector.collectorType === "Unraid" ? "your-api-key" :
+                                                                ""
+                            }
+                        />
+
+                        {/* Show encryption method selection when editing and token is being changed */}
+                        {editMode && accessTokenChanged && (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                                    How should this token be stored?
+                                </Typography>
+                                <FormControl component="fieldset">
+                                    <RadioGroup
+                                        value={collector.externalAccessToken ? "password" : "database"}
+                                        onChange={(e) => updateCollectorField('externalAccessToken', e.target.value === "password")}
+                                    >
+                                        <FormControlLabel
+                                            value="database"
+                                            control={<Radio size="small" />}
+                                            label={
+                                                <Box>
+                                                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                        Database Encryption (Recommended)
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Automatically encrypted. No password required on startup.
+                                                    </Typography>
+                                                </Box>
+                                            }
+                                        />
+                                        <FormControlLabel
+                                            value="password"
+                                            control={<Radio size="small" />}
+                                            label={
+                                                <Box>
+                                                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                                        Password-Based Encryption
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        Maximum security. Requires password entry on each app start.
+                                                    </Typography>
+                                                </Box>
+                                            }
+                                        />
+                                    </RadioGroup>
+                                </FormControl>
+
+                                {/* Encryption Password field - only show if password encryption is selected */}
+                                {collector.externalAccessToken && (
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Encryption Password"
+                                        type="password"
+                                        value={encryptionPassword}
+                                        onChange={(e) => setEncryptionPassword(e.target.value)}
+                                        required
+                                        sx={{ mt: 2 }}
+                                        placeholder="Enter a strong password for encryption"
+                                        helperText="This password will be required each time the application starts"
+                                    />
+                                )}
+                            </Box>
+                        )}
+
+                        {/* Show current encryption method when not changing token */}
+                        {editMode && !accessTokenChanged && originalCollector?.accessToken && (
+                            <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+                                    <SecurityIcon sx={{ mr: 1, fontSize: 14 }} />
+                                    Current: {originalEncryptionMethod ? "Password-Based" : "Database"} Encryption
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                    {originalEncryptionMethod
+                                        ? "Enter a new token above to change encryption method"
+                                        : "Enter a new token above to change encryption method"}
+                                </Typography>
+                            </Box>
+                        )}
+                    </Box>
                 )}
 
                 {needsService && (
@@ -856,6 +1117,161 @@ const ConfigureCollector = () => {
                         size="small"
                         helperText="How often to send test data (milliseconds)"
                     />
+                )}
+
+                {/* Description field - allow editing */}
+                <TextField
+                    label="Description (Optional)"
+                    value={collector.description || ''}
+                    onChange={(e) => updateCollectorField('description', e.target.value)}
+                    disabled={!editMode || isLocked}
+                    size="small"
+                    multiline
+                    rows={2}
+                    placeholder="Optional description for this collector"
+                />
+            </Box>
+        );
+    };
+
+    // UPDATED: Render enhanced sensor fetch stats with lost sensors
+    const renderSensorFetchStats = () => {
+        const hasPersistedStats = collector?.lastFetchTime;
+        const hasRecentFetchStats = lastFetchStats.lastFetchTime;
+
+        const statsToShow = hasRecentFetchStats ? lastFetchStats : {
+            totalFetched: collector?.lastFetchTotalSensors || 0,
+            totalStored: storedSensors.length,
+            newSensors: collector?.lastFetchNewSensors || 0,
+            lostSensors: collector?.lastFetchLostSensors || 0, // NEW: Include lost sensors from collector
+            fetchSuccessful: collector?.lastFetchSuccessful ?? false,
+            lastFetchTime: collector?.lastFetchTime ? new Date(collector.lastFetchTime) : null
+        };
+
+        const { totalFetched, totalStored, newSensors, lostSensors, fetchSuccessful, lastFetchTime } = statsToShow;
+
+        return (
+            <Box sx={{
+                p: 2,
+                bgcolor: lastFetchTime ? (fetchSuccessful ? 'action.hover' : 'error.light') : 'grey.50',
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: lastFetchTime ? (fetchSuccessful ? 'divider' : 'error.main') : 'grey.300'
+            }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    {lastFetchTime ? (
+                        fetchSuccessful ? (
+                            <CheckCircleIcon sx={{ mr: 1, color: 'primary.main', fontSize: 20 }} />
+                        ) : (
+                            <ErrorIcon sx={{ mr: 1, color: 'error.main', fontSize: 20 }} />
+                        )
+                    ) : (
+                        <InfoIcon sx={{ mr: 1, color: 'grey.500', fontSize: 20 }} />
+                    )}
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'medium' }}>
+                        {lastFetchTime ?
+                            `Last Fetch: ${lastFetchTime.toLocaleTimeString()} on ${lastFetchTime.toLocaleDateString()}` :
+                            'No fetch performed yet'
+                        }
+                    </Typography>
+                </Box>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 2 }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="h6" color={lastFetchTime ? (fetchSuccessful ? 'primary.main' : 'error.main') : 'grey.500'}>
+                            {totalFetched}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            Total Fetched
+                        </Typography>
+                    </Box>
+
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="h6" color="primary.main">
+                            {totalStored}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            In Database
+                        </Typography>
+                    </Box>
+
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="h6" color={newSensors > 0 ? 'warning.main' : 'text.secondary'}>
+                            {newSensors}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            New Available
+                        </Typography>
+                    </Box>
+
+                    {/* NEW: Lost sensors count */}
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="h6" color={lostSensors > 0 ? 'error.main' : 'text.secondary'}>
+                            {lostSensors}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            Lost Sensors
+                        </Typography>
+                    </Box>
+
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="h6" color="text.secondary">
+                            {collector?.testFrequency ? `${collector.testFrequency}ms` : 'Not Set'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            Test Frequency
+                        </Typography>
+                    </Box>
+                </Box>
+
+                {/* Show last tested info */}
+                {collector?.lastTested && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                        <InfoIcon sx={{ mr: 1, color: 'info.main', fontSize: 16 }} />
+                        <Typography variant="caption" color="info.main">
+                            Last tested: {new Date(collector.lastTested).toLocaleString()}
+                        </Typography>
+                    </Box>
+                )}
+
+                {/* Show success message for completed fetch */}
+                {lastFetchTime && fetchSuccessful && newSensors === 0 && lostSensors === 0 && totalFetched > 0 && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                        <InfoIcon sx={{ mr: 1, color: 'info.main', fontSize: 16 }} />
+                        <Typography variant="caption" color="info.main">
+                            All sensors from collector are already stored in database
+                        </Typography>
+                    </Box>
+                )}
+
+                {/* NEW: Show warning if lost sensors detected */}
+                {lastFetchTime && fetchSuccessful && lostSensors > 0 && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                        <ErrorIcon sx={{ mr: 1, color: 'error.main', fontSize: 16 }} />
+                        <Typography variant="caption" color="error.main">
+                            Warning: {lostSensors} sensors are no longer available from the collector
+                        </Typography>
+                    </Box>
+                )}
+
+                {/* Show error message if last fetch failed */}
+                {lastFetchTime && !fetchSuccessful && collector?.lastFetchErrorMessage && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'flex-start' }}>
+                        <ErrorIcon sx={{ mr: 1, color: 'error.main', fontSize: 16, mt: 0.1 }} />
+                        <Typography variant="caption" color="error.main">
+                            Last error: {collector.lastFetchErrorMessage}
+                        </Typography>
+                    </Box>
+                )}
+
+                {/* Show message when no fetch has been performed */}
+                {!lastFetchTime && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
+                        <InfoIcon sx={{ mr: 1, color: 'grey.500', fontSize: 16 }} />
+                        <Typography variant="caption" color="grey.600">
+                            Click "Fetch New Sensors" to retrieve sensors from this collector
+                        </Typography>
+                    </Box>
                 )}
             </Box>
         );
@@ -910,7 +1326,7 @@ const ConfigureCollector = () => {
                         Back to Collectors
                     </Button>
 
-                    {/* NEW: Unlock/Lock Button */}
+                    {/* Unlock/Lock Button */}
                     {requiresPassword && (
                         <Button
                             variant={isLocked ? "contained" : "outlined"}
@@ -935,7 +1351,7 @@ const ConfigureCollector = () => {
                 </Box>
             </Box>
 
-            {/* NEW: Lock Status Banner */}
+            {/* Lock Status Banner */}
             {isLocked && (
                 <Box sx={{ mb: 3 }}>
                     <Alert
@@ -977,7 +1393,7 @@ const ConfigureCollector = () => {
                                 color={getCollectorColor(collector.collectorType)}
                                 size="small"
                             />
-                            {/* NEW: Lock status indicator */}
+                            {/* Lock status indicator */}
                             {requiresPassword && (
                                 <Chip
                                     icon={isLocked ? <LockIcon /> : <LockOpenIcon />}
@@ -1000,7 +1416,7 @@ const ConfigureCollector = () => {
                                         variant="contained"
                                         startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
                                         onClick={handleSaveCollector}
-                                        disabled={saving || !hasChanges || isLocked}
+                                        disabled={saving || !hasChanges || isLocked || isEncryptionPasswordRequired()}
                                         sx={{ width: { xs: '100%', sm: 'auto' } }}
                                     >
                                         {saving ? "Saving..." : "Save Changes"}
@@ -1056,44 +1472,39 @@ const ConfigureCollector = () => {
                                         isLocked ? "Unlock Collector First" : "Fetch New Sensors"}
                                 </Button>
 
-                                <Box sx={{
-                                    p: 2,
-                                    bgcolor: 'action.hover',
-                                    borderRadius: 1,
-                                    textAlign: 'center'
-                                }}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        <strong>Stored Sensors:</strong> {storedSensors.length}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        <strong>New Sensors:</strong> {fetchedSensors.length}
-                                    </Typography>
-                                </Box>
+                                {/* Enhanced Sensor Fetch Stats */}
+                                {renderSensorFetchStats()}
 
                                 {/* Security Notice */}
                                 {(collector.collectorType === "Cloudflare" ||
                                     collector.collectorType === "Github" ||
                                     collector.collectorType === "HomeAssistant" ||
                                     collector.collectorType === "Render" ||
-                                    collector.collectorType === "Stripe") && (
+                                    collector.collectorType === "SonarrCalendar" ||
+                                    collector.collectorType === "iCal" ||
+                                    collector.collectorType === "Stripe" ||
+                                    collector.collectorType === "Unraid") && (
                                         <Box sx={{
                                             p: 2,
-                                            bgcolor: 'rgba(76, 175, 80, 0.08)',
+                                            bgcolor: requiresPassword ? 'rgba(255, 152, 0, 0.08)' : 'rgba(76, 175, 80, 0.08)',
                                             borderRadius: 1,
-                                            border: '1px solid rgba(76, 175, 80, 0.23)'
+                                            border: '1px solid',
+                                            borderColor: requiresPassword ? 'rgba(255, 152, 0, 0.23)' : 'rgba(76, 175, 80, 0.23)'
                                         }}>
-                                            <Typography variant="caption" color="success.main" sx={{
+                                            <Typography variant="caption" color={requiresPassword ? "warning.main" : "success.main"} sx={{
                                                 fontWeight: 'medium',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 mb: 0.5
                                             }}>
                                                 <SecurityIcon sx={{ mr: 1, fontSize: 16 }} />
-                                                Security Notice
+                                                {requiresPassword ? "Password-Protected Collector" : "Database-Encrypted Collector"}
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                Access tokens are automatically encrypted before being stored.
-                                                {requiresPassword ? " This collector uses password-based encryption for enhanced security." : " Existing credentials are never sent to your browser for security."}
+                                                {requiresPassword
+                                                    ? "This collector uses password-based encryption for maximum security. Access tokens are encrypted with your password and require manual unlock."
+                                                    : "Access tokens are automatically encrypted using database encryption. The application can decrypt them automatically on startup."
+                                                }
                                             </Typography>
                                         </Box>
                                     )}
@@ -1102,6 +1513,84 @@ const ConfigureCollector = () => {
                     </Box>
                 </CardContent>
             </Card>
+
+            {/* Sensor Fetch Error Card */}
+            {sensorFetchError && (
+                <Card elevation={3} sx={{ mb: 3, border: '2px solid', borderColor: 'error.main' }}>
+                    <CardContent sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                            <Alert
+                                severity="error"
+                                sx={{
+                                    flex: 1,
+                                    bgcolor: 'transparent',
+                                    color: 'inherit',
+                                    '& .MuiAlert-icon': {
+                                        color: 'error.main'
+                                    }
+                                }}
+                                action={
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Button
+                                            color="inherit"
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() => setSensorFetchError(null)}
+                                            sx={{
+                                                borderColor: 'error.contrastText',
+                                                color: 'error.contrastText',
+                                                '&:hover': {
+                                                    borderColor: 'error.contrastText',
+                                                    bgcolor: 'rgba(255, 255, 255, 0.1)'
+                                                }
+                                            }}
+                                        >
+                                            Dismiss
+                                        </Button>
+                                        <Button
+                                            color="inherit"
+                                            size="small"
+                                            variant="contained"
+                                            onClick={fetchDeltaSensors}
+                                            disabled={fetchingSensors || isLocked}
+                                            startIcon={fetchingSensors ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+                                            sx={{
+                                                bgcolor: 'error.dark',
+                                                color: 'error.contrastText',
+                                                '&:hover': {
+                                                    bgcolor: 'error.main'
+                                                }
+                                            }}
+                                        >
+                                            {fetchingSensors ? "Retrying..." : "Retry"}
+                                        </Button>
+                                    </Box>
+                                }
+                            >
+                                <Box>
+                                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+                                        Sensor Fetch Issue Detected
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ mb: 2 }}>
+                                        {sensorFetchError}
+                                    </Typography>
+
+                                    <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 1 }}>
+                                        Troubleshooting Steps:
+                                    </Typography>
+                                    <Box component="ul" sx={{ m: 0, pl: 2, '& li': { mb: 0.5 } }}>
+                                        <li>Verify the collector configuration (URL, API tokens, etc.)</li>
+                                        <li>Check network connectivity to the target service</li>
+                                        <li>Ensure the target service is running and accessible</li>
+                                        <li>Review API key permissions and expiration</li>
+                                        {requiresPassword && <li>Verify the collector is unlocked with the correct password</li>}
+                                    </Box>
+                                </Box>
+                            </Alert>
+                        </Box>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Setup Instructions Accordion */}
             <Accordion sx={{ mb: 3 }}>
@@ -1113,7 +1602,7 @@ const ConfigureCollector = () => {
                 </AccordionDetails>
             </Accordion>
 
-            {/* Tab Selection with Add All button */}
+            {/* UPDATED: Tab Selection with Lost Sensors tab */}
             <Box sx={{
                 display: 'flex',
                 flexDirection: { xs: 'column', sm: 'row' },
@@ -1141,6 +1630,25 @@ const ConfigureCollector = () => {
                         {fetchedSensors.length > 0 && (
                             <Chip
                                 label={fetchedSensors.length}
+                                color="success"
+                                size="small"
+                                sx={{ ml: 1, height: 20 }}
+                            />
+                        )}
+                    </Button>
+
+                    {/* NEW: Lost Sensors Tab */}
+                    <Button
+                        variant={activeTab === "lost" ? "contained" : "outlined"}
+                        onClick={() => setActiveTab("lost")}
+                        startIcon={<MissingLocationIcon />}
+                        disabled={lostSensors.length === 0}
+                        color={lostSensors.length > 0 ? "error" : "inherit"}
+                    >
+                        Lost Sensors {lostSensors.length > 0 && `(${lostSensors.length})`}
+                        {lostSensors.length > 0 && (
+                            <Chip
+                                label={lostSensors.length}
                                 color="error"
                                 size="small"
                                 sx={{ ml: 1, height: 20 }}
@@ -1191,9 +1699,21 @@ const ConfigureCollector = () => {
                         hideTargetsColumn={true}
                         hideSelectionColumn={true}
                         hideSourceColumn={true}
-                        customTitle={activeTab === "stored" ? "Stored Sensors" : "New Sensors Available"}
-                        customIcon={activeTab === "stored" ? <StorageIcon sx={{ mr: 1 }} /> : <NewReleasesIcon sx={{ mr: 1 }} />}
-                        customActions={activeTab === "stored" ? renderStoredSensorActions : renderDeltaSensorActions}
+                        customTitle={
+                            activeTab === "stored" ? "Stored Sensors" :
+                                activeTab === "delta" ? "New Sensors Available" :
+                                    "Lost Sensors" // NEW: Title for lost sensors
+                        }
+                        customIcon={
+                            activeTab === "stored" ? <StorageIcon sx={{ mr: 1 }} /> :
+                                activeTab === "delta" ? <NewReleasesIcon sx={{ mr: 1 }} /> :
+                                    <MissingLocationIcon sx={{ mr: 1 }} /> // NEW: Icon for lost sensors
+                        }
+                        customActions={
+                            activeTab === "stored" ? renderStoredSensorActions :
+                                activeTab === "delta" ? renderDeltaSensorActions :
+                                    renderLostSensorActions // NEW: Actions for lost sensors
+                        }
                         readOnly={true}
                         showLastUpdated={true}
                         hideFilters={false}
@@ -1213,7 +1733,10 @@ const ConfigureCollector = () => {
                     <Typography variant="body1" color="text.secondary">
                         {activeTab === "stored"
                             ? "No sensors are currently stored in the database."
-                            : "No new sensors available. Click 'Fetch New Sensors' to check for updates."}
+                            : activeTab === "delta"
+                                ? "No new sensors available. Click 'Fetch New Sensors' to check for updates."
+                                : "No lost sensors detected. This means all stored sensors are still available from the collector." // NEW: Message for lost sensors tab
+                        }
                     </Typography>
                     {activeTab === "stored" && (
                         <Button
@@ -1226,6 +1749,16 @@ const ConfigureCollector = () => {
                             {fetchingSensors ? "Fetching Sensors..." :
                                 isLocked ? "Unlock Collector First" : "Fetch New Sensors"}
                         </Button>
+                    )}
+                    {/* NEW: Help text for lost sensors tab */}
+                    {activeTab === "lost" && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+                            <Typography variant="body2" color="success.dark">
+                                Lost sensors are sensors that were previously stored in the database but are no longer
+                                available from the collector. This could indicate that the sensor has been removed from
+                                the source system, renamed, or the collector configuration has changed.
+                            </Typography>
+                        </Box>
                     )}
                 </Paper>
             )}
@@ -1242,7 +1775,7 @@ const ConfigureCollector = () => {
                 </Alert>
             </Snackbar>
 
-            {/* NEW: Unlock Dialog */}
+            {/* Unlock Dialog */}
             <Dialog
                 open={showUnlockDialog}
                 onClose={() => {

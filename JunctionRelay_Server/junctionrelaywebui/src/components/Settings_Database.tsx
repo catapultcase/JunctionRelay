@@ -59,6 +59,12 @@ interface SettingsDatabaseProps {
     setFriendlyName?: (name: string) => void;
 }
 
+const STORAGE_KEYS = {
+    INCLUDE_KEYS: 'junctionrelay_backup_include_keys',
+    INCLUDE_IDENTITY: 'junctionrelay_backup_include_identity',
+    INCLUDE_FRAME_ENGINE: 'junctionrelay_backup_include_frame_engine'
+};
+
 const Settings_Database: React.FC<SettingsDatabaseProps> = ({
     showSnackbar,
     isMobile = false,
@@ -66,9 +72,18 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
 }) => {
     const [backupInfo, setBackupInfo] = useState<BackendInfo | null>(null);
     const [backendIdentity, setBackendIdentity] = useState<BackendIdentity | null>(null);
-    const [includeKeys, setIncludeKeys] = useState<boolean>(true);
-    const [includeIdentity, setIncludeIdentity] = useState<boolean>(true);
-    const [includeFrameEngine, setIncludeFrameEngine] = useState<boolean>(false);
+    const [includeKeys, setIncludeKeys] = useState<boolean>(() => {
+        const saved = localStorage.getItem(STORAGE_KEYS.INCLUDE_KEYS);
+        return saved !== null ? saved === 'true' : true;
+    });
+    const [includeIdentity, setIncludeIdentity] = useState<boolean>(() => {
+        const saved = localStorage.getItem(STORAGE_KEYS.INCLUDE_IDENTITY);
+        return saved !== null ? saved === 'true' : true;
+    });
+    const [includeFrameEngine, setIncludeFrameEngine] = useState<boolean>(() => {
+        const saved = localStorage.getItem(STORAGE_KEYS.INCLUDE_FRAME_ENGINE);
+        return saved !== null ? saved === 'true' : true;
+    });
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
     const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
@@ -111,6 +126,19 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
         };
         loadData();
     }, []);
+
+    // Save preferences to localStorage whenever they change
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEYS.INCLUDE_KEYS, includeKeys.toString());
+    }, [includeKeys]);
+
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEYS.INCLUDE_IDENTITY, includeIdentity.toString());
+    }, [includeIdentity]);
+
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEYS.INCLUDE_FRAME_ENGINE, includeFrameEngine.toString());
+    }, [includeFrameEngine]);
 
     const formatFileSize = (bytes: number): string => {
         if (bytes === 0) return '0 Bytes';
@@ -403,7 +431,7 @@ const Settings_Database: React.FC<SettingsDatabaseProps> = ({
             {/* Backup Controls */}
             <Box sx={{ mb: 2 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Backup Options
+                    Export Backup Options
                 </Typography>
 
                 <FormControlLabel

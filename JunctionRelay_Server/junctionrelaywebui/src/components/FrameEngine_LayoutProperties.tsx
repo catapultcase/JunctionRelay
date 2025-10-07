@@ -15,6 +15,14 @@ interface DiscoveredStateMachine {
     inputs: DiscoveredInput[];
 }
 
+interface DiscoveredDataBinding {
+    name: string;
+    type: 'number' | 'string' | 'boolean' | 'color' | 'trigger' | 'enum' | 'list' | 'image' | 'unknown'; // Added 'list' and 'image'
+    propertyName?: string;
+    currentValue?: any;
+    ref?: any;
+}
+
 interface RiveFileInfo {
     filename: string;
     displayName: string;
@@ -37,6 +45,7 @@ interface FrameLayoutConfig {
     riveFile?: string | null;
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
+    riveBindings?: Record<string, any> | null;
     rows?: number;
     columns?: number;
     isTemplate: boolean;
@@ -50,6 +59,7 @@ interface FrameEngine_LayoutPropertiesProps {
     expandedSections: Set<string>;
     onToggleSection: (sectionId: string) => void;
     discoveredMachines?: DiscoveredStateMachine[];
+    discoveredBindings?: DiscoveredDataBinding[];
 }
 
 export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutPropertiesProps> = ({
@@ -58,6 +68,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
     expandedSections,
     onToggleSection,
     discoveredMachines = [],
+    discoveredBindings = [],
 }) => {
     // Rive-related state
     const [availableRiveFiles, setAvailableRiveFiles] = useState<RiveFileInfo[]>([]);
@@ -113,7 +124,8 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     backgroundType: 'rive',
                     riveFile: result.filename,
                     riveStateMachine: null,
-                    riveInputs: {}
+                    riveInputs: {},
+                    riveBindings: {}
                 });
                 event.target.value = '';
             } else {
@@ -132,6 +144,12 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         const currentInputs = layout.riveInputs || {};
         const inputKey = `${stateMachineName}.${inputName}`;
         onLayoutUpdate({ riveInputs: { ...currentInputs, [inputKey]: value } });
+    };
+
+    // Handle Rive data binding value change
+    const handleRiveBindingChange = (bindingName: string, value: any) => {
+        const currentBindings = layout.riveBindings || {};
+        onLayoutUpdate({ riveBindings: { ...currentBindings, [bindingName]: value } });
     };
 
     // Get layout type options
@@ -391,6 +409,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                             riveFile: e.target.value || null,
                                             riveStateMachine: null,
                                             riveInputs: {},
+                                            riveBindings: {},
                                         })}
                                         style={inputStyle}
                                     >
@@ -416,16 +435,19 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                     <div><strong>File:</strong> {layout.riveFile}</div>
                                     <div><strong>State Machines:</strong> {discoveredMachines.length}</div>
                                     <div><strong>Total Inputs:</strong> {discoveredMachines.reduce((sum: number, m: DiscoveredStateMachine) => sum + m.inputs.length, 0)}</div>
+                                    <div><strong>Data Bindings:</strong> {discoveredBindings.length}</div>
                                 </div>
                             )}
 
                             {/* Live State Machine Testing - applies to all state machines automatically */}
-                            {layout.riveFile && discoveredMachines.length > 0 && (
+                            {layout.riveFile && (discoveredMachines.length > 0 || discoveredBindings.length > 0) && (
                                 <LiveStateMachineTesting
                                     discoveredMachines={discoveredMachines}
+                                    discoveredBindings={discoveredBindings}
                                     riveFile={layout.riveFile}
                                     layout={layout}
                                     onInputChange={handleRiveInputChange}
+                                    onBindingChange={handleRiveBindingChange}
                                 />
                             )}
                         </div>

@@ -35,7 +35,7 @@ namespace JunctionRelayServer.Services
         public required DateTime LastGeneratedTime { get; set; }
         public required string Protocol { get; set; }
 
-        // NEW: Blit mode support
+        // Blit mode support
         public bool IsBlitMode { get; set; } = false;
         public int CanvasWidth { get; set; } = 400;
         public int CanvasHeight { get; set; } = 1280;
@@ -52,18 +52,23 @@ namespace JunctionRelayServer.Services
         public long MinFrameRenderTime { get; private set; } = long.MaxValue;
         private readonly Queue<long> _renderTimes = new(50); // Keep last 50 render times
 
-        // Payload data (for non-blit modes)
-        public string? ConfigPayloadJson { get; private set; }
-        public string? LastGeneratedPayloadJson { get; private set; }
-
         // Payload generation tracking
         public long PayloadsGenerated { get; private set; } = 0;
 
-        // Health information
+        // Payload tracking for UI and virtual screens (to match other StreamInfo classes)
+        public string ConfigPayloadPrefix { get; set; } = string.Empty;
+        public string ConfigPayloadJson { get; private set; } = string.Empty;
+        public string LastSentPayloadPrefix { get; set; } = string.Empty;
+        public string LastSentPayloadJson { get; private set; } = string.Empty;
+        public string CompressedConfigPayloadPrefix { get; private set; } = string.Empty;
+        public string CompressedLastSentPayloadPrefix { get; private set; } = string.Empty;
+
+        // Health information - Updated to match new architecture
         public Service_StreamHealth_Virtual Health { get; } = new();
 
-        // Thread-safe frame update
+        // Thread-safe frame and payload operations
         private readonly object _frameLock = new();
+        private readonly object _payloadLock = new();
 
         public void UpdateLastGeneratedFrame(byte[] frameData, string layoutType, DateTime generatedTime)
         {
@@ -75,6 +80,10 @@ namespace JunctionRelayServer.Services
                 LastFrameGeneratedTime = generatedTime;
                 LastFrameLayoutType = layoutType;
                 PayloadsGenerated++;
+
+                // Update health metrics for frames
+                Health.FramesSent++;
+                Health.UpdateFrameSize(frameData.Length);
             }
         }
 
@@ -89,6 +98,9 @@ namespace JunctionRelayServer.Services
                 AverageFrameRenderTime = _renderTimes.Average();
                 MaxFrameRenderTime = Math.Max(MaxFrameRenderTime, renderTimeMs);
                 MinFrameRenderTime = Math.Min(MinFrameRenderTime, renderTimeMs);
+
+                // Update health metrics for render time
+                Health.UpdateFrameRenderTime(renderTimeMs);
             }
         }
 
@@ -117,13 +129,56 @@ namespace JunctionRelayServer.Services
 
         public void UpdateConfigPayload(string jsonPayload)
         {
-            ConfigPayloadJson = jsonPayload;
+            lock (_payloadLock)
+            {
+                ConfigPayloadJson = jsonPayload ?? string.Empty;
+            }
         }
 
-        public void UpdateLastGeneratedPayload(string jsonPayload)
+        public void UpdateLastSentPayload(string jsonPayload)
         {
-            LastGeneratedPayloadJson = jsonPayload;
-            PayloadsGenerated++;
+            lock (_payloadLock)
+            {
+                LastSentPayloadJson = jsonPayload ?? string.Empty;
+            }
+        }
+
+        public void UpdateCompressedConfigPayloadPrefix(string prefix)
+        {
+            lock (_payloadLock)
+            {
+                CompressedConfigPayloadPrefix = prefix ?? string.Empty;
+            }
+        }
+
+        public void UpdateCompressedLastSentPayloadPrefix(string prefix)
+        {
+            lock (_payloadLock)
+            {
+                CompressedLastSentPayloadPrefix = prefix ?? string.Empty;
+            }
+        }
+
+        public string GetCompressedConfigPayloadPreview()
+        {
+            lock (_payloadLock)
+            {
+                if (string.IsNullOrEmpty(CompressedConfigPayloadPrefix))
+                    return ConfigPayloadJson;
+
+                return $"[{CompressedConfigPayloadPrefix}] {(ConfigPayloadJson.Length > 200 ? ConfigPayloadJson.Substring(0, 200) + "..." : ConfigPayloadJson)}";
+            }
+        }
+
+        public string GetCompressedLastSentPayloadPreview()
+        {
+            lock (_payloadLock)
+            {
+                if (string.IsNullOrEmpty(CompressedLastSentPayloadPrefix))
+                    return LastSentPayloadJson;
+
+                return $"[{CompressedLastSentPayloadPrefix}] {(LastSentPayloadJson.Length > 200 ? LastSentPayloadJson.Substring(0, 200) + "..." : LastSentPayloadJson)}";
+            }
         }
     }
 
@@ -139,8 +194,110 @@ namespace JunctionRelayServer.Services
         public DateTime? LastSuccessTime { get; set; }
         public DateTime? LastFailureTime { get; set; }
 
+        // Frame mode properties to match WebSocket manager
+        public bool IsFrameMode { get; set; } = false;
+        public string PayloadType { get; set; } = "JSON";
+        public int FramesSent { get; set; } = 0;
+        public int PayloadsSent { get; set; } = 0;
+        public string CurrentFrameLayoutType { get; set; } = "";
+        public double AverageFrameSize { get; set; } = 0.0;
+        public long MaxFrameSize { get; set; } = 0;
+        public long MinFrameSize { get; set; } = 0;
+        public double AverageFrameRenderTime { get; set; } = 0.0;
+        public long MaxFrameRenderTime { get; set; } = 0;
+        public long MinFrameRenderTime { get; set; } = 0;
+
+        // Frame size tracking
+        private readonly Queue<long> _frameSizes = new(50);
+        private readonly Queue<long> _renderTimes = new(50);
+
+        // Update health based on result from virtual stream manager
+        public void UpdateHealth(VirtualStreamHealthResult result)
+        {
+            if (result.Success)
+            {
+                ConsecutiveSuccesses++;
+                ConsecutiveFailures = 0;
+                LastSuccessTime = DateTime.UtcNow;
+                ErrorType = null;
+                LastErrorMessage = null;
+                PayloadsSent++;
+            }
+            else
+            {
+                ConsecutiveFailures++;
+                ConsecutiveSuccesses = 0;
+                LastFailureTime = DateTime.UtcNow;
+                ErrorType = result.ErrorType;
+                LastErrorMessage = result.ErrorMessage;
+            }
+
+            // Update latency
+            UpdateLatency(result.LatencyMs);
+
+            // Update payload type
+            PayloadType = result.PayloadType;
+
+            UpdateConnectionState();
+        }
+
+        public void UpdateLatency(long latencyMs)
+        {
+            // Simple running average for latency
+            AverageLatency = (AverageLatency + latencyMs) / 2.0;
+        }
+
+        public void UpdateFrameSize(long sizeBytes)
+        {
+            lock (_frameSizes)
+            {
+                _frameSizes.Enqueue(sizeBytes);
+                if (_frameSizes.Count > 50)
+                    _frameSizes.Dequeue();
+
+                AverageFrameSize = _frameSizes.Average();
+                MaxFrameSize = Math.Max(MaxFrameSize, sizeBytes);
+
+                if (MinFrameSize == 0 || sizeBytes < MinFrameSize)
+                    MinFrameSize = sizeBytes;
+            }
+        }
+
+        public void UpdateFrameRenderTime(long renderTimeMs)
+        {
+            lock (_renderTimes)
+            {
+                _renderTimes.Enqueue(renderTimeMs);
+                if (_renderTimes.Count > 50)
+                    _renderTimes.Dequeue();
+
+                AverageFrameRenderTime = _renderTimes.Average();
+                MaxFrameRenderTime = Math.Max(MaxFrameRenderTime, renderTimeMs);
+
+                if (MinFrameRenderTime == 0 || renderTimeMs < MinFrameRenderTime)
+                    MinFrameRenderTime = renderTimeMs;
+            }
+        }
+
+        public object GetFrameHealthSummary()
+        {
+            if (!IsFrameMode)
+            {
+                return new { message = "Not in frame mode" };
+            }
+
+            return new
+            {
+                totalFrames = FramesSent,
+                averageSize = $"{AverageFrameSize:F1} bytes",
+                averageRenderTime = $"{AverageFrameRenderTime:F1} ms",
+                sizeRange = $"{MinFrameSize} - {MaxFrameSize} bytes",
+                renderTimeRange = $"{MinFrameRenderTime} - {MaxFrameRenderTime} ms"
+            };
+        }
+
         // Health calculation based on consecutive failures
-        public void UpdateConnectionState()
+        private void UpdateConnectionState()
         {
             ConnectionState = ConsecutiveFailures switch
             {
@@ -164,6 +321,7 @@ namespace JunctionRelayServer.Services
             LastSuccessTime = DateTime.UtcNow;
             ErrorType = null;
             LastErrorMessage = null;
+            PayloadsSent++;
             UpdateConnectionState();
         }
 

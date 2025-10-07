@@ -21,16 +21,14 @@ using System.Collections.Concurrent;
 
 namespace JunctionRelayServer.Services
 {
-    // Configuration for history retention
     public class HistoryConfiguration
     {
-        public TimeSpan RetentionPeriod { get; set; } = TimeSpan.FromHours(24); // Default 24 hours
-        public int MaxEntriesPerStream { get; set; } = 10000; // Safety limit
-        public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(15); // Cleanup frequency
-        public bool LoggingEnabled { get; set; } = true; // Enable/disable history logging
+        public TimeSpan RetentionPeriod { get; set; } = TimeSpan.FromHours(24);
+        public int MaxEntriesPerStream { get; set; } = 10000;
+        public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(15);
+        public bool LoggingEnabled { get; set; } = true;
     }
 
-    // Single history entry for a stream
     public class StreamHistoryEntry
     {
         public DateTime Timestamp { get; set; }
@@ -52,11 +50,23 @@ namespace JunctionRelayServer.Services
         public string? LastErrorMessage { get; set; }
         public string? ErrorType { get; set; }
 
+        // Frame mode metrics
+        public bool IsFrameMode { get; set; }
+        public string PayloadType { get; set; } = "JSON";
+        public int FramesSent { get; set; }
+        public int PayloadsSent { get; set; }
+        public double AverageFrameSize { get; set; }
+        public double AverageFrameRenderTime { get; set; }
+
+        // Gateway mode metrics
+        public bool IsGatewayMode { get; set; }
+        public string? GatewayTarget { get; set; }
+        public int GatewayMessagesSent { get; set; }
+
         // Protocol-specific data
         public Dictionary<string, object> ProtocolSpecificData { get; set; } = new();
     }
 
-    // Aggregated statistics for time periods
     public class StreamStatistics
     {
         public DateTime PeriodStart { get; set; }
@@ -69,11 +79,15 @@ namespace JunctionRelayServer.Services
         public double SuccessRate { get; set; }
         public int TotalFailures { get; set; }
         public int TotalSuccesses { get; set; }
+        public int TotalFramesSent { get; set; }
+        public int TotalPayloadsSent { get; set; }
+        public double AverageFrameSize { get; set; }
+        public double AverageFrameRenderTime { get; set; }
         public Dictionary<string, int> ErrorTypeCounts { get; set; } = new();
+        public Dictionary<string, int> PayloadTypeCounts { get; set; } = new();
         public List<string> StatusChanges { get; set; } = new();
     }
 
-    // History response for API
     public class StreamHistoryResponse
     {
         public int ScreenId { get; set; }
@@ -87,111 +101,34 @@ namespace JunctionRelayServer.Services
         public StreamStatistics? Statistics { get; set; }
     }
 
-    // Main history manager service
     public class Service_Stream_History_Manager
     {
         private readonly ConcurrentDictionary<int, ConcurrentQueue<StreamHistoryEntry>> _streamHistories = new();
-        private readonly Service_Database_Manager_StreamHistory _dbManager;
-        private readonly HistoryConfiguration _config;
+        private readonly HistoryConfiguration _config = new();
         private readonly Timer _cleanupTimer;
-        private readonly object _configLock = new object();
+        private readonly object _configLock = new();
 
-        public Service_Stream_History_Manager(Service_Database_Manager_StreamHistory dbManager)
+        public Service_Stream_History_Manager()
         {
-            _dbManager = dbManager;
-            _config = new HistoryConfiguration();
-
-            // Load configuration from database on startup
-            LoadConfigurationFromDatabase();
-
-            // Start cleanup timer
             _cleanupTimer = new Timer(PerformCleanup, null, _config.CleanupInterval, _config.CleanupInterval);
         }
 
-        private async void LoadConfigurationFromDatabase()
-        {
-            try
-            {
-                var dbConfig = await _dbManager.GetConfigurationAsync();
-                lock (_configLock)
-                {
-                    _config.RetentionPeriod = dbConfig.RetentionPeriod;
-                    _config.MaxEntriesPerStream = dbConfig.MaxEntriesPerStream;
-                    _config.CleanupInterval = dbConfig.CleanupInterval;
-                    _config.LoggingEnabled = dbConfig.LoggingEnabled;
-                }
-                Console.WriteLine($"[STREAM_HISTORY] Configuration loaded from database: {_config.RetentionPeriod.TotalHours}h retention, {_config.MaxEntriesPerStream} max entries, logging {(_config.LoggingEnabled ? "enabled" : "disabled")}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[STREAM_HISTORY] Failed to load config from database, using defaults: {ex.Message}");
-            }
-        }
-
-        public async void UpdateRetentionPeriod(TimeSpan retentionPeriod)
+        public void UpdateRetentionPeriod(TimeSpan retentionPeriod)
         {
             lock (_configLock)
             {
                 _config.RetentionPeriod = retentionPeriod;
             }
-
-            try
-            {
-                await _dbManager.UpdateConfigurationAsync(_config);
-                Console.WriteLine($"[STREAM_HISTORY] Retention period updated to {retentionPeriod.TotalHours} hours");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[STREAM_HISTORY] Failed to save retention period: {ex.Message}");
-            }
+            Console.WriteLine($"[STREAM_HISTORY] Retention period updated to {retentionPeriod.TotalHours} hours");
         }
 
-        public async void UpdateMaxEntries(int maxEntries)
+        public void UpdateMaxEntries(int maxEntries)
         {
             lock (_configLock)
             {
-                _config.MaxEntriesPerStream = Math.Max(100, maxEntries); // Minimum 100 entries
+                _config.MaxEntriesPerStream = Math.Max(100, maxEntries);
             }
-
-            try
-            {
-                await _dbManager.UpdateConfigurationAsync(_config);
-                Console.WriteLine($"[STREAM_HISTORY] Max entries updated to {maxEntries}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[STREAM_HISTORY] Failed to save max entries: {ex.Message}");
-            }
-        }
-
-        public async void UpdateLoggingEnabled(bool loggingEnabled)
-        {
-            bool wasEnabled;
-            lock (_configLock)
-            {
-                wasEnabled = _config.LoggingEnabled;
-                _config.LoggingEnabled = loggingEnabled;
-            }
-
-            try
-            {
-                await _dbManager.UpdateConfigurationAsync(_config);
-                Console.WriteLine($"[STREAM_HISTORY] Logging {(loggingEnabled ? "enabled" : "disabled")}");
-
-                // If logging was disabled, optionally clear existing history
-                if (wasEnabled && !loggingEnabled)
-                {
-                    Console.WriteLine($"[STREAM_HISTORY] Logging disabled - existing history retained until next cleanup");
-                }
-                else if (!wasEnabled && loggingEnabled)
-                {
-                    Console.WriteLine($"[STREAM_HISTORY] Logging enabled - will start collecting new data");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[STREAM_HISTORY] Failed to save logging setting: {ex.Message}");
-            }
+            Console.WriteLine($"[STREAM_HISTORY] Max entries updated to {maxEntries}");
         }
 
         public HistoryConfiguration GetConfiguration()
@@ -208,103 +145,28 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Add a new history entry - only if logging is enabled
         public void AddHistoryEntry(StreamHistoryEntry entry)
         {
             if (entry == null) return;
 
-            // Check if logging is enabled
             bool loggingEnabled;
             lock (_configLock)
             {
                 loggingEnabled = _config.LoggingEnabled;
             }
 
-            if (!loggingEnabled)
-            {
-                // Silently skip adding entries when logging is disabled
-                return;
-            }
+            if (!loggingEnabled) return;
 
             var queue = _streamHistories.GetOrAdd(entry.ScreenId, _ => new ConcurrentQueue<StreamHistoryEntry>());
             queue.Enqueue(entry);
 
-            // Immediate size check to prevent memory issues
-            if (queue.Count > _config.MaxEntriesPerStream * 1.2) // 20% buffer before aggressive cleanup
+            if (queue.Count > _config.MaxEntriesPerStream * 1.2)
             {
                 TrimQueue(queue, _config.MaxEntriesPerStream);
             }
         }
 
-        // Create entry from COM stream info
-        // Create entry from COM stream info
-        public StreamHistoryEntry CreateEntryFromCOM(Service_StreamInfo_COM info)
-        {
-            return new StreamHistoryEntry
-            {
-                Timestamp = DateTime.UtcNow,
-                ScreenId = info.ScreenId,
-                DeviceName = info.DeviceName,
-                ScreenName = info.ScreenName,
-                Protocol = info.Protocol,
-                Status = info.Status,
-                Latency = info.Latency,
-                SensorsCount = info.SensorsCount,
-                Rate = info.Rate,
-                ConnectionState = info.Health.ConnectionState,
-                SuccessRate = info.Health.SuccessRate,
-                ConsecutiveFailures = info.Health.ConsecutiveFailures,
-                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
-                AverageLatency = info.Health.AverageLatency,
-                LastErrorMessage = info.Health.LastErrorMessage,
-                ErrorType = info.Health.ErrorType,
-                ProtocolSpecificData = new Dictionary<string, object>
-                {
-                    ["MinLatency"] = info.Health.MinLatency,
-                    ["MaxLatency"] = info.Health.MaxLatency,
-                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
-                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O")
-                }
-            };
-        }
-
-        // Create entry from HTTP stream info
-        public StreamHistoryEntry CreateEntryFromHTTP(Service_StreamInfo_HTTP info)
-        {
-            return new StreamHistoryEntry
-            {
-                Timestamp = DateTime.UtcNow,
-                ScreenId = info.ScreenId,
-                DeviceName = info.DeviceName,
-                ScreenName = info.ScreenName,
-                Protocol = info.Protocol,
-                Status = info.Status,
-                Latency = info.Latency,
-                SensorsCount = info.SensorsCount,
-                Rate = info.Rate,
-                ConnectionState = info.Health.ConnectionState,
-                SuccessRate = info.Health.SuccessRate,
-                ConsecutiveFailures = info.Health.ConsecutiveFailures,
-                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
-                AverageLatency = info.Health.AverageLatency,
-                LastErrorMessage = info.Health.LastErrorMessage,
-                ErrorType = info.Health.ErrorType,
-                ProtocolSpecificData = new Dictionary<string, object>
-                {
-                    ["HttpStatusCode"] = info.Health.HttpStatusCode,
-                    ["KeepAlivePoolRecreated"] = info.Health.KeepAlivePoolRecreated,
-                    ["PoolRecreationCount"] = info.Health.PoolRecreationCount,
-                    ["MinLatency"] = info.Health.MinLatency,
-                    ["MaxLatency"] = info.Health.MaxLatency,
-                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
-                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O")
-                }
-            };
-        }
-
-        // Add this method to your Service_Stream_History_Manager class
-
-        // Create entry from WebSocket stream info
+        // WebSocket stream entry creation
         public StreamHistoryEntry CreateEntryFromWebSocket(Service_StreamInfo_WebSocket info)
         {
             return new StreamHistoryEntry
@@ -325,29 +187,31 @@ namespace JunctionRelayServer.Services
                 AverageLatency = info.Health.AverageLatency,
                 LastErrorMessage = info.Health.LastErrorMessage,
                 ErrorType = info.Health.ErrorType,
+                IsFrameMode = info.Health.IsFrameMode,
+                PayloadType = info.Health.PayloadType,
+                FramesSent = info.Health.FramesSent,
+                PayloadsSent = info.Health.PayloadsSent,
+                AverageFrameSize = info.Health.AverageFrameSize,
+                AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
+                IsGatewayMode = info.IsGatewayMode,
+                GatewayTarget = info.GatewayTarget,
+                GatewayMessagesSent = info.Health.GatewayMessagesSent,
                 ProtocolSpecificData = new Dictionary<string, object>
                 {
                     ["DeviceMac"] = info.DeviceMac,
                     ["LastWebSocketState"] = info.Health.LastWebSocketState?.ToString() ?? "Unknown",
                     ["ConnectionRecreated"] = info.Health.ConnectionRecreated,
                     ["ConnectionRecreationCount"] = info.Health.ConnectionRecreationCount,
-                    ["MinLatency"] = info.Health.MinLatency,
+                    ["MinLatency"] = info.Health.MinLatency == long.MaxValue ? 0L : info.Health.MinLatency,
                     ["MaxLatency"] = info.Health.MaxLatency,
-                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
-                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O"),
-                    ["IsGatewayMode"] = info.IsGatewayMode,
-                    ["GatewayTarget"] = info.GatewayTarget ?? "",
-                    ["GatewayMessagesSent"] = info.Health.GatewayMessagesSent,
-                    ["IsFrameMode"] = info.Health.IsFrameMode,
-                    ["FramesSent"] = info.Health.FramesSent,
-                    ["PayloadsSent"] = info.Health.PayloadsSent,
-                    ["PayloadType"] = info.Health.PayloadType
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O") ?? "",
+                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O") ?? ""
                 }
             };
         }
 
-        // Create entry from MQTT stream info
-        public StreamHistoryEntry CreateEntryFromMQTT(Service_StreamInfo_MQTT info)
+        // COM stream entry creation
+        public StreamHistoryEntry CreateEntryFromCOM(Service_StreamInfo_COM info)
         {
             return new StreamHistoryEntry
             {
@@ -367,21 +231,71 @@ namespace JunctionRelayServer.Services
                 AverageLatency = info.Health.AverageLatency,
                 LastErrorMessage = info.Health.LastErrorMessage,
                 ErrorType = info.Health.ErrorType,
+                IsFrameMode = info.Health.IsFrameMode,
+                PayloadType = info.Health.PayloadType,
+                FramesSent = info.Health.FramesSent,
+                PayloadsSent = info.Health.PayloadsSent,
+                AverageFrameSize = info.Health.AverageFrameSize,
+                AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
+                IsGatewayMode = info.IsGatewayMode,
+                GatewayTarget = info.GatewayTarget,
+                GatewayMessagesSent = info.Health.PayloadsSent,
                 ProtocolSpecificData = new Dictionary<string, object>
                 {
-                    ["ConnectionRecreated"] = info.Health.ConnectionRecreated,
-                    ["ConnectionRecreationCount"] = info.Health.ConnectionRecreationCount,
-                    ["AcknowledgmentTimeouts"] = info.Health.AcknowledgmentTimeouts,
-                    ["PublishFailures"] = info.Health.PublishFailures,
-                    ["TopicLatencies"] = info.Health.TopicLatencies,
+                    ["ComPort"] = info.ComPort ?? "",
                     ["MinLatency"] = info.Health.MinLatency,
                     ["MaxLatency"] = info.Health.MaxLatency,
                     ["LastSuccessTime"] = info.Health.LastSuccessTime.ToString("O"),
-                    ["LastFailureTime"] = info.Health.LastFailureTime.ToString("O")
+                    ["LastFailureTime"] = info.Health.LastFailureTime != DateTime.MinValue ? info.Health.LastFailureTime.ToString("O") : ""
+                    //["TotalBytesSent"] = info.Health.TotalBytesSent
                 }
             };
         }
 
+        // HTTP stream entry creation
+        public StreamHistoryEntry CreateEntryFromHTTP(Service_StreamInfo_HTTP info)
+        {
+            return new StreamHistoryEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ScreenId = info.ScreenId,
+                DeviceName = info.DeviceName,
+                ScreenName = info.ScreenName,
+                Protocol = info.Protocol ?? "HTTP",
+                Status = info.Status,
+                Latency = info.Latency,
+                SensorsCount = info.SensorsCount,
+                Rate = info.Rate,
+                ConnectionState = info.Health.ConnectionState,
+                SuccessRate = info.Health.SuccessRate,
+                ConsecutiveFailures = info.Health.ConsecutiveFailures,
+                ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
+                AverageLatency = info.Health.AverageLatency,
+                LastErrorMessage = info.Health.LastErrorMessage,
+                ErrorType = info.Health.ErrorType,
+                IsFrameMode = info.Health.IsFrameMode,
+                PayloadType = info.Health.PayloadType,
+                FramesSent = info.Health.FramesSent,
+                PayloadsSent = info.Health.PayloadsSent,
+                AverageFrameSize = info.Health.AverageFrameSize,
+                AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
+                IsGatewayMode = info.IsGatewayMode,
+                GatewayTarget = info.GatewayTarget,
+                GatewayMessagesSent = info.Health.PayloadsSent,
+                ProtocolSpecificData = new Dictionary<string, object>
+                {
+                    ["HttpStatusCode"] = info.Health.HttpStatusCode ?? 0,
+                    ["KeepAlivePoolRecreated"] = info.Health.KeepAlivePoolRecreated,
+                    ["PoolRecreationCount"] = info.Health.PoolRecreationCount,
+                    ["MinLatency"] = info.Health.MinLatency,
+                    ["MaxLatency"] = info.Health.MaxLatency,
+                    ["LastSuccessTime"] = info.Health.LastSuccessTime?.ToString("O") ?? "",
+                    ["LastFailureTime"] = info.Health.LastFailureTime?.ToString("O") ?? ""
+                }
+            };
+        }
+
+        // Virtual stream entry creation
         public StreamHistoryEntry CreateEntryFromVirtual(Service_StreamInfo_Virtual info)
         {
             return new StreamHistoryEntry
@@ -402,13 +316,21 @@ namespace JunctionRelayServer.Services
                 AverageLatency = info.Health.AverageLatency,
                 LastErrorMessage = info.Health.LastErrorMessage,
                 ErrorType = info.Health.ErrorType,
+                IsFrameMode = info.Health.IsFrameMode,
+                PayloadType = info.Health.PayloadType,
+                FramesSent = info.Health.FramesSent,
+                PayloadsSent = info.Health.PayloadsSent,
+                AverageFrameSize = info.Health.AverageFrameSize,
+                AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
+                IsGatewayMode = false,
+                GatewayTarget = null,
+                GatewayMessagesSent = 0,
                 ProtocolSpecificData = new Dictionary<string, object>
                 {
                     ["IsVirtual"] = true,
                     ["LastSuccessTime"] = info.Health.LastSuccessTime?.ToString("O") ?? "",
                     ["LastFailureTime"] = info.Health.LastFailureTime?.ToString("O") ?? "",
                     ["PayloadsGenerated"] = info.PayloadsGenerated,
-                    // NEW: Add blit mode specific data
                     ["IsBlitMode"] = info.IsBlitMode,
                     ["CanvasWidth"] = info.CanvasWidth,
                     ["CanvasHeight"] = info.CanvasHeight,
@@ -420,8 +342,6 @@ namespace JunctionRelayServer.Services
             };
         }
 
-
-        // Get history for a specific stream
         public StreamHistoryResponse GetStreamHistory(int screenId, DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = true)
         {
             if (!_streamHistories.TryGetValue(screenId, out var queue))
@@ -435,7 +355,6 @@ namespace JunctionRelayServer.Services
                 return new StreamHistoryResponse { ScreenId = screenId };
             }
 
-            // Apply time filtering
             var filteredEntries = entries.AsEnumerable();
             if (fromTime.HasValue)
             {
@@ -472,7 +391,6 @@ namespace JunctionRelayServer.Services
             return response;
         }
 
-        // Get history for all streams
         public Dictionary<int, StreamHistoryResponse> GetAllStreamHistories(DateTime? fromTime = null, DateTime? toTime = null, bool includeStatistics = false)
         {
             var result = new Dictionary<int, StreamHistoryResponse>();
@@ -489,7 +407,6 @@ namespace JunctionRelayServer.Services
             return result;
         }
 
-        // Get summary of all streams
         public object GetHistorySummary()
         {
             var now = DateTime.UtcNow;
@@ -511,25 +428,21 @@ namespace JunctionRelayServer.Services
                         OldestEntry = entries.Length > 0 ? entries.Min(e => e.Timestamp) : (DateTime?)null,
                         NewestEntry = entries.Length > 0 ? entries.Max(e => e.Timestamp) : (DateTime?)null,
                         DeviceName = entries.Length > 0 ? entries.Last().DeviceName : "Unknown",
-                        Protocol = entries.Length > 0 ? entries.Last().Protocol : "Unknown"
+                        Protocol = entries.Length > 0 ? entries.Last().Protocol : "Unknown",
+                        IsFrameMode = entries.Length > 0 && entries.Last().IsFrameMode,
+                        IsGatewayMode = entries.Length > 0 && entries.Last().IsGatewayMode,
+                        TotalFramesSent = entries.Where(e => e.IsFrameMode).Sum(e => e.FramesSent),
+                        TotalPayloadsSent = entries.Sum(e => e.PayloadsSent)
                     };
                 }).ToList()
             };
         }
 
-        // Clear history for a specific stream
         public bool ClearStreamHistory(int screenId)
         {
             return _streamHistories.TryRemove(screenId, out _);
         }
 
-        // Clear all history
-        public void ClearAllHistory()
-        {
-            _streamHistories.Clear();
-        }
-
-        // Calculate statistics for a set of entries
         private StreamStatistics CalculateStatistics(List<StreamHistoryEntry> entries)
         {
             if (entries.Count == 0)
@@ -552,9 +465,17 @@ namespace JunctionRelayServer.Services
                 SuccessRate = entries.Count > 0 ? (double)successfulEntries.Length / entries.Count * 100 : 0,
                 TotalSuccesses = successfulEntries.Length,
                 TotalFailures = entries.Count - successfulEntries.Length,
+                TotalFramesSent = entries.Sum(e => e.FramesSent),
+                TotalPayloadsSent = entries.Sum(e => e.PayloadsSent),
+                AverageFrameSize = entries.Where(e => e.IsFrameMode && e.AverageFrameSize > 0).DefaultIfEmpty().Average(e => e?.AverageFrameSize ?? 0),
+                AverageFrameRenderTime = entries.Where(e => e.IsFrameMode && e.AverageFrameRenderTime > 0).DefaultIfEmpty().Average(e => e?.AverageFrameRenderTime ?? 0),
                 ErrorTypeCounts = entries
                     .Where(e => !string.IsNullOrEmpty(e.ErrorType))
                     .GroupBy(e => e.ErrorType)
+                    .ToDictionary(g => g.Key!, g => g.Count()),
+                PayloadTypeCounts = entries
+                    .Where(e => !string.IsNullOrEmpty(e.PayloadType))
+                    .GroupBy(e => e.PayloadType)
                     .ToDictionary(g => g.Key!, g => g.Count()),
                 StatusChanges = entries
                     .Select((entry, index) => new { entry, index })
@@ -566,7 +487,6 @@ namespace JunctionRelayServer.Services
             return stats;
         }
 
-        // Cleanup old entries
         private void PerformCleanup(object? state)
         {
             try
@@ -580,7 +500,6 @@ namespace JunctionRelayServer.Services
                     var newQueue = new ConcurrentQueue<StreamHistoryEntry>();
                     var hasValidEntries = false;
 
-                    // Move valid entries to new queue
                     while (queue.TryDequeue(out var entry))
                     {
                         if (entry.Timestamp >= cutoff)
@@ -592,7 +511,6 @@ namespace JunctionRelayServer.Services
 
                     if (hasValidEntries)
                     {
-                        // Trim to max entries if needed
                         TrimQueue(newQueue, _config.MaxEntriesPerStream);
                         _streamHistories[kvp.Key] = newQueue;
                     }
@@ -602,7 +520,6 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
-                // Remove empty streams
                 foreach (var screenId in streamsToRemove)
                 {
                     _streamHistories.TryRemove(screenId, out _);
@@ -617,7 +534,6 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Trim queue to specified size
         private static void TrimQueue(ConcurrentQueue<StreamHistoryEntry> queue, int maxSize)
         {
             var excess = queue.Count - maxSize;

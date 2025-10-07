@@ -19,13 +19,16 @@ import {
     ListItemText,
     SelectChangeEvent,
     Button,
-    Tooltip
+    Tooltip,
+    Slider
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
+import StorageIcon from '@mui/icons-material/Storage';
+import AspectRatioIcon from '@mui/icons-material/AspectRatio';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 import ECGCollectorVisualization from './Dashboard_ECGCollectorVisualization';
 
@@ -49,6 +52,12 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
     const [selectedCollectors, setSelectedCollectors] = useState<string[]>(() => {
         const saved = localStorage.getItem(`${storageKey}_selected`);
         return saved ? JSON.parse(saved) : [];
+    });
+
+    // NEW: ECG width control with localStorage persistence
+    const [ecgWidth, setEcgWidth] = useState<number>(() => {
+        const saved = localStorage.getItem(`${storageKey}_ecg_width`);
+        return saved ? parseInt(saved, 10) : 400; // Default to current size
     });
 
     // Only use WebSocket hook when expanded
@@ -105,6 +114,11 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
         localStorage.setItem(`${storageKey}_selected`, JSON.stringify(selectedCollectors));
     }, [selectedCollectors, storageKey]);
 
+    // NEW: Save ECG width to localStorage
+    useEffect(() => {
+        localStorage.setItem(`${storageKey}_ecg_width`, ecgWidth.toString());
+    }, [ecgWidth, storageKey]);
+
     // Handle WebSocket connection based on expansion state
     useEffect(() => {
         if (expanded) {
@@ -151,75 +165,113 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
         setSelectedCollectors([]);
     };
 
+    // NEW: Handle ECG width change
+    const handleEcgWidthChange = (event: Event, newValue: number | number[]) => {
+        setEcgWidth(newValue as number);
+    };
+
     // Filter collectors based on selection
     const displayedCollectors = useMemo(() => {
         return availableCollectors.filter(item => selectedCollectors.includes(item.key));
     }, [availableCollectors, selectedCollectors]);
 
     const renderCollectorSelect = () => (
-        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>Display Collectors</InputLabel>
-            <Select
-                multiple
-                value={selectedCollectors}
-                onChange={handleCollectorSelectionChange}
-                label="Display Collectors"
-                MenuProps={{
-                    PaperProps: {
-                        style: {
-                            maxHeight: 300
+        <Box>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Display Collectors</InputLabel>
+                <Select
+                    multiple
+                    value={selectedCollectors}
+                    onChange={handleCollectorSelectionChange}
+                    label="Display Collectors"
+                    MenuProps={{
+                        PaperProps: {
+                            style: {
+                                maxHeight: 300
+                            }
                         }
-                    }
-                }}
-                renderValue={(selected) => (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((key) => {
-                            const collector = availableCollectors.find(c => c.key === key);
-                            return (
-                                <Chip
-                                    key={key}
-                                    label={collector?.name || key}
-                                    size="small"
-                                />
-                            );
-                        })}
-                    </Box>
-                )}
-            >
-                {availableCollectors.map((item) => (
-                    <MenuItem key={item.key} value={item.key}>
-                        <Checkbox checked={selectedCollectors.includes(item.key)} />
-                        <ListItemText primary={item.name} />
-                    </MenuItem>
-                ))}
-            </Select>
+                    }}
+                    renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {selected.map((key) => {
+                                const collector = availableCollectors.find(c => c.key === key);
+                                return (
+                                    <Chip
+                                        key={key}
+                                        label={collector?.name || key}
+                                        size="small"
+                                    />
+                                );
+                            })}
+                        </Box>
+                    )}
+                >
+                    {availableCollectors.map((item) => (
+                        <MenuItem key={item.key} value={item.key}>
+                            <Checkbox checked={selectedCollectors.includes(item.key)} />
+                            <ListItemText primary={item.name} />
+                        </MenuItem>
+                    ))}
+                </Select>
 
-            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <Button
-                    size="small"
-                    onClick={handleSelectAll}
-                    startIcon={<SelectAllIcon />}
-                    disabled={selectedCollectors.length === availableCollectors.length}
-                >
-                    Select All
-                </Button>
-                <Button
-                    size="small"
-                    onClick={handleDeselectAll}
-                    startIcon={<DeselectIcon />}
-                    disabled={selectedCollectors.length === 0}
-                >
-                    Deselect All
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={handleSelectAll}
+                        startIcon={<SelectAllIcon />}
+                        disabled={selectedCollectors.length === availableCollectors.length}
+                    >
+                        Select All
+                    </Button>
+                    <Button
+                        size="small"
+                        onClick={handleDeselectAll}
+                        startIcon={<DeselectIcon />}
+                        disabled={selectedCollectors.length === 0}
+                    >
+                        Deselect All
+                    </Button>
+                </Box>
+            </FormControl>
+
+            {/* NEW: ECG Width Control */}
+            <Box sx={{ mt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <AspectRatioIcon color="primary" fontSize="small" />
+                    <Typography variant="subtitle2">
+                        ECG Width: {ecgWidth}px
+                    </Typography>
+                </Box>
+                <Box sx={{ px: 2, maxWidth: 300 }}>
+                    <Slider
+                        value={ecgWidth}
+                        onChange={handleEcgWidthChange}
+                        min={200}
+                        max={800}
+                        step={50}
+                        marks={[
+                            { value: 200, label: '200' },
+                            { value: 400, label: '400' },
+                            { value: 600, label: '600' },
+                            { value: 800, label: '800' }
+                        ]}
+                        size="small"
+                        sx={{ mb: 1 }}
+                    />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                    Adjust visualization width (saved automatically)
+                </Typography>
             </Box>
-        </FormControl>
+        </Box>
     );
 
     return (
-        <Card sx={{ mb: 4 }}>
+        <Card sx={{ mb: 4, borderRadius: 2 }}>
             <CardHeader
                 title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <StorageIcon color="primary" />
                         <Typography variant="h6">
                             Active Collectors
                         </Typography>
@@ -237,14 +289,23 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
                                         variant="outlined"
                                     />
                                 )}
+                                {/* NEW: Width indicator chip */}
+                                {displayedCollectors.length > 0 && (
+                                    <Chip
+                                        label={`${ecgWidth}px wide`}
+                                        size="small"
+                                        variant="outlined"
+                                        color="secondary"
+                                    />
+                                )}
                             </>
                         )}
                     </Box>
                 }
                 action={
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        {expanded && availableCollectors.length > 1 && (
-                            <Tooltip title="Collector Selection">
+                        {expanded && (
+                            <Tooltip title="Collector Settings">
                                 <IconButton
                                     onClick={handleCollectorSelectToggle}
                                     size="small"
@@ -278,7 +339,7 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
 
                         {/* Collector Selection Panel */}
                         <Collapse in={showCollectorSelect}>
-                            {showCollectorSelect && availableCollectors.length > 0 && (
+                            {showCollectorSelect && (
                                 <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
                                     <Typography variant="subtitle2" gutterBottom>
                                         Collector Display Settings
@@ -311,17 +372,14 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
                             <Box sx={{
                                 display: 'grid',
                                 gap: 2,
-                                gridTemplateColumns: {
-                                    xs: '1fr', // Single column on mobile
-                                    sm: 'repeat(auto-fit, minmax(300px, 1fr))', // Smaller min width for tablets
-                                    md: 'repeat(auto-fit, minmax(400px, 1fr))' // Original size for desktop
-                                }
+                                gridTemplateColumns: `repeat(auto-fit, ${ecgWidth}px)`, // Dynamic grid based on width
+                                width: '100%'
                             }}>
                                 {displayedCollectors.map((item) => (
                                     <ECGCollectorVisualization
                                         key={item.key}
                                         collector={item.collector}
-                                        width={400}
+                                        width={ecgWidth} // Use dynamic width
                                         height={120}
                                     />
                                 ))}

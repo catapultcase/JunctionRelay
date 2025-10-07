@@ -21,12 +21,12 @@ import React from "react";
 import {
     Typography, Box, Paper, TextField, FormControl, Select,
     MenuItem, SelectChangeEvent, Table, TableRow, TableCell, TableBody,
-    TableContainer, useTheme, useMediaQuery, Switch, FormControlLabel
+    TableContainer, useTheme, useMediaQuery, Switch, FormControlLabel, Grid
 } from "@mui/material";
 import InfoIcon from '@mui/icons-material/Info';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
-import EmbeddedVirtualScreenViewer from '../pages/VirtualScreenViewer';
+import EmbeddedVirtualScreenViewer from './EmbeddedVirtualScreenViewer';
 
 interface DeviceInfoPanelProps {
     deviceData: any;
@@ -36,7 +36,8 @@ interface DeviceInfoPanelProps {
     selectedComPort: string;
     setSelectedComPort: (port: string) => void;
     onAutoSave?: (updatedData: any, field: string, immediate?: boolean) => void;
-    deviceId?: string; // Add deviceId prop
+    deviceId?: string;
+    mountVirtualScreen?: boolean;
 }
 
 const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
@@ -47,111 +48,53 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
     selectedComPort,
     setSelectedComPort,
     onAutoSave,
-    deviceId
+    deviceId,
+    mountVirtualScreen = true
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-    // Sync selectedComPort with deviceData changes - initialize and update
     React.useEffect(() => {
-        console.log('[DeviceInfoPanel] useEffect triggered:', {
-            deviceDataComPort: deviceData?.comPort,
-            selectedComPort,
-            deviceDataExists: !!deviceData
-        });
-
         if (deviceData?.comPort !== undefined) {
-            console.log('[DeviceInfoPanel] Setting selectedComPort to:', deviceData.comPort);
             setSelectedComPort(deviceData.comPort || "");
-        } else {
-            console.log('[DeviceInfoPanel] deviceData.comPort is undefined, not updating selectedComPort');
         }
     }, [deviceData?.comPort, setSelectedComPort]);
 
-    // Check if selected port is invalid - memoized to prevent excessive re-renders
     const isCOMPortInvalid = React.useMemo(() => {
-        const isInvalid = deviceData?.comPort &&
+        return deviceData?.comPort &&
             deviceData.comPort !== "" &&
             comPorts.length > 0 &&
             !comPorts.includes(deviceData.comPort);
-
-        console.log('[DeviceInfoPanel] isCOMPortInvalid computed:', {
-            deviceComPort: deviceData?.comPort,
-            comPortsLength: comPorts.length,
-            isInvalid
-        });
-
-        return isInvalid;
     }, [deviceData?.comPort, comPorts]);
 
-    // Simple field change handler - match your working v4 signature
     const handleFieldChange = (field: string, value: any, immediate: boolean = false) => {
-        console.log(`[DeviceInfoPanel] handleFieldChange called:`, {
-            field,
-            value,
-            immediate,
-            currentDeviceData: deviceData,
-            onAutoSaveExists: !!onAutoSave
-        });
-
-        // Create updated data object like your working version expects
-        const updatedData = {
-            ...deviceData,
-            [field]: value
-        };
-
-        console.log(`[DeviceInfoPanel] Created updatedData:`, updatedData);
-
-        // Call with the signature your working ConfigureDevice expects
+        const updatedData = { ...deviceData, [field]: value };
         if (onAutoSave) {
-            console.log(`[DeviceInfoPanel] Calling onAutoSave with:`, { updatedData, field, immediate });
             onAutoSave(updatedData, field, immediate);
-        } else {
-            console.warn('[DeviceInfoPanel] onAutoSave is not provided!');
         }
     };
 
-    // Helper function to handle text input changes with debounced auto-save
     const handleTextChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-        const newValue = event.target.value;
-        console.log(`[DeviceInfoPanel] Text change: ${field} = ${newValue}`);
-        handleFieldChange(field, newValue, false); // false = debounced save
+        handleFieldChange(field, event.target.value, false);
     };
 
-    // Helper function to handle number input changes with debounced auto-save
     const handleNumberChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
         const value = event.target.value === '' ? 0 : Number(event.target.value);
-        console.log(`[DeviceInfoPanel] Number change: ${field} = ${value}`);
-        handleFieldChange(field, value, false); // false = debounced save
+        handleFieldChange(field, value, false);
     };
 
-    // Helper function to handle boolean toggle changes with immediate auto-save
     const handleToggleChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-        const value = event.target.checked;
-        console.log(`[DeviceInfoPanel] Toggle change: ${field} = ${value}`);
-        handleFieldChange(field, value, true); // true = immediate save
+        handleFieldChange(field, event.target.checked, true);
     };
 
-    // Handle COM port selection with immediate auto-save
     const handleComPortChange = (event: SelectChangeEvent) => {
         const newPort = event.target.value;
-        console.log('[DeviceInfoPanel] handleComPortChange:', {
-            newPort,
-            currentSelectedComPort: selectedComPort,
-            currentDeviceCOMPort: deviceData?.COMPort
-        });
-
         setSelectedComPort(newPort);
-        console.log('[DeviceInfoPanel] setSelectedComPort called with:', newPort);
-
         handleFieldChange('comPort', newPort, true);
-        console.log('[DeviceInfoPanel] handleFieldChange called for COMPort with value:', newPort);
     };
 
-    // Define which fields should be always editable
     const alwaysEditableFields = ['name', 'description', 'pollRate', 'sendRate'];
 
-    // Define info fields
     const infoFields = [
         { key: 'name', label: 'Device Name' },
         { key: 'description', label: 'Description' },
@@ -170,7 +113,6 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
         { key: 'sendRate', label: 'Default Send Rate' }
     ];
 
-    // Define capability fields (removed isGateway - now in separate card)
     const capFields = [
         { key: 'hasOnboardScreen', label: 'Onboard Screen' },
         { key: 'hasOnboardLED', label: 'Onboard LED' },
@@ -192,12 +134,224 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
         { key: 'supportsWebSockets', label: 'Supports WebSockets' }
     ];
 
-    // Check if this is a Virtual Screen device
     const isVirtualScreen = deviceData?.type === 'Virtual Screen';
 
+    // Split fields into two columns for Virtual Screen layout
+    const midpoint = Math.ceil(infoFields.length / 2);
+    const leftColumnFields = infoFields.slice(0, midpoint);
+    const rightColumnFields = infoFields.slice(midpoint);
+
+    if (isVirtualScreen) {
+        // Virtual Screen Layout: Full-width device info above, preview below
+        return (
+            <Box>
+                {/* Full-width Device Info Card with 2 columns */}
+                <Paper elevation={2} sx={{
+                    p: isMobile ? 2 : 3,
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    mb: 3
+                }}>
+                    <Typography variant="subtitle1" gutterBottom sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mb: isMobile ? 1.5 : 2,
+                        fontSize: isMobile ? '1rem' : '1.1rem'
+                    }}>
+                        <InfoIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                        Device Info
+                    </Typography>
+
+                    <Grid container spacing={isMobile ? 2 : 3}>
+                        {/* Left Column */}
+                        <Grid item xs={12} md={6}>
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableBody>
+                                        {leftColumnFields.map(({ key, label }) => (
+                                            <TableRow key={key}>
+                                                <TableCell sx={{
+                                                    width: '40%',
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee'
+                                                }}>
+                                                    <Typography variant="body2" fontWeight="medium" sx={{
+                                                        fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                                    }}>
+                                                        {label}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell sx={{
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee'
+                                                }}>
+                                                    {alwaysEditableFields.includes(key) ? (
+                                                        key === 'pollRate' || key === 'sendRate' ? (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                type="number"
+                                                                value={deviceData[key] ?? 0}
+                                                                onChange={handleNumberChange(key)}
+                                                                slotProps={{ htmlInput: { min: 0 } }}
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                value={deviceData[key] ?? ""}
+                                                                onChange={handleTextChange(key)}
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
+                                                                    }
+                                                                }}
+                                                            />
+                                                        )
+                                                    ) : (
+                                                        <Typography variant="body2" sx={{
+                                                            fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                                        }}>
+                                                            {deviceData[key] !== undefined ? String(deviceData[key]) : "—"}
+                                                        </Typography>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Grid>
+
+                        {/* Right Column */}
+                        <Grid item xs={12} md={6}>
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableBody>
+                                        {rightColumnFields.map(({ key, label }) => (
+                                            <TableRow key={key}>
+                                                <TableCell sx={{
+                                                    width: '40%',
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee'
+                                                }}>
+                                                    <Typography variant="body2" fontWeight="medium" sx={{
+                                                        fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                                    }}>
+                                                        {label}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell sx={{
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee'
+                                                }}>
+                                                    {alwaysEditableFields.includes(key) ? (
+                                                        key === 'pollRate' || key === 'sendRate' ? (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                type="number"
+                                                                value={deviceData[key] ?? 0}
+                                                                onChange={handleNumberChange(key)}
+                                                                slotProps={{ htmlInput: { min: 0 } }}
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                value={deviceData[key] ?? ""}
+                                                                onChange={handleTextChange(key)}
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
+                                                                    }
+                                                                }}
+                                                            />
+                                                        )
+                                                    ) : (
+                                                        <Typography variant="body2" sx={{
+                                                            fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                                        }}>
+                                                            {deviceData[key] !== undefined ? String(deviceData[key]) : "—"}
+                                                        </Typography>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Grid>
+                    </Grid>
+                </Paper>
+
+                {/* Virtual Screen Preview - Full Width */}
+                <Paper elevation={2} sx={{
+                    p: 0,
+                    height: '600px',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <Box sx={{
+                        p: isMobile ? 2 : 3,
+                        borderBottom: '1px solid #eee',
+                        backgroundColor: 'background.paper'
+                    }}>
+                        <Typography variant="subtitle1" sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            fontSize: isMobile ? '1rem' : '1.1rem',
+                            margin: 0
+                        }}>
+                            <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                            Virtual Screen Preview
+                        </Typography>
+                    </Box>
+                    <Box sx={{ flex: 1, position: 'relative' }}>
+                        {mountVirtualScreen && deviceId && (
+                            <EmbeddedVirtualScreenViewer
+                                deviceId={deviceId}
+                                deviceData={deviceData}
+                                containerHeight={600 - (isMobile ? 68 : 76)}
+                                showControls={true}
+                            />
+                        )}
+                        {!mountVirtualScreen && (
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '100%',
+                                color: 'text.secondary'
+                            }}>
+                                <Typography variant="body2">Preparing navigation...</Typography>
+                            </Box>
+                        )}
+                    </Box>
+                </Paper>
+            </Box>
+        );
+    }
+
+    // Original Layout for non-Virtual Screen devices
     return (
         <Box>
-            {/* Device Info and Capabilities Cards */}
             <Box sx={{
                 display: 'flex',
                 gap: isMobile ? 2 : 3,
@@ -232,41 +386,31 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                         <Box sx={{ mb: 2, overflow: 'auto' }}>
                             <TableContainer sx={{
                                 maxWidth: '100%',
-                                '& .MuiTable-root': {
-                                    tableLayout: 'fixed'
-                                }
+                                '& .MuiTable-root': { tableLayout: 'fixed' }
                             }}>
                                 <Table size="small">
                                     <TableBody>
                                         {infoFields.map(({ key, label }) => (
                                             <TableRow key={key}>
-                                                <TableCell
-                                                    sx={{
-                                                        width: isMobile ? '35%' : '40%',
-                                                        padding: isMobile ? '6px 8px' : '8px 16px',
-                                                        borderBottom: '1px solid #eee',
-                                                        wordBreak: 'break-word',
-                                                        fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                                    }}
-                                                >
-                                                    <Typography
-                                                        variant="body2"
-                                                        fontWeight="medium"
-                                                        sx={{
-                                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                            lineHeight: 1.2
-                                                        }}
-                                                    >
+                                                <TableCell sx={{
+                                                    width: isMobile ? '35%' : '40%',
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee',
+                                                    wordBreak: 'break-word',
+                                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
+                                                }}>
+                                                    <Typography variant="body2" fontWeight="medium" sx={{
+                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                        lineHeight: 1.2
+                                                    }}>
                                                         {label}
                                                     </Typography>
                                                 </TableCell>
-                                                <TableCell
-                                                    sx={{
-                                                        padding: isMobile ? '6px 8px' : '8px 16px',
-                                                        borderBottom: '1px solid #eee',
-                                                        overflow: 'hidden'
-                                                    }}
-                                                >
+                                                <TableCell sx={{
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee',
+                                                    overflow: 'hidden'
+                                                }}>
                                                     {(isCustom && key !== "type") || alwaysEditableFields.includes(key) ? (
                                                         key === 'pollRate' || key === 'sendRate' ? (
                                                             <TextField
@@ -275,9 +419,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                                 type="number"
                                                                 value={deviceData[key] ?? 0}
                                                                 onChange={handleNumberChange(key)}
-                                                                slotProps={{
-                                                                    htmlInput: { min: 0 }
-                                                                }}
+                                                                slotProps={{ htmlInput: { min: 0 } }}
                                                                 sx={{
                                                                     '& .MuiInputBase-input': {
                                                                         fontSize: isMobile ? '0.8rem' : '0.875rem',
@@ -286,15 +428,11 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                                 }}
                                                             />
                                                         ) : key === 'hasCustomFirmware' ? (
-                                                            // Special handling for hasCustomFirmware - show as Yes/No display only
-                                                            <Typography
-                                                                variant="body2"
-                                                                sx={{
-                                                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                    wordBreak: 'break-word',
-                                                                    lineHeight: 1.2
-                                                                }}
-                                                            >
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                                wordBreak: 'break-word',
+                                                                lineHeight: 1.2
+                                                            }}>
                                                                 {deviceData[key] ? "Yes" : "No"}
                                                             </Typography>
                                                         ) : (
@@ -312,14 +450,11 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                             />
                                                         )
                                                     ) : (
-                                                        <Typography
-                                                            variant="body2"
-                                                            sx={{
-                                                                fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                wordBreak: 'break-word',
-                                                                lineHeight: 1.2
-                                                            }}
-                                                        >
+                                                        <Typography variant="body2" sx={{
+                                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                            wordBreak: 'break-word',
+                                                            lineHeight: 1.2
+                                                        }}>
                                                             {deviceData[key] !== undefined ? String(deviceData[key]) : "—"}
                                                         </Typography>
                                                     )}
@@ -329,32 +464,24 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                         {/* COM Port Selection */}
                                         {deviceData.supportsUSB && (
                                             <TableRow>
-                                                <TableCell
-                                                    sx={{
-                                                        width: isMobile ? '35%' : '40%',
-                                                        padding: isMobile ? '6px 8px' : '8px 16px',
-                                                        borderBottom: '1px solid #eee',
-                                                        backgroundColor: isCOMPortInvalid ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
-                                                    }}
-                                                >
-                                                    <Typography
-                                                        variant="body2"
-                                                        fontWeight="medium"
-                                                        sx={{
-                                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                            color: isCOMPortInvalid ? 'error.main' : 'inherit'
-                                                        }}
-                                                    >
+                                                <TableCell sx={{
+                                                    width: isMobile ? '35%' : '40%',
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee',
+                                                    backgroundColor: isCOMPortInvalid ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
+                                                }}>
+                                                    <Typography variant="body2" fontWeight="medium" sx={{
+                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                        color: isCOMPortInvalid ? 'error.main' : 'inherit'
+                                                    }}>
                                                         COM Port
                                                     </Typography>
                                                 </TableCell>
-                                                <TableCell
-                                                    sx={{
-                                                        padding: isMobile ? '6px 8px' : '8px 16px',
-                                                        borderBottom: '1px solid #eee',
-                                                        backgroundColor: isCOMPortInvalid ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
-                                                    }}
-                                                >
+                                                <TableCell sx={{
+                                                    padding: isMobile ? '6px 8px' : '8px 16px',
+                                                    borderBottom: '1px solid #eee',
+                                                    backgroundColor: isCOMPortInvalid ? 'rgba(244, 67, 54, 0.1)' : 'transparent'
+                                                }}>
                                                     <FormControl fullWidth size="small" error={isCOMPortInvalid}>
                                                         <Select
                                                             value={selectedComPort || ""}
@@ -370,32 +497,23 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                                                 }
                                                             }}
                                                         >
-                                                            <MenuItem value="">
-                                                                <em>None</em>
-                                                            </MenuItem>
-                                                            {/* Show the invalid saved port if it exists */}
+                                                            <MenuItem value=""><em>None</em></MenuItem>
                                                             {isCOMPortInvalid && (
                                                                 <MenuItem value={deviceData.comPort} disabled sx={{ color: 'error.main', fontStyle: 'italic' }}>
                                                                     {deviceData.comPort} (No longer available)
                                                                 </MenuItem>
                                                             )}
                                                             {comPorts.map((port) => (
-                                                                <MenuItem key={port} value={port}>
-                                                                    {port}
-                                                                </MenuItem>
+                                                                <MenuItem key={port} value={port}>{port}</MenuItem>
                                                             ))}
                                                         </Select>
                                                     </FormControl>
                                                     {isCOMPortInvalid && (
-                                                        <Typography
-                                                            variant="caption"
-                                                            color="error"
-                                                            sx={{
-                                                                display: 'block',
-                                                                mt: 0.5,
-                                                                fontSize: isMobile ? '0.7rem' : '0.75rem'
-                                                            }}
-                                                        >
+                                                        <Typography variant="caption" color="error" sx={{
+                                                            display: 'block',
+                                                            mt: 0.5,
+                                                            fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                                        }}>
                                                             Saved selection no longer exists
                                                         </Typography>
                                                     )}
@@ -435,138 +553,85 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                                     />
                                 }
                                 label={
-                                    <Typography
-                                        variant="body2"
-                                        sx={{
-                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                            fontWeight: 'medium'
-                                        }}
-                                    >
+                                    <Typography variant="body2" sx={{
+                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                        fontWeight: 'medium'
+                                    }}>
                                         Enable Gateway Mode
                                     </Typography>
                                 }
                                 sx={{ mb: 1 }}
                             />
 
-                            <Typography
-                                variant="body2"
-                                color="text.secondary"
-                                sx={{
-                                    fontSize: isMobile ? '0.75rem' : '0.8rem',
-                                    lineHeight: 1.4,
-                                    mt: 1
-                                }}
-                            >
+                            <Typography variant="body2" color="text.secondary" sx={{
+                                fontSize: isMobile ? '0.75rem' : '0.8rem',
+                                lineHeight: 1.4,
+                                mt: 1
+                            }}>
                                 Gateway devices can relay data from other devices on the network. Enable this setting if this device should act as a central hub for collecting and forwarding sensor data from multiple sources.
                             </Typography>
                         </Box>
                     </Paper>
                 </Box>
 
-                {/* Right Column - Device Capabilities OR Virtual Screen Viewer */}
+                {/* Right Column - Device Capabilities */}
                 <Box sx={{
                     flex: isMobile ? '1' : '1 1 400px',
                     minWidth: isMobile ? 'auto' : '400px',
                     width: isMobile ? '100%' : 'auto'
                 }}>
-                    {isVirtualScreen ? (
-                        /* Virtual Screen Viewer */
-                        <Paper elevation={2} sx={{
-                            p: 0, // No padding for the viewer
-                            height: '600px', // Fixed height for consistent layout
-                            borderRadius: 2,
-                            overflow: 'hidden',
+                    <Paper elevation={2} sx={{
+                        p: isMobile ? 2 : 3,
+                        height: '100%',
+                        borderRadius: 2,
+                        overflow: 'hidden'
+                    }}>
+                        <Typography variant="subtitle1" gutterBottom sx={{
                             display: 'flex',
-                            flexDirection: 'column'
+                            alignItems: 'center',
+                            mb: isMobile ? 1.5 : 1,
+                            fontSize: isMobile ? '1rem' : '1.1rem'
                         }}>
-                            <Box sx={{
-                                p: isMobile ? 2 : 3,
-                                borderBottom: '1px solid #eee',
-                                backgroundColor: 'background.paper'
-                            }}>
-                                <Typography variant="subtitle1" sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    fontSize: isMobile ? '1rem' : '1.1rem',
-                                    margin: 0
-                                }}>
-                                    <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
-                                    Virtual Screen Preview
-                                </Typography>
-                            </Box>
-                            <Box sx={{
-                                flex: 1,
-                                position: 'relative'
-                            }}>
-                                <EmbeddedVirtualScreenViewer
-                                    deviceId={deviceId || deviceData.id?.toString() || deviceData.uniqueIdentifier || ''}
-                                    deviceData={deviceData} // Pass the device data to avoid API call
-                                    containerHeight={600 - (isMobile ? 68 : 76)} // Account for header
-                                    showControls={true}
-                                />
-                            </Box>
-                        </Paper>
-                    ) : (
-                        /* Device Capabilities */
-                        <Paper elevation={2} sx={{
-                            p: isMobile ? 2 : 3,
-                            height: '100%',
-                            borderRadius: 2,
-                            overflow: 'hidden'
-                        }}>
-                            <Typography variant="subtitle1" gutterBottom sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                mb: isMobile ? 1.5 : 1,
-                                fontSize: isMobile ? '1rem' : '1.1rem'
-                            }}>
-                                <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
-                                Device Capabilities
-                            </Typography>
-                            <Box sx={{ mb: 2, overflow: 'auto' }}>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                    {capFields.map(({ key, label }) => (
-                                        <Box key={key} sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            py: 0.5,
-                                            borderBottom: '1px solid #f0f0f0'
+                            <SettingsIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                            Device Capabilities
+                        </Typography>
+                        <Box sx={{ mb: 2, overflow: 'auto' }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {capFields.map(({ key, label }) => (
+                                    <Box key={key} sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        py: 0.5,
+                                        borderBottom: '1px solid #f0f0f0'
+                                    }}>
+                                        <Typography variant="body2" sx={{
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            fontWeight: 'medium'
                                         }}>
-                                            <Typography
-                                                variant="body2"
-                                                sx={{
-                                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                    fontWeight: 'medium'
-                                                }}
-                                            >
-                                                {label}
-                                            </Typography>
+                                            {label}
+                                        </Typography>
 
-                                            {isCustom ? (
-                                                <Switch
-                                                    checked={deviceData[key] || false}
-                                                    onChange={handleToggleChange(key)}
-                                                    size="small"
-                                                    color="primary"
-                                                />
-                                            ) : (
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{
-                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                        color: deviceData[key] ? 'success.main' : 'text.secondary'
-                                                    }}
-                                                >
-                                                    {deviceData[key] ? "Yes" : "No"}
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    ))}
-                                </Box>
+                                        {isCustom ? (
+                                            <Switch
+                                                checked={deviceData[key] || false}
+                                                onChange={handleToggleChange(key)}
+                                                size="small"
+                                                color="primary"
+                                            />
+                                        ) : (
+                                            <Typography variant="body2" sx={{
+                                                fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                                color: deviceData[key] ? 'success.main' : 'text.secondary'
+                                            }}>
+                                                {deviceData[key] ? "Yes" : "No"}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                ))}
                             </Box>
-                        </Paper>
-                    )}
+                        </Box>
+                    </Paper>
                 </Box>
             </Box>
         </Box>

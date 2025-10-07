@@ -93,6 +93,71 @@ namespace JunctionRelayServer.Services
             return _userPasswordCache.ContainsKey(collectorId);
         }
 
+        // UPDATED: Method to update last fetch information with lost sensors tracking
+        public async Task<bool> UpdateLastFetchInfoAsync(int collectorId, DateTime lastFetchTime,
+            int totalSensors, int newSensors, bool fetchSuccessful, string errorMessage, int lostSensors = 0)
+        {
+            try
+            {
+                var sql = @"
+                    UPDATE Collectors SET
+                        LastFetchTime = @LastFetchTime,
+                        LastFetchTotalSensors = @LastFetchTotalSensors,
+                        LastFetchNewSensors = @LastFetchNewSensors,
+                        LastFetchLostSensors = @LastFetchLostSensors,
+                        LastFetchSuccessful = @LastFetchSuccessful,
+                        LastFetchErrorMessage = @LastFetchErrorMessage
+                    WHERE Id = @Id;
+                ";
+
+                var rowsAffected = await _db.ExecuteAsync(sql, new
+                {
+                    Id = collectorId,
+                    LastFetchTime = lastFetchTime,
+                    LastFetchTotalSensors = totalSensors,
+                    LastFetchNewSensors = newSensors,
+                    LastFetchLostSensors = lostSensors,
+                    LastFetchSuccessful = fetchSuccessful,
+                    LastFetchErrorMessage = errorMessage
+                });
+
+                Console.WriteLine($"[FETCH_TRACKING] Updated last fetch info for collector {collectorId}: Success={fetchSuccessful}, Total={totalSensors}, New={newSensors}, Lost={lostSensors}");
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FETCH_TRACKING] ❌ Error updating last fetch info for collector {collectorId}: {ex.Message}");
+                return false;
+            }
+        }
+
+        // NEW: Method to update last tested timestamp
+        public async Task<bool> UpdateLastTestedAsync(int collectorId, DateTime lastTested)
+        {
+            try
+            {
+                var sql = @"
+                    UPDATE Collectors SET
+                        LastTested = @LastTested
+                    WHERE Id = @Id;
+                ";
+
+                var rowsAffected = await _db.ExecuteAsync(sql, new
+                {
+                    Id = collectorId,
+                    LastTested = lastTested
+                });
+
+                Console.WriteLine($"[TEST_TRACKING] Updated last tested for collector {collectorId}: {lastTested}");
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TEST_TRACKING] ❌ Error updating last tested for collector {collectorId}: {ex.Message}");
+                return false;
+            }
+        }
+
         // Fetch all collectors
         public async Task<List<Model_Collector>> GetAllCollectorsAsync()
         {
@@ -165,9 +230,9 @@ namespace JunctionRelayServer.Services
 
             var sql = @"
         INSERT INTO Collectors (
-            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId, DecimalPlaces
+            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId, DecimalPlaces, TestFrequency
         ) VALUES (
-            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId, @DecimalPlaces
+            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId, @DecimalPlaces, @TestFrequency
         );
         SELECT last_insert_rowid();
     ";
@@ -181,40 +246,142 @@ namespace JunctionRelayServer.Services
         // Update an existing collector
         public async Task<bool> UpdateCollectorAsync(int id, Model_Collector updatedCollector)
         {
+            // Get the existing collector first to compare encryption methods
+            var existingCollector = await _db.QuerySingleOrDefaultAsync<Model_Collector>(
+                "SELECT * FROM Collectors WHERE Id = @Id", new { Id = id });
+
+            if (existingCollector == null)
+            {
+                Console.WriteLine($"[COLLECTOR_UPDATE] ❌ Collector {id} not found for update");
+                return false;
+            }
+
             // Create a copy for database storage
             var collectorForDb = CreateCollectorCopy(updatedCollector);
             collectorForDb.Id = id;
 
-            // Handle encryption
+            // Handle encryption based on the encryption method
             if (!string.IsNullOrEmpty(collectorForDb.EncryptionPassword) && collectorForDb.ExternalAccessToken)
             {
-                collectorForDb.AccessToken = _secretsService.EncryptWithPassword(
-                    collectorForDb.AccessToken ?? string.Empty,
-                    collectorForDb.EncryptionPassword
-                );
+                // User wants password-based encryption
+                Console.WriteLine($"[COLLECTOR_UPDATE] 🔐 Applying password-based encryption for collector {id}");
+
+                if (!string.IsNullOrEmpty(collectorForDb.AccessToken))
+                {
+                    collectorForDb.AccessToken = _secretsService.EncryptWithPassword(
+                        collectorForDb.AccessToken,
+                        collectorForDb.EncryptionPassword
+                    );
+                }
+
+                // If switching FROM database encryption TO password encryption, clean up cache
+                if (!existingCollector.ExternalAccessToken && collectorForDb.ExternalAccessToken)
+                {
+                    Console.WriteLine($"[COLLECTOR_UPDATE] 🔄 Switching from DB encryption to password encryption for collector {id}");
+                    LockCollector(id); // This will clear any cached tokens
+                }
+            }
+            else if (!collectorForDb.ExternalAccessToken)
+            {
+                // User wants database encryption
+                Console.WriteLine($"[COLLECTOR_UPDATE] 🗄️ Applying database encryption for collector {id}");
+
+                // If switching FROM password encryption TO database encryption
+                if (existingCollector.ExternalAccessToken && !collectorForDb.ExternalAccessToken)
+                {
+                    Console.WriteLine($"[COLLECTOR_UPDATE] 🔄 Switching from password encryption to DB encryption for collector {id}");
+                    LockCollector(id); // Clear any cached tokens
+
+                    // If access token is provided, encrypt it with database encryption
+                    if (!string.IsNullOrEmpty(collectorForDb.AccessToken))
+                    {
+                        EncryptCollectorSecrets(collectorForDb);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(collectorForDb.AccessToken))
+                {
+                    // Standard database encryption for new/updated tokens
+                    EncryptCollectorSecrets(collectorForDb);
+                }
             }
             else
             {
-                EncryptCollectorSecrets(collectorForDb);
+                // ExternalAccessToken is true but no encryption password provided
+                // This means we're keeping the existing encryption method and password
+                Console.WriteLine($"[COLLECTOR_UPDATE] 🔒 Keeping existing password encryption for collector {id}");
+
+                // If no new access token provided, don't update the access token field
+                if (string.IsNullOrEmpty(collectorForDb.AccessToken))
+                {
+                    // Keep the existing access token by not including it in the update
+                    // We'll exclude it from the SQL update below
+                }
+                else
+                {
+                    // New access token provided but no password - this shouldn't happen with proper UI validation
+                    // but we'll handle it gracefully by not updating the access token
+                    Console.WriteLine($"[COLLECTOR_UPDATE] ⚠️ New access token provided for password-encrypted collector {id} but no encryption password - skipping access token update");
+                    collectorForDb.AccessToken = null; // Don't update the access token
+                }
             }
 
-            var sql = @"
+            // Clear the encryption password from the object - we never store this in the database
+            collectorForDb.EncryptionPassword = null;
+
+            // Build the SQL update statement dynamically to exclude null access tokens
+            var updateFields = new List<string>
+    {
+        "Name = @Name",
+        "CollectorType = @CollectorType",
+        "Description = @Description",
+        "URL = @URL", // Now included in updates
+        "ExternalAccessToken = @ExternalAccessToken",
+        "PollRate = @PollRate",
+        "SendRate = @SendRate",
+        "ServiceId = @ServiceId",
+        "DecimalPlaces = @DecimalPlaces",
+        "TestFrequency = @TestFrequency" // NEW
+    };
+
+            // Only update AccessToken if it's not null (meaning we want to update it)
+            if (collectorForDb.AccessToken != null)
+            {
+                updateFields.Add("AccessToken = @AccessToken");
+            }
+
+            var sql = $@"
         UPDATE Collectors SET
-            Name = @Name,
-            CollectorType = @CollectorType,
-            Description = @Description,
-            URL = @URL,
-            AccessToken = @AccessToken,
-            ExternalAccessToken = @ExternalAccessToken,
-            PollRate = @PollRate,
-            SendRate = @SendRate,
-            ServiceId = @ServiceId,
-            DecimalPlaces = @DecimalPlaces
+            {string.Join(", ", updateFields)}
         WHERE Id = @Id;
     ";
 
-            var rowsAffected = await _db.ExecuteAsync(sql, collectorForDb);
-            return rowsAffected > 0;
+            try
+            {
+                var rowsAffected = await _db.ExecuteAsync(sql, collectorForDb);
+
+                if (rowsAffected > 0)
+                {
+                    Console.WriteLine($"[COLLECTOR_UPDATE] ✅ Successfully updated collector {id}");
+
+                    // If we switched encryption methods, the collector might need to be unlocked again
+                    if (existingCollector.ExternalAccessToken != collectorForDb.ExternalAccessToken)
+                    {
+                        Console.WriteLine($"[COLLECTOR_UPDATE] 🔄 Encryption method changed for collector {id} - may require unlock");
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"[COLLECTOR_UPDATE] ❌ No rows affected when updating collector {id}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COLLECTOR_UPDATE] ❌ Error updating collector {id}: {ex.Message}");
+                throw;
+            }
         }
 
         // Delete a collector by its ID
@@ -312,6 +479,7 @@ namespace JunctionRelayServer.Services
                 SendRate = original.SendRate,
                 ServiceId = original.ServiceId,
                 DecimalPlaces = original.DecimalPlaces,
+                TestFrequency = original.TestFrequency,
                 Status = original.Status,
             };
         }

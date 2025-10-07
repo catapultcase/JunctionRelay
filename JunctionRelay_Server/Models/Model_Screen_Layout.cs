@@ -25,8 +25,8 @@ public class Model_Screen_Layout
     public string? Description { get; set; }
     public string LayoutType { get; set; } = "LVGL_GRID";
     public string? CustomLayoutType { get; set; }
-    public bool IncludePrefixConfig {  get; set; }
-    public bool IncludePrefixSensor {  get; set; }
+    public bool IncludePrefixConfig { get; set; }
+    public bool IncludePrefixSensor { get; set; }
 
     // Grid-specific properties
     public int? Rows { get; set; }
@@ -71,17 +71,12 @@ public class Model_Screen_Layout
     public int? HistoryPointsToShow { get; set; }
     public int? ChartScrollSpeed { get; set; }
 
-    // Sensors and Fonts
+    // Sensors
     public bool? ShowUnits { get; set; }
     public string? TextColor { get; set; }
     public string? TextSize { get; set; }
     public string? LabelSize { get; set; }
     public string? ValueSize { get; set; }
-    public int? TitleFontId { get; set; }
-    public int? SubHeadingFontId { get; set; }
-    public int? SensorLabelsFontId { get; set; }
-    public int? SensorValuesFontId { get; set; }
-    public int? SensorUnitsFontId { get; set; }
     public int? DecimalPlaces { get; set; }
 
     // Alignment and Positioning
@@ -118,11 +113,9 @@ public class Model_Screen_Layout
     public string? DataFilterCriteria { get; set; }
 
     // Media
-
     public string? BackgroundImageUrl { get; set; }
     public string? BackgroundImageId { get; set; }
-    public string? ImageFit {  get; set; }
-
+    public string? ImageFit { get; set; }
 
     // Performance and Optimization
     public bool LazyLoad { get; set; } = false;
@@ -132,7 +125,6 @@ public class Model_Screen_Layout
     public int? MaxWidth { get; set; }
     public int? MinHeight { get; set; }
     public int? MaxHeight { get; set; }
-
 
     // Fields To Send
     public string? FieldsToSend { get; set; }

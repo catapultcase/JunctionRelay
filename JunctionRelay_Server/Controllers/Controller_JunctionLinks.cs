@@ -33,19 +33,21 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Database_Manager_Collectors _collectorDbManager;
         private readonly Service_Database_Manager_Sensors _sensorsDbManager;
         private readonly Service_Manager_Sensors _sensorManager;
+        private readonly Service_Manager_Events _eventManager;
 
         public Controller_JunctionLinks(Service_Database_Manager_JunctionLinks linkDb,
                                         Service_Database_Manager_Devices deviceDbManager,
                                         Service_Database_Manager_Collectors collectorDbManager,
                                         Service_Database_Manager_Sensors sensorsDbManager,
-                                        Service_Manager_Sensors sensorManager)
-
+                                        Service_Manager_Sensors sensorManager,
+                                        Service_Manager_Events eventManager)
         {
             _linkDb = linkDb;
             _deviceDbManager = deviceDbManager;
             _collectorDbManager = collectorDbManager;
             _sensorsDbManager = sensorsDbManager;
             _sensorManager = sensorManager;
+            _eventManager = eventManager;
         }
 
         // GET: api/junctions/{junctionId}/links
@@ -289,9 +291,6 @@ namespace JunctionRelayServer.Controllers
             {
                 var deviceLinks = await _linkDb.GetDeviceLinksByJunctionAsync(junctionId);
                 var collectorLinks = await _linkDb.GetCollectorLinksByJunctionAsync(junctionId);
-
-                var allDevices = await _deviceDbManager.GetAllDevicesAsync();
-                var allCollectors = await _collectorDbManager.GetAllCollectorsAsync();
 
                 var availableSensors = new List<Model_Sensor>();
 

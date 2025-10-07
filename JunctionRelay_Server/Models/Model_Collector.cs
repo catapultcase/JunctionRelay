@@ -16,38 +16,42 @@
  * You should have received a copy of the GNU General Public License
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
-
 using System.ComponentModel.DataAnnotations.Schema;
-
 namespace JunctionRelayServer.Models
 {
     public class Model_Collector
     {
         public int Id { get; set; }
-
         // Required properties
         public required string Name { get; set; }
         // This property explicitly indicates which concrete implementation to use.
         public required string CollectorType { get; set; }
         public required string Status { get; set; }
-
         // Optional properties
         public string? Description { get; set; }
-
         // Settings
         public string? URL { get; set; }
         public string? AccessToken { get; set; }
         public bool ExternalAccessToken { get; set; }
-
         public int? PollRate { get; set; } = 5000;
         public int? SendRate { get; set; } = 5000;
         public int? ServiceId { get; set; }
         public int? DecimalPlaces { get; set; }
-
         // ExternalEncryption
-
         [NotMapped]
         public string? EncryptionPassword { get; set; }
         public string? DecryptedAccessToken { get; set; }
+
+        // Last fetch tracking
+        public DateTime? LastFetchTime { get; set; }
+        public int? LastFetchTotalSensors { get; set; }
+        public int? LastFetchNewSensors { get; set; }
+        public int? LastFetchLostSensors { get; set; }
+        public bool? LastFetchSuccessful { get; set; }
+        public string? LastFetchErrorMessage { get; set; }
+
+        // Connection testing
+        public int? TestFrequency { get; set; }
+        public DateTime? LastTested { get; set; }
     }
 }

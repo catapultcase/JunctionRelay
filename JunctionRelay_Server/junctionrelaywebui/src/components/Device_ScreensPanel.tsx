@@ -256,8 +256,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                 deviceId: Number(deviceId),
                 screenKey: newScreenKey,
                 displayName: newScreenDisplayName,
-                screenLayoutId: newScreenScreenLayoutId,
-                frameLayoutId: newScreenFrameLayoutId, 
+                screenLayoutId: newScreenScreenLayoutId || null,
+                frameLayoutId: newScreenFrameLayoutId || null,
                 supportsConfigPayloads: newScreenSupportsConfigPayloads,
                 supportsSensorPayloads: newScreenSupportsSensorPayloads
             };
@@ -943,13 +943,9 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         <Select
                             label="Layout"
                             value={newScreenScreenLayoutId}
-                            onChange={e => setNewScreenScreenLayoutId(Number(e.target.value))}
-                            sx={{
-                                '& .MuiSelect-select': {
-                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                }
-                            }}
+                            onChange={e => setNewScreenScreenLayoutId(Number(e.target.value) || "")}
                         >
+                            <MenuItem value="">None</MenuItem>
                             {layoutTemplates.map((t: any) => (
                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                             ))}
@@ -960,13 +956,9 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         <Select
                             label="Layout"
                             value={newScreenFrameLayoutId}
-                            onChange={e => setNewScreenFrameLayoutId(Number(e.target.value))}
-                            sx={{
-                                '& .MuiSelect-select': {
-                                    fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                }
-                            }}
+                            onChange={e => setNewScreenFrameLayoutId(Number(e.target.value) || "")}
                         >
+                            <MenuItem value="">None</MenuItem>
                             {frameTemplates.map((t: any) => (
                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                             ))}
@@ -1017,7 +1009,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         <Button
                             variant="contained"
                             onClick={handleAddScreen}
-                            disabled={!newScreenKey || !newScreenDisplayName || !newScreenScreenLayoutId || !newScreenFrameLayoutId}
+                            disabled={!newScreenKey || !newScreenDisplayName}
                             fullWidth={isMobile}
                             sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}
                         >

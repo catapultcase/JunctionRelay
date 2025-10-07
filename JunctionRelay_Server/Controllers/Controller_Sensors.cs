@@ -30,11 +30,28 @@ namespace JunctionRelayServer.Controllers
     {
         private readonly Service_Database_Manager_Sensors _sensorDb;
         private readonly Service_Manager_Sensors _sensorManager;
+        private readonly Service_Manager_Events _eventManager;
 
-        public Controller_Sensors(Service_Database_Manager_Sensors sensorDb, Service_Manager_Sensors sensorManager)
+        public Controller_Sensors(Service_Database_Manager_Sensors sensorDb, Service_Manager_Sensors sensorManager, Service_Manager_Events eventManager)
         {
             _sensorDb = sensorDb;
             _sensorManager = sensorManager;
+            _eventManager = eventManager;
+        }
+
+        // GET api/sensors - Get all sensors
+        [HttpGet]
+        public async Task<IActionResult> GetAllSensors()
+        {
+            try
+            {
+                var sensors = await _sensorDb.GetAllSensorsAsync();
+                return Ok(sensors);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
         }
 
         // Get all sensors for a specific device
@@ -113,6 +130,39 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        // Create custom Junction 
+
+        [HttpPost("junction-sensors/{junctionId}/custom")]
+        public async Task<IActionResult> CreateCustomJunctionSensor(int junctionId, [FromBody] Model_Sensor customSensor)
+        {
+            try
+            {
+                // Validate the custom sensor data
+                if (customSensor == null || string.IsNullOrEmpty(customSensor.Name) || string.IsNullOrEmpty(customSensor.SensorType))
+                {
+                    return BadRequest("Invalid custom sensor data. Name and SensorType are required.");
+                }
+
+                // Create the custom junction sensor
+                var createdSensor = await _sensorDb.CreateCustomJunctionSensorAsync(junctionId, customSensor);
+
+                return CreatedAtAction(
+                    nameof(GetSensorsByDevice),
+                    new { deviceId = junctionId },
+                    createdSensor
+                );
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to create custom junction sensor: {ex.Message}");
+            }
+        }
+
+
         // DELETE api/sensors/{sensorId}
         [HttpDelete("{sensorId}")]
         public async Task<IActionResult> DeleteSensor(int sensorId)
@@ -126,6 +176,24 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message);
+            }
+        }
+
+        // DELETE api/sensors/junction-sensors/{junctionId}/custom/{sensorId}
+        [HttpDelete("junction-sensors/{junctionId}/custom/{sensorId}")]
+        public async Task<IActionResult> DeleteCustomJunctionSensor(int junctionId, int sensorId)
+        {
+            try
+            {
+                var success = await _sensorDb.DeleteCustomJunctionSensorAsync(junctionId, sensorId);
+                if (!success)
+                    return NotFound(new { message = "Custom junction sensor not found." });
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to delete custom junction sensor: {ex.Message}");
             }
         }
 
@@ -244,6 +312,235 @@ namespace JunctionRelayServer.Controllers
         {
             var targets = await _sensorDb.GetAllSensorTargetsForJunctionAsync(junctionId);
             return Ok(targets);
+        }
+
+        // Event Sensor Management Methods
+
+        // GET api/sensors/event-sensors
+        [HttpGet("event-sensors")]
+        public async Task<IActionResult> GetEventSensors()
+        {
+            try
+            {
+                var eventSensors = await _eventManager.GetAllEventSensorsAsync();
+                return Ok(eventSensors);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // GET api/sensors/event-sensors/{sensorId}
+        [HttpGet("event-sensors/{sensorId}")]
+        public async Task<IActionResult> GetEventSensor(int sensorId)
+        {
+            try
+            {
+                var eventSensor = await _eventManager.GetEventSensorAsync(sensorId);
+                if (eventSensor == null)
+                    return NotFound(new { message = "Event sensor not found." });
+
+                return Ok(eventSensor);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // GET api/sensors/event-sensors/by-tag/{sensorTag}
+        [HttpGet("event-sensors/by-tag/{sensorTag}")]
+        public async Task<IActionResult> GetEventSensorByTag(string sensorTag)
+        {
+            try
+            {
+                var eventSensor = await _eventManager.GetEventSensorByTagAsync(sensorTag);
+                if (eventSensor == null)
+                    return NotFound(new { message = $"Event sensor with tag '{sensorTag}' not found." });
+
+                return Ok(eventSensor);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // POST api/sensors/event-sensors
+        [HttpPost("event-sensors")]
+        public async Task<IActionResult> CreateEventSensor([FromBody] Model_Sensor newEventSensor)
+        {
+            try
+            {
+                if (newEventSensor == null || string.IsNullOrEmpty(newEventSensor.Name) || string.IsNullOrEmpty(newEventSensor.SensorTag))
+                {
+                    return BadRequest("Invalid event sensor data. Name and SensorTag are required.");
+                }
+
+                // Check if sensor tag already exists
+                var existingSensor = await _eventManager.GetEventSensorByTagAsync(newEventSensor.SensorTag);
+                if (existingSensor != null)
+                {
+                    return BadRequest($"Event sensor with tag '{newEventSensor.SensorTag}' already exists.");
+                }
+
+                // Ensure this is marked as an event sensor
+                newEventSensor.IsEventSensor = true;
+                newEventSensor.IsSelected = false;
+                newEventSensor.IsVisible = true;
+
+                // Set default external ID if not provided
+                if (string.IsNullOrEmpty(newEventSensor.ExternalId))
+                {
+                    newEventSensor.ExternalId = $"event_{newEventSensor.SensorTag}_{DateTime.UtcNow.Ticks}";
+                }
+
+                var createdSensor = await _eventManager.CreateEventSensorAsync(newEventSensor);
+                return CreatedAtAction(nameof(GetEventSensor), new { sensorId = createdSensor.Id }, createdSensor);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to create event sensor: {ex.Message}");
+            }
+        }
+
+        // PUT api/sensors/event-sensors/{sensorId}
+        [HttpPut("event-sensors/{sensorId}")]
+        public async Task<IActionResult> UpdateEventSensor(int sensorId, [FromBody] Model_Sensor updatedSensor)
+        {
+            try
+            {
+                if (updatedSensor == null || string.IsNullOrEmpty(updatedSensor.Name) || string.IsNullOrEmpty(updatedSensor.SensorTag))
+                {
+                    return BadRequest("Invalid event sensor data. Name and SensorTag are required.");
+                }
+
+                // Check if sensor tag conflicts with another sensor (excluding this one)
+                var existingSensor = await _eventManager.GetEventSensorByTagAsync(updatedSensor.SensorTag);
+                if (existingSensor != null && existingSensor.Id != sensorId)
+                {
+                    return BadRequest($"Event sensor with tag '{updatedSensor.SensorTag}' already exists.");
+                }
+
+                var success = await _eventManager.UpdateEventSensorAsync(sensorId, updatedSensor);
+                if (!success)
+                    return NotFound(new { message = "Event sensor not found." });
+
+                return Ok(new { message = "Event sensor updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to update event sensor: {ex.Message}");
+            }
+        }
+
+        // PUT api/sensors/event-sensors/{sensorId}/value
+        [HttpPut("event-sensors/{sensorId}/value")]
+        public async Task<IActionResult> UpdateEventSensorValue(int sensorId, [FromBody] UpdateValueRequest request)
+        {
+            try
+            {
+                if (request == null || request.Value == null)
+                {
+                    return BadRequest("Value is required.");
+                }
+
+                var success = await _eventManager.UpdateEventSensorValueAsync(sensorId, request.Value);
+                if (!success)
+                    return NotFound(new { message = "Event sensor not found." });
+
+                return Ok(new { message = "Event sensor value updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to update event sensor value: {ex.Message}");
+            }
+        }
+
+        // PUT api/sensors/event-sensors/by-tag/{sensorTag}/value
+        [HttpPut("event-sensors/by-tag/{sensorTag}/value")]
+        public async Task<IActionResult> UpdateEventSensorValueByTag(string sensorTag, [FromBody] UpdateValueRequest request)
+        {
+            try
+            {
+                if (request == null || request.Value == null)
+                {
+                    return BadRequest("Value is required.");
+                }
+
+                var success = await _eventManager.UpdateEventSensorValueByTagAsync(sensorTag, request.Value);
+                if (!success)
+                    return NotFound(new { message = $"Event sensor with tag '{sensorTag}' not found." });
+
+                return Ok(new { message = "Event sensor value updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to update event sensor value: {ex.Message}");
+            }
+        }
+
+        // PUT api/sensors/event-sensors/{sensorId}/toggle
+        [HttpPut("event-sensors/{sensorId}/toggle")]
+        public async Task<IActionResult> ToggleEventSensor(int sensorId, [FromBody] ToggleRequest request)
+        {
+            try
+            {
+                var success = await _eventManager.ToggleEventSensorAsync(sensorId, request.IsSelected);
+                if (!success)
+                    return NotFound(new { message = "Event sensor not found." });
+
+                return Ok(new { message = $"Event sensor {(request.IsSelected ? "enabled" : "disabled")} successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to toggle event sensor: {ex.Message}");
+            }
+        }
+
+        // DELETE api/sensors/event-sensors/{sensorId}
+        [HttpDelete("event-sensors/{sensorId}")]
+        public async Task<IActionResult> DeleteEventSensor(int sensorId)
+        {
+            try
+            {
+                var success = await _eventManager.DeleteEventSensorAsync(sensorId);
+                if (!success)
+                    return NotFound(new { message = "Event sensor not found." });
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to delete event sensor: {ex.Message}");
+            }
+        }
+
+        // POST api/sensors/event-sensors/refresh-cache
+        [HttpPost("event-sensors/refresh-cache")]
+        public async Task<IActionResult> RefreshEventSensorCache()
+        {
+            try
+            {
+                await _eventManager.RefreshCacheAsync();
+                return Ok(new { message = "Event sensor cache refreshed successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to refresh event sensor cache: {ex.Message}");
+            }
+        }
+
+        // Request models for the API
+        public class UpdateValueRequest
+        {
+            public required string Value { get; set; }
+        }
+
+        public class ToggleRequest
+        {
+            public bool IsSelected { get; set; }
         }
     }
 }

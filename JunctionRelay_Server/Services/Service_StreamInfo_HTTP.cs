@@ -17,14 +17,195 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.IO.Compression;
-using System.Text;
 using JunctionRelayServer.Models;
 
 namespace JunctionRelayServer.Services
 {
+    public class HttpStreamHealth
+    {
+        public string ConnectionState { get; set; } = "good";
+        public double SuccessRate { get; set; } = 100.0;
+        public string? LastErrorMessage { get; set; }
+        public string? ErrorType { get; set; }
+        public int ConsecutiveFailures { get; set; } = 0;
+        public int ConsecutiveSuccesses { get; set; } = 0;
+        public bool KeepAlivePoolRecreated { get; set; } = false;
+        public int? HttpStatusCode { get; set; }
+        public double AverageLatency { get; set; } = 0.0;
+        public long MaxLatency { get; set; } = 0;
+        public long MinLatency { get; set; } = long.MaxValue;
+        public DateTime? LastSuccessTime { get; set; }
+        public DateTime? LastFailureTime { get; set; }
+        public int PoolRecreationCount { get; set; } = 0;
+
+        // Frame-specific health metrics
+        public bool IsFrameMode { get; set; } = false;
+        public string PayloadType { get; set; } = "JSON";
+        public int FramesSent { get; set; } = 0;
+        public int PayloadsSent { get; set; } = 0;
+        public string CurrentFrameLayoutType { get; set; } = "";
+        public double AverageFrameSize { get; set; } = 0.0;
+        public long MaxFrameSize { get; set; } = 0;
+        public long MinFrameSize { get; set; } = long.MaxValue;
+        public double AverageFrameRenderTime { get; set; } = 0.0;
+        public long MaxFrameRenderTime { get; set; } = 0;
+        public long MinFrameRenderTime { get; set; } = long.MaxValue;
+
+        // Frame size and render time tracking
+        private readonly Queue<long> _frameSizes = new(50);
+        private readonly Queue<long> _renderTimes = new(50);
+        private readonly Queue<bool> _recentAttempts = new(10);
+
+        public void UpdateHealth(HttpSendResult result)
+        {
+            // Update recent attempts for success rate calculation
+            _recentAttempts.Enqueue(result.Success);
+            if (_recentAttempts.Count > 10)
+                _recentAttempts.Dequeue();
+
+            SuccessRate = _recentAttempts.Count > 0 ?
+                _recentAttempts.Count(x => x) * 100.0 / _recentAttempts.Count : 100.0;
+
+            // Update latency metrics
+            if (result.Success && result.LatencyMs > 0)
+            {
+                AverageLatency = AverageLatency == 0 ? result.LatencyMs :
+                    (AverageLatency * 0.8) + (result.LatencyMs * 0.2);
+                MaxLatency = Math.Max(MaxLatency, result.LatencyMs);
+                MinLatency = Math.Min(MinLatency, result.LatencyMs);
+            }
+
+            // Handle frame-specific metrics
+            if (result.IsFramePayload)
+            {
+                IsFrameMode = true;
+                FramesSent++;
+                PayloadType = "Frame";
+                CurrentFrameLayoutType = result.FrameLayoutType ?? "";
+
+                if (result.FrameSizeBytes.HasValue && result.FrameSizeBytes.Value > 0)
+                {
+                    UpdateFrameSize(result.FrameSizeBytes.Value);
+                }
+
+                if (result.FrameRenderTimeMs.HasValue && result.FrameRenderTimeMs.Value > 0)
+                {
+                    UpdateFrameRenderTime(result.FrameRenderTimeMs.Value);
+                }
+            }
+            else
+            {
+                PayloadsSent++;
+                PayloadType = result.PayloadType;
+            }
+
+            // Update connection recreation tracking
+            if (result.KeepAlivePoolRecreated)
+            {
+                KeepAlivePoolRecreated = true;
+                PoolRecreationCount++;
+            }
+
+            // Note: HttpStatusCode would be set here if available in HttpSendResult
+
+            if (result.Success)
+            {
+                ConsecutiveSuccesses++;
+                ConsecutiveFailures = 0;
+                LastSuccessTime = DateTime.UtcNow;
+                ErrorType = null;
+                LastErrorMessage = null;
+            }
+            else
+            {
+                ConsecutiveFailures++;
+                ConsecutiveSuccesses = 0;
+                LastFailureTime = DateTime.UtcNow;
+                ErrorType = result.ErrorType;
+                LastErrorMessage = result.ErrorMessage;
+            }
+
+            UpdateConnectionState();
+        }
+
+        private void UpdateConnectionState()
+        {
+            if (SuccessRate >= 95.0 && ConsecutiveFailures == 0)
+            {
+                ConnectionState = "good";
+            }
+            else if (SuccessRate >= 70.0 || (ConsecutiveFailures > 0 && ConsecutiveFailures < 3))
+            {
+                ConnectionState = "poor";
+            }
+            else
+            {
+                ConnectionState = "disconnected";
+            }
+
+            if (ConnectionState == "good" && AverageLatency > 500)
+            {
+                ConnectionState = "poor";
+            }
+        }
+
+        private void UpdateFrameSize(long sizeBytes)
+        {
+            lock (_frameSizes)
+            {
+                _frameSizes.Enqueue(sizeBytes);
+                if (_frameSizes.Count > 50)
+                    _frameSizes.Dequeue();
+
+                AverageFrameSize = _frameSizes.Average();
+                MaxFrameSize = Math.Max(MaxFrameSize, sizeBytes);
+
+                if (MinFrameSize == long.MaxValue || sizeBytes < MinFrameSize)
+                    MinFrameSize = sizeBytes;
+            }
+        }
+
+        private void UpdateFrameRenderTime(long renderTimeMs)
+        {
+            lock (_renderTimes)
+            {
+                _renderTimes.Enqueue(renderTimeMs);
+                if (_renderTimes.Count > 50)
+                    _renderTimes.Dequeue();
+
+                AverageFrameRenderTime = _renderTimes.Average();
+                MaxFrameRenderTime = Math.Max(MaxFrameRenderTime, renderTimeMs);
+
+                if (MinFrameRenderTime == long.MaxValue || renderTimeMs < MinFrameRenderTime)
+                    MinFrameRenderTime = renderTimeMs;
+            }
+        }
+
+        public object GetFrameHealthSummary()
+        {
+            if (!IsFrameMode)
+            {
+                return new { message = "Not in frame mode" };
+            }
+
+            return new
+            {
+                totalFrames = FramesSent,
+                averageSize = $"{AverageFrameSize:F1} bytes",
+                averageRenderTime = $"{AverageFrameRenderTime:F1} ms",
+                sizeRange = $"{(MinFrameSize == long.MaxValue ? 0 : MinFrameSize)} - {MaxFrameSize} bytes",
+                renderTimeRange = $"{(MinFrameRenderTime == long.MaxValue ? 0 : MinFrameRenderTime)} - {MaxFrameRenderTime} ms",
+                payloadType = PayloadType
+            };
+        }
+
+        public object GetGatewayHealthSummary()
+        {
+            return new { message = "Not in gateway mode" };
+        }
+    }
+
     public class Service_StreamInfo_HTTP
     {
         public string DeviceName { get; set; } = string.Empty;
@@ -35,7 +216,6 @@ namespace JunctionRelayServer.Services
         [JsonIgnore]
         public CancellationTokenSource Cts { get; set; } = new();
 
-        // Add a dedicated HTTP sender for this stream
         [JsonIgnore]
         public Service_Send_Data_HTTP? HttpSender { get; set; }
 
@@ -45,83 +225,53 @@ namespace JunctionRelayServer.Services
         public long Latency { get; set; }
         public DateTime LastSentTime { get; set; }
 
-        // Add health tracking
-        public StreamHealth Health { get; set; } = new StreamHealth();
+        // Health tracking
+        public HttpStreamHealth Health { get; set; } = new HttpStreamHealth();
 
-        // Add compression setting
-        [JsonIgnore]
-        public bool CompressionEnabled { get; private set; }
+        // Gateway mode support
+        public bool IsGatewayMode { get; private set; }
+        public string? GatewayTarget { get; private set; }
 
-        // NEW: Last sent frame data for frame mode
+        // Frame data for blit mode
         [JsonIgnore]
         public byte[]? LastSentFrameBytes { get; private set; }
         public DateTime? LastFrameGeneratedTime { get; private set; }
         public int? LastFrameSize => LastSentFrameBytes?.Length;
         public string? LastFrameLayoutType { get; private set; }
 
-        // Uncompressed payload prefixes (8-digit length hints before the '{')
+        // Payload tracking for UI and virtual screens
         public string ConfigPayloadPrefix { get; set; } = string.Empty;
+        public string ConfigPayloadJson { get; private set; } = string.Empty;
         public string LastSentPayloadPrefix { get; set; } = string.Empty;
+        public string LastSentPayloadJson { get; private set; } = string.Empty;
+        public string CompressedConfigPayloadPrefix { get; private set; } = string.Empty;
+        public string CompressedLastSentPayloadPrefix { get; private set; } = string.Empty;
 
-        // NEW: Compressed payload prefixes (8-digit LLLLTTRR format)
-        public string CompressedConfigPayloadPrefix { get; set; } = string.Empty;
-        public string CompressedLastSentPayloadPrefix { get; set; } = string.Empty;
+        // Thread-safe frame and payload operations
+        private readonly object _frameLock = new();
+        private readonly object _payloadLock = new();
 
-        // hold the parsed JSON docs; we will expose raw JSON strings instead of JsonElement
-        [JsonIgnore]
-        public JsonDocument ConfigPayloadDoc { get; set; } = JsonDocument.Parse("{}");
-        [JsonIgnore]
-        public JsonDocument LastSentPayloadDoc { get; set; } = JsonDocument.Parse("{}");
-
-        // Thread-safe cached JSON strings to avoid accessing disposed JsonDocuments
-        private string _configPayloadJsonCache = "{}";
-        private string _lastSentPayloadJsonCache = "{}";
-
-        // Compressed payload caches - store as hex strings for UI display
-        private string? _compressedConfigHexCache;
-        private string? _compressedLastSentHexCache;
-
-        private readonly object _jsonCacheLock = new object();
-
-        // Constructor to set compression state
-        public Service_StreamInfo_HTTP(bool compressionEnabled = false)
+        // Constructor with gateway mode support
+        public Service_StreamInfo_HTTP(bool compressionEnabled = false, bool isGatewayMode = false, string? gatewayTarget = null)
         {
-            CompressionEnabled = compressionEnabled;
+            IsGatewayMode = isGatewayMode;
+            GatewayTarget = gatewayTarget;
         }
 
-        // Method to update compression setting (in case it changes during runtime)
-        public void SetCompressionEnabled(bool enabled)
-        {
-            lock (_jsonCacheLock)
-            {
-                CompressionEnabled = enabled;
-
-                // Clear compressed caches if compression is disabled
-                if (!enabled)
-                {
-                    _compressedConfigHexCache = null;
-                    _compressedLastSentHexCache = null;
-                    CompressedConfigPayloadPrefix = string.Empty;
-                    CompressedLastSentPayloadPrefix = string.Empty;
-                }
-            }
-        }
-
-        // NEW: Method to update last sent frame data
         public void UpdateLastSentFrame(byte[] frameBytes, string? layoutType = null)
         {
-            lock (_jsonCacheLock)
+            lock (_frameLock)
             {
-                LastSentFrameBytes = frameBytes;
+                LastSentFrameBytes = new byte[frameBytes.Length];
+                Array.Copy(frameBytes, LastSentFrameBytes, frameBytes.Length);
                 LastFrameGeneratedTime = DateTime.UtcNow;
                 LastFrameLayoutType = layoutType;
             }
         }
 
-        // NEW: Method to get last sent frame (thread-safe copy)
         public byte[]? GetLastSentFrameCopy()
         {
-            lock (_jsonCacheLock)
+            lock (_frameLock)
             {
                 if (LastSentFrameBytes == null) return null;
 
@@ -131,10 +281,9 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // NEW: Method to clear last sent frame (to free memory if needed)
         public void ClearLastSentFrame()
         {
-            lock (_jsonCacheLock)
+            lock (_frameLock)
             {
                 LastSentFrameBytes = null;
                 LastFrameGeneratedTime = null;
@@ -142,165 +291,76 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // expose JSON text so we never serialize a disposed JsonDocument/JsonElement
-        public string ConfigPayloadJson
+        public void UpdateConfigPayload(string jsonPayload)
         {
-            get
+            lock (_payloadLock)
             {
-                lock (_jsonCacheLock)
-                {
-                    return _configPayloadJsonCache;
-                }
+                ConfigPayloadJson = jsonPayload ?? string.Empty;
             }
         }
 
-        public string LastSentPayloadJson
+        public void UpdateLastSentPayload(string jsonPayload)
         {
-            get
+            lock (_payloadLock)
             {
-                lock (_jsonCacheLock)
-                {
-                    return _lastSentPayloadJsonCache;
-                }
+                LastSentPayloadJson = jsonPayload ?? string.Empty;
             }
         }
 
-        // Method to safely update the config payload and cache
-        public void UpdateConfigPayload(string jsonString)
-        {
-            lock (_jsonCacheLock)
-            {
-                ConfigPayloadDoc?.Dispose();
-                ConfigPayloadDoc = JsonDocument.Parse(jsonString);
-                _configPayloadJsonCache = jsonString;
-
-                // Clear compressed cache so it gets regenerated on next access
-                _compressedConfigHexCache = null;
-            }
-        }
-
-        // Method to safely update the last sent payload and cache
-        public void UpdateLastSentPayload(string jsonString)
-        {
-            lock (_jsonCacheLock)
-            {
-                LastSentPayloadDoc?.Dispose();
-                LastSentPayloadDoc = JsonDocument.Parse(jsonString);
-                _lastSentPayloadJsonCache = jsonString;
-
-                // Clear compressed cache so it gets regenerated on next access
-                _compressedLastSentHexCache = null;
-            }
-        }
-
-        // NEW: Method to update compressed config payload prefix
         public void UpdateCompressedConfigPayloadPrefix(string prefix)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                CompressedConfigPayloadPrefix = prefix;
+                CompressedConfigPayloadPrefix = prefix ?? string.Empty;
             }
         }
 
-        // NEW: Method to update compressed last sent payload prefix
         public void UpdateCompressedLastSentPayloadPrefix(string prefix)
         {
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                CompressedLastSentPayloadPrefix = prefix;
+                CompressedLastSentPayloadPrefix = prefix ?? string.Empty;
             }
         }
 
-        // UPDATED: Methods to get hex views of compressed payloads (replaces base64)
         public string GetCompressedConfigPayloadPreview()
         {
-            if (!CompressionEnabled)
-                return "[Compression disabled]";
-
-            if (string.IsNullOrEmpty(ConfigPayloadJson))
-                return "";
-
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                // Use cached version if available
-                if (_compressedConfigHexCache != null)
-                    return _compressedConfigHexCache;
+                if (string.IsNullOrEmpty(CompressedConfigPayloadPrefix))
+                    return ConfigPayloadJson;
 
-                // Generate and cache compressed version as hex
-                var jsonBytes = Encoding.UTF8.GetBytes(ConfigPayloadJson);
-                var compressedBytes = CompressData(jsonBytes);
-                _compressedConfigHexCache = BytesToHex(compressedBytes);
-                return _compressedConfigHexCache;
+                return $"[{CompressedConfigPayloadPrefix}] {(ConfigPayloadJson.Length > 200 ? ConfigPayloadJson.Substring(0, 200) + "..." : ConfigPayloadJson)}";
             }
         }
 
         public string GetCompressedLastSentPayloadPreview()
         {
-            if (!CompressionEnabled)
-                return "[Compression disabled]";
-
-            if (string.IsNullOrEmpty(LastSentPayloadJson))
-                return "";
-
-            lock (_jsonCacheLock)
+            lock (_payloadLock)
             {
-                // Use cached version if available
-                if (_compressedLastSentHexCache != null)
-                    return _compressedLastSentHexCache;
+                if (string.IsNullOrEmpty(CompressedLastSentPayloadPrefix))
+                    return LastSentPayloadJson;
 
-                // Generate and cache compressed version as hex
-                var jsonBytes = Encoding.UTF8.GetBytes(LastSentPayloadJson);
-                var compressedBytes = CompressData(jsonBytes);
-                _compressedLastSentHexCache = BytesToHex(compressedBytes);
-                return _compressedLastSentHexCache;
+                return $"[{CompressedLastSentPayloadPrefix}] {(LastSentPayloadJson.Length > 200 ? LastSentPayloadJson.Substring(0, 200) + "..." : LastSentPayloadJson)}";
             }
         }
 
-        // Helper method for gzip compression
-        private byte[] CompressData(byte[] data)
-        {
-            using var output = new MemoryStream();
-            using (var gzip = new GZipStream(output, CompressionMode.Compress))
-            {
-                gzip.Write(data, 0, data.Length);
-            }
-            return output.ToArray();
-        }
-
-        // Helper method to convert bytes to hex string with spaces for readability
-        private string BytesToHex(byte[] bytes)
-        {
-            if (bytes == null || bytes.Length == 0)
-                return "";
-
-            var sb = new StringBuilder(bytes.Length * 3);
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append(' ');
-                sb.Append(bytes[i].ToString("x2"));
-            }
-            return sb.ToString();
-        }
-
-        // Updated dispose method to handle HTTP sender and frame data
         public void Dispose()
         {
-            lock (_jsonCacheLock)
+            lock (_frameLock)
             {
-                ConfigPayloadDoc?.Dispose();
-                LastSentPayloadDoc?.Dispose();
-                Cts?.Dispose();
-                HttpSender?.Dispose(); // Dispose the HTTP sender
-
-                // Clear compressed caches
-                _compressedConfigHexCache = null;
-                _compressedLastSentHexCache = null;
-
-                // Clear frame data to free memory
-                LastSentFrameBytes = null;
-                LastFrameGeneratedTime = null;
-                LastFrameLayoutType = null;
+                lock (_payloadLock)
+                {
+                    Cts?.Dispose();
+                    HttpSender?.Dispose();
+                    LastSentFrameBytes = null;
+                    LastFrameGeneratedTime = null;
+                    LastFrameLayoutType = null;
+                    ConfigPayloadJson = string.Empty;
+                    LastSentPayloadJson = string.Empty;
+                    CompressedConfigPayloadPrefix = string.Empty;
+                    CompressedLastSentPayloadPrefix = string.Empty;
+                }
             }
         }
     }

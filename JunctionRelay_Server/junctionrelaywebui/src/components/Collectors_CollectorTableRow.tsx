@@ -45,42 +45,39 @@ import TvIcon from '@mui/icons-material/Tv';
 
 // Helper function to get collector type info with colors and icons
 const getCollectorTypeInfo = (type: string) => {
-    const typeMap: Record < string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
-    "Cloudflare": { color: "primary", icon: < CloudIcon fontSize = "small" /> },
-        "GenericAPI": { color: "info", icon: < DnsIcon fontSize="small" /> },
-        "Github": { color: "info", icon: < DnsIcon fontSize="small" /> },
-        "HomeAssistant": { color: "info", icon: < HomeIcon fontSize = "small" /> },
-        "Host": { color: "secondary", icon: < ComputerIcon fontSize = "small" /> },
-        "LibreHardwareMonitor": { color: "primary", icon: < MemoryIcon fontSize = "small" /> },
-        "MQTT": { color: "error", icon: < RouterIcon fontSize = "small" /> },
-        "NeoPixelColor": { color: "secondary", icon: < ColorLensIcon fontSize = "small" /> },
-        "RateTester": { color: "warning", icon: < SpeedIcon fontSize = "small" /> },
-        "Render": { color: "success", icon: < CloudIcon fontSize = "small" /> },
-        "SonarrCalendar": { color: "secondary", icon: < TvIcon fontSize = "small" /> },
-        "Stripe": { color: "success", icon: < PaymentIcon fontSize = "small" /> },
-        "UptimeKuma": { color: "success", icon: < MonitorHeartIcon fontSize = "small" /> },
+    const typeMap: Record<string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
+        "Cloudflare": { color: "primary", icon: <CloudIcon fontSize="small" /> },
+        "GenericAPI": { color: "info", icon: <DnsIcon fontSize="small" /> },
+        "Github": { color: "info", icon: <DnsIcon fontSize="small" /> },
+        "HomeAssistant": { color: "info", icon: <HomeIcon fontSize="small" /> },
+        "Host": { color: "secondary", icon: <ComputerIcon fontSize="small" /> },
+        "LibreHardwareMonitor": { color: "primary", icon: <MemoryIcon fontSize="small" /> },
+        "MQTT": { color: "error", icon: <RouterIcon fontSize="small" /> },
+        "NeoPixelColor": { color: "secondary", icon: <ColorLensIcon fontSize="small" /> },
+        "RateTester": { color: "warning", icon: <SpeedIcon fontSize="small" /> },
+        "Render": { color: "success", icon: <CloudIcon fontSize="small" /> },
+        "SonarrCalendar": { color: "secondary", icon: <TvIcon fontSize="small" /> },
+        "Stripe": { color: "success", icon: <PaymentIcon fontSize="small" /> },
+        "UptimeKuma": { color: "success", icon: <MonitorHeartIcon fontSize="small" /> },
+        "FrameEngine": { color: "warning", icon: <MemoryIcon fontSize="small" /> },
     };
 
-return typeMap[type] || { color: "default" as const, icon: < DnsIcon fontSize = "small" /> };
+    return typeMap[type] || { color: "default" as const, icon: <DnsIcon fontSize="small" /> };
 };
 
 // Helper function to extract base URL from Sonarr iCal feed URL
 const extractSonarrBaseUrl = (icalFeedUrl: string): string => {
     if (!icalFeedUrl) return "";
 
-try
-{
-    const url = new URL(icalFeedUrl);
-    return `${ url.protocol}//${url.host}`;
-}
-catch
-{
-    return "";
-}
+    try {
+        const url = new URL(icalFeedUrl);
+        return `${url.protocol}//${url.host}`;
+    } catch {
+        return "";
+    }
 };
 
-interface CollectorColumn
-{
+interface CollectorColumn {
     field: string;
     label: string;
     align: "left" | "right" | "center" | "inherit" | "justify";
@@ -94,42 +91,52 @@ const CollectorTableRow = memo(({
     allColumns,
     onDelete,
     onEdit,
+    isFrameEngine = false,
+    onCardClick,
 }: {
-collector: any,
+    collector: any,
     visibleCols: string[],
     allColumns: CollectorColumn[],
     onDelete: (e: React.MouseEvent, id: number) => void,
     onEdit: (e: React.MouseEvent, collector: any) => void,
+    isFrameEngine?: boolean,
+    onCardClick?: () => void,
 }) => {
     const navigate = useNavigate();
 
+    const handleRowClick = () => {
+        if (isFrameEngine && onCardClick) {
+            onCardClick();
+        } else {
+            navigate(`/configure-collector/${collector.id}`);
+        }
+    };
+
     const getCollectorCell = useCallback((field: string) => {
-        switch (field)
-        {
+        switch (field) {
             case "name":
                 const typeInfo = getCollectorTypeInfo(collector.collectorType);
                 return (
-                    < Box sx ={ { display: 'flex', alignItems: 'center', gap: 1 } }>
-                        { typeInfo.icon}
-                        < Typography fontWeight = "medium" color = "text.primary" >
-                            { collector.name}
-                        </ Typography >
-                    </ Box >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {typeInfo.icon}
+                        <Typography fontWeight="medium" color="text.primary">
+                            {collector.name}
+                        </Typography>
+                    </Box>
                 );
             case "type":
                 const typeInfoChip = getCollectorTypeInfo(collector.collectorType);
                 return (
-                    < Chip
-                        label ={ collector.collectorType}
-                color ={ typeInfoChip.color}
-                size = "small"
-                        sx ={ { fontSize: '0.75rem', height: 22 } }
+                    <Chip
+                        label={collector.collectorType}
+                        color={typeInfoChip.color}
+                        size="small"
+                        sx={{ fontSize: '0.75rem', height: 22 }}
                     />
                 );
             case "url":
                 // Handle Sonarr special case - show base URL or "iCal Feed"
-                if (collector.collectorType === 'SonarrCalendar')
-                {
+                if (collector.collectorType === 'SonarrCalendar') {
                     const baseUrl = collector.url || extractSonarrBaseUrl(collector.accessToken);
                     return baseUrl || "iCal Feed";
                 }
@@ -140,90 +147,96 @@ collector: any,
                 const statusColor = collector.status === 'Active' ? 'success' :
                     collector.status === 'Inactive' ? 'error' : 'default';
                 return (
-                    < Chip
-                        label ={ collector.status || 'Unknown'}
-                color ={ statusColor}
-                size = "small"
-            />
+                    <Chip
+                        label={collector.status || 'Unknown'}
+                        color={statusColor}
+                        size="small"
+                    />
                 );
             case "actions":
+                // Hide edit/delete buttons for FrameEngine collectors
+                if (isFrameEngine) {
+                    return (
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary">
+                                Managed by EventEngine
+                            </Typography>
+                        </Box>
+                    );
+                }
+
                 return (
-                    < Box sx ={ { display: 'flex', justifyContent: 'flex-end', gap: 0.5 } }>
-                        < Tooltip title = "Edit" >
-                            < IconButton
-                                size = "small"
-                                onClick ={ (e) => onEdit(e, collector)}
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                        <Tooltip title="Edit">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => onEdit(e, collector)}
                             >
-                                < EditIcon fontSize = "small" />
-                            </ IconButton >
-                        </ Tooltip >
-                        < Tooltip title = "Delete" >
-                            < IconButton
-                                size = "small"
-                                onClick ={ (e) => onDelete(e, collector.id)}
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => onDelete(e, collector.id)}
                             >
-                                < DeleteIcon fontSize = "small" />
-                            </ IconButton >
-                        </ Tooltip >
-                    </ Box >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
                 );
             default:
                 return collector[field] || "—";
         }
-    }, [collector, onDelete, onEdit]);
+    }, [collector, onDelete, onEdit, isFrameEngine]);
 
     return (
-        < TableRow
+        <TableRow
             hover
-            onClick = { () => navigate(`/configure-collector/${collector.id}`)}
-            sx ={ { cursor: "pointer" } }
+            onClick={handleRowClick}
+            sx={{ cursor: "pointer" }}
         >
-            {
-        visibleCols.map((field) => {
-        const colDef = allColumns.find((c) => c.field === field)!;
+            {visibleCols.map((field) => {
+                const colDef = allColumns.find((c) => c.field === field)!;
 
-        const getColumnWidth = (field: string) => {
-            switch (field)
-            {
-                case "name":
-                    return { minWidth: 200, width: 'auto' };
-                case "type":
-                    return { minWidth: 120, width: 120 };
-                case "url":
-                    return { minWidth: 200, width: 'auto' };
-                case "accessToken":
-                    return { minWidth: 120, width: 120 };
-                case "status":
-                    return { minWidth: 100, width: 100 };
-                case "actions":
-                    return { minWidth: 120, width: 120 };
-                default:
-                    return { minWidth: 120, width: 'auto' };
-            }
-        };
+                const getColumnWidth = (field: string) => {
+                    switch (field) {
+                        case "name":
+                            return { minWidth: 200, width: 'auto' };
+                        case "type":
+                            return { minWidth: 120, width: 120 };
+                        case "url":
+                            return { minWidth: 200, width: 'auto' };
+                        case "accessToken":
+                            return { minWidth: 120, width: 120 };
+                        case "status":
+                            return { minWidth: 100, width: 100 };
+                        case "actions":
+                            return { minWidth: 120, width: 120 };
+                        default:
+                            return { minWidth: 120, width: 'auto' };
+                    }
+                };
 
-        const columnWidth = getColumnWidth(field);
+                const columnWidth = getColumnWidth(field);
 
-        return (
-
-            < TableCell
-                        key ={ field}
-        align ={ colDef.align}
-        sx ={
-            {
-                ...columnWidth,
+                return (
+                    <TableCell
+                        key={field}
+                        align={colDef.align}
+                        sx={{
+                            ...columnWidth,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             padding: '8px 16px'
-                        }
-        }
+                        }}
                     >
-                        { getCollectorCell(field)}
-                    </ TableCell >
+                        {getCollectorCell(field)}
+                    </TableCell>
                 );
-    })}
-        </ TableRow >
+            })}
+        </TableRow>
     );
 });
 

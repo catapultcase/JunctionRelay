@@ -27,9 +27,9 @@ namespace JunctionRelayServer.Controllers
     [ApiController]
     public class Controller_DashboardWebSocket : ControllerBase
     {
-        private readonly Service_Manager_WebSocket_Dashboard _dashboardWebSocketManager;
+        private readonly Service_Manager_WebSocket_Server _dashboardWebSocketManager;
 
-        public Controller_DashboardWebSocket(Service_Manager_WebSocket_Dashboard dashboardWebSocketManager)
+        public Controller_DashboardWebSocket(Service_Manager_WebSocket_Server dashboardWebSocketManager)
         {
             _dashboardWebSocketManager = dashboardWebSocketManager;
         }
