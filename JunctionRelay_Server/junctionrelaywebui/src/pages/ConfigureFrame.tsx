@@ -20,10 +20,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import FrameEngine_Toolbar from '../components/FrameEngine_Toolbar';
-import FrameEngine_PropertiesPanel from '../components/FrameEngine_PropertiesPanel';
-import FrameEngine_Canvas from '../components/FrameEngine_Canvas';
-import FrameEngine_ElementLibrary from '../components/FrameEngine_ElementLibrary';
+import FrameEngine_Toolbar from '../components/frameengine/FrameEngine_Toolbar';
+import FrameEngine_PropertiesPanel from '../components/frameengine/FrameEngine_PropertiesPanel';
+import FrameEngine_Canvas from '../components/frameengine/FrameEngine_Canvas';
+import FrameEngine_ElementLibrary from '../components/frameengine/FrameEngine_ElementLibrary';
 
 // Types for Rive discovery
 interface DiscoveredInput {
@@ -1488,6 +1488,18 @@ const ConfigureFrame: React.FC = () => {
         });
     }, [addToHistory]);
 
+    // Handle element visibility toggle
+    const handleElementVisibilityToggle = useCallback((elementId: string) => {
+        addToHistory(`Toggle visibility for element ${elementId}`);
+        setState(prev => ({
+            ...prev,
+            elements: prev.elements.map(el =>
+                el.id === elementId ? { ...el, visible: !(el.visible ?? true) } : el
+            ),
+            isDirty: true,
+        }));
+    }, [addToHistory]);
+
     // Start drag/resize operation - adds history entry at the beginning
     const startElementOperation = useCallback((action: string) => {
         addToHistory(action);
@@ -1729,6 +1741,7 @@ const ConfigureFrame: React.FC = () => {
                             onElementSelect={selectElements}
                             onElementDuplicate={handleElementDuplicate}
                             onElementReorder={handleElementReorder}
+                            onElementVisibilityToggle={handleElementVisibilityToggle}
                             discoveredMachines={discoveredMachines}
                             discoveredBindings={discoveredBindings}
                         />

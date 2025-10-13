@@ -40,13 +40,13 @@ import {
     FrameEngine_ElementRenderer,
     BaseElement,
     RendererConfig
-} from '../components/FrameEngine_ElementRenderer';
+} from '../components/frameengine/FrameEngine_ElementRenderer';
 import {
     FrameEngine_BackgroundRenderer,
     BackgroundConfig,
     DiscoveredStateMachine,
     DiscoveredDataBinding
-} from '../components/FrameEngine_BackgroundRenderer';
+} from '../components/frameengine/FrameEngine_BackgroundRenderer';
 
 interface CanvasConfig {
     width: number;
@@ -124,6 +124,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
                 height: element.position.height,
             },
             properties: element.properties,
+            visible: (element as any).display?.visible ?? true,
         }));
 
         setDisplayElements(baseElements);
@@ -478,6 +479,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
         elementPadding: canvasConfig?.elementPadding || 4,
         isInteractive: false,
         showPlaceholders: false,
+        enableSensorVisibility: true, // Enable sensor-based visibility in runtime
     }), [canvasConfig?.elementPadding]);
 
     const brightnessStyle = useMemo(() => {

@@ -47,6 +47,33 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
     // Environment variable for Stripe billing portal
     const stripeBillingPortalUrl = 'https://billing.stripe.com/p/login/00w7sN7ZS6RE7q87rwcjS00';
 
+    // Promo configuration
+    const promoCode = 'EARLYACCESS';
+    const promoDiscountPercent = 33;
+    const promoExpiryDate = new Date('2025-12-31T23:59:59'); // expiry date
+
+    // Check if promo is currently active based on expiry date
+    const promoActive = new Date() < promoExpiryDate;
+
+    // Base prices
+    const baseMonthlyPrice = 1.99;
+    const baseAnnualPrice = 19.99;
+
+    // Calculate discounted prices
+    const monthlyPrice = promoActive
+        ? (baseMonthlyPrice * (1 - promoDiscountPercent / 100)).toFixed(2)
+        : baseMonthlyPrice.toFixed(2);
+    const annualPrice = promoActive
+        ? (baseAnnualPrice * (1 - promoDiscountPercent / 100)).toFixed(2)
+        : baseAnnualPrice.toFixed(2);
+
+    // Calculate total savings for annual plan compared to monthly price
+    // When promo is active, compare to standard monthly price (not discounted)
+    const monthlyPriceYearly = baseMonthlyPrice * 12;
+    const annualSavingsPercent = promoActive
+        ? Math.round(((monthlyPriceYearly - parseFloat(annualPrice)) / monthlyPriceYearly) * 100)
+        : 17; // Just the 2-month savings (rounded)
+
     // Fetch subscription details when user has a valid license
     useEffect(() => {
         if (cloudUserInfo?.hasValidLicense) {
@@ -194,8 +221,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                     Device Ownership
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    The backend database is linked to your cloud account. It is possible to backup/migrate the data only, or start a completely fresh database
-                    in the Database & Backup tab. Note that deleting the database will clear all data and generate a new device identity.
+                    This backend database will linked to your cloud account upon login. Deleting the database will clear all data and generate a new backend identity.
                 </Typography>
             </Box>
 
@@ -209,10 +235,10 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             }}>
                 <Typography variant="body2" color="primary.main" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center', mb: 1 }}>
                     <StarIcon sx={{ mr: 1, fontSize: 18 }} />
-                    Pro Subscription Benefits
+                    Optional "Pro"" License Benefits
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    Support the JunctionRelay project and access additional features like expanded cloud device management and the cloud backup service.
+                    Support the JunctionRelay project and access automatic updates on Windows, expanded cloud device management and cloud backup service.
                 </Typography>
             </Box>
 
@@ -275,38 +301,89 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                         )}
                     </Box>
 
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         {/* Left side - Subscription actions */}
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                            {cloudUserInfo.hasValidLicense ? (
-                                <Button
-                                    variant="contained"
-                                    size="small"
-                                    startIcon={<CreditCardIcon />}
-                                    onClick={handleManageSubscription}
-                                >
-                                    Manage Subscription
-                                </Button>
-                            ) : (
-                                <>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {!cloudUserInfo.hasValidLicense && (
+                                <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 'bold' }}>
+                                    Upgrade to a Pro License
+                                </Typography>
+                            )}
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                {cloudUserInfo.hasValidLicense ? (
                                     <Button
                                         variant="contained"
                                         size="small"
-                                        onClick={() => handleSubscribe('monthly')}
-                                        disabled={subscriptionLoading}
-                                        startIcon={subscriptionLoading ? <CircularProgress size={12} /> : <UpgradeIcon />}
+                                        startIcon={<CreditCardIcon />}
+                                        onClick={handleManageSubscription}
                                     >
-                                        {subscriptionLoading ? 'Starting...' : 'Subscribe Monthly'}
+                                        Manage Subscription
                                     </Button>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        onClick={() => handleSubscribe('annual')}
-                                        disabled={subscriptionLoading}
-                                        startIcon={<StarIcon />}
-                                    >
-                                        Subscribe Annual (Save 20%)
-                                    </Button>
+                                ) : (
+                                    <>
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            onClick={() => handleSubscribe('monthly')}
+                                            disabled={subscriptionLoading}
+                                            startIcon={subscriptionLoading ? <CircularProgress size={12} /> : <UpgradeIcon />}
+                                        >
+                                            {subscriptionLoading ? 'Starting...' : (
+                                                <>
+                                                    Subscribe Monthly{' '}
+                                                    {promoActive && (
+                                                        <span style={{ textDecoration: 'line-through', opacity: 0.6, marginLeft: '4px' }}>
+                                                            ${baseMonthlyPrice.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    <span style={{ fontWeight: 'bold', marginLeft: '4px' }}>
+                                                        ${monthlyPrice}/mo
+                                                    </span>
+                                                </>
+                                            )}
+                                            {!subscriptionLoading && promoActive && (
+                                                <Chip
+                                                    label={`${promoDiscountPercent}% OFF`}
+                                                    size="small"
+                                                    color="success"
+                                                    sx={{ ml: 1, height: 20 }}
+                                                />
+                                            )}
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            onClick={() => handleSubscribe('annual')}
+                                            disabled={subscriptionLoading}
+                                            startIcon={<StarIcon />}
+                                        >
+                                            Subscribe Annually{' '}
+                                            {promoActive && (
+                                                <span style={{ textDecoration: 'line-through', opacity: 0.6, marginLeft: '4px' }}>
+                                                    ${baseAnnualPrice.toFixed(2)}
+                                                </span>
+                                            )}
+                                            <span style={{ fontWeight: 'bold', marginLeft: '4px' }}>
+                                                ${annualPrice}/yr
+                                            </span>
+                                            <Chip
+                                                label={promoActive ? `${annualSavingsPercent}% OFF` : "Save 2 months"}
+                                                size="small"
+                                                color="success"
+                                                sx={{ ml: 1, height: 20 }}
+                                            />
+                                        </Button>
+                                    </>
+                                )}
+                            </Box>
+                            {promoActive && !cloudUserInfo.hasValidLicense && (
+                                <>
+                                    <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>
+                                        Enter promo code "{promoCode}" at checkout
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', mt: 0.5 }}>
+                                        * Annual savings compared to monthly subscription price
+                                    </Typography>
                                 </>
                             )}
                         </Box>

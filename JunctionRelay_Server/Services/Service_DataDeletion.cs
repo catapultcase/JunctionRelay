@@ -1,4 +1,23 @@
-﻿using System.Runtime.InteropServices;
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+using System.Runtime.InteropServices;
 
 namespace JunctionRelayServer.Services
 {
@@ -78,8 +97,8 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine("Deleted encryption keys directory");
                 }
 
-                // Delete cache directories (in app folder)
-                var firmwareDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Firmware");
+                // Delete cache directories (in data folder, not app folder)
+                var firmwareDirectory = Path.Combine(dbDirectory, "firmware");
                 if (Directory.Exists(firmwareDirectory))
                 {
                     Directory.Delete(firmwareDirectory, true);
@@ -94,13 +113,13 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine("Deleted logs directory");
                 }
 
-                // Delete FrameEngine directories (in app folder)
+                // Delete FrameEngine directories (in data folder, not app folder)
                 var frameEngineDirectories = new[]
                 {
-            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "frames"),
-            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "rive"),
-            Path.Combine(Directory.GetCurrentDirectory(), "frameengine", "thumbnails")
-        };
+                    Path.Combine(dbDirectory, "frameengine", "frames"),
+                    Path.Combine(dbDirectory, "frameengine", "rive"),
+                    Path.Combine(dbDirectory, "frameengine", "thumbnails")
+                };
 
                 foreach (var directory in frameEngineDirectories)
                 {
@@ -116,11 +135,34 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine("Removed deletion marker file");
 
                 Console.WriteLine("Database deletion completed successfully - starting with fresh setup");
+
+                // Recreate essential directories immediately after deletion
+                RecreateEssentialDirectories(dbDirectory);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error during database deletion: {ex.Message}");
             }
+        }
+
+        private void RecreateEssentialDirectories(string dbDirectory)
+        {
+            var essentialDirs = new[]
+            {
+                Path.Combine(dbDirectory, "keys"),
+                Path.Combine(dbDirectory, "frameengine", "frames"),
+                Path.Combine(dbDirectory, "frameengine", "rive"),
+                Path.Combine(dbDirectory, "frameengine", "thumbnails"),
+                Path.Combine(dbDirectory, "firmware"),
+                Path.Combine(dbDirectory, "firmware", "releases")
+            };
+
+            foreach (var dir in essentialDirs)
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            Console.WriteLine("Recreated essential directories");
         }
 
         public void ScheduleDeletion()

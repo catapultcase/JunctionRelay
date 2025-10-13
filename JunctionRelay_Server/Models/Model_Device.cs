@@ -49,6 +49,12 @@ namespace JunctionRelayServer.Models
         public string? IPAddress { get; set; }
         public bool HasMQTTConfig { get; set; }
 
+        // Network service ports
+        public int? HttpPort { get; set; }
+        public int? WebSocketPort { get; set; }
+        public int? MqttPort { get; set; }
+        public string? Hostname { get; set; }
+
         // Logical flags
         public bool IsGateway { get; set; }
         public int? GatewayId { get; set; }

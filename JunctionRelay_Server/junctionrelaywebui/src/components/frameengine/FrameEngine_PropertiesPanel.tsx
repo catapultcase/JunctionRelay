@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { useTheme } from '@mui/material/styles';
 import { FrameEngine_LayoutProperties } from './FrameEngine_LayoutProperties';
 import { FrameEngine_ElementList } from './FrameEngine_ElementList';
 import type {
@@ -38,6 +39,7 @@ interface FrameEngine_PropertiesPanelProps {
     onElementSelect: (elementIds: string[], addToSelection?: boolean) => void;
     onElementDuplicate?: (elementId: string) => void;
     onElementReorder?: (fromIndex: number, toIndex: number) => void;
+    onElementVisibilityToggle: (elementId: string) => void;
     discoveredMachines?: DiscoveredStateMachine[];
     discoveredBindings?: DiscoveredDataBinding[];
 }
@@ -52,21 +54,15 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     onElementSelect,
     onElementDuplicate,
     onElementReorder,
+    onElementVisibilityToggle,
     discoveredMachines = [],
     discoveredBindings = [],
 }) => {
+    const theme = useTheme();
     const [activeSection, setActiveSection] = useState<'layout' | 'element'>('layout');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
         new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography'])
     );
-
-    // Handle element visibility toggle
-    const handleElementVisibilityToggle = useCallback((elementId: string) => {
-        const element = elements.find(el => el.id === elementId);
-        if (element) {
-            onElementUpdate(elementId, { visible: !(element.visible ?? true) });
-        }
-    }, [elements, onElementUpdate]);
 
     // Switch to element properties when elements are selected
     useEffect(() => {
@@ -97,11 +93,11 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
         });
     }, []);
 
-    // Common styles
+    // Theme-responsive styles
     const panelStyle = {
         width: '320px',
-        backgroundColor: '#fff',
-        borderRight: '1px solid #e0e0e0',
+        backgroundColor: theme.palette.background.paper,
+        borderRight: `1px solid ${theme.palette.divider}`,
         display: 'flex',
         flexDirection: 'column' as const,
         flex: 1,
@@ -109,34 +105,62 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
         maxHeight: '100%'
     };
 
+    const headerStyle = {
+        padding: '16px',
+        borderBottom: `1px solid ${theme.palette.divider}`
+    };
+
+    const titleStyle = {
+        fontSize: '14px',
+        fontWeight: 500,
+        color: theme.palette.text.primary,
+        margin: 0
+    };
+
+    const getButtonStyle = (isActive: boolean) => ({
+        flex: 1,
+        padding: '4px 12px',
+        fontSize: '12px',
+        border: `1px solid ${theme.palette.divider}`,
+        backgroundColor: isActive
+            ? (theme.palette.mode === 'dark' ? theme.palette.primary.dark : theme.palette.primary.light)
+            : theme.palette.background.default,
+        color: isActive ? theme.palette.primary.main : theme.palette.text.secondary,
+        cursor: 'pointer',
+        transition: 'all 0.2s'
+    });
+
+    const layoutButtonStyle = {
+        ...getButtonStyle(activeSection === 'layout'),
+        borderTopLeftRadius: '4px',
+        borderBottomLeftRadius: '4px',
+    };
+
+    const elementButtonStyle = {
+        ...getButtonStyle(activeSection === 'element'),
+        borderTopRightRadius: '4px',
+        borderBottomRightRadius: '4px',
+    };
+
     return (
         <div style={panelStyle}>
             {/* Header */}
-            <div style={{ padding: '16px', borderBottom: '1px solid #e0e0e0' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 500, color: '#333', margin: 0 }}>Layout & Elements</h3>
+            <div style={headerStyle}>
+                <h3 style={titleStyle}>Layout & Elements</h3>
                 <div style={{ display: 'flex', marginTop: '8px' }}>
                     <button
                         onClick={() => setActiveSection('layout')}
-                        style={{
-                            flex: 1,
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            borderTopLeftRadius: '4px',
-                            borderBottomLeftRadius: '4px',
-                            border: '1px solid #ccc',
-                            backgroundColor: activeSection === 'layout' ? '#e3f2fd' : '#f5f5f5',
-                            color: activeSection === 'layout' ? '#1976d2' : '#666',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                        }}
+                        style={layoutButtonStyle}
                         onMouseEnter={(e) => {
                             if (activeSection !== 'layout') {
-                                e.currentTarget.style.backgroundColor = '#eeeeee';
+                                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                    ? theme.palette.grey[800]
+                                    : theme.palette.grey[200];
                             }
                         }}
                         onMouseLeave={(e) => {
                             if (activeSection !== 'layout') {
-                                e.currentTarget.style.backgroundColor = '#f5f5f5';
+                                e.currentTarget.style.backgroundColor = theme.palette.background.default;
                             }
                         }}
                     >
@@ -144,28 +168,17 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                     </button>
                     <button
                         onClick={() => setActiveSection('element')}
-                        style={{
-                            flex: 1,
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            borderTopRightRadius: '4px',
-                            borderBottomRightRadius: '4px',
-                            borderTop: '1px solid #ccc',
-                            borderRight: '1px solid #ccc',
-                            borderBottom: '1px solid #ccc',
-                            backgroundColor: activeSection === 'element' ? '#e3f2fd' : '#f5f5f5',
-                            color: activeSection === 'element' ? '#1976d2' : '#666',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                        }}
+                        style={elementButtonStyle}
                         onMouseEnter={(e) => {
                             if (activeSection !== 'element') {
-                                e.currentTarget.style.backgroundColor = '#eeeeee';
+                                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                    ? theme.palette.grey[800]
+                                    : theme.palette.grey[200];
                             }
                         }}
                         onMouseLeave={(e) => {
                             if (activeSection !== 'element') {
-                                e.currentTarget.style.backgroundColor = '#f5f5f5';
+                                e.currentTarget.style.backgroundColor = theme.palette.background.default;
                             }
                         }}
                     >
@@ -197,7 +210,7 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                         onElementDelete={onElementDelete}
                         onElementDuplicate={onElementDuplicate}
                         onElementReorder={onElementReorder}
-                        onElementVisibilityToggle={handleElementVisibilityToggle}
+                        onElementVisibilityToggle={onElementVisibilityToggle}
                     />
                 )}
             </div>

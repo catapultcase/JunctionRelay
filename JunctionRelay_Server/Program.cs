@@ -316,6 +316,9 @@ builder.Services.AddSingleton<Service_CloudBackup_Scheduler>();
 builder.Services.AddSingleton<Service_Manager_WebSocket_Client>();
 builder.Services.AddSingleton<Service_Manager_WebSocket_Server>();
 
+// Register Token IPC Client for auto-updates
+builder.Services.AddSingleton<Service_TokenIpcClient>();
+
 // Register SSH services
 builder.Services.AddSingleton<Service_Manager_SSH>();
 
@@ -464,7 +467,13 @@ app.UseWebSockets();
 
 app.UseStaticFiles();
 
-// Frames directory for FrameEngine
+// Frames directory for FrameEngine - ensure directory exists
+if (!Directory.Exists(framesPath))
+{
+    Directory.CreateDirectory(framesPath);
+    Console.WriteLine($"[STARTUP] Created missing frames directory: {framesPath}");
+}
+
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(framesPath),

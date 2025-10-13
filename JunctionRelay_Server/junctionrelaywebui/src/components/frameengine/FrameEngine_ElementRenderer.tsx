@@ -18,12 +18,12 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { FrameEngine_ECGElement } from './frameengine_effects/FrameEngine_ECGElement';
-import { FrameEngine_ClockElement } from './frameengine_effects/FrameEngine_ClockElement';
-import { FrameEngine_OscilloscopeElement } from './frameengine_effects/FrameEngine_OscilloscopeElement';
-import { FrameEngine_TunnelElement } from './frameengine_effects/FrameEngine_TunnelElement';
-import { FrameEngine_TunnelElementWebGL } from './frameengine_effects/FrameEngine_TunnelElementWebGL';
-import { FrameEngine_WeatherElement } from './frameengine_effects/FrameEngine_WeatherElement';
+import { FrameEngine_ECGElement } from '../frameengine_effects/FrameEngine_ECGElement';
+import { FrameEngine_ClockElement } from '../frameengine_effects/FrameEngine_ClockElement';
+import { FrameEngine_OscilloscopeElement } from '../frameengine_effects/FrameEngine_OscilloscopeElement';
+import { FrameEngine_TunnelElement } from '../frameengine_effects/FrameEngine_TunnelElement';
+import { FrameEngine_TunnelElementWebGL } from '../frameengine_effects/FrameEngine_TunnelElementWebGL';
+import { FrameEngine_WeatherElement } from '../frameengine_effects/FrameEngine_WeatherElement';
 
 const loadedFonts = new Set<string>();
 
@@ -40,12 +40,14 @@ export interface BaseElement {
     type: string;
     position: ElementPosition;
     properties: Record<string, any>;
+    visible?: boolean;
 }
 
 export interface RendererConfig {
     isInteractive: boolean;
     showPlaceholders: boolean;
     elementPadding: number;
+    enableSensorVisibility?: boolean; // Enable sensor-based visibility in runtime
 }
 
 // Specialized element interfaces that extend BaseElement
@@ -611,32 +613,48 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
     }, [getTextStyles, getSensorData, config.showPlaceholders]);
 
     const renderedElements = useMemo(() => {
-        return elements
-            .filter(element => {
-                if (config.isInteractive) {
-                    return true;
-                }
-                return isElementVisible(element);
-            })
-            .map((element) => {
-                const isSelected = selectedElementIds.includes(element.id);
-                const elementStyles = getElementStyles(element, isSelected);
+        const filtered = elements.filter(element => {
+            // Check element's visible property
+            const isVisible = element.visible ?? true;
 
-                return (
-                    <div
-                        key={element.id}
-                        style={elementStyles}
-                        onMouseDown={config.isInteractive && onElementMouseDown ?
-                            (e) => onElementMouseDown(e, element.id) : undefined}
-                        onMouseEnter={config.isInteractive && onElementMouseEnter ?
-                            (e) => onElementMouseEnter(e, element.id) : undefined}
-                        onMouseLeave={config.isInteractive && onElementMouseLeave ?
-                            (e) => onElementMouseLeave(e, element.id) : undefined}
-                    >
-                        {renderElementContent(element)}
-                    </div>
-                );
-            });
+            // Always hide elements with visible=false, regardless of mode
+            if (!isVisible) {
+                return false;
+            }
+
+            // Check if sensor-based visibility is enabled (runtime mode)
+            if (config.enableSensorVisibility) {
+                const hasVisibilitySensor = element.properties.visibilitySensorTag &&
+                    element.properties.visibilitySensorTag.trim() !== '';
+
+                if (hasVisibilitySensor) {
+                    return isElementVisible(element);
+                }
+            }
+
+            // Show element (no visibility sensor or sensor visibility not enabled)
+            return true;
+        });
+
+        return filtered.map((element) => {
+            const isSelected = selectedElementIds.includes(element.id);
+            const elementStyles = getElementStyles(element, isSelected);
+
+            return (
+                <div
+                    key={element.id}
+                    style={elementStyles}
+                    onMouseDown={config.isInteractive && onElementMouseDown ?
+                        (e) => onElementMouseDown(e, element.id) : undefined}
+                    onMouseEnter={config.isInteractive && onElementMouseEnter ?
+                        (e) => onElementMouseEnter(e, element.id) : undefined}
+                    onMouseLeave={config.isInteractive && onElementMouseLeave ?
+                        (e) => onElementMouseLeave(e, element.id) : undefined}
+                >
+                    {renderElementContent(element)}
+                </div>
+            );
+        });
     }, [
         elements,
         selectedElementIds,

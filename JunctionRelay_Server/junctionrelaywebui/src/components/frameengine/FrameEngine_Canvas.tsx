@@ -89,6 +89,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
     onCanvasSettingsChange,
 }) => {
     const viewportRef = useRef<HTMLDivElement>(null);
+    const canvasContainerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
 
     // Viewport transform state
@@ -136,6 +137,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 height: element.height,
             },
             properties: element.properties,
+            visible: element.visible ?? true, // Pass visibility flag
         }));
     }, [elements]);
 
@@ -172,9 +174,9 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             riveFile: layout.riveFile || undefined,
             riveStateMachine: layout.riveStateMachine || undefined,
             riveInputs: layout.riveInputs || undefined,
-            riveBindings: layout.riveBindings || undefined, 
+            riveBindings: layout.riveBindings || undefined,
         };
-    }, [layout.backgroundColor, layout.backgroundImageUrl, layout.backgroundType, layout.riveFile, layout.riveStateMachine, layout.riveInputs]);
+    }, [layout.backgroundColor, layout.backgroundImageUrl, layout.backgroundType, layout.riveFile, layout.riveStateMachine, layout.riveInputs, layout.riveBindings]);
 
     // Canvas settings update handler
     const updateCanvasSettings = useCallback((updates: {
@@ -265,26 +267,36 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         return viewportToCanvas(viewportCoords.x, viewportCoords.y);
     }, [screenToViewport, viewportToCanvas]);
 
-    // Reset view to 100% scale with no offset
+    // Reset view to 100% scale centered in viewport
     const fitToViewport = useCallback(() => {
+        if (!viewportRef.current) return;
+
+        const viewportRect = viewportRef.current.getBoundingClientRect();
+        const canvasWidth = layout.width;
+        const canvasHeight = layout.height;
+
+        // Center the canvas in the viewport at 100% scale
+        const translateX = (viewportRect.width - canvasWidth) / 2;
+        const translateY = (viewportRect.height - canvasHeight) / 2;
+
         setViewport({
             scale: 1,
-            translateX: 0,
-            translateY: 0,
+            translateX: translateX,
+            translateY: translateY,
         });
-    }, []);
+    }, [layout.width, layout.height]);
 
     // Reset to fit on layout change
     useEffect(() => {
         fitToViewport();
     }, [layout.width, layout.height, fitToViewport]);
 
-    // Handle wheel for zoom and pan
+    // Handle wheel for zoom
     const handleWheel = useCallback((event: WheelEvent) => {
         event.preventDefault();
 
         if (event.ctrlKey || event.metaKey) {
-            // Zoom
+            // Zoom with Ctrl/Cmd
             const viewportCoords = screenToViewport(event.clientX, event.clientY);
             const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
             const newScale = Math.max(0.1, Math.min(30, viewport.scale * zoomFactor));
@@ -299,13 +311,13 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 translateY: newTranslateY,
             });
         } else if (event.shiftKey) {
-            // Horizontal pan
+            // Horizontal pan with Shift
             setViewport(prev => ({
                 ...prev,
                 translateX: prev.translateX - event.deltaY,
             }));
         } else {
-            // Default zoom with plain wheel
+            // Default: zoom without modifier
             const viewportCoords = screenToViewport(event.clientX, event.clientY);
             const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
             const newScale = Math.max(0.1, Math.min(30, viewport.scale * zoomFactor));
@@ -509,7 +521,6 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             break;
                     }
 
-                    // Apply snap to grid for resize
                     if (snapToGrid) {
                         newX = snapToGridValue(newX);
                         newY = snapToGridValue(newY);
@@ -718,7 +729,6 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             gap: '8px'
                         }}
                     >
-                        {/* Reset View Button */}
                         <button
                             onClick={fitToViewport}
                             style={{
@@ -740,7 +750,6 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             🎯 Reset View
                         </button>
 
-                        {/* Grid Controls */}
                         <div style={{
                             backgroundColor: '#fff',
                             border: '1px solid #ccc',
@@ -843,7 +852,6 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             </div>
                         </div>
 
-                        {/* Element Padding Controls */}
                         <div style={{
                             backgroundColor: '#fff',
                             border: '1px solid #ccc',
@@ -923,137 +931,147 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                     </div>
                 )}
 
-                {/* Canvas Container */}
+                {/* Transform Container - This scales and translates */}
                 <div
-                    ref={canvasRef}
-                    data-canvas="true"
-                    className="frame-canvas-area"
+                    ref={canvasContainerRef}
                     style={{
-                        position: 'relative',
-                        border: (!previewMode && dropZone.isActive) ? '2px dashed #1976d2' : 'none',
-                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-                        userSelect: 'none',
-                        width: layout.width,
-                        height: layout.height,
-                        overflow: 'hidden',
-                        cursor: 'default',
+                        position: 'absolute',
                         transformOrigin: '0 0',
                         transform: `translate(${viewport.translateX}px, ${viewport.translateY}px) scale(${viewport.scale})`,
-                        backgroundColor: backgroundConfig.type === 'color' ? backgroundConfig.color : 'transparent',
+                        pointerEvents: 'none',
                     }}
-                    onClick={handleCanvasClick}
-                    onMouseDown={(e) => {
-                        if (e.button !== 1) {
-                            e.stopPropagation();
-                        }
-                    }}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onContextMenu={(e) => e.preventDefault()}
                 >
-                    {/* Background Layer using shared renderer */}
-                    <FrameEngine_BackgroundRenderer
-                        config={backgroundConfig}
-                        width={layout.width}
-                        height={layout.height}
-                        fit="none"
-                        onRiveDiscovery={onRiveDiscovery}
-                    />
+                    {/* Canvas - Fixed size, contains all content */}
+                    <div
+                        ref={canvasRef}
+                        data-canvas="true"
+                        className="frame-canvas-area"
+                        style={{
+                            position: 'relative',
+                            border: (!previewMode && dropZone.isActive) ? '2px dashed #1976d2' : 'none',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                            userSelect: 'none',
+                            width: layout.width,
+                            height: layout.height,
+                            overflow: 'visible',
+                            cursor: 'default',
+                            backgroundColor: backgroundConfig.type === 'color' ? backgroundConfig.color : 'transparent',
+                            pointerEvents: 'auto',
+                        }}
+                        onClick={handleCanvasClick}
+                        onMouseDown={(e) => {
+                            if (e.button !== 1) {
+                                e.stopPropagation();
+                            }
+                        }}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onContextMenu={(e) => e.preventDefault()}
+                    >
+                        {/* Background Layer using shared renderer */}
+                        <FrameEngine_BackgroundRenderer
+                            config={backgroundConfig}
+                            width={layout.width}
+                            height={layout.height}
+                            fit="none"
+                            onRiveDiscovery={onRiveDiscovery}
+                        />
 
-                    {/* Grid overlay */}
-                    {!previewMode && (
-                        <div
-                            data-skip-thumbnail="true"
-                            style={{
+                        {/* Grid overlay */}
+                        {!previewMode && (
+                            <div
+                                data-skip-thumbnail="true"
+                                style={{
+                                    position: 'absolute',
+                                    inset: '0',
+                                    opacity: showGrid ? (snapToGrid ? 0.4 : 0.2) : 0,
+                                    pointerEvents: 'none',
+                                    backgroundImage: `
+                                        linear-gradient(to right, ${gridColor} 1px, transparent 1px),
+                                        linear-gradient(to bottom, ${gridColor} 1px, transparent 1px)
+                                    `,
+                                    backgroundSize: `${gridSize}px ${gridSize}px`,
+                                    zIndex: 1,
+                                    transition: 'opacity 0.2s ease'
+                                }}
+                            />
+                        )}
+
+                        {/* Render elements using shared renderer */}
+                        <FrameEngine_ElementRenderer
+                            elements={baseElements}
+                            config={rendererConfig}
+                            sensorData={sensorDataMap}
+                            selectedElementIds={selectedElementIds}
+                            onElementMouseDown={handleElementMouseDown}
+                            onElementMouseEnter={handleElementMouseEnter}
+                            onElementMouseLeave={handleElementMouseLeave}
+                        >
+                            {/* Resize handles as children */}
+                            {renderResizeHandles()}
+                        </FrameEngine_ElementRenderer>
+
+                        {/* Drop zone overlay */}
+                        {!previewMode && dropZone.isActive && (
+                            <div style={{
                                 position: 'absolute',
                                 inset: '0',
-                                opacity: showGrid ? (snapToGrid ? 0.4 : 0.2) : 0,
+                                backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                                border: '2px dashed #1976d2',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                                 pointerEvents: 'none',
-                                backgroundImage: `
-                                    linear-gradient(to right, ${gridColor} 1px, transparent 1px),
-                                    linear-gradient(to bottom, ${gridColor} 1px, transparent 1px)
-                                `,
-                                backgroundSize: `${gridSize}px ${gridSize}px`,
-                                zIndex: 1,
-                                transition: 'opacity 0.2s ease'
-                            }}
-                        />
-                    )}
-
-                    {/* Render elements using shared renderer */}
-                    <FrameEngine_ElementRenderer
-                        elements={baseElements}
-                        config={rendererConfig}
-                        sensorData={sensorDataMap}
-                        selectedElementIds={selectedElementIds}
-                        onElementMouseDown={handleElementMouseDown}
-                        onElementMouseEnter={handleElementMouseEnter}
-                        onElementMouseLeave={handleElementMouseLeave}
-                    >
-                        {/* Resize handles as children */}
-                        {renderResizeHandles()}
-                    </FrameEngine_ElementRenderer>
-
-                    {/* Drop zone overlay */}
-                    {!previewMode && dropZone.isActive && (
-                        <div style={{
-                            position: 'absolute',
-                            inset: '0',
-                            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                            border: '2px dashed #1976d2',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            pointerEvents: 'none',
-                            zIndex: 10
-                        }}>
-                            <div style={{
-                                color: '#1976d2',
-                                fontSize: '18px',
-                                fontWeight: 500
+                                zIndex: 10
                             }}>
-                                Drop {dropZone.elementType} here
+                                <div style={{
+                                    color: '#1976d2',
+                                    fontSize: '18px',
+                                    fontWeight: 500
+                                }}>
+                                    Drop {dropZone.elementType} here
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* Empty state */}
-                    {!previewMode && elements.length === 0 && !dropZone.isActive && backgroundConfig.type !== 'rive' && (
-                        <div style={{
-                            position: 'absolute',
-                            inset: '0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#999',
-                            zIndex: 1
-                        }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '18px', fontWeight: 500 }}>Empty Canvas</div>
-                                <div style={{ fontSize: '14px' }}>Drag elements from the library to get started</div>
+                        {/* Empty state */}
+                        {!previewMode && elements.length === 0 && !dropZone.isActive && backgroundConfig.type !== 'rive' && (
+                            <div style={{
+                                position: 'absolute',
+                                inset: '0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#999',
+                                zIndex: 1
+                            }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '18px', fontWeight: 500 }}>Empty Canvas</div>
+                                    <div style={{ fontSize: '14px' }}>Drag elements from the library to get started</div>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* Rive Loading State */}
-                    {!previewMode && backgroundConfig.type === 'rive' && backgroundConfig.riveFile && elements.length === 0 && !dropZone.isActive && (
-                        <div style={{
-                            position: 'absolute',
-                            inset: '0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#999',
-                            backgroundColor: 'rgba(255,255,255,0.8)',
-                            zIndex: 5
-                        }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '18px', fontWeight: 500 }}>Rive Background Active</div>
-                                <div style={{ fontSize: '14px' }}>Drag elements to overlay on Rive animation</div>
+                        {/* Rive Loading State */}
+                        {!previewMode && backgroundConfig.type === 'rive' && backgroundConfig.riveFile && elements.length === 0 && !dropZone.isActive && (
+                            <div style={{
+                                position: 'absolute',
+                                inset: '0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#999',
+                                backgroundColor: 'rgba(255,255,255,0.8)',
+                                zIndex: 5
+                            }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '18px', fontWeight: 500 }}>Rive Background Active</div>
+                                    <div style={{ fontSize: '14px' }}>Drag elements to overlay on Rive animation</div>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             </div>
 

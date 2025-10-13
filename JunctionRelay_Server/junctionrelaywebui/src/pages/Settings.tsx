@@ -46,7 +46,7 @@ import Settings_SessionManagement from '../components/Settings_SessionManagement
 import Settings_Database from '../components/Settings_Database';
 import Settings_Backups from '../components/Settings_CloudBackups';
 import StreamHistorySettings from '../components/StreamHistorySettings';
-import DashboardSettings from '../components/Dashboard_Settings';
+import DashboardSettings from '../components/dashboard/Dashboard_Settings';
 
 
 interface SettingItem {
@@ -695,7 +695,7 @@ const Settings: React.FC = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <StorageIcon sx={{ mr: 1 }} />
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="h6">Local Backups</Typography>
+                                <Typography variant="h6">Local Database & Backend</Typography>
                                 {backendFriendlyName && (
                                     <Chip
                                         label={backendFriendlyName}

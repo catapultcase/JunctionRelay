@@ -138,6 +138,8 @@ INSERT INTO Devices (
     ConnMode, COMPort,
     DeviceModel, DeviceManufacturer, FirmwareVersion, HasCustomFirmware, IgnoreUpdates, MCU, WirelessConnectivity, Flash, PSRAM, UniqueIdentifier,
 
+    HttpPort, WebSocketPort, MqttPort, Hostname,
+
     HeartbeatProtocol, HeartbeatTarget, HeartbeatExpectedValue, HeartbeatEnabled, HeartbeatIntervalMs, HeartbeatGracePeriodMs, HeartbeatMaxRetryAttempts,
     UseStreamAsHeartbeat, StreamHeartbeatThresholdMs,
     ConnectionStatusEnabled, ConnectionStatusIntervalMs, LastConnectionStatusCheck,
@@ -155,6 +157,8 @@ VALUES (
     @IsCloudDevice, @CloudDeviceId, @LastEncryptedSensorData, @LastHealthReportAt,
     @ConnMode, @COMPort,
     @DeviceModel, @DeviceManufacturer, @FirmwareVersion, @HasCustomFirmware, @IgnoreUpdates, @MCU, @WirelessConnectivity, @Flash, @PSRAM, @UniqueIdentifier,
+
+    @HttpPort, @WebSocketPort, @MqttPort, @Hostname,
 
     @HeartbeatProtocol, @HeartbeatTarget, @HeartbeatExpectedValue, @HeartbeatEnabled, @HeartbeatIntervalMs, @HeartbeatGracePeriodMs, @HeartbeatMaxRetryAttempts,
     @UseStreamAsHeartbeat, @StreamHeartbeatThresholdMs,
@@ -426,6 +430,11 @@ WirelessConnectivity = @WirelessConnectivity,
 Flash = @Flash,
 PSRAM = @PSRAM,
 UniqueIdentifier = @UniqueIdentifier,
+
+HttpPort = @HttpPort,
+WebSocketPort = @WebSocketPort,
+MqttPort = @MqttPort,
+Hostname = @Hostname,
 
 HeartbeatProtocol = @HeartbeatProtocol,
 HeartbeatTarget = @HeartbeatTarget,

@@ -272,15 +272,25 @@ namespace JunctionRelayServer.Services
         private readonly HttpClient _httpClient;
         private bool _disposed = false;
 
-        public Service_Send_Data_HTTP(string endpointUrl, bool useKeepAlive = true)
+        public Service_Send_Data_HTTP(string deviceIp, int? httpPort = null, string endpointPath = "/stream", bool useKeepAlive = true)
         {
-            _endpointUrl = endpointUrl;
+            // Use HttpPort if provided, otherwise default to 80
+            int port = httpPort ?? 80;
+
+            // Ensure endpointPath starts with /
+            if (!endpointPath.StartsWith("/"))
+            {
+                endpointPath = "/" + endpointPath;
+            }
+
+            // Build the full endpoint URL
+            _endpointUrl = $"http://{deviceIp}:{port}{endpointPath}";
             _useKeepAlive = useKeepAlive;
 
             if (_useKeepAlive)
             {
                 // Get or create a dedicated keep-alive HttpClient for this endpoint
-                _httpClient = _keepAliveClients.GetOrAdd(endpointUrl, url =>
+                _httpClient = _keepAliveClients.GetOrAdd(_endpointUrl, url =>
                 {
                     var handler = new SocketsHttpHandler()
                     {
@@ -312,7 +322,7 @@ namespace JunctionRelayServer.Services
             {
                 // Use the shared non-keep-alive client (now with reasonable settings)
                 _httpClient = _standardClient.Value;
-                Console.WriteLine($"[SERVICE_SEND_DATA_HTTP] Using standard HttpClient for {endpointUrl}");
+                Console.WriteLine($"[SERVICE_SEND_DATA_HTTP] Using standard HttpClient for {_endpointUrl}");
             }
         }
 

@@ -28,6 +28,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import LinkIcon from '@mui/icons-material/Link';
+import InfoIcon from '@mui/icons-material/Info';
 
 interface GatewayDevice {
     id: number;
@@ -373,6 +374,14 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                         <Card>
                             <CardContent sx={{ pb: 1 }}>
                                 <Typography variant="subtitle1" gutterBottom>MQTT Broker Configuration</Typography>
+
+                                <Alert severity="info" icon={<InfoIcon />} sx={{ mb: 2 }}>
+                                    <Typography variant="body2">
+                                        <strong>MQTT Protocol Flow:</strong> Initial configuration payloads are sent via HTTP to the device,
+                                        then subsequent sensor data updates are transmitted via MQTT to the configured broker topics.
+                                        Sensor payloads must fit within the MQTT packet size limits defined by your broker (typically 256MB max, but often configured lower).
+                                    </Typography>
+                                </Alert>
 
                                 <Box
                                     sx={{

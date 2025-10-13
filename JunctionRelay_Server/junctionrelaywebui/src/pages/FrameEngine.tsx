@@ -77,7 +77,7 @@ import ImageIcon from '@mui/icons-material/Image';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
-import FrameEngine_Gallery from '../components/FrameEngine_Gallery';
+import FrameEngine_Gallery from '../components/frameengine/FrameEngine_Gallery';
 import { useTheme, useMediaQuery } from "@mui/material";
 
 // Types
@@ -508,8 +508,8 @@ const AddFrameLayoutModal: React.FC<{
     // Frame layout type options for dropdown
     const frameLayoutTypes = [
         { value: "", name: "Select Frame Layout Type", desc: "Choose a frame layout type to begin" },
-        { value: "PRE_RENDERED_IMAGE", name: "Pre-Rendered Image", desc: "Map sensors over an image" },
-        { value: "COMPOSITE_MODE", name: "Composite Mode", desc: "Map sensors over a Rive component" }
+        // { value: "PRE_RENDERED_IMAGE", name: "Pre-Rendered Image", desc: "Map sensors over an image" },
+        { value: "COMPOSITE_MODE", name: "Composite Mode", desc: "Build dynamic layouts with elements and backgrounds" }
     ];
 
     // Reset form when modal opens/closes
@@ -577,17 +577,11 @@ const AddFrameLayoutModal: React.FC<{
 
     // Set default values based on selected layout type
     useEffect(() => {
-        if (frameLayout.layoutType === "PRE_RENDERED_IMAGE") {
-            setFrameLayout((prev: any) => ({
-                ...prev,
-                displayName: "Pre-Rendered Image Layout",
-                description: "Static background image with sensor overlays"
-            }));
-        } else if (frameLayout.layoutType === "COMPOSITE_MODE") {
+        if (frameLayout.layoutType === "COMPOSITE_MODE") {
             setFrameLayout((prev: any) => ({
                 ...prev,
                 displayName: "Composite Mode Layout",
-                description: "Rive component with sensor overlays"
+                description: "Build dynamic layouts with elements and backgrounds"
             }));
         } else {
             setFrameLayout((prev: any) => ({
@@ -1202,15 +1196,15 @@ const FrameEngine = () => {
                         />
                     </Button>
 
-                    <Button
-                        variant="outlined"
-                        onClick={handleResetAll}
-                        size="small"
-                        startIcon={resetLoading ? <CircularProgress size={16} /> : <RefreshIcon />}
-                        disabled={resetLoading}
-                    >
-                        Reset/Restore All Frame Layout Templates
-                    </Button>
+                    {/*<Button*/}
+                    {/*    variant="outlined"*/}
+                    {/*    onClick={handleResetAll}*/}
+                    {/*    size="small"*/}
+                    {/*    startIcon={resetLoading ? <CircularProgress size={16} /> : <RefreshIcon />}*/}
+                    {/*    disabled={resetLoading}*/}
+                    {/*>*/}
+                    {/*    Reset/Restore All Frame Layout Templates*/}
+                    {/*</Button>*/}
                 </Box>
             )}
 

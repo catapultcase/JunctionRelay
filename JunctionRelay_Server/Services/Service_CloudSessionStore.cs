@@ -38,6 +38,7 @@ namespace JunctionRelayServer.Services
         private readonly IDbConnection _db;
         private readonly object _lock = new();
         private readonly Service_BackendIdentity _backendIdentity;
+        private readonly Service_TokenIpcClient _tokenIpcClient;
 
         private string? _encryptedAccessToken;
         private string? _encryptedRefreshToken;
@@ -51,13 +52,15 @@ namespace JunctionRelayServer.Services
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             IDbConnection db,
-            Service_BackendIdentity backendIdentity)
+            Service_BackendIdentity backendIdentity,
+            Service_TokenIpcClient tokenIpcClient)
         {
             _secretsService = secretsService;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
             _db = db;
             _backendIdentity = backendIdentity;
+            _tokenIpcClient = tokenIpcClient;
         }
 
 
@@ -116,6 +119,20 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine($"[CLOUD_SESSION] ⚠️ Failed to persist refresh token to database: {ex.Message}");
                 }
             }
+
+            // Send token to Tray for auto-updates (fire and forget)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var expiresAt = _tokenExpiryTime ?? DateTime.UtcNow.AddHours(12);
+                    await _tokenIpcClient.SendTokenAsync(accessToken, expiresAt);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[CLOUD_SESSION] Failed to send update token to Tray: {ex.Message}");
+                }
+            });
         }
 
 
@@ -319,9 +336,6 @@ namespace JunctionRelayServer.Services
             {
                 try
                 {
-                    //Console.WriteLine($"[CLOUD_SESSION] 🔍 DEBUG: Sending refresh token: {currentRefreshToken?.Substring(0, 20)}... (length: {currentRefreshToken?.Length})");
-                    //Console.WriteLine($"[CLOUD_SESSION] 🔍 DEBUG: Sending backend ID: {_backendIdentity.GetBackendId()}");
-
                     var httpClient = _httpClientFactory.CreateClient();
                     httpClient.Timeout = TimeSpan.FromSeconds(10);
                     var refreshUrl = $"{cloudApiUrl}/auth/refresh";
@@ -382,6 +396,21 @@ namespace JunctionRelayServer.Services
                                     _refreshTask = null;
                                 }
                                 Console.WriteLine($"[CLOUD_SESSION] ✅ Token refreshed successfully on attempt {attempt}");
+
+                                // Send refreshed token to Tray for auto-updates (fire and forget)
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        var expiresAt = ExtractTokenExpiry(newAccessToken) ?? DateTime.UtcNow.AddHours(12);
+                                        await _tokenIpcClient.SendTokenAsync(newAccessToken, expiresAt);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"[CLOUD_SESSION] Failed to send refreshed update token to Tray: {ex.Message}");
+                                    }
+                                });
+
                                 return newAccessToken;
                             }
                         }
@@ -397,7 +426,6 @@ namespace JunctionRelayServer.Services
                             ClearSession();
                             return null;
                         }
-                        // Wait a bit before retrying
                         await Task.Delay(1000, cancellationToken);
                     }
                     else
@@ -407,7 +435,6 @@ namespace JunctionRelayServer.Services
                         {
                             return null;
                         }
-                        // Wait a bit before retrying
                         await Task.Delay(1000, cancellationToken);
                     }
                 }
@@ -418,7 +445,6 @@ namespace JunctionRelayServer.Services
                     {
                         return null;
                     }
-                    // Wait a bit before retrying
                     await Task.Delay(1000, cancellationToken);
                 }
             }

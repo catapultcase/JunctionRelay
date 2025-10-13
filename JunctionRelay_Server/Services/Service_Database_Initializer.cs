@@ -51,6 +51,49 @@ namespace JunctionRelayServer.Services
         {
             _db.Open();
 
+            // STEP 1: Create all base tables
+            await CreateTablesAsync();
+
+            // STEP 2: Apply schema updates BEFORE any data operations
+            await ApplySchemaUpdatesAsync();
+
+            // STEP 3: Seed screen layout templates
+            var existingScreenTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
+            if (existingScreenTemplates == 0)
+            {
+                await layoutTemplates.InitializeLayoutTemplatesAsync();
+                Console.WriteLine("✅ Initialized screen layout templates");
+            }
+            else
+            {
+                Console.WriteLine($"ℹ️ Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
+            }
+
+            // STEP 4: Seed frame layout templates
+            var existingFrameTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM FrameLayouts WHERE IsTemplate = 1");
+            if (existingFrameTemplates == 0)
+            {
+                var templatesCreated = await _frameEngineManager.RestoreDefaultTemplatesAsync();
+                if (templatesCreated)
+                {
+                    Console.WriteLine("✅ Initialized frame layout templates");
+                }
+                else
+                {
+                    Console.WriteLine("ℹ️ No frame layout templates were created");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"ℹ️ Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
+            }
+
+            // STEP 5: Seed settings
+            await SeedInitialSettingsAsync();
+        }
+
+        private async Task CreateTablesAsync()
+        {
             // Create Settings Table
             _db.Execute(@"
                 CREATE TABLE IF NOT EXISTS Settings (
@@ -829,42 +872,7 @@ namespace JunctionRelayServer.Services
                 ON JunctionScreenLayouts(JunctionId, DeviceScreenId);
             ");
 
-            // Seed screen layout templates
-            var existingScreenTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM ScreenLayouts WHERE IsTemplate = 1");
-            if (existingScreenTemplates == 0)
-            {
-                await layoutTemplates.InitializeLayoutTemplatesAsync();
-                Console.WriteLine("✅ Initialized screen layout templates");
-            }
-            else
-            {
-                Console.WriteLine($"ℹ️ Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
-            }
-
-            // Seed frame layout templates
-            var existingFrameTemplates = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM FrameLayouts WHERE IsTemplate = 1");
-            if (existingFrameTemplates == 0)
-            {
-                var templatesCreated = await _frameEngineManager.RestoreDefaultTemplatesAsync();
-                if (templatesCreated)
-                {
-                    Console.WriteLine("✅ Initialized frame layout templates");
-                }
-                else
-                {
-                    Console.WriteLine("ℹ️ No frame layout templates were created");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"ℹ️ Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
-            }
-
-            // Apply schema updates for future changes
-            await ApplySchemaUpdatesAsync();
-
-            // Seed settings
-            await SeedInitialSettingsAsync();
+            await Task.CompletedTask;
         }
 
         public async Task SeedInitialSettingsAsync()
@@ -935,7 +943,14 @@ namespace JunctionRelayServer.Services
             {
                 ["FrameLayouts"] = new (string, string)[]
                 {
-            ("JsonFrameConfigRuntime", "TEXT")
+                    ("JsonFrameConfigRuntime", "TEXT")
+                },
+                ["Devices"] = new (string, string)[]
+                {
+                    ("HttpPort", "INTEGER"),
+                    ("WebSocketPort", "INTEGER"),
+                    ("MqttPort", "INTEGER"),
+                    ("Hostname", "TEXT")
                 }
             };
 
@@ -951,9 +966,9 @@ namespace JunctionRelayServer.Services
                     try
                     {
                         var columnExists = _db.ExecuteScalar<int>(@"
-                    SELECT COUNT(*) 
-                    FROM pragma_table_info(@tableName) 
-                    WHERE name = @columnName",
+                            SELECT COUNT(*) 
+                            FROM pragma_table_info(@tableName) 
+                            WHERE name = @columnName",
                             new { tableName, columnName }) > 0;
 
                         if (!columnExists)

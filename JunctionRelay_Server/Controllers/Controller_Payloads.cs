@@ -138,12 +138,11 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        // New combined endpoint that returns both config and sensor payloads
         [HttpPost("{id}/preview-payload")]
         public async Task<IActionResult> PreviewPayload(
-            int id,
-            [FromQuery] int sensorCount = 4,
-            [FromQuery] int startingYOffset = 0)
+    int id,
+    [FromQuery] int sensorCount = 4,
+    [FromQuery] int startingYOffset = 0)
         {
             try
             {
@@ -273,7 +272,7 @@ namespace JunctionRelayServer.Controllers
                     Template = template
                 };
 
-                // 4) Generate the config payload
+                // 4) Generate the config payload using the payload service
                 var configPayloads = await _payloadService.GenerateConfigPayloadsAsync(
                     previewScreen.ScreenKey,
                     sensors,
@@ -281,90 +280,19 @@ namespace JunctionRelayServer.Controllers
                     template
                 );
 
-                // 5) Generate the sensor payload based on layout type
-                var sensorPayload = new Dictionary<string, object>();
-                var random = new Random();
-                string layoutType = template.LayoutType.ToUpperInvariant();
-
-                if (layoutType == "MATRIX")
-                {
-                    var sensorItems = new Dictionary<string, object>();
-                    int yOffset = startingYOffset;
-
-                    foreach (var sensor in sensors)
-                    {
-                        string text = $"{sensor.SensorTag}: {sensor.Value} {sensor.Unit}";
-
-                        sensorItems[sensor.SensorTag] = new
-                        {
-                            Position = new { x = 0, y = yOffset },
-                            Data = new[] { new { text } }
-                        };
-
-                        yOffset += 8; // 8 pixels per line
-                    }
-
-                    var matrixPayload = new
-                    {
-                        type = "sensor",
-                        screenId = previewScreen.ScreenKey,
-                        sensors = sensorItems
-                    };
-
-                    string json = System.Text.Json.JsonSerializer.Serialize(matrixPayload);
-                    string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
-                    sensorPayload[previewScreen.ScreenKey] = finalPayload;
-                }
-                else if (layoutType == "NEOPIXEL")
-                {
-                    int red = random.Next(0, 256);
-                    int green = random.Next(0, 256);
-                    int blue = random.Next(0, 256);
-                    int color = (red << 16) | (green << 8) | blue;
-
-                    var neopixelPayload = new
-                    {
-                        type = "sensor",
-                        screenId = previewScreen.ScreenKey,
-                        sensors = new
-                        {
-                            neopixel = new { color }
-                        }
-                    };
-
-                    string json = System.Text.Json.JsonSerializer.Serialize(neopixelPayload);
-                    string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
-                    sensorPayload[previewScreen.ScreenKey] = finalPayload;
-                }
-                else // Standard layouts
-                {
-                    var sensorItems = new Dictionary<string, object>();
-
-                    foreach (var sensor in sensors)
-                    {
-                        sensorItems[sensor.SensorTag] = new[]
-                        {
-                    new { Value = sensor.Value, Unit = sensor.Unit }
-                };
-                    }
-
-                    var stdPayload = new
-                    {
-                        type = "sensor",
-                        screenId = previewScreen.ScreenKey,
-                        sensors = sensorItems
-                    };
-
-                    string json = System.Text.Json.JsonSerializer.Serialize(stdPayload);
-                    string finalPayload = json.Length.ToString().PadLeft(8, '0') + json;
-                    sensorPayload[previewScreen.ScreenKey] = finalPayload;
-                }
+                // 5) Generate the sensor payload using the payload service
+                var sensorPayloads = await _payloadService.GenerateSensorPayloadsAsync(
+                    previewScreen.ScreenKey,
+                    sensorCount,
+                    sensors,
+                    previewScreen
+                );
 
                 // 6) Combine both payloads and return
                 var combinedResult = new
                 {
                     configPayload = configPayloads,
-                    sensorPayload = sensorPayload
+                    sensorPayload = sensorPayloads  // Now also a Model_PayloadResultCollection
                 };
 
                 return Ok(combinedResult);
