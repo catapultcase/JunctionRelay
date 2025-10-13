@@ -19,8 +19,6 @@
 
 using JunctionRelayServer.Models;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
-using System.Text;
 
 namespace JunctionRelayServer.Services
 {
@@ -121,7 +119,6 @@ namespace JunctionRelayServer.Services
                                 {
                                     var baseUrl = GetServerBaseUrl();
                                     riveDict["fileUrl"] = $"{baseUrl}/api/frameengine/rive-files/{frameLayout.RiveFile}/content";
-                                    riveDict["embedded"] = false;
                                     Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added fileUrl to existing rive object for {screenKey}");
                                 }
                             }
@@ -347,93 +344,36 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ❌ Error generating Rive sensor payload for {screenKey}: {ex.Message}");
                 return result;
             }
-        }
-
-        private object? AddRiveFileReference(object? configObject, string riveFileName)
-        {
-            try
-            {
-                if (configObject == null) return null;
-
-                var configJson = JsonSerializer.Serialize(configObject);
-                var configDict = JsonSerializer.Deserialize<Dictionary<string, object>>(configJson);
-
-                if (configDict == null) return configObject;
-
-                if (!configDict.TryGetValue("frameConfig", out var frameConfigObj))
-                {
-                    configDict["frameConfig"] = new Dictionary<string, object>();
-                    frameConfigObj = configDict["frameConfig"];
-                }
-
-                Dictionary<string, object> frameConfigDict;
-                if (frameConfigObj is JsonElement frameConfigElement)
-                {
-                    var frameConfigJson = frameConfigElement.GetRawText();
-                    frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object>>(frameConfigJson) ?? new Dictionary<string, object>();
-                }
-                else
-                {
-                    frameConfigDict = frameConfigObj as Dictionary<string, object> ?? new Dictionary<string, object>();
-                }
-
-                if (!frameConfigDict.TryGetValue("rive", out var riveObj))
-                {
-                    frameConfigDict["rive"] = new Dictionary<string, object>();
-                    riveObj = frameConfigDict["rive"];
-                }
-
-                Dictionary<string, object> riveDict;
-                if (riveObj is JsonElement riveElement)
-                {
-                    var riveJson = riveElement.GetRawText();
-                    riveDict = JsonSerializer.Deserialize<Dictionary<string, object>>(riveJson) ?? new Dictionary<string, object>();
-                }
-                else
-                {
-                    riveDict = riveObj as Dictionary<string, object> ?? new Dictionary<string, object>();
-                }
-
-                var baseUrl = GetServerBaseUrl();
-                riveDict["file"] = riveFileName;
-                riveDict["fileUrl"] = $"{baseUrl}/api/frameengine/rive-files/{riveFileName}/content";
-                riveDict["embedded"] = false;
-
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Generated Rive URL: {riveDict["fileUrl"]}");
-
-                frameConfigDict["rive"] = riveDict;
-                configDict["frameConfig"] = frameConfigDict;
-
-                return CloneJsonValue(JsonDocument.Parse(JsonSerializer.Serialize(configDict)).RootElement);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ⚠️ Error adding Rive file reference {riveFileName} to config: {ex.Message}");
-                return configObject;
-            }
-        }
+        }        
 
         private string GetServerBaseUrl()
         {
             var httpContext = _httpContextAccessor.HttpContext;
+            string? scheme = "http";
+            string? hostValue = null;
+
             if (httpContext?.Request != null)
             {
                 var request = httpContext.Request;
-                var scheme = request.Scheme;
-                var host = request.Host.Value;
-                return $"{scheme}://{host}";
+                scheme = request.Scheme;
+                hostValue = request.Host.Host;
             }
 
             try
             {
+                // Always resolve the true LAN/WAN IP, not "localhost"
                 var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
                 var localIP = host.AddressList
-                    .FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
-                                          !System.Net.IPAddress.IsLoopback(ip));
+                    .FirstOrDefault(ip =>
+                        ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                        !System.Net.IPAddress.IsLoopback(ip) &&
+                        !ip.ToString().StartsWith("169.254") // ignore link-local
+                    );
 
                 if (localIP != null)
                 {
-                    return $"http://{localIP}:7180";
+                    var port = httpContext?.Request?.Host.Port ?? 7180;
+                    return $"{scheme}://{localIP}:{port}";
                 }
             }
             catch (Exception ex)
@@ -441,7 +381,9 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Could not auto-detect IP: {ex.Message}");
             }
 
-            return "http://localhost:7180";
+            // As a last fallback, return the hostname instead of localhost
+            var machineName = System.Net.Dns.GetHostName();
+            return $"{scheme}://{machineName}:7180";
         }
 
         private object? CloneJsonValue(JsonElement element)

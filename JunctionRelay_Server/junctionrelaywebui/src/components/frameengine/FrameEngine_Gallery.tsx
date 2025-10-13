@@ -104,8 +104,8 @@ const ThumbnailImage = memo(({
         return (
             <Box
                 sx={{
-                    width: '100%',
-                    height: '200px',
+                    width: '320px',
+                    height: '180px',
                     backgroundColor: 'grey.100',
                     display: 'flex',
                     flexDirection: 'column',
@@ -128,45 +128,48 @@ const ThumbnailImage = memo(({
                 <Typography variant="caption" color="textSecondary" align="center">
                     {frameLayout.width && frameLayout.height
                         ? `${frameLayout.width}×${frameLayout.height}`
-                        : 'Unknown size'
-                    }
+                        : 'Unknown size'}
                 </Typography>
             </Box>
         );
     }
 
     return (
-        <Box sx={{
-            position: 'relative',
-            width: '100%',
-            height: '200px',
-            overflow: 'hidden'
-        }}>
+        <Box
+            sx={{
+                position: 'relative',
+                width: '320px',
+                height: '180px',
+                overflow: 'hidden',
+                borderRadius: 1,
+                backgroundColor: 'grey.50'
+            }}
+        >
             {imageLoading && (
                 <Skeleton
                     variant="rectangular"
-                    width="100%"
-                    height="200px"
+                    width="320px"
+                    height="180px"
                     sx={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }}
                 />
             )}
             <CardMedia
                 component="img"
-                height="200"
+                width="320"
+                height="180"
                 image={thumbnailUrl}
                 alt={`${frameLayout.displayName} preview`}
                 onLoad={handleImageLoad}
                 onError={handleImageError}
                 sx={{
-                    width: '100%',
-                    height: '200px',
-                    objectFit: 'cover', // Changed from 'contain' to 'cover' for consistent sizing
+                    width: '320px',
+                    height: '180px',
+                    objectFit: 'cover',
                     backgroundColor: 'grey.50',
                     opacity: imageLoading ? 0 : 1,
                     transition: 'opacity 0.3s ease-in-out'
                 }}
             />
-
         </Box>
     );
 });
@@ -228,7 +231,7 @@ const GalleryCard = memo(({
                 position: 'relative',
                 height: '420px', // Increased to match FrameXchange
                 width: '100%', // Let grid control width, card fills available space
-                maxWidth: '300px', // Lock maximum width to match thumbnail aspect ratio
+                maxWidth: '320px', // Lock maximum width to match thumbnail aspect ratio
                 display: 'flex',
                 flexDirection: 'column',
                 '&:hover': {
@@ -440,16 +443,10 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
         <Box
             sx={{
                 display: 'grid',
-                gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: 'repeat(2, 1fr)',
-                    md: 'repeat(3, 1fr)',
-                    lg: 'repeat(4, 1fr)',
-                    xl: 'repeat(5, 1fr)'
-                },
+                gridTemplateColumns: 'repeat(auto-fill, 320px)', // fixed width
+                justifyContent: 'center', // centers the row if it doesn't fill
                 gap: 3,
                 mb: 4,
-                justifyItems: 'center' // Center cards in their grid cells
             }}
         >
             {frameLayouts.map((frameLayout) => (

@@ -100,11 +100,16 @@ export const SetupInstructions_Junctions: React.FC<SetupInstructions_JunctionsPr
                             • Distributed system messaging
                         </Typography>
                         <Typography variant="body2" sx={{ mb: 2 }}>
+                            <strong>Protocol Flow:</strong><br />
+                            Initial configuration payloads are sent via HTTP to devices, then subsequent sensor data updates are transmitted via MQTT to the configured broker topics.
+                            Sensor payloads must fit within the MQTT packet size limits defined by your broker (typically 256MB max, but often configured lower).
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>
                             <strong>Configuration:</strong><br />
                             After creation, you'll configure the MQTT broker connection, topics to subscribe to, QoS levels, and authentication credentials.
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                            <strong>Prerequisites:</strong> Ensure you have access to an MQTT broker (Mosquitto, HiveMQ, AWS IoT, etc.) and know the connection details.
+                            <strong>Prerequisites:</strong> Ensure you have access to an MQTT broker (Mosquitto, HiveMQ, AWS IoT, etc.) and know the connection details. Devices must be reachable via HTTP for initial configuration.
                         </Typography>
                     </Box>
                 );

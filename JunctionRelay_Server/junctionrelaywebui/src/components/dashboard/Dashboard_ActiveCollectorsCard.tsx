@@ -29,7 +29,7 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
 import StorageIcon from '@mui/icons-material/Storage';
 import AspectRatioIcon from '@mui/icons-material/AspectRatio';
-import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
+import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import ECGCollectorVisualization from './Dashboard_ECGCollectorVisualization';
 
 interface ActiveCollectorsCardProps {

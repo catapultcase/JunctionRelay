@@ -26,6 +26,7 @@ import {
 import InfoIcon from '@mui/icons-material/Info';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
+import PortIcon from '@mui/icons-material/Cable';
 import EmbeddedVirtualScreenViewer from './EmbeddedVirtualScreenViewer';
 
 interface DeviceInfoPanelProps {
@@ -79,7 +80,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
     };
 
     const handleNumberChange = (field: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-        const value = event.target.value === '' ? 0 : Number(event.target.value);
+        const value = event.target.value === '' ? null : Number(event.target.value);
         handleFieldChange(field, value, false);
     };
 
@@ -358,7 +359,7 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                 flexDirection: isMobile ? 'column' : 'row',
                 mb: 3
             }}>
-                {/* Left Column - Device Info and Gateway Configuration */}
+                {/* Left Column - Device Info, Gateway Configuration, and Network Ports */}
                 <Box sx={{
                     flex: isMobile ? '1' : '1 1 400px',
                     minWidth: isMobile ? 'auto' : '400px',
@@ -570,6 +571,189 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                             }}>
                                 Gateway devices can relay data from other devices on the network. Enable this setting if this device should act as a central hub for collecting and forwarding sensor data from multiple sources.
                             </Typography>
+                        </Box>
+                    </Paper>
+
+                    {/* Network Ports Configuration Card */}
+                    <Paper elevation={2} sx={{
+                        p: isMobile ? 2 : 3,
+                        borderRadius: 2,
+                        overflow: 'hidden'
+                    }}>
+                        <Typography variant="subtitle1" gutterBottom sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            mb: isMobile ? 1.5 : 2,
+                            fontSize: isMobile ? '1rem' : '1.1rem'
+                        }}>
+                            <PortIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                            Network Ports
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <Box>
+                                <Typography variant="body2" sx={{
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                    fontWeight: 'medium',
+                                    mb: 0.5
+                                }}>
+                                    HTTP Port
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="number"
+                                    placeholder="80"
+                                    value={deviceData.httpPort ?? ''}
+                                    onChange={handleNumberChange('httpPort')}
+                                    disabled={!isCustom}
+                                    slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            padding: isMobile ? '6px 8px' : '8px 12px'
+                                        }
+                                    }}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{
+                                    display: 'block',
+                                    mt: 0.5,
+                                    fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                }}>
+                                    Default: 80
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography variant="body2" sx={{
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                    fontWeight: 'medium',
+                                    mb: 0.5
+                                }}>
+                                    WebSocket Port
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="number"
+                                    placeholder="81"
+                                    value={deviceData.webSocketPort ?? ''}
+                                    onChange={handleNumberChange('webSocketPort')}
+                                    disabled={!isCustom}
+                                    slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            padding: isMobile ? '6px 8px' : '8px 12px'
+                                        }
+                                    }}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{
+                                    display: 'block',
+                                    mt: 0.5,
+                                    fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                }}>
+                                    Default: 81
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography variant="body2" sx={{
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                    fontWeight: 'medium',
+                                    mb: 0.5
+                                }}>
+                                    MQTT Port
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="number"
+                                    placeholder="1883"
+                                    value={deviceData.mqttPort ?? ''}
+                                    onChange={handleNumberChange('mqttPort')}
+                                    disabled={!isCustom}
+                                    slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            padding: isMobile ? '6px 8px' : '8px 12px'
+                                        }
+                                    }}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{
+                                    display: 'block',
+                                    mt: 0.5,
+                                    fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                }}>
+                                    Default: 1883
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography variant="body2" sx={{
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                    fontWeight: 'medium',
+                                    mb: 0.5
+                                }}>
+                                    SSH Port
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="number"
+                                    placeholder="22"
+                                    value={deviceData.sshPort ?? ''}
+                                    onChange={handleNumberChange('sshPort')}
+                                    disabled={!isCustom}
+                                    slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            padding: isMobile ? '6px 8px' : '8px 12px'
+                                        }
+                                    }}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{
+                                    display: 'block',
+                                    mt: 0.5,
+                                    fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                }}>
+                                    Default: 22
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography variant="body2" sx={{
+                                    fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                    fontWeight: 'medium',
+                                    mb: 0.5
+                                }}>
+                                    Hostname
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    type="text"
+                                    placeholder="device.local"
+                                    value={deviceData.hostname ?? ''}
+                                    onChange={handleTextChange('hostname')}
+                                    disabled={!isCustom}
+                                    sx={{
+                                        '& .MuiInputBase-input': {
+                                            fontSize: isMobile ? '0.8rem' : '0.875rem',
+                                            padding: isMobile ? '6px 8px' : '8px 12px'
+                                        }
+                                    }}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{
+                                    display: 'block',
+                                    mt: 0.5,
+                                    fontSize: isMobile ? '0.7rem' : '0.75rem'
+                                }}>
+                                    Optional mDNS hostname
+                                </Typography>
+                            </Box>
                         </Box>
                     </Paper>
                 </Box>

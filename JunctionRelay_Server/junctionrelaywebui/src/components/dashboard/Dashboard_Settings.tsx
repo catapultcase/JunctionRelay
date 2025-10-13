@@ -29,7 +29,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SpeedIcon from '@mui/icons-material/Speed';
 import TuneIcon from '@mui/icons-material/Tune';
 import AnimationIcon from '@mui/icons-material/Animation';
-import { useDashboardWebSocket, POLL_RATE_PRESETS, POLL_RATE_LABELS } from '../hooks/useDashboardWebSocket';
+import { useDashboardWebSocket, POLL_RATE_PRESETS, POLL_RATE_LABELS } from '../../hooks/useDashboardWebSocket';
 
 interface DashboardSettingsProps {
     enabled: boolean; // True if either collectors or streams card is expanded

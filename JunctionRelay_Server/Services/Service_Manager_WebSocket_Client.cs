@@ -47,7 +47,7 @@ namespace JunctionRelayServer.Services
         public Service_Manager_WebSocket_Client(IServiceScopeFactory scopeFactory)
         {
             _scopeFactory = scopeFactory;
-            Console.WriteLine("[WebSocket Service] Service initialized for WebSocketsServer library (port 81)");
+            Console.WriteLine("[WebSocket Service] Service initialized for WebSocketsServer library");
         }
 
         // Enhanced device connection tracking
@@ -270,7 +270,10 @@ namespace JunctionRelayServer.Services
         {
             var deviceMac = device.UniqueIdentifier!;
 
-            // Parse WebSocket URL from HeartbeatTarget or default to port 81
+            // Use WebSocketPort if available, otherwise default to 81
+            int wsPort = device.WebSocketPort ?? 81;
+
+            // Parse WebSocket URL from HeartbeatTarget or use the port
             string wsUrl;
             if (!string.IsNullOrWhiteSpace(device.HeartbeatTarget))
             {
@@ -284,22 +287,22 @@ namespace JunctionRelayServer.Services
                 {
                     wsUrl = $"ws://{device.IPAddress}:{device.HeartbeatTarget}/";
                 }
-                // If it's a path, assume it's for the old AsyncWebSocket format
+                // If it's a path, use the WebSocketPort (or default 81) with the path
                 else if (device.HeartbeatTarget.StartsWith("/"))
                 {
-                    wsUrl = $"ws://{device.IPAddress}{device.HeartbeatTarget}";
+                    wsUrl = $"ws://{device.IPAddress}:{wsPort}{device.HeartbeatTarget}";
                 }
                 else
                 {
-                    // Treat as port:path format like "81" or "81/"
+                    // Treat as port:path format like "8081" or "8081/"
                     wsUrl = $"ws://{device.IPAddress}:{device.HeartbeatTarget}";
                     if (!wsUrl.EndsWith("/")) wsUrl += "/";
                 }
             }
             else
             {
-                // Default to port 81 for WebSocketsServer
-                wsUrl = $"ws://{device.IPAddress}:81/";
+                // Use WebSocketPort from device (or default 81)
+                wsUrl = $"ws://{device.IPAddress}:{wsPort}/";
             }
 
             Console.WriteLine($"[WebSocket Client] 🔄 Connecting to {device.Name} ({deviceMac}) at {wsUrl}");

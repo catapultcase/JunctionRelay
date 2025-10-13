@@ -959,22 +959,29 @@ const ConfigureLayout: React.FC = () => {
             // Process the config payload
             if (data.configPayload) {
                 try {
-                    const configValues = Object.values(data.configPayload);
-                    if (configValues && configValues.length > 0) {
-                        const rawConfig = configValues[0] as string;
-                        const prefixConfig = rawConfig.slice(0, 8);
-                        const jsonPartConfig = rawConfig.slice(8);
-                        let prettyConfig = jsonPartConfig;
-                        try {
-                            prettyConfig = JSON.stringify(JSON.parse(jsonPartConfig), null, 2);
-                        } catch (err: any) {
-                            console.error("Failed to parse JSON config:", err);
-                        }
+                    const configResults = data.configPayload.results || data.configPayload.Results;
 
-                        // Update config payload state
-                        setPayloadJson(`${prefixConfig}\n${prettyConfig}`);
+                    if (configResults) {
+                        const screenKey = `preview-${id}`;
+                        const payloadResult = configResults[screenKey];
+
+                        if (payloadResult) {
+                            const uncompressedJson = payloadResult.uncompressedJson || payloadResult.UncompressedJson || "";
+                            const uncompressedPrefix = payloadResult.uncompressedPrefix || payloadResult.UncompressedPrefix || "";
+
+                            let prettyConfig = uncompressedJson;
+                            try {
+                                prettyConfig = JSON.stringify(JSON.parse(uncompressedJson), null, 2);
+                            } catch (err: any) {
+                                console.error("Failed to parse JSON config:", err);
+                            }
+
+                            setPayloadJson(uncompressedPrefix ? `${uncompressedPrefix}\n\n${prettyConfig}` : prettyConfig);
+                        } else {
+                            setPayloadJson("No config payload data for preview screen");
+                        }
                     } else {
-                        setPayloadJson("No config payload data available");
+                        setPayloadJson("No results in config payload");
                     }
                 } catch (err: any) {
                     console.error("Error processing config payload:", err);
@@ -984,44 +991,43 @@ const ConfigureLayout: React.FC = () => {
                 setPayloadJson("No config payload returned");
             }
 
-            // Process the sensor payload - with safer checks
+            // Process the sensor payload - NEW FORMAT matching config
             if (data.sensorPayload) {
                 try {
-                    const sensorValues = Object.values(data.sensorPayload);
-                    if (sensorValues && sensorValues.length > 0) {
-                        const rawSensor = sensorValues[0] as string;
-                        // Only try to slice if rawSensor is a string and has content
-                        if (typeof rawSensor === 'string' && rawSensor.length > 8) {
-                            const prefixSensor = rawSensor.slice(0, 8);
-                            const jsonPartSensor = rawSensor.slice(8);
-                            let prettySensor = jsonPartSensor;
+                    const sensorResults = data.sensorPayload.results || data.sensorPayload.Results;
+
+                    if (sensorResults) {
+                        const screenKey = `preview-${id}`;
+                        const payloadResult = sensorResults[screenKey];
+
+                        if (payloadResult) {
+                            const uncompressedJson = payloadResult.uncompressedJson || payloadResult.UncompressedJson || "";
+                            const uncompressedPrefix = payloadResult.uncompressedPrefix || payloadResult.UncompressedPrefix || "";
+
+                            let prettySensor = uncompressedJson;
                             try {
-                                prettySensor = JSON.stringify(JSON.parse(jsonPartSensor), null, 2);
+                                prettySensor = JSON.stringify(JSON.parse(uncompressedJson), null, 2);
                             } catch (err: any) {
                                 console.error("Failed to parse JSON sensor data:", err);
                             }
 
-                            // Update sensor payload state
-                            setSensorPreviewJson(`${prefixSensor}\n${prettySensor}`);
+                            setSensorPreviewJson(uncompressedPrefix ? `${uncompressedPrefix}\n\n${prettySensor}` : prettySensor);
                         } else {
-                            // Handle empty string or short string
-                            setSensorPreviewJson(typeof rawSensor === 'string' ? rawSensor : "Empty sensor payload");
+                            // Handle case where no sensors (sensorCount = 0)
+                            setSensorPreviewJson(safePreviewSensors === 0 ? "" : "No sensor payload data for preview screen");
                         }
                     } else {
-                        // Empty object or array
-                        setSensorPreviewJson("");
+                        setSensorPreviewJson(safePreviewSensors === 0 ? "" : "No results in sensor payload");
                     }
                 } catch (err: any) {
                     console.error("Error processing sensor payload:", err);
-                    setSensorPreviewJson("");
+                    setSensorPreviewJson(safePreviewSensors === 0 ? "" : `Error processing sensor: ${err.message || "Unknown error"}`);
                 }
             } else if (safePreviewSensors === 0) {
-                // Expected behavior when no sensors
                 setSensorPreviewJson("");
             } else {
-                // No sensor payload (unexpected)
                 console.warn("No sensor payload in response");
-                setSensorPreviewJson("");
+                setSensorPreviewJson("No sensor payload returned");
             }
 
             return data;

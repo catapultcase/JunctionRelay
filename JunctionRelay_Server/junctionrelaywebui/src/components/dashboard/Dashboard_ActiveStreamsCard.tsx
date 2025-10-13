@@ -50,7 +50,7 @@ import DeselectIcon from '@mui/icons-material/Deselect';
 import StreamIcon from '@mui/icons-material/Stream';
 import AspectRatioIcon from '@mui/icons-material/AspectRatio';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
-import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
+import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import ECGStreamVisualizationHTTP from './Dashboard_ECGStreamVisualizationHTTP';
 import ECGStreamVisualizationMQTT from './Dashboard_ECGStreamVisualizationMQTT';
 

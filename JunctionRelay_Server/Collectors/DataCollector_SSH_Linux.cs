@@ -387,20 +387,143 @@ namespace JunctionRelayServer.Collectors
         {
             try
             {
-                // Try to get CPU temperature (works on many systems with sensors installed)
-                var (success, _, output, _) = await _sshManager.ExecuteCommandAsync(
+                // Method 1: Try lm-sensors (most common)
+                var (success1, _, output1, _) = await _sshManager.ExecuteCommandAsync(
                     _deviceKey!,
-                    "sensors 2>/dev/null | grep -i 'core 0' | awk '{print $3}' | tr -d '+°C'",
+                    "sensors 2>/dev/null",
                     5000
                 );
 
-                if (success && !string.IsNullOrWhiteSpace(output))
+                if (success1 && !string.IsNullOrWhiteSpace(output1))
                 {
-                    if (double.TryParse(output.Trim(), out var temp))
+                    // Parse CPU package temperature
+                    var packageMatch = Regex.Match(output1, @"Package id \d+:\s*\+?([\d.]+)°C", RegexOptions.IgnoreCase);
+                    if (packageMatch.Success && double.TryParse(packageMatch.Groups[1].Value, out var pkgTemp))
                     {
-                        sensors.Add(CreateSensor(collector, "cpu_temp", "CPU Temperature",
-                            temp.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                        sensors.Add(CreateSensor(collector, "cpu_package_temp", "CPU Package Temperature",
+                            pkgTemp.ToString("F1"), "°C", "Temperature", "Sensor", 1));
                     }
+
+                    // Parse individual core temperatures
+                    var coreMatches = Regex.Matches(output1, @"Core (\d+):\s*\+?([\d.]+)°C", RegexOptions.IgnoreCase);
+                    foreach (Match match in coreMatches)
+                    {
+                        if (int.TryParse(match.Groups[1].Value, out var coreNum) &&
+                            double.TryParse(match.Groups[2].Value, out var coreTemp))
+                        {
+                            sensors.Add(CreateSensor(collector, $"cpu_core{coreNum}_temp",
+                                $"CPU Core {coreNum} Temperature",
+                                coreTemp.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                        }
+                    }
+
+                    // Parse other temperature sensors (motherboard, GPU, etc.)
+                    var tempMatches = Regex.Matches(output1, @"^([^:]+):\s*\+?([\d.]+)°C", RegexOptions.Multiline);
+                    foreach (Match match in tempMatches)
+                    {
+                        var label = match.Groups[1].Value.Trim();
+                        if (double.TryParse(match.Groups[2].Value, out var temp) &&
+                            !label.StartsWith("Core") &&
+                            !label.StartsWith("Package"))
+                        {
+                            var sensorId = $"temp_{Regex.Replace(label.ToLower(), @"[^a-z0-9]+", "_").Trim('_')}";
+                            sensors.Add(CreateSensor(collector, sensorId, $"{label} Temperature",
+                                temp.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                        }
+                    }
+                }
+
+                // Method 2: Try thermal_zone (common on embedded systems and some laptops)
+                var (success2, _, output2, _) = await _sshManager.ExecuteCommandAsync(
+                    _deviceKey!,
+                    "for zone in /sys/class/thermal/thermal_zone*/temp; do [ -f \"$zone\" ] && echo \"$zone:$(cat $zone)\"; done",
+                    5000
+                );
+
+                if (success2 && !string.IsNullOrWhiteSpace(output2))
+                {
+                    var lines = output2.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Split(':');
+                        if (parts.Length == 2)
+                        {
+                            var zoneMatch = Regex.Match(parts[0], @"thermal_zone(\d+)");
+                            if (zoneMatch.Success && int.TryParse(parts[1], out var milliTemp))
+                            {
+                                var tempC = milliTemp / 1000.0;
+                                var zoneNum = zoneMatch.Groups[1].Value;
+
+                                // Only add if reasonable temperature (0-150°C)
+                                if (tempC > 0 && tempC < 150)
+                                {
+                                    sensors.Add(CreateSensor(collector, $"thermal_zone{zoneNum}_temp",
+                                        $"Thermal Zone {zoneNum}",
+                                        tempC.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Method 3: Try hwmon interface (alternative sensor reading)
+                var (success3, _, output3, _) = await _sshManager.ExecuteCommandAsync(
+                    _deviceKey!,
+                    "for hwmon in /sys/class/hwmon/hwmon*/temp*_input; do [ -f \"$hwmon\" ] && echo \"$hwmon:$(cat $hwmon)\"; done | head -10",
+                    5000
+                );
+
+                if (success3 && !string.IsNullOrWhiteSpace(output3))
+                {
+                    var lines = output3.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Split(':');
+                        if (parts.Length == 2)
+                        {
+                            var hwmonMatch = Regex.Match(parts[0], @"hwmon(\d+)/temp(\d+)_input");
+                            if (hwmonMatch.Success && int.TryParse(parts[1], out var milliTemp))
+                            {
+                                var tempC = milliTemp / 1000.0;
+                                var hwmonNum = hwmonMatch.Groups[1].Value;
+                                var tempNum = hwmonMatch.Groups[2].Value;
+
+                                // Only add if reasonable temperature
+                                if (tempC > 0 && tempC < 150)
+                                {
+                                    sensors.Add(CreateSensor(collector, $"hwmon{hwmonNum}_temp{tempNum}",
+                                        $"HWMon {hwmonNum} Temp {tempNum}",
+                                        tempC.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Method 4: Raspberry Pi specific temperature
+                var (success4, _, output4, _) = await _sshManager.ExecuteCommandAsync(
+                    _deviceKey!,
+                    "[ -f /sys/class/thermal/thermal_zone0/temp ] && cat /sys/class/thermal/thermal_zone0/temp",
+                    5000
+                );
+
+                if (success4 && !string.IsNullOrWhiteSpace(output4))
+                {
+                    if (int.TryParse(output4.Trim(), out var milliTemp))
+                    {
+                        var tempC = milliTemp / 1000.0;
+                        if (tempC > 0 && tempC < 150)
+                        {
+                            sensors.Add(CreateSensor(collector, "soc_temp", "SoC Temperature",
+                                tempC.ToString("F1"), "°C", "Temperature", "Sensor", 1));
+                        }
+                    }
+                }
+
+                // If no temperatures found, log it
+                if (!sensors.Any(s => s.Category == "Temperature"))
+                {
+                    Console.WriteLine($"[SSH Linux Collector] No temperature sensors found for {_deviceKey}");
                 }
             }
             catch (Exception ex)

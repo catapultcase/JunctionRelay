@@ -39,13 +39,235 @@ namespace JunctionRelayServer.Controllers
                 Service_Database_Manager_Collectors collectorDb,
                 Service_Database_Manager_Sensors sensorDb,
                 Func<Model_Collector, IDataCollector> dataCollectorFactory,
-                Service_Manager_Polling pollingManager) // <- NEW
+                Service_Manager_Polling pollingManager)
         {
             _collectorDb = collectorDb;
             _sensorDb = sensorDb;
             _dataCollectorFactory = dataCollectorFactory;
-            _pollingManager = pollingManager; // <- NEW
+            _pollingManager = pollingManager;
         }
+
+
+        // ⚙COLLECTOR STATS CONFIGURATION
+        private static class CollectorStatsConfig
+        {
+            // Sensor health thresholds
+            public const int SENSOR_ERROR_LOST_THRESHOLD = 5;      // ❌ Error if X+ sensors lost
+            public const int SENSOR_WARNING_LOST_THRESHOLD = 1;    // ⚠️ Warning if any sensors lost
+        }
+
+        // GET: /api/collectors/stats
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetCollectorStats()
+        {
+            try
+            {
+                var allCollectors = await _collectorDb.GetAllCollectorsAsync();
+
+                // Exclude EventEngine from stats - it's a special collector
+                var collectors = allCollectors.Where(c => c.CollectorType != "EventEngine").ToList();
+
+                var activePollers = _pollingManager.GetActivePollers().ToList();
+
+                // Count collectors by various states
+                var totalCollectors = collectors.Count;
+                var activeCollectors = activePollers.Count;
+
+                // Locked collectors (require password and are not unlocked)
+                var lockedCollectors = collectors.Count(c =>
+                    c.ExternalAccessToken && !_collectorDb.IsCollectorUnlocked(c.Id));
+
+                // Failed fetch collectors (last fetch failed)
+                var failedFetchCollectors = collectors.Count(c =>
+                    c.LastFetchSuccessful == false);
+
+                // Never fetched collectors
+                var neverFetchedCollectors = collectors.Count(c =>
+                    c.LastFetchTime == null);
+
+                // Collectors with errors (fetch failed)
+                var collectorsWithErrors = failedFetchCollectors;
+
+                // Collectors with warnings (locked or never fetched)
+                var collectorsWithWarnings = collectors.Count(c =>
+                    (c.ExternalAccessToken && !_collectorDb.IsCollectorUnlocked(c.Id)) ||
+                    c.LastFetchTime == null);
+
+                // Healthy collectors (fetched successfully and not locked)
+                var healthyCollectors = collectors.Count(c =>
+                    c.LastFetchSuccessful == true &&
+                    c.LastFetchTime != null &&
+                    (!c.ExternalAccessToken || _collectorDb.IsCollectorUnlocked(c.Id)));
+
+                // === SENSOR STATS AGGREGATION ===
+                var totalSensors = collectors.Sum(c => c.LastFetchTotalSensors ?? 0);
+                var totalLostSensors = collectors.Sum(c => c.LastFetchLostSensors ?? 0);
+                var totalNewSensors = collectors.Sum(c => c.LastFetchNewSensors ?? 0);
+
+                // Active sensors = total sensors from successful collectors
+                var activeSensors = collectors
+                    .Where(c => c.LastFetchSuccessful == true)
+                    .Sum(c => c.LastFetchTotalSensors ?? 0);
+
+                // Determine overall health status for COLLECTORS
+                string healthStatus;
+                string healthSeverity;
+
+                if (collectorsWithErrors > 0)
+                {
+                    healthStatus = $"{collectorsWithErrors} {(collectorsWithErrors == 1 ? "Error" : "Errors")}";
+                    healthSeverity = "error";
+                }
+                else if (collectorsWithWarnings > 0)
+                {
+                    healthStatus = $"{collectorsWithWarnings} {(collectorsWithWarnings == 1 ? "Warning" : "Warnings")}";
+                    healthSeverity = "warning";
+                }
+                else
+                {
+                    healthStatus = "All Healthy";
+                    healthSeverity = "success";
+                }
+
+                // Determine overall health status for SENSORS
+                string sensorHealthStatus;
+                string sensorHealthSeverity;
+
+                if (totalLostSensors >= CollectorStatsConfig.SENSOR_ERROR_LOST_THRESHOLD)
+                {
+                    sensorHealthStatus = $"{totalLostSensors} Lost";
+                    sensorHealthSeverity = "error";
+                }
+                else if (totalLostSensors >= CollectorStatsConfig.SENSOR_WARNING_LOST_THRESHOLD)
+                {
+                    sensorHealthStatus = $"{totalLostSensors} Lost";
+                    sensorHealthSeverity = "warning";
+                }
+                else
+                {
+                    sensorHealthStatus = "All Healthy";
+                    sensorHealthSeverity = "success";
+                }
+
+                // Build detailed issues list
+                var details = new List<object>();
+                var sensorDetails = new List<object>();
+                int issueId = 1;
+                int sensorIssueId = 1;
+
+                // Add failed fetch issues
+                foreach (var collector in collectors.Where(c => c.LastFetchSuccessful == false && !string.IsNullOrEmpty(c.LastFetchErrorMessage)))
+                {
+                    details.Add(new
+                    {
+                        id = issueId++,
+                        type = "error",
+                        title = $"{collector.Name} fetch failed",
+                        description = collector.LastFetchErrorMessage ?? "Fetch operation failed",
+                        timestamp = collector.LastFetchTime ?? DateTime.UtcNow,
+                        area = "collectors",
+                        collectorId = collector.Id
+                    });
+                }
+
+                // Add locked collector warnings
+                foreach (var collector in collectors.Where(c => c.ExternalAccessToken && !_collectorDb.IsCollectorUnlocked(c.Id)))
+                {
+                    details.Add(new
+                    {
+                        id = issueId++,
+                        type = "warning",
+                        title = $"{collector.Name} is locked",
+                        description = "Collector requires password to unlock",
+                        timestamp = DateTime.UtcNow,
+                        area = "collectors",
+                        collectorId = collector.Id
+                    });
+                }
+
+                // Add never fetched warnings
+                foreach (var collector in collectors.Where(c => c.LastFetchTime == null))
+                {
+                    details.Add(new
+                    {
+                        id = issueId++,
+                        type = "warning",
+                        title = $"{collector.Name} not fetched",
+                        description = "Collector has never fetched data",
+                        timestamp = DateTime.UtcNow,
+                        area = "collectors",
+                        collectorId = collector.Id
+                    });
+                }
+
+                // Add sensor lost warnings/errors
+                foreach (var collector in collectors.Where(c => (c.LastFetchLostSensors ?? 0) > 0))
+                {
+                    var lostCount = collector.LastFetchLostSensors ?? 0;  // Changed from c. to collector.
+                    var isError = lostCount >= CollectorStatsConfig.SENSOR_ERROR_LOST_THRESHOLD;
+
+                    sensorDetails.Add(new
+                    {
+                        id = sensorIssueId++,
+                        type = isError ? "error" : "warning",
+                        title = $"{collector.Name} lost {lostCount} sensor{(lostCount == 1 ? "" : "s")}",
+                        description = $"{lostCount} sensor{(lostCount == 1 ? "" : "s")} no longer detected",
+                        timestamp = collector.LastFetchTime ?? DateTime.UtcNow,
+                        area = "sensors",
+                        collectorId = collector.Id,
+                        lostCount = lostCount
+                    });
+                }
+
+                return Ok(new
+                {
+                    collectors = new
+                    {
+                        active = activeCollectors,
+                        total = totalCollectors,
+                        health = new
+                        {
+                            status = healthStatus,
+                            severity = healthSeverity
+                        },
+                        hasIssues = collectorsWithErrors > 0 || collectorsWithWarnings > 0,
+                        details = details.OrderByDescending(d => ((dynamic)d).timestamp),
+                        breakdown = new
+                        {
+                            locked = lockedCollectors,
+                            failedFetch = failedFetchCollectors,
+                            neverFetched = neverFetchedCollectors,
+                            healthy = healthyCollectors,
+                            errors = collectorsWithErrors,
+                            warnings = collectorsWithWarnings
+                        }
+                    },
+                    sensors = new
+                    {
+                        active = activeSensors,
+                        total = totalSensors,
+                        health = new
+                        {
+                            status = sensorHealthStatus,
+                            severity = sensorHealthSeverity
+                        },
+                        hasIssues = totalLostSensors > 0,
+                        details = sensorDetails.OrderByDescending(d => ((dynamic)d).timestamp),
+                        breakdown = new
+                        {
+                            lost = totalLostSensors,
+                            new_ = totalNewSensors,
+                            healthy = totalSensors - totalLostSensors
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"Error fetching collector stats: {ex.Message}" });
+            }
+        }
+
 
         // GET: /api/collectors/pollers
         [HttpGet("pollers")]

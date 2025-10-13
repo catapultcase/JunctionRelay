@@ -232,7 +232,11 @@ namespace JunctionRelayServer.Services
                 }
 
                 bool useKeepAlive = screen.UseKeepAlive ?? false;
-                var httpSender = new Service_Send_Data_HTTP(httpEndpoint, useKeepAlive);
+                var httpSender = new Service_Send_Data_HTTP(
+                    isGatewayMode ? gatewayDestination! : device.IPAddress!,
+                    device.HttpPort,
+                    isGatewayMode ? "/api/data" : "/api/data",
+                    useKeepAlive);
 
                 string protocolString = isGatewayMode
                     ? "HTTP (Gateway to ESP-NOW)"

@@ -166,22 +166,35 @@ namespace JunctionRelayServer.Services
 
     public class Service_Send_Data_MQTT : IDisposable
     {
+        private readonly string _brokerAddress;
+        private readonly int _brokerPort;
+        private readonly string? _username;
+        private readonly string? _password;
         private readonly Service_MQTT _mqttService;
         private bool _disposed = false;
 
-        public Service_Send_Data_MQTT(Service_MQTT mqttService)
+        public Service_Send_Data_MQTT(
+            string brokerAddress,
+            int? mqttPort = null,
+            string? username = null,
+            string? password = null,
+            Service_MQTT? existingMqttService = null)
         {
-            _mqttService = mqttService ?? throw new ArgumentNullException(nameof(mqttService));
+            _brokerAddress = brokerAddress ?? throw new ArgumentNullException(nameof(brokerAddress));
+            _brokerPort = mqttPort ?? 1883; // Default MQTT port
+            _username = username;
+            _password = password;
+
+            // Use existing MQTT service if provided, otherwise create new one
+            _mqttService = existingMqttService ?? new Service_MQTT();
         }
 
-        // Legacy method for backward compatibility
         public async Task<(bool Success, string ResponseMessage)> PublishTopicAsync(string topic, string payload, int qos = 0)
         {
             var result = await PublishTopicWithHealthAsync(topic, payload, qos);
             return (result.Success, result.ResponseMessage);
         }
 
-        // Enhanced method with detailed health information
         public async Task<MqttSendResult> PublishTopicWithHealthAsync(string topic, string payload, int qos = 0)
         {
             if (_disposed)
@@ -195,7 +208,7 @@ namespace JunctionRelayServer.Services
                 // Check and restore connection if needed
                 if (!_mqttService.IsConnected)
                 {
-                    Console.WriteLine("[SERVICE_SEND_DATA_MQTT] MQTT client is not connected. Attempting to connect.");
+                    Console.WriteLine($"[SERVICE_SEND_DATA_MQTT] MQTT client is not connected to {_brokerAddress}:{_brokerPort}. Attempting to connect.");
                     await _mqttService.ConnectAsync();
                     connectionRecreated = true;
                 }
@@ -207,7 +220,7 @@ namespace JunctionRelayServer.Services
                     {
                         Success = false,
                         ErrorType = "connection_failed",
-                        ErrorMessage = "MQTT client failed to connect.",
+                        ErrorMessage = $"MQTT client failed to connect to {_brokerAddress}:{_brokerPort}",
                         LatencyMs = stopwatch.ElapsedMilliseconds,
                         QoS = qos,
                         Topic = topic,
@@ -226,7 +239,7 @@ namespace JunctionRelayServer.Services
                     QoS = qos,
                     Topic = topic,
                     ConnectionRecreated = connectionRecreated,
-                    ResponseMessage = $"Published to {topic} with QoS {qos}"
+                    ResponseMessage = $"Published to {topic} on {_brokerAddress}:{_brokerPort} with QoS {qos}"
                 };
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
@@ -261,7 +274,7 @@ namespace JunctionRelayServer.Services
                     _ => "mqtt_error"
                 };
 
-                Console.WriteLine($"[SERVICE_SEND_DATA_MQTT] MQTT error publishing to {topic} (QoS {qos}): {ex.Message}");
+                Console.WriteLine($"[SERVICE_SEND_DATA_MQTT] MQTT error publishing to {topic} on {_brokerAddress}:{_brokerPort} (QoS {qos}): {ex.Message}");
 
                 return new MqttSendResult
                 {

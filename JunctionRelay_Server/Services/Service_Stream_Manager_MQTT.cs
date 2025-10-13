@@ -286,7 +286,12 @@ namespace JunctionRelayServer.Services
                 throw new InvalidOperationException("MQTT does not support frame engine modes (Blit/Composite)");
             }
 
-            var mqttSender = new Service_Send_Data_MQTT(mqtt);
+            var mqttSender = new Service_Send_Data_MQTT(
+                service.MQTTBrokerAddress!,
+                int.TryParse(service.MQTTBrokerPort, out int port) ? port : null,
+                service.MQTTUsername,
+                service.AccessToken,
+                mqtt);
 
             var info = new Service_StreamInfo_MQTT(junction.CompressPayload)
             {
@@ -345,7 +350,7 @@ namespace JunctionRelayServer.Services
             }
 
             // Send config payloads via HTTP
-            var httpSender = new Service_Send_Data_HTTP($"http://{device.IPAddress}/api/data");
+            var httpSender = new Service_Send_Data_HTTP(device.IPAddress!, device.HttpPort, "/api/data", useKeepAlive: false);
             var (sentStd, _) = await httpSender.SendPayloadAsync(standardConfigPayload.BinaryPayload);
             var (sentMqtt, _) = await httpSender.SendPayloadAsync(mqttConfigPayload.BinaryPayload);
 

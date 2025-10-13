@@ -1,34 +1,31 @@
-﻿import React, { useState, useCallback } from 'react';
-import { LiveStateMachineTesting } from './FrameEngine_RiveComponents';
+﻿/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
 
-// Types for Rive discovery
-interface DiscoveredInput {
-    name: string;
-    type: 'number' | 'boolean' | 'trigger' | 'unknown';
-    currentValue?: any;
-    ref?: any;
-}
-
-interface DiscoveredStateMachine {
-    name: string;
-    inputNames: string[];
-    inputs: DiscoveredInput[];
-}
-
-interface DiscoveredDataBinding {
-    name: string;
-    type: 'number' | 'string' | 'boolean' | 'color' | 'trigger' | 'enum' | 'list' | 'image' | 'unknown'; // Added 'list' and 'image'
-    propertyName?: string;
-    currentValue?: any;
-    ref?: any;
-}
-
-interface RiveFileInfo {
-    filename: string;
-    displayName: string;
-    uploadDate: string;
-    fileSize: number;
-}
+import React, { useState, useCallback } from 'react';
+import { LiveStateMachineTesting } from './FrameEngine_RiveLive';
+import {
+    type DiscoveredInput,
+    type DiscoveredStateMachine,
+    type DiscoveredDataBinding,
+    type RiveFileInfo
+} from './FrameEngine_RiveCore';
+import { useTheme } from '@mui/material/styles';
 
 interface FrameLayoutConfig {
     displayName: string;
@@ -70,6 +67,8 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
     discoveredMachines = [],
     discoveredBindings = [],
 }) => {
+    const theme = useTheme();
+
     // Rive-related state
     const [availableRiveFiles, setAvailableRiveFiles] = useState<RiveFileInfo[]>([]);
     const [riveUploadLoading, setRiveUploadLoading] = useState(false);
@@ -152,12 +151,6 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         onLayoutUpdate({ riveBindings: { ...currentBindings, [bindingName]: value } });
     };
 
-    // Get layout type options
-    const layoutTypeOptions = [
-        { value: 'PRE_RENDERED_IMAGE', label: 'Pre-Rendered Image' },
-        { value: 'COMPOSITE_MODE', label: 'Composite Mode' }
-    ];
-
     // Handle orientation swap
     const swapOrientation = useCallback(() => {
         onLayoutUpdate({
@@ -167,7 +160,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         });
     }, [layout.width, layout.height, layout.orientation, onLayoutUpdate]);
 
-    // Common styles
+    // Common styles using theme
     const sectionHeaderStyle = {
         width: '100%',
         display: 'flex',
@@ -175,13 +168,13 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         justifyContent: 'space-between',
         padding: '8px',
         textAlign: 'left' as const,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[100],
         border: 'none',
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: `1px solid ${theme.palette.divider}`,
         cursor: 'pointer',
         fontSize: '12px',
         fontWeight: 500,
-        color: '#333',
+        color: theme.palette.text.primary,
         textTransform: 'uppercase' as const,
         letterSpacing: '0.5px'
     };
@@ -190,21 +183,37 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         width: '100%',
         padding: '4px 8px',
         fontSize: '12px',
-        border: '1px solid #ccc',
+        border: `1px solid ${theme.palette.divider}`,
         borderRadius: '4px',
-        outline: 'none'
+        outline: 'none',
+        backgroundColor: theme.palette.background.paper,
+        color: theme.palette.text.primary,
     };
 
     const buttonStyle = {
         width: '100%',
         padding: '6px 12px',
         fontSize: '12px',
-        backgroundColor: '#e3f2fd',
-        color: '#1976d2',
-        border: '1px solid #1976d2',
+        backgroundColor: theme.palette.primary.light,
+        color: theme.palette.primary.main,
+        border: `1px solid ${theme.palette.primary.main}`,
         borderRadius: '4px',
         cursor: 'pointer',
         transition: 'background-color 0.2s'
+    };
+
+    const labelStyle = {
+        display: 'block',
+        fontSize: '12px',
+        fontWeight: 500,
+        color: theme.palette.text.primary,
+        marginBottom: '4px'
+    };
+
+    const helperTextStyle = {
+        fontSize: '10px',
+        color: theme.palette.text.secondary,
+        marginTop: '2px'
     };
 
     // Render section header
@@ -212,11 +221,19 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         <button
             onClick={() => onToggleSection(id)}
             style={sectionHeaderStyle}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#eeeeee'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                    ? theme.palette.grey[700]
+                    : theme.palette.grey[200];
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                    ? theme.palette.grey[800]
+                    : theme.palette.grey[100];
+            }}
         >
             <span>{title}</span>
-            <span style={{ color: '#666' }}>
+            <span style={{ color: theme.palette.text.secondary }}>
                 {expandedSections.has(id) ? '−' : '+'}
             </span>
         </button>
@@ -227,9 +244,9 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
             {/* Basic Properties */}
             {renderSectionHeader('basic', 'Basic Properties')}
             {expandedSections.has('basic') && (
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: theme.palette.background.paper }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                        <label style={labelStyle}>
                             Layout Name
                         </label>
                         <input
@@ -241,7 +258,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                        <label style={labelStyle}>
                             Description
                         </label>
                         <textarea
@@ -251,33 +268,16 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                             style={inputStyle}
                         />
                     </div>
-
-                    <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
-                            Layout Type
-                        </label>
-                        <select
-                            value={layout.layoutType}
-                            onChange={(e) => onLayoutUpdate({ layoutType: e.target.value })}
-                            style={inputStyle}
-                        >
-                            {layoutTypeOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
                 </div>
             )}
 
             {/* Dimensions */}
             {renderSectionHeader('dimensions', 'Dimensions')}
             {expandedSections.has('dimensions') && (
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: theme.palette.background.paper }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                            <label style={labelStyle}>
                                 Width
                             </label>
                             <input
@@ -288,7 +288,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                             />
                         </div>
                         <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                            <label style={labelStyle}>
                                 Height
                             </label>
                             <input
@@ -303,8 +303,14 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     <button
                         onClick={swapOrientation}
                         style={buttonStyle}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#bbdefb'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                ? theme.palette.primary.dark
+                                : '#bbdefb';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = theme.palette.primary.light;
+                        }}
                     >
                         🔄 Swap Orientation ({layout.orientation})
                     </button>
@@ -314,9 +320,9 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
             {/* Background */}
             {renderSectionHeader('background', 'Background')}
             {expandedSections.has('background') && (
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: theme.palette.background.paper }}>
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                        <label style={labelStyle}>
                             Background Type
                         </label>
                         <select
@@ -331,32 +337,32 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                         </select>
                     </div>
 
-                    {layout.backgroundType === 'color' && (
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
-                                Background Color
-                            </label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                    type="color"
-                                    value={layout.backgroundColor || '#FFFFFF'}
-                                    onChange={(e) => onLayoutUpdate({ backgroundColor: e.target.value })}
-                                    style={{ width: '48px', height: '32px', border: '1px solid #ccc', borderRadius: '4px' }}
-                                />
-                                <input
-                                    type="text"
-                                    value={layout.backgroundColor || '#FFFFFF'}
-                                    onChange={(e) => onLayoutUpdate({ backgroundColor: e.target.value })}
-                                    style={{ ...inputStyle, flex: 1 }}
-                                    placeholder="#FFFFFF"
-                                />
-                            </div>
+                    {/* ALWAYS show background color - works as fallback/underlay for all background types */}
+                    <div>
+                        <label style={labelStyle}>
+                            Background Color {layout.backgroundType === 'rive' && '(Behind Rive)'}
+                            {layout.backgroundType === 'image' && '(Behind Image)'}
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="color"
+                                value={layout.backgroundColor || '#FFFFFF'}
+                                onChange={(e) => onLayoutUpdate({ backgroundColor: e.target.value })}
+                                style={{ width: '48px', height: '32px', border: `1px solid ${theme.palette.divider}`, borderRadius: '4px' }}
+                            />
+                            <input
+                                type="text"
+                                value={layout.backgroundColor || '#FFFFFF'}
+                                onChange={(e) => onLayoutUpdate({ backgroundColor: e.target.value })}
+                                style={{ ...inputStyle, flex: 1 }}
+                                placeholder="#FFFFFF"
+                            />
                         </div>
-                    )}
+                    </div>
 
                     {layout.backgroundType === 'image' && (
                         <div>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                            <label style={labelStyle}>
                                 Image URL
                             </label>
                             <input
@@ -372,7 +378,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     {layout.backgroundType === 'rive' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             <div>
-                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                                <label style={labelStyle}>
                                     Upload New Rive File
                                 </label>
                                 <input
@@ -387,12 +393,12 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                     }}
                                 />
                                 {riveUploadLoading && (
-                                    <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                                    <div style={{ ...helperTextStyle, color: theme.palette.text.secondary }}>
                                         Uploading Rive file...
                                     </div>
                                 )}
                                 {riveLoadingError && (
-                                    <div style={{ fontSize: '11px', color: '#d32f2f', marginTop: '4px' }}>
+                                    <div style={{ ...helperTextStyle, color: theme.palette.error.main }}>
                                         {riveLoadingError}
                                     </div>
                                 )}
@@ -400,7 +406,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
 
                             {availableRiveFiles.length > 0 && (
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                                    <label style={labelStyle}>
                                         Or Select Existing File
                                     </label>
                                     <select
@@ -427,10 +433,10 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                             {layout.riveFile && (
                                 <div style={{
                                     padding: '8px',
-                                    backgroundColor: '#f8f9fa',
+                                    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[100],
                                     borderRadius: '4px',
                                     fontSize: '11px',
-                                    color: '#666'
+                                    color: theme.palette.text.secondary
                                 }}>
                                     <div><strong>File:</strong> {layout.riveFile}</div>
                                     <div><strong>State Machines:</strong> {discoveredMachines.length}</div>

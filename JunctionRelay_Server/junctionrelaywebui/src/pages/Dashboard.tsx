@@ -26,43 +26,28 @@ import {
     Alert,
     AlertColor,
     Button,
-    Paper,
-    Chip,
-    Divider,
     IconButton,
     Card,
     CardHeader,
     CardContent,
     Collapse,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import AddIcon from '@mui/icons-material/Add';
 import { useTheme, useMediaQuery } from "@mui/material";
 
-// Import icons for stats
+// Import icons
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import StorageIcon from '@mui/icons-material/Storage';
-import StreamIcon from '@mui/icons-material/Stream';
-import SensorsIcon from '@mui/icons-material/Sensors';
-import InfoIcon from '@mui/icons-material/Info';
-import ErrorIcon from '@mui/icons-material/Error';
-import WarningIcon from '@mui/icons-material/Warning';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
 import AddJunctionModal from "../components/Junction_AddJunctionModal";
-import DashboardSettings from '../components/Dashboard_Settings';
-import ActiveCollectorsCard from '../components/Dashboard_ActiveCollectorsCard';
-import ActiveStreamsCard from '../components/Dashboard_ActiveStreamsCard';
+import DashboardSettings from '../components/dashboard/Dashboard_Settings';
+import ActiveCollectorsCard from '../components/dashboard/Dashboard_ActiveCollectorsCard';
+import ActiveStreamsCard from '../components/dashboard/Dashboard_ActiveStreamsCard';
+import DashboardStats from '../components/dashboard/Dashboard_Stats';
 
 // Main Dashboard Component
 const Dashboard = () => {
@@ -77,14 +62,6 @@ const Dashboard = () => {
 
     // Junction creation state - simplified
     const [addJunctionModalOpen, setAddJunctionModalOpen] = useState<boolean>(false);
-
-    // Removed drawer functionality - no longer needed
-
-    // NEW: System Overview expansion state
-    const [overviewExpanded, setOverviewExpanded] = useState<boolean>(() => {
-        const saved = localStorage.getItem('dashboard_overview_expanded');
-        return saved !== null ? saved === 'true' : false; // Default to collapsed
-    });
 
     const navigate = useNavigate();
     const theme = useTheme();
@@ -130,11 +107,6 @@ const Dashboard = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array - refreshJunctions is stable
-
-    // Persist overview expansion state
-    useEffect(() => {
-        localStorage.setItem('dashboard_overview_expanded', overviewExpanded.toString());
-    }, [overviewExpanded]);
 
     // Show snackbar with configurable severity
     const showSnackbar = useCallback((message: string, severity: AlertColor = "success") => {
@@ -443,347 +415,10 @@ const Dashboard = () => {
         localStorage.setItem('dashboard_junctions_expanded', junctionsExpanded.toString());
     }, [junctionsExpanded]);
 
-    // NEW: Calculate stats from junctions data (placeholder logic)
-    const dashboardStats = useMemo(() => {
-        const activeJunctions = junctions.filter(j => j.status === 'Running').length;
-
-        // Mockup values as requested
-        const activeCollectors = 8;
-        const activeStreams = 15;
-        const activeSensors = 342;
-
-        return {
-            junctions: {
-                active: activeJunctions,
-                health: { status: 'All Healthy', severity: 'success' as const },
-                hasIssues: false,
-                details: []
-            },
-            collectors: {
-                active: activeCollectors,
-                health: { status: '2 Unhealthy', severity: 'warning' as const },
-                hasIssues: true,
-                details: [
-                    {
-                        id: 1,
-                        type: 'error',
-                        title: 'Collector ABC failed test',
-                        description: 'Last test failed at 7/12/2023 8:00 PM',
-                        timestamp: '2023-07-12T20:00:00Z',
-                        area: 'collectors'
-                    },
-                    {
-                        id: 2,
-                        type: 'warning',
-                        title: 'Junction DEF collector issues',
-                        description: '1 collector reporting faults',
-                        timestamp: '2023-07-12T19:45:00Z',
-                        area: 'collectors'
-                    }
-                ]
-            },
-            streams: {
-                active: activeStreams,
-                health: { status: 'Critical Errors', severity: 'error' as const },
-                hasIssues: true,
-                details: [
-                    {
-                        id: 3,
-                        type: 'error',
-                        title: 'Stream GHI connection failed',
-                        description: 'Total connection loss - service unavailable',
-                        timestamp: '2023-07-12T19:30:00Z',
-                        area: 'streams'
-                    },
-                    {
-                        id: 4,
-                        type: 'error',
-                        title: 'Stream XYZ data corruption',
-                        description: 'Corrupted data packets detected',
-                        timestamp: '2023-07-12T19:15:00Z',
-                        area: 'streams'
-                    }
-                ]
-            },
-            sensors: {
-                active: activeSensors,
-                health: { status: 'All Healthy', severity: 'success' as const },
-                hasIssues: false,
-                details: []
-            }
-        };
-    }, [junctions]);
-
-    // NEW: Get all warnings grouped by area
-    const getAllWarnings = () => {
-        const allWarnings: any[] = [];
-
-        Object.entries(dashboardStats).forEach(([area, data]) => {
-            if (data.hasIssues && data.details) {
-                data.details.forEach((detail: any) => {
-                    allWarnings.push({
-                        ...detail,
-                        area: area.charAt(0).toUpperCase() + area.slice(1)
-                    });
-                });
-            }
-        });
-
-        // Sort by timestamp (most recent first)
-        return allWarnings.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    };
-
-    // System Overview Card Component
-    const renderSystemOverviewCard = () => (
-        <Card sx={{ mb: 3 }}>
-            <CardHeader
-                title={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <InfoIcon color="primary" />
-                        <Typography variant="h6">
-                            System Overview
-                        </Typography>
-                    </Box>
-                }
-                sx={{ pb: 1 }}
-            />
-
-            <CardContent sx={{ pt: 0 }}>
-                {/* Stats Grid - Always Visible */}
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: {
-                        xs: 'repeat(2, 1fr)',
-                        sm: 'repeat(4, 1fr)'
-                    },
-                    gap: 2,
-                    mb: 3
-                }}>
-                    {/* Active Junctions */}
-                    <Box sx={{ textAlign: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                            <AccountTreeIcon sx={{ mr: 1, color: 'primary.main' }} />
-                            <Typography variant="h4" color="primary.main">
-                                {dashboardStats.junctions.active}
-                            </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                            {dashboardStats.junctions.active === 1 ? 'Active Junction' : 'Active Junctions'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
-                            <Chip
-                                label={dashboardStats.junctions.health.status}
-                                color={dashboardStats.junctions.health.severity}
-                                size="small"
-                                variant="outlined"
-                            />
-                        </Box>
-                    </Box>
-
-                    {/* Active Collectors */}
-                    <Box sx={{ textAlign: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                            <StorageIcon sx={{ mr: 1, color: 'secondary.main' }} />
-                            <Typography variant="h4" color="secondary.main">
-                                {dashboardStats.collectors.active}
-                            </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                            {dashboardStats.collectors.active === 1 ? 'Active Collector' : 'Active Collectors'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                            <WarningIcon sx={{ color: 'warning.main', fontSize: 20 }} />
-                            <Chip
-                                label={dashboardStats.collectors.health.status}
-                                color={dashboardStats.collectors.health.severity}
-                                size="small"
-                                variant="outlined"
-                            />
-                        </Box>
-                    </Box>
-
-                    {/* Active Streams */}
-                    <Box sx={{ textAlign: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                            <StreamIcon sx={{ mr: 1, color: 'success.main' }} />
-                            <Typography variant="h4" color="success.main">
-                                {dashboardStats.streams.active}
-                            </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                            {dashboardStats.streams.active === 1 ? 'Active Stream' : 'Active Streams'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                            <ErrorIcon sx={{ color: 'error.main', fontSize: 20 }} />
-                            <Chip
-                                label={dashboardStats.streams.health.status}
-                                color={dashboardStats.streams.health.severity}
-                                size="small"
-                                variant="outlined"
-                            />
-                        </Box>
-                    </Box>
-
-                    {/* Active Sensors */}
-                    <Box sx={{ textAlign: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                            <SensorsIcon sx={{ mr: 1, color: 'info.main' }} />
-                            <Typography variant="h4" color="info.main">
-                                {dashboardStats.sensors.active}
-                            </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                            {dashboardStats.sensors.active === 1 ? 'Active Sensor' : 'Active Sensors'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
-                            <Chip
-                                label={dashboardStats.sensors.health.status}
-                                color={dashboardStats.sensors.health.severity}
-                                size="small"
-                                variant="outlined"
-                            />
-                        </Box>
-                    </Box>
-                </Box>
-
-                {/* Collapsible Current Warnings Section */}
-                <Divider sx={{ mb: 2 }} />
-
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    p: 1,
-                    borderRadius: 1,
-                    '&:hover': { backgroundColor: 'action.hover' }
-                }}
-                    onClick={() => setOverviewExpanded(!overviewExpanded)}
-                >
-                    {(() => {
-                        const allWarnings = getAllWarnings();
-                        const errorCount = allWarnings.filter(w => w.type === 'error').length;
-                        const warningCount = allWarnings.filter(w => w.type === 'warning').length;
-
-                        if (allWarnings.length === 0) {
-                            return (
-                                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <CheckCircleIcon color="success" />
-                                    No Warnings
-                                </Typography>
-                            );
-                        }
-
-                        return (
-                            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <WarningIcon color="warning" />
-                                Current Warnings
-                                <Box component="span" sx={{ ml: 1, display: 'flex', gap: 1 }}>
-                                    {errorCount > 0 && (
-                                        <Chip
-                                            label={`${errorCount} Error${errorCount !== 1 ? 's' : ''}`}
-                                            color="error"
-                                            size="small"
-                                            variant="outlined"
-                                        />
-                                    )}
-                                    {warningCount > 0 && (
-                                        <Chip
-                                            label={`${warningCount} Warning${warningCount !== 1 ? 's' : ''}`}
-                                            color="warning"
-                                            size="small"
-                                            variant="outlined"
-                                        />
-                                    )}
-                                </Box>
-                            </Typography>
-                        );
-                    })()}
-                    <IconButton size="small">
-                        {overviewExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                    </IconButton>
-                </Box>
-
-                <Collapse in={overviewExpanded}>
-                    <Box sx={{ mt: 2 }}>
-                        {getAllWarnings().length > 0 ? (
-                            <TableContainer component={Paper} variant="outlined">
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Area</TableCell>
-                                            <TableCell>Severity</TableCell>
-                                            <TableCell>Issue</TableCell>
-                                            <TableCell>Description</TableCell>
-                                            <TableCell>Time</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {getAllWarnings().map((warning) => (
-                                            <TableRow key={warning.id}>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={warning.area}
-                                                        size="small"
-                                                        variant="outlined"
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        {warning.type === 'error' ? (
-                                                            <ErrorIcon color="error" fontSize="small" />
-                                                        ) : (
-                                                            <WarningIcon color="warning" fontSize="small" />
-                                                        )}
-                                                        <Typography variant="caption" color={warning.type === 'error' ? 'error' : 'warning'}>
-                                                            {warning.type.toUpperCase()}
-                                                        </Typography>
-                                                    </Box>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="body2" fontWeight="medium">
-                                                        {warning.title}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {warning.description}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {new Date(warning.timestamp).toLocaleString()}
-                                                    </Typography>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        ) : (
-                            <Box sx={{ textAlign: 'center', py: 4, backgroundColor: 'grey.50', borderRadius: 1 }}>
-                                <CheckCircleIcon color="success" sx={{ fontSize: 48, mb: 2 }} />
-                                <Typography variant="h6" color="success.main" gutterBottom>
-                                    All Systems Healthy
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    No warnings or issues detected across all areas
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                </Collapse>
-            </CardContent>
-        </Card>
-    );
-    
-
     return (
         <Box sx={{ padding: 2 }}>
-            {/* NEW: System Overview Card */}
-            {renderSystemOverviewCard()}
+            {/* System Overview Stats Card - now a subcomponent */}
+            <DashboardStats junctions={junctions} />
 
             {/* Junction Management Card - matches ActiveCollectors/Streams pattern */}
             <Card sx={{ mb: 3 }}>
@@ -861,7 +496,7 @@ const Dashboard = () => {
                 </Collapse>
             </Card>
 
-            {/* NEW: Unified Dashboard Settings - replaces SharedWebSocketSettings */}
+            {/* Unified Dashboard Settings */}
             <DashboardSettings
                 enabled={true}
                 defaultExpanded={false}
@@ -869,13 +504,13 @@ const Dashboard = () => {
                 showAsCard={true}
             />
 
-            {/* UPDATED: Simplified Active Collectors Card */}
+            {/* Active Collectors Card */}
             <ActiveCollectorsCard
                 defaultExpanded={collectorsExpanded}
                 storageKey="dashboard_collectors_expanded"
             />
 
-            {/* UPDATED: Simplified Active Streams Card */}
+            {/* Active Streams Card */}
             <ActiveStreamsCard
                 defaultExpanded={streamsExpanded}
                 storageKey="dashboard_streams_expanded"
