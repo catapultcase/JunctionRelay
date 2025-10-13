@@ -18,6 +18,22 @@ using Microsoft.Extensions.FileProviders;
 using JunctionRelay_Server.Services.BackgroundServices;
 using JunctionRelay_Server.Services;
 using JunctionRelayServer.Services.BackgroundServices;
+using System.Diagnostics;
+
+// ============================================================================
+// SINGLE INSTANCE CHECK
+// ============================================================================
+
+// Check if another instance is already running
+var currentProcess = Process.GetCurrentProcess();
+var runningProcesses = Process.GetProcessesByName(currentProcess.ProcessName);
+
+if (runningProcesses.Length > 1)
+{
+    Console.WriteLine("[STARTUP] ERROR: Another instance of JunctionRelay is already running.");
+    Console.WriteLine("[STARTUP] Only one instance can run at a time. Exiting...");
+    Environment.Exit(1);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -287,6 +303,7 @@ builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 builder.Services.AddScoped<Service_Database_Manager_EventRules>();
+builder.Services.AddScoped<Service_FrameEngine_Filesystem>();
 
 // Core singleton services
 builder.Services.AddSingleton<IService_Settings, Service_Settings>();
@@ -443,10 +460,64 @@ app.Lifetime.ApplicationStarted.Register(async () =>
         var eventService = app.Services.GetRequiredService<Service_Events>();
         await eventService.InitializeAsync();
         startupSignals.EventEngineInitialized.TrySetResult(true);
+
+        // ===================================================================
+        // FrameEngine Auto-Cleanup on Startup
+        // ===================================================================
+        try
+        {
+            var settingsService = scope.ServiceProvider.GetRequiredService<IService_Settings>();
+            var autoCleanupEnabled = await settingsService.GetBoolSettingAsync("frameengine_auto_cleanup", false);
+
+            if (autoCleanupEnabled)
+            {
+                Console.WriteLine("[STARTUP] FrameEngine auto-cleanup enabled, scanning for orphaned files...");
+
+                var frameLayoutService = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
+                var dbPathProvider = scope.ServiceProvider.GetRequiredService<DatabasePathProvider>();
+                var webHostEnvironment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+
+                var filesystemService = new Service_FrameEngine_Filesystem(
+                    frameLayoutService,
+                    dbPathProvider,
+                    webHostEnvironment);
+
+                var cleanupResult = await filesystemService.CleanupOrphanedFiles();
+
+                if (cleanupResult.DeletedCount > 0)
+                {
+                    Console.WriteLine($"[STARTUP] FrameEngine cleanup: Removed {cleanupResult.DeletedCount} orphaned files, freed {cleanupResult.FreedSpaceMB:F2} MB");
+                }
+                else
+                {
+                    Console.WriteLine("[STARTUP] FrameEngine cleanup: No orphaned files found");
+                }
+
+                if (cleanupResult.Errors.Count > 0)
+                {
+                    Console.WriteLine($"[STARTUP] FrameEngine cleanup: {cleanupResult.Errors.Count} error(s) occurred during cleanup");
+                    foreach (var error in cleanupResult.Errors)
+                    {
+                        Console.WriteLine($"[STARTUP]   - {error}");
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine("[STARTUP] FrameEngine auto-cleanup disabled");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STARTUP] FrameEngine auto-cleanup failed: {ex.Message}");
+            Console.WriteLine($"[STARTUP]   - {ex.StackTrace}");
+            // Don't fail startup if cleanup fails
+        }
+        // ===================================================================
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Database initialization failed: {ex.Message}");
+        Console.WriteLine($"[STARTUP] Database initialization failed: {ex.Message}");
         startupSignals.DatabaseInitialized.TrySetException(ex);
         startupSignals.EventEngineInitialized.TrySetException(ex);
     }
