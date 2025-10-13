@@ -882,6 +882,7 @@ namespace JunctionRelayServer.Services
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
                 ("device_combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
                 ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
+                ("frameengine_auto_cleanup", "false", "If true, automatically clean up orphaned FrameEngine files on application startup"),
                 ("global_sensorcache_expiry", "60000", "Time in milliseconds after which sensor data expires from the global cache (default: 1 minute)"),
                 ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
                 ("junction_autostart_enabled", "true", "Master toggle for the junction autostart service. If false, no junctions will auto-start regardless of their individual AutoStartOnLaunch setting"),

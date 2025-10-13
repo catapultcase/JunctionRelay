@@ -23,6 +23,7 @@ using JunctionRelayServer.Models;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using JunctionRelayServer.Utils;
+using System.Runtime.InteropServices;
 
 
 namespace JunctionRelayServer.Controllers
@@ -55,6 +56,38 @@ namespace JunctionRelayServer.Controllers
             _junctionLinksService = junctionLinksService;
             _webHostEnvironment = webHostEnvironment;
             _dbPathProvider = dbPathProvider;
+        }
+
+        // Get server platform information
+
+        [HttpGet("platform")]
+        public ActionResult GetPlatform()
+        {
+            try
+            {
+                var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+                var isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+                var isMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+
+                var platform = "Unknown";
+                if (isWindows) platform = "Windows";
+                else if (isLinux) platform = "Linux";
+                else if (isMacOS) platform = "macOS";
+
+                return Ok(new
+                {
+                    platform = platform,
+                    isWindows = isWindows,
+                    isLinux = isLinux,
+                    isMacOS = isMacOS,
+                    osDescription = RuntimeInformation.OSDescription,
+                    architecture = RuntimeInformation.OSArchitecture.ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error detecting platform", error = ex.Message });
+            }
         }
 
         // Get all frame engine layouts
@@ -1060,6 +1093,139 @@ namespace JunctionRelayServer.Controllers
             {
                 Console.WriteLine($"Warning: Failed to delete thumbnail file {relativePath}: {ex.Message}");
             }
+        }
+
+        // ============================================================================
+        // FILESYSTEM MANAGEMENT ENDPOINTS
+        // ============================================================================
+
+        // Get audit report of orphaned files
+
+        [HttpGet("audit/orphaned-files")]
+        public async Task<ActionResult<OrphanedFilesReport>> GetOrphanedFilesAudit()
+        {
+            try
+            {
+                var filesystemService = new Service_FrameEngine_Filesystem(
+                    _frameLayoutService,
+                    _dbPathProvider,
+                    _webHostEnvironment);
+
+                var report = await filesystemService.AuditOrphanedFiles();
+                return Ok(report);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error auditing orphaned files", error = ex.Message });
+            }
+        }
+
+        // Clean up orphaned files from filesystem
+
+        [HttpPost("cleanup/orphaned-files")]
+        public async Task<ActionResult<CleanupResult>> CleanupOrphanedFiles()
+        {
+            try
+            {
+                var filesystemService = new Service_FrameEngine_Filesystem(
+                    _frameLayoutService,
+                    _dbPathProvider,
+                    _webHostEnvironment);
+
+                var result = await filesystemService.CleanupOrphanedFiles();
+
+                if (result.Errors.Count > 0)
+                {
+                    return Ok(new
+                    {
+                        deletedCount = result.DeletedCount,
+                        freedSpaceMB = result.FreedSpaceMB,
+                        deletedFiles = result.DeletedFiles,
+                        errors = result.Errors,
+                        message = $"Cleanup completed with {result.Errors.Count} error(s)"
+                    });
+                }
+
+                return Ok(new
+                {
+                    deletedCount = result.DeletedCount,
+                    freedSpaceMB = result.FreedSpaceMB,
+                    message = $"Successfully cleaned up {result.DeletedCount} orphaned files, freed {result.FreedSpaceMB:F2} MB"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error cleaning up orphaned files", error = ex.Message });
+            }
+        }
+
+        // Get auto-cleanup setting
+
+        [HttpGet("settings/auto-cleanup")]
+        public async Task<ActionResult> GetAutoCleanupSetting()
+        {
+            try
+            {
+                var settingsService = HttpContext.RequestServices.GetRequiredService<IService_Settings>();
+                var enabled = await settingsService.GetBoolSettingAsync("frameengine_auto_cleanup", false);
+
+                return Ok(new { enabled });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error retrieving auto-cleanup setting", error = ex.Message });
+            }
+        }
+
+        // Update auto-cleanup setting
+
+        [HttpPost("settings/auto-cleanup")]
+        public async Task<ActionResult> UpdateAutoCleanupSetting([FromBody] AutoCleanupSettingRequest request)
+        {
+            try
+            {
+                var settingsService = HttpContext.RequestServices.GetRequiredService<IService_Settings>();
+                await settingsService.SetSettingAsync("frameengine_auto_cleanup", request.Enabled.ToString());
+
+                return Ok(new { message = $"Auto-cleanup {(request.Enabled ? "enabled" : "disabled")}" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error updating auto-cleanup setting", error = ex.Message });
+            }
+        }
+
+        // Open FrameEngine directory in Windows Explorer (Windows only)
+
+        [HttpPost("open-directory")]
+        public ActionResult OpenFrameEngineDirectory()
+        {
+            try
+            {
+                var filesystemService = new Service_FrameEngine_Filesystem(
+                    _frameLayoutService,
+                    _dbPathProvider,
+                    _webHostEnvironment);
+
+                var success = filesystemService.OpenFrameEngineDirectory();
+
+                if (!success)
+                {
+                    return BadRequest(new { message = "Opening directory is only supported on Windows" });
+                }
+
+                return Ok(new { message = "Directory opened in Explorer" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error opening directory", error = ex.Message });
+            }
+        }
+
+        // DTO for auto-cleanup setting
+        public class AutoCleanupSettingRequest
+        {
+            public bool Enabled { get; set; }
         }
     }
 

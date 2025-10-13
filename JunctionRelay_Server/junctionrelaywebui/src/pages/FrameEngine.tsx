@@ -17,21 +17,13 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     Button,
     Typography,
     Box,
-    CircularProgress,
-    Chip,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    TableSortLabel,
-    Paper,
+    Snackbar,
+    Alert,
     Modal,
     TextField,
     FormControl,
@@ -39,46 +31,17 @@ import {
     Select,
     MenuItem,
     SelectChangeEvent,
-    Snackbar,
-    Alert,
-    Tooltip,
-    IconButton,
-    Popover,
-    List,
-    ListItem,
-    ListItemText,
-    Checkbox,
-    ToggleButtonGroup,
-    ToggleButton,
-    Card,
-    CardContent,
-    Divider,
+    CircularProgress,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-// Icon imports
 import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
 import UploadIcon from '@mui/icons-material/Upload';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import CheckIcon from '@mui/icons-material/Check';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import TableViewIcon from '@mui/icons-material/TableView';
-import ViewModuleIcon from '@mui/icons-material/ViewModule';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import PhotoIcon from '@mui/icons-material/Photo';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import GridOnIcon from '@mui/icons-material/GridOn';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
-import AppsIcon from '@mui/icons-material/Apps';
-import ImageIcon from '@mui/icons-material/Image';
-import ExtensionIcon from '@mui/icons-material/Extension';
-import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
-import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
-import FrameEngine_Gallery from '../components/frameengine/FrameEngine_Gallery';
 import { useTheme, useMediaQuery } from "@mui/material";
+
+// Import sub-components
+import FrameEngineManagementSection from '../components/FrameEngine_ManagementSection';
+import FrameEngineListingSection from '../components/FrameEngine_ListingSection';
+import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
 
 // Types
 type ViewMode = 'gallery' | 'table' | 'standard' | 'mini';
@@ -97,398 +60,24 @@ interface FrameLayoutListItem {
     thumbnailGeneratedAt?: string;
 }
 
-interface FrameEngineColumn {
-    field: string;
-    label: string;
-    align: "left" | "right" | "center" | "inherit" | "justify";
-    sortable?: boolean;
-}
-
 // Storage keys
 const STORAGE_KEY_FRAMEENGINE_COLUMNS = "frameengine_visible_columns";
 const STORAGE_KEY_FRAMEENGINE_SORT = "frameengine_sort_state";
 const STORAGE_KEY_FRAMEENGINE_VIEW_MODE = "junctionrelay_frameengine_view_mode";
 
-// Column definitions
-const defaultFrameEngineColumns: FrameEngineColumn[] = [
-    { field: "actions", label: "Actions", align: "right", sortable: false },
-    { field: "name", label: "Name", align: "left", sortable: true },
-    { field: "template", label: "Template", align: "center", sortable: true },
-    { field: "type", label: "Type", align: "left", sortable: true },
-    { field: "description", label: "Description", align: "left", sortable: true },
-    { field: "dimensions", label: "Dimensions", align: "center", sortable: false },
-    { field: "thumbnail", label: "Thumbnail", align: "center", sortable: true },
-];
-
 // Default visible columns
 const defaultVisibleColumns = ["name", "template", "type", "description", "dimensions", "thumbnail", "actions"];
 
-// Helper function to get frame layout type info with colors and icons
-const getFrameLayoutTypeInfo = (type: string) => {
-    const typeMap: Record<string, { color: "default" | "primary" | "secondary" | "success" | "info" | "warning" | "error", icon: React.ReactNode }> = {
-        "PRE_RENDERED_IMAGE": { color: "primary", icon: <ImageIcon fontSize="small" /> },
-        "COMPOSITE_MODE": { color: "secondary", icon: <ExtensionIcon fontSize="small" /> },
-        "FRAME_SENSOR_GRID": { color: "primary", icon: <GridOnIcon fontSize="small" /> },
-        "FRAME_CALENDAR": { color: "secondary", icon: <CalendarTodayIcon fontSize="small" /> },
-        "FRAME_DASHBOARD": { color: "info", icon: <DashboardIcon fontSize="small" /> },
-        "FRAME_CHART": { color: "warning", icon: <ShowChartIcon fontSize="small" /> },
-        "FRAME_QUAD": { color: "success", icon: <AppsIcon fontSize="small" /> },
-        "FRAME_IMAGE": { color: "error", icon: <ImageIcon fontSize="small" /> },
-        "FRAME_CUSTOM": { color: "default", icon: <ExtensionIcon fontSize="small" /> },
-    };
-
-    return typeMap[type] || { color: "default" as const, icon: <PhotoIcon fontSize="small" /> };
-};
-
-// Memoized Frame Layout Card component for tile views
-const FrameLayoutCard = memo(({
-    frameLayout,
-    viewMode,
-    onDelete,
-    onEdit,
-    onClone,
-}: {
-    frameLayout: FrameLayoutListItem,
-    viewMode: 'standard' | 'mini',
-    onDelete: (e: React.MouseEvent, id: string) => void,
-    onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-    onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-}) => {
-    const navigate = useNavigate();
-    const typeInfo = getFrameLayoutTypeInfo(frameLayout.layoutType);
-
-    const getCardHeight = () => {
-        return viewMode === 'mini' ? 120 : 220;
-    };
-
-    return (
-        <Card
-            variant="outlined"
-            sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s ease-in-out',
-                position: 'relative',
-                minHeight: getCardHeight(),
-                display: 'flex',
-                flexDirection: 'column',
-                '&:hover': {
-                    boxShadow: 6,
-                    transform: 'translateY(-2px)',
-                    backgroundColor: 'action.hover'
-                },
-                border: '1px solid',
-                borderColor: frameLayout.isTemplate ? 'success.main' : 'divider',
-            }}
-            onClick={() => navigate(`/configure-frame/${frameLayout.id}`)}
-        >
-            {/* Template Badge */}
-            {frameLayout.isTemplate && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: viewMode === 'mini' ? 4 : 8,
-                        right: viewMode === 'mini' ? 4 : 8,
-                        backgroundColor: 'success.main',
-                        color: 'success.contrastText',
-                        px: viewMode === 'mini' ? 0.5 : 1.5,
-                        py: viewMode === 'mini' ? 0.25 : 0.5,
-                        borderRadius: viewMode === 'mini' ? 1 : 2,
-                        fontSize: viewMode === 'mini' ? '0.6rem' : '0.75rem',
-                        fontWeight: 'bold',
-                        textTransform: 'uppercase',
-                        boxShadow: 1,
-                        zIndex: 1
-                    }}
-                >
-                    {viewMode === 'mini' ? '●' : 'TEMPLATE'}
-                </Box>
-            )}
-
-            <CardContent sx={{
-                flex: 1,
-                pt: viewMode === 'mini' ? 2.5 : 5,
-                p: viewMode === 'mini' ? 1 : 2
-            }}>
-                {/* Frame Layout Name with type icon */}
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    mb: viewMode === 'mini' ? 0.5 : 1,
-                    gap: 0.5
-                }}>
-                    {typeInfo.icon}
-                    <Typography
-                        variant={viewMode === 'mini' ? 'body2' : 'h6'}
-                        sx={{
-                            fontSize: viewMode === 'mini' ? '0.75rem' : { xs: '1rem', sm: '1.1rem' },
-                            fontWeight: 600,
-                            lineHeight: viewMode === 'mini' ? 1.2 : 1.5,
-                            flex: 1
-                        }}
-                        noWrap
-                    >
-                        {frameLayout.displayName}
-                    </Typography>
-                </Box>
-
-                {/* Frame Layout Details */}
-                {viewMode === 'standard' && (
-                    <>
-                        <Divider sx={{ mb: 1 }} />
-                        <Box sx={{ mb: 1 }}>
-                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                <strong>Type:</strong> {frameLayout.layoutType || "Unknown"}
-                            </Typography>
-                            {frameLayout.description && (
-                                <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                    <strong>Description:</strong> {frameLayout.description}
-                                </Typography>
-                            )}
-                        </Box>
-                    </>
-                )}
-
-                {/* Type Chip */}
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: viewMode === 'mini' ? 0.5 : 1,
-                    mt: 'auto'
-                }}>
-                    <Box sx={{
-                        display: 'flex',
-                        gap: 0.5,
-                        flexWrap: 'wrap',
-                        alignItems: 'center'
-                    }}>
-                        <Chip
-                            label={viewMode === 'mini'
-                                ? frameLayout.layoutType?.substring(0, 8) + (frameLayout.layoutType?.length > 8 ? '...' : '')
-                                : frameLayout.layoutType
-                            }
-                            color={typeInfo.color}
-                            size="small"
-                            sx={{
-                                fontSize: viewMode === 'mini' ? '0.6rem' : '0.7rem',
-                                height: viewMode === 'mini' ? 18 : 22
-                            }}
-                        />
-                    </Box>
-                </Box>
-
-                {/* Action Buttons for standard view */}
-                {viewMode === 'standard' && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEdit(e, frameLayout);
-                                    }}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <Tooltip title="Clone">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClone(e, frameLayout);
-                                }}
-                            >
-                                <ContentCopyIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Delete">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(e, frameLayout.id);
-                                    }}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
-                )}
-            </CardContent>
-        </Card>
-    );
-});
-
-// Memoized TableRow component
-const FrameLayoutTableRow = memo(({
-    frameLayout,
-    visibleCols,
-    allColumns,
-    onDelete,
-    onEdit,
-    onClone,
-}: {
-    frameLayout: FrameLayoutListItem,
-    visibleCols: string[],
-    allColumns: FrameEngineColumn[],
-    onDelete: (e: React.MouseEvent, id: string) => void,
-    onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-    onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-}) => {
-    const navigate = useNavigate();
-
-    const getFrameLayoutCell = useCallback((field: string) => {
-        switch (field) {
-            case "name":
-                const typeInfo = getFrameLayoutTypeInfo(frameLayout.layoutType);
-                return (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {typeInfo.icon}
-                        <Typography fontWeight="medium" color="text.primary">
-                            {frameLayout.displayName}
-                        </Typography>
-                    </Box>
-                );
-            case "template":
-                return frameLayout.isTemplate ? (
-                    <CheckIcon fontSize="small" sx={{ color: "success.main" }} />
-                ) : (
-                    ""
-                );
-            case "type":
-                const typeInfoChip = getFrameLayoutTypeInfo(frameLayout.layoutType);
-                return (
-                    <Chip
-                        label={frameLayout.layoutType}
-                        color={typeInfoChip.color}
-                        size="small"
-                        sx={{ fontSize: '0.75rem', height: 22 }}
-                    />
-                );
-            case "description":
-                return frameLayout.description || "-";
-            case "dimensions":
-                return frameLayout.width && frameLayout.height
-                    ? `${frameLayout.width}×${frameLayout.height}`
-                    : "-";
-            case "thumbnail":
-                return frameLayout.hasThumbnail ? (
-                    <Chip
-                        icon={<ImageIcon />}
-                        label="Available"
-                        color="success"
-                        size="small"
-                        sx={{ fontSize: '0.7rem', height: 20 }}
-                    />
-                ) : (
-                    <Chip
-                        label="None"
-                        color="default"
-                        size="small"
-                        sx={{ fontSize: '0.7rem', height: 20 }}
-                    />
-                );
-            case "actions":
-                return (
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => onEdit(e, frameLayout)}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <Tooltip title="Clone">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => onClone(e, frameLayout)}
-                            >
-                                <ContentCopyIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Delete">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => onDelete(e, frameLayout.id)}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
-                );
-            default:
-                return frameLayout[field as keyof FrameLayoutListItem] || "-";
-        }
-    }, [frameLayout, onDelete, onEdit, onClone]);
-
-    return (
-        <TableRow
-            hover
-            onClick={() => navigate(`/configure-frame/${frameLayout.id}`)}
-            sx={{ cursor: "pointer" }}
-        >
-            {visibleCols.map((field) => {
-                const colDef = allColumns.find((c) => c.field === field)!;
-
-                const getColumnWidth = (field: string) => {
-                    switch (field) {
-                        case "name":
-                            return { minWidth: 200, width: 'auto' };
-                        case "template":
-                            return { minWidth: 80, width: 80 };
-                        case "type":
-                            return { minWidth: 120, width: 120 };
-                        case "description":
-                            return { minWidth: 200, width: 'auto' };
-                        case "dimensions":
-                            return { minWidth: 100, width: 100 };
-                        case "thumbnail":
-                            return { minWidth: 100, width: 100 };
-                        case "actions":
-                            return { minWidth: 140, width: 140 };
-                        default:
-                            return { minWidth: 120, width: 'auto' };
-                    }
-                };
-
-                const columnWidth = getColumnWidth(field);
-
-                return (
-                    <TableCell
-                        key={field}
-                        align={colDef.align}
-                        sx={{
-                            ...columnWidth,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            padding: '8px 16px'
-                        }}
-                    >
-                        {getFrameLayoutCell(field)}
-                    </TableCell>
-                );
-            })}
-        </TableRow>
-    );
-});
-
-
+// Frequency options for auto-testing (if needed in future)
+const frequencyOptions = [
+    { value: 1, label: '1 hour' },
+    { value: 6, label: '6 hours' },
+    { value: 12, label: '12 hours' },
+    { value: 18, label: '18 hours' },
+    { value: 24, label: '24 hours' },
+    { value: 72, label: '3 days' },
+    { value: 168, label: '7 days' },
+];
 
 // AddFrameLayout Modal Component
 const AddFrameLayoutModal: React.FC<{
@@ -508,7 +97,6 @@ const AddFrameLayoutModal: React.FC<{
     // Frame layout type options for dropdown
     const frameLayoutTypes = [
         { value: "", name: "Select Frame Layout Type", desc: "Choose a frame layout type to begin" },
-        // { value: "PRE_RENDERED_IMAGE", name: "Pre-Rendered Image", desc: "Map sensors over an image" },
         { value: "COMPOSITE_MODE", name: "Composite Mode", desc: "Build dynamic layouts with elements and backgrounds" }
     ];
 
@@ -806,15 +394,15 @@ const AddFrameLayoutModal: React.FC<{
 const FrameEngine = () => {
     const [frameLayouts, setFrameLayouts] = useState<FrameLayoutListItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
-    const [resetLoading, setResetLoading] = useState<boolean>(false);
     const [addFrameLayoutModalOpen, setAddFrameLayoutModalOpen] = useState<boolean>(false);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
+    const [importLoading, setImportLoading] = useState<boolean>(false);
 
     // View mode and table management state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
         const stored = localStorage.getItem(STORAGE_KEY_FRAMEENGINE_VIEW_MODE);
-        return (stored as ViewMode) || 'gallery';  // Default to gallery view
+        return (stored as ViewMode) || 'gallery';
     });
 
     const [visibleCols, setVisibleCols] = useState<string[]>(() => {
@@ -831,14 +419,9 @@ const FrameEngine = () => {
         }
     });
 
-    // Popover anchor for column management
-    const [anchorCols, setAnchorCols] = useState<HTMLElement | null>(null);
-
     const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-
-    const [importLoading, setImportLoading] = useState<boolean>(false);
 
     // Persist states
     useEffect(() => {
@@ -854,12 +437,12 @@ const FrameEngine = () => {
     }, [sortState]);
 
     // Show snackbar with configurable severity
-    const showSnackbar = (message: string, severity: "success" | "info" | "warning" | "error" = "success") => {
+    const showSnackbar = useCallback((message: string, severity: "success" | "info" | "warning" | "error" = "success") => {
         setSnackMessage(message);
         setSnackbarSeverity(severity);
-    };
+    }, []);
 
-    const fetchFrameLayouts = async () => {
+    const fetchFrameLayouts = useCallback(async () => {
         try {
             setLoading(true);
             const response = await fetch("/api/frameengine");
@@ -874,24 +457,21 @@ const FrameEngine = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [showSnackbar]);
 
     useEffect(() => {
         fetchFrameLayouts();
-    }, []);
+    }, [fetchFrameLayouts]);
 
     // Listen for view mode changes from bottom action bar (mobile only) 
     useEffect(() => {
         const handleBottomActionViewModeChange = (e: CustomEvent) => {
-            // Only respond to bottom action bar changes when in mobile mode
             if (isMobile && e.detail.mode) {
                 const newMode = e.detail.mode as ViewMode;
                 setViewMode(newMode);
-                localStorage.setItem(STORAGE_KEY_FRAMEENGINE_VIEW_MODE, newMode);
             }
         };
 
-        // Listen for localStorage changes from other tabs/windows
         const handleStorageChange = (e: StorageEvent) => {
             if (e.key === STORAGE_KEY_FRAMEENGINE_VIEW_MODE && e.newValue) {
                 const newMode = e.newValue as ViewMode;
@@ -899,11 +479,9 @@ const FrameEngine = () => {
             }
         };
 
-        // Only listen for bottom action events on mobile
         if (isMobile) {
             window.addEventListener('bottom-action-view-mode-change', handleBottomActionViewModeChange as EventListener);
         }
-
         window.addEventListener('storage', handleStorageChange);
 
         return () => {
@@ -917,92 +495,15 @@ const FrameEngine = () => {
     // Listen for bottom action bar events
     useEffect(() => {
         const handleAddFrameLayout = () => {
-            console.log('Bottom bar: Add frame layout requested');
             setAddFrameLayoutModalOpen(true);
         };
 
-        const handleResetAll = () => {
-            console.log('Bottom bar: Reset all requested');
-            handleResetAll();
-        };
-
-        // Add event listeners for bottom action bar
         window.addEventListener('bottom-action-add-frame', handleAddFrameLayout);
-        window.addEventListener('bottom-action-reset-all', handleResetAll);
 
-        // Cleanup
         return () => {
             window.removeEventListener('bottom-action-add-frame', handleAddFrameLayout);
-            window.removeEventListener('bottom-action-reset-all', handleResetAll);
         };
     }, []);
-
-    // Sort frame layouts
-    const sortedFrameLayouts = useMemo(() => {
-        const { orderBy, order } = sortState;
-        return [...frameLayouts].sort((a, b) => {
-            let valueA: any;
-            let valueB: any;
-
-            switch (orderBy) {
-                case 'name':
-                case 'displayName':
-                    valueA = a.displayName?.toLowerCase() || '';
-                    valueB = b.displayName?.toLowerCase() || '';
-                    break;
-                case 'type':
-                case 'layoutType':
-                    valueA = a.layoutType?.toLowerCase() || '';
-                    valueB = b.layoutType?.toLowerCase() || '';
-                    break;
-                case 'description':
-                    valueA = a.description?.toLowerCase() || '';
-                    valueB = b.description?.toLowerCase() || '';
-                    break;
-                case 'template':
-                case 'isTemplate':
-                    valueA = a.isTemplate ? 1 : 0;
-                    valueB = b.isTemplate ? 1 : 0;
-                    break;
-                case 'thumbnail':
-                case 'hasThumbnail':
-                    valueA = a.hasThumbnail ? 1 : 0;
-                    valueB = b.hasThumbnail ? 1 : 0;
-                    break;
-                default:
-                    valueA = a[orderBy as keyof FrameLayoutListItem] || '';
-                    valueB = b[orderBy as keyof FrameLayoutListItem] || '';
-            }
-
-            if (valueA < valueB) {
-                return order === 'asc' ? -1 : 1;
-            }
-            if (valueA > valueB) {
-                return order === 'asc' ? 1 : -1;
-            }
-            return 0;
-        });
-    }, [frameLayouts, sortState]);
-
-    // Calculate grid columns based on view mode
-    const getGridColumns = () => {
-        if (viewMode === 'mini') {
-            return {
-                xs: 'repeat(2, 1fr)',
-                sm: 'repeat(3, 1fr)',
-                md: 'repeat(4, 1fr)',
-                lg: 'repeat(6, 1fr)'
-            };
-        } else if (viewMode === 'standard') {
-            return {
-                xs: '1fr',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(3, 1fr)',
-                lg: 'repeat(4, 1fr)'
-            };
-        }
-        return {};
-    };
 
     // Event handlers
     const handleAddFrameLayout = () => {
@@ -1050,27 +551,7 @@ const FrameEngine = () => {
             showSnackbar(`Import failed: ${error.message}`, "error");
         } finally {
             setImportLoading(false);
-            // Clear the input
             event.target.value = '';
-        }
-    };
-
-    const handleResetAll = async () => {
-        setResetLoading(true);
-        try {
-            const response = await fetch("/api/frameengine/restore-templates", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" }
-            });
-            if (!response.ok) {
-                throw new Error("Failed to reset all frame layout templates");
-            }
-            await fetchFrameLayouts();
-            showSnackbar("All frame layout templates have been restored or reset to defaults", "success");
-        } catch (err: any) {
-            showSnackbar("Error resetting frame layouts", "error");
-        } finally {
-            setResetLoading(false);
         }
     };
 
@@ -1109,53 +590,13 @@ const FrameEngine = () => {
         }
     };
 
-    // View mode change handler
-    const handleViewModeChange = useCallback((event: React.MouseEvent<HTMLElement>, newViewMode: ViewMode) => {
-        if (newViewMode !== null) {
-            setViewMode(newViewMode);
-        }
+    const handleViewModeChange = useCallback((mode: ViewMode) => {
+        setViewMode(mode);
     }, []);
 
-    // Sort handler
-    const handleRequestSort = useCallback((property: string) => {
-        const isAsc = sortState.orderBy === property && sortState.order === 'asc';
-        setSortState({
-            orderBy: property,
-            order: isAsc ? 'desc' : 'asc'
-        });
-    }, [sortState]);
-
-    // Column management handlers
-    const openColsPopover = useCallback((e: React.MouseEvent<HTMLElement>) => {
-        e.stopPropagation();
-        setAnchorCols(e.currentTarget);
+    const handleSortChange = useCallback((orderBy: string, order: SortDirection) => {
+        setSortState({ orderBy, order });
     }, []);
-
-    const closeColsPopover = useCallback(() => setAnchorCols(null), []);
-
-    const handleToggleColumn = useCallback((field: string, checked: boolean) => {
-        if (checked) {
-            setVisibleCols(prev => [...prev, field]);
-        } else {
-            setVisibleCols(prev => prev.filter(f => f !== field));
-        }
-    }, []);
-
-    const moveCol = useCallback((field: string, direction: "up" | "down") => {
-        const list = visibleCols;
-        const i = list.indexOf(field);
-        if (i < 0) return;
-        const j = direction === "up" ? i - 1 : i + 1;
-        if (j < 0 || j >= list.length) return;
-        const copy = [...list];
-        copy.splice(i, 1);
-        copy.splice(j, 0, field);
-        setVisibleCols(copy);
-    }, [visibleCols]);
-
-    const handleMoveColumn = useCallback((field: string, direction: "up" | "down") => {
-        moveCol(field, direction);
-    }, [moveCol]);
 
     return (
         <Box sx={{ padding: 2 }}>
@@ -1179,13 +620,13 @@ const FrameEngine = () => {
                         Add Frame Layout
                     </Button>
 
-                    {/* ADD THIS IMPORT BUTTON */}
                     <Button
                         variant="outlined"
                         color="primary"
                         component="label"
                         size="small"
-                        startIcon={<UploadIcon />}
+                        startIcon={importLoading ? <CircularProgress size={16} /> : <UploadIcon />}
+                        disabled={importLoading}
                     >
                         Import Package
                         <input
@@ -1195,250 +636,29 @@ const FrameEngine = () => {
                             onChange={handleImportPackage}
                         />
                     </Button>
-
-                    {/*<Button*/}
-                    {/*    variant="outlined"*/}
-                    {/*    onClick={handleResetAll}*/}
-                    {/*    size="small"*/}
-                    {/*    startIcon={resetLoading ? <CircularProgress size={16} /> : <RefreshIcon />}*/}
-                    {/*    disabled={resetLoading}*/}
-                    {/*>*/}
-                    {/*    Reset/Restore All Frame Layout Templates*/}
-                    {/*</Button>*/}
                 </Box>
             )}
 
-            {/* Table header with view mode toggle and column selector */}
-            <Box display="flex" alignItems="center" mb={1} flexWrap="wrap" gap={2}>
-                <Typography variant="h6">FrameEngine</Typography>
-
-                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                    {/* View Mode Toggle - ONLY show on desktop (hidden on mobile since it's in bottom bar) */}
-                    {!isMobile && (
-                        <ToggleButtonGroup
-                            value={viewMode}
-                            exclusive
-                            onChange={handleViewModeChange}
-                            aria-label="view mode"
-                            size="small"
-                        >
-                            <ToggleButton value="gallery" aria-label="gallery view">
-                                <PhotoLibraryIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Gallery
-                                </Typography>
-                            </ToggleButton>
-                            <ToggleButton value="table" aria-label="table view">
-                                <TableViewIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Table
-                                </Typography>
-                            </ToggleButton>
-                            <ToggleButton value="standard" aria-label="standard tiles">
-                                <DashboardIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Standard
-                                </Typography>
-                            </ToggleButton>
-                            <ToggleButton value="mini" aria-label="mini tiles">
-                                <ViewModuleIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Mini
-                                </Typography>
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-                    )}
-
-                    {/* Columns Button - Only show in table view */}
-                    {viewMode === 'table' && (
-                        <Button
-                            onClick={openColsPopover}
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                                minWidth: 'auto',
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                fontSize: '0.875rem',
-                                padding: '4px 10px',
-                            }}
-                        >
-                            Columns
-                        </Button>
-                    )}
-                </Box>
-
-                {/* Columns Popover */}
-                <Popover
-                    open={Boolean(anchorCols)}
-                    anchorEl={anchorCols}
-                    onClose={closeColsPopover}
-                >
-                    <List dense>
-                        {visibleCols.map((field, idx) => (
-                            <ListItem key={field}>
-                                <Checkbox
-                                    checked
-                                    onChange={(e) => {
-                                        handleToggleColumn(field, e.target.checked);
-                                    }}
-                                />
-                                <ListItemText primary={defaultFrameEngineColumns.find((c) => c.field === field)!.label} />
-                                <IconButton
-                                    size="small"
-                                    disabled={idx === 0}
-                                    onClick={() => handleMoveColumn(field, "up")}
-                                >
-                                    <ArrowUpwardIcon fontSize="inherit" />
-                                </IconButton>
-                                <IconButton
-                                    size="small"
-                                    disabled={idx === visibleCols.length - 1}
-                                    onClick={() => handleMoveColumn(field, "down")}
-                                >
-                                    <ArrowDownwardIcon fontSize="inherit" />
-                                </IconButton>
-                            </ListItem>
-                        ))}
-                        {defaultFrameEngineColumns
-                            .filter((c) => !visibleCols.includes(c.field))
-                            .map(({ field, label }) => (
-                                <ListItem key={field}>
-                                    <Checkbox
-                                        onChange={(e) => {
-                                            handleToggleColumn(field, e.target.checked);
-                                        }}
-                                    />
-                                    <ListItemText primary={label} />
-                                </ListItem>
-                            ))}
-                    </List>
-                </Popover>
-            </Box>
-
-            {/* Render based on view mode */}
-            {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', padding: 3 }}>
-                    <CircularProgress size={24} />
-                </Box>
-            ) : viewMode === 'gallery' ? (
-                /* Gallery View */
-                <FrameEngine_Gallery
-                    frameLayouts={sortedFrameLayouts}
-                    onDelete={handleDelete}
-                    onEdit={handleEdit}
-                    onClone={handleClone}
-                />
-            ) : viewMode === 'table' ? (
-                /* Table View */
-                <TableContainer component={Paper} sx={{ mb: 4 }}>
-                    <Table size="small">
-                        <TableHead>
-                            <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
-                                {visibleCols.map((field) => {
-                                    const colDef = defaultFrameEngineColumns.find((c) => c.field === field)!;
-
-                                    const getColumnWidth = (field: string) => {
-                                        switch (field) {
-                                            case "name":
-                                                return { minWidth: 200, width: 'auto' };
-                                            case "template":
-                                                return { minWidth: 80, width: 80 };
-                                            case "type":
-                                                return { minWidth: 120, width: 120 };
-                                            case "description":
-                                                return { minWidth: 200, width: 'auto' };
-                                            case "dimensions":
-                                                return { minWidth: 100, width: 100 };
-                                            case "thumbnail":
-                                                return { minWidth: 100, width: 100 };
-                                            case "actions":
-                                                return { minWidth: 140, width: 140 };
-                                            default:
-                                                return { minWidth: 120, width: 'auto' };
-                                        }
-                                    };
-
-                                    const columnWidth = getColumnWidth(field);
-
-                                    return (
-                                        <TableCell
-                                            key={field}
-                                            align={colDef.align}
-                                            sortDirection={sortState.orderBy === field ? sortState.order : false}
-                                            sx={{
-                                                ...columnWidth,
-                                                whiteSpace: 'nowrap',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                padding: '8px 16px'
-                                            }}
-                                        >
-                                            {colDef.sortable !== false ? (
-                                                <TableSortLabel
-                                                    active={sortState.orderBy === field}
-                                                    direction={sortState.orderBy === field ? sortState.order : 'asc'}
-                                                    onClick={() => handleRequestSort(field)}
-                                                >
-                                                    {colDef.label}
-                                                </TableSortLabel>
-                                            ) : (
-                                                colDef.label
-                                            )}
-                                        </TableCell>
-                                    );
-                                })}
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {sortedFrameLayouts.length > 0 ? (
-                                sortedFrameLayouts.map((frameLayout) => (
-                                    <FrameLayoutTableRow
-                                        key={frameLayout.id}
-                                        frameLayout={frameLayout}
-                                        visibleCols={visibleCols}
-                                        allColumns={defaultFrameEngineColumns}
-                                        onDelete={handleDelete}
-                                        onEdit={handleEdit}
-                                        onClone={handleClone}
-                                    />
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={visibleCols.length} sx={{ textAlign: 'center', py: 3 }}>
-                                        <Typography color="textSecondary">No frame layouts found</Typography>
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            ) : (
-                /* Tile Views (Standard/Mini) */
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: getGridColumns(),
-                    gap: viewMode === 'mini' ? 1 : 2,
-                    mb: 4
-                }}>
-                    {sortedFrameLayouts.length > 0 ? (
-                        sortedFrameLayouts.map((frameLayout) => (
-                            <FrameLayoutCard
-                                key={frameLayout.id}
-                                frameLayout={frameLayout}
-                                viewMode={viewMode as 'standard' | 'mini'}
-                                onDelete={handleDelete}
-                                onEdit={handleEdit}
-                                onClone={handleClone}
-                            />
-                        ))
-                    ) : (
-                        <Paper sx={{ p: 3, textAlign: 'center', gridColumn: '1 / -1' }}>
-                            <Typography color="textSecondary">No frame layouts found</Typography>
-                        </Paper>
-                    )}
-                </Box>
+            {/* Filesystem Management Section - Hide on mobile */}
+            {!isMobile && (
+                <FrameEngineManagementSection onShowSnackbar={showSnackbar} />
             )}
+
+            {/* Listing Section with all view modes */}
+            <FrameEngineListingSection
+                frameLayouts={frameLayouts}
+                loading={loading}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                visibleColumns={visibleCols}
+                onVisibleColumnsChange={setVisibleCols}
+                sortState={sortState}
+                onSortChange={handleSortChange}
+                onDelete={handleDelete}
+                onEdit={handleEdit}
+                onClone={handleClone}
+                isMobile={isMobile}
+            />
 
             {/* Snackbar for notifications */}
             <Snackbar
