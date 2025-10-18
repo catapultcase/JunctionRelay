@@ -103,9 +103,9 @@ namespace JunctionRelayServer.Services
             {
                 newDevice.Type = "Cloud Device";
             }
-            else if (newDevice.Type != "Custom" && newDevice.Type != "Virtual Screen")
+            else if (newDevice.Type != "Custom" && newDevice.Type != "Virtual Screen" && newDevice.Type != "Virtual Device")
             {
-                // Otherwise, determine type based on gateway info (only if not already set to Custom or Virtual Screen)
+                // Otherwise, determine type based on gateway info (only if not already set to Custom, Virtual Screen, or Virtual Device)
                 if (newDevice.IsGateway)
                 {
                     newDevice.Type = "Gateway";
@@ -119,7 +119,7 @@ namespace JunctionRelayServer.Services
                     newDevice.Type = "Standalone";
                 }
             }
-            // If Type is already "Custom" or "Virtual Screen", we preserve it
+            // If Type is already "Custom", "Virtual Screen", or "Virtual Device", we preserve it
 
             // Encrypt SSH secrets before storing
             if (!string.IsNullOrEmpty(newDevice.SshPassword))
@@ -223,6 +223,22 @@ SELECT last_insert_rowid();";
                     UseKeepAlive = false
                 };
                 await CreateDeviceScreenAsync(virtualScreen);
+            }
+
+            // Automatically set up Virtual Device
+            if (newDevice.Type == "Virtual Device")
+            {
+                var virtualDeviceScreen = new Model_Device_Screens
+                {
+                    DeviceId = newId,
+                    ScreenKey = "virtual_device",
+                    DisplayName = "Virtual Device Display",
+                    ScreenType = "virtual_device",
+                    SupportsConfigPayloads = true,
+                    SupportsSensorPayloads = true,
+                    UseKeepAlive = false
+                };
+                await CreateDeviceScreenAsync(virtualDeviceScreen);
             }
 
             return newDevice;

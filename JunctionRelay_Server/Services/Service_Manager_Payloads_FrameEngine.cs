@@ -100,6 +100,8 @@ namespace JunctionRelayServer.Services
                 object? frameConfig = null;
                 object? frameElements = null;
 
+                var baseUrl = GetServerBaseUrl();
+
                 if (!string.IsNullOrWhiteSpace(frameLayout.JsonFrameConfigRuntime))
                 {
                     try
@@ -112,14 +114,42 @@ namespace JunctionRelayServer.Services
                         {
                             frameConfig = CloneJsonValue(innerFrameConfig);
 
-                            // Add fileUrl directly to the existing rive object
+                            // Add fileUrl directly to the existing rive object (if exists)
                             if (!string.IsNullOrEmpty(frameLayout.RiveFile) && frameConfig is Dictionary<string, object> configDict)
                             {
                                 if (configDict.TryGetValue("rive", out var riveObj) && riveObj is Dictionary<string, object> riveDict)
                                 {
-                                    var baseUrl = GetServerBaseUrl();
-                                    riveDict["fileUrl"] = $"{baseUrl}/api/frameengine/rive-files/{frameLayout.RiveFile}/content";
-                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added fileUrl to existing rive object for {screenKey}");
+                                    riveDict["fileUrl"] = $"{baseUrl}/api/frameengine/rive/{frameLayout.RiveFile}/content";
+                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added Rive fileUrl for {screenKey}");
+                                }
+                            }
+
+                            // Add imageUrl to background object (if exists)
+                            if (frameConfig is Dictionary<string, object> configDict2)
+                            {
+                                if (configDict2.TryGetValue("background", out var bgObj) && bgObj is Dictionary<string, object> bgDict)
+                                {
+                                    // Check if imageUrl exists and is just a filename
+                                    if (bgDict.TryGetValue("imageUrl", out var imageUrlObj) && imageUrlObj is string imageFilename)
+                                    {
+                                        if (!string.IsNullOrEmpty(imageFilename) && !imageFilename.StartsWith("http"))
+                                        {
+                                            // Convert filename to full URL
+                                            bgDict["imageUrl"] = $"{baseUrl}/api/frameengine/images/{imageFilename}/content";
+                                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added background imageUrl for {screenKey}: {imageFilename}");
+                                        }
+                                    }
+
+                                    // Check if videoUrl exists and is just a filename
+                                    if (bgDict.TryGetValue("videoUrl", out var videoUrlObj) && videoUrlObj is string videoFilename)
+                                    {
+                                        if (!string.IsNullOrEmpty(videoFilename) && !videoFilename.StartsWith("http"))
+                                        {
+                                            // Convert filename to full URL
+                                            bgDict["videoUrl"] = $"{baseUrl}/api/frameengine/videos/{videoFilename}/content";
+                                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added background videoUrl for {screenKey}: {videoFilename}");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -136,6 +166,52 @@ namespace JunctionRelayServer.Services
                     {
                         using var elementsDoc = JsonDocument.Parse(frameLayout.JsonFrameElements);
                         frameElements = CloneJsonValue(elementsDoc.RootElement);
+
+                        // Convert asset element filenames to full URLs
+                        if (frameElements is List<object> elementsList)
+                        {
+                            foreach (var element in elementsList)
+                            {
+                                if (element is Dictionary<string, object> elementDict)
+                                {
+                                    if (elementDict.TryGetValue("type", out var typeObj) && typeObj is string elementType)
+                                    {
+                                        if (elementDict.TryGetValue("properties", out var propsObj) && propsObj is Dictionary<string, object> props)
+                                        {
+                                            // Handle asset-image elements
+                                            if (elementType == "asset-image" && props.TryGetValue("assetImageUrl", out var imageUrlObj) && imageUrlObj is string imageFilename)
+                                            {
+                                                if (!string.IsNullOrEmpty(imageFilename) && !imageFilename.StartsWith("http"))
+                                                {
+                                                    props["assetImageUrl"] = $"{baseUrl}/api/frameengine/images/{imageFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset imageUrl for element: {imageFilename}");
+                                                }
+                                            }
+
+                                            // Handle asset-video elements
+                                            if (elementType == "asset-video" && props.TryGetValue("assetVideoUrl", out var videoUrlObj) && videoUrlObj is string videoFilename)
+                                            {
+                                                if (!string.IsNullOrEmpty(videoFilename) && !videoFilename.StartsWith("http"))
+                                                {
+                                                    props["assetVideoUrl"] = $"{baseUrl}/api/frameengine/videos/{videoFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset videoUrl for element: {videoFilename}");
+                                                }
+                                            }
+
+                                            // Handle asset-rive elements
+                                            if (elementType == "asset-rive" && props.TryGetValue("assetRiveFile", out var riveFileObj) && riveFileObj is string riveFilename)
+                                            {
+                                                if (!string.IsNullOrEmpty(riveFilename) && !riveFilename.StartsWith("http"))
+                                                {
+                                                    props["assetRiveFile"] = $"{baseUrl}/api/frameengine/rive/{riveFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset Rive fileUrl for element: {riveFilename}");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     catch (JsonException ex)
                     {
@@ -204,12 +280,12 @@ namespace JunctionRelayServer.Services
         }
 
         public async Task<Model_PayloadResultCollection> GenerateFrameEngineSensorPayloadsAsync(
-    string screenKey,
-    List<Model_Sensor> assignedSensors,
-    Model_Device_Screens screen,
-    string? junctionType = null,
-    string? gatewayDestination = null,
-    bool compressPayload = false)
+            string screenKey,
+            List<Model_Sensor> assignedSensors,
+            Model_Device_Screens screen,
+            string? junctionType = null,
+            string? gatewayDestination = null,
+            bool compressPayload = false)
         {
             var result = new Model_PayloadResultCollection();
 
@@ -344,7 +420,7 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ❌ Error generating Rive sensor payload for {screenKey}: {ex.Message}");
                 return result;
             }
-        }        
+        }
 
         private string GetServerBaseUrl()
         {

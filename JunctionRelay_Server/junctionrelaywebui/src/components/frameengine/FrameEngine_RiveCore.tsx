@@ -57,6 +57,23 @@ export interface RiveFileInfo {
     fileSize: number;
 }
 
+export interface BackgroundImageInfo {
+    filename: string;
+    displayName: string;
+    uploadDate: string;
+    fileSize: number;
+}
+
+export interface BackgroundVideoInfo {
+    filename: string;
+    displayName: string;
+    uploadDate: string;
+    fileSize: number;
+    duration?: number; // Video duration in seconds
+    width?: number; // Video width in pixels
+    height?: number; // Video height in pixels
+}
+
 // ============================================================================
 // SIMPLE LIVE INPUT ROW
 // ============================================================================

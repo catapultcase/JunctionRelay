@@ -601,7 +601,8 @@ const ConfigureDevice: React.FC = () => {
     // Dispatch bottom action bar configuration for mobile
     useEffect(() => {
         if (isMobile && deviceData) {
-            const isVirtualDevice = deviceData.type === "Virtual Screen";
+            const isVirtualDevice = deviceData.type === "Virtual Screen" ||
+                                    deviceData.type === "Virtual Device";
 
             const event = new CustomEvent('configure-device-bottom-actions', {
                 detail: {
@@ -675,7 +676,8 @@ const ConfigureDevice: React.FC = () => {
 
     const isCustom = deviceData.type === "Custom";
     const isJunctionRelayDevice = deviceData.isJunctionRelayDevice || false;
-    const isVirtualDevice = deviceData.type === "Virtual Screen";
+    const isVirtualDevice = deviceData.type === "Virtual Screen" ||
+                            deviceData.type === "Virtual Device";
 
     // Define accordion panels configuration - UPDATED with new Heartbeat History panel
     const accordionPanels = [

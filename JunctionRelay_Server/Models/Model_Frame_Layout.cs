@@ -25,6 +25,7 @@ namespace JunctionRelayServer.Models
         public string? DisplayName { get; set; }
         public string? Description { get; set; }
         public string LayoutType { get; set; } = "Pre-Rendered Image"; // "Pre-Rendered Image" or "Composite Mode"
+
         // Status and Metadata
         public bool IsTemplate { get; set; } = false;
         public bool IsDraft { get; set; } = true;
@@ -33,16 +34,26 @@ namespace JunctionRelayServer.Models
         public DateTime? LastModified { get; set; }
         public string? CreatedBy { get; set; }
         public string? Version { get; set; } = "1.0";
+
         // Frame Dimensions and Orientation
         public int Width { get; set; } = 792;
         public int Height { get; set; } = 272;
         public string Orientation { get; set; } = "landscape"; // "landscape" or "portrait"
+
         // Background Configuration
-        public string BackgroundType { get; set; } = "color"; // "none", "color", "image", "rive"
+        public string BackgroundType { get; set; } = "color"; // "none", "color", "image", "video", "rive"
         public string? BackgroundColor { get; set; } = "#FFFFFF";
         public string? BackgroundImageUrl { get; set; }
-        public byte[]? BackgroundImageData { get; set; } // For uploaded images
+        public string? BackgroundImageFit { get; set; } = "cover"; // "cover", "contain", "fill", "tile", "stretch", "none"
         public double BackgroundOpacity { get; set; } = 1.0;
+
+        // Video Background Configuration
+        public string? BackgroundVideoUrl { get; set; } // Filename or path to video file
+        public string? BackgroundVideoFit { get; set; } = "cover"; // "cover", "contain", "fill", "stretch", "none"
+        public bool VideoLoop { get; set; } = true; // Whether video should loop
+        public bool VideoMuted { get; set; } = true; // Whether video should be muted
+        public bool VideoAutoplay { get; set; } = true; // Whether video should autoplay
+
         // Rive Configuration
         public string? RiveFile { get; set; }
 
@@ -52,6 +63,7 @@ namespace JunctionRelayServer.Models
         public bool HasThumbnail { get; set; } = false; // Quick check if thumbnail exists
         public string? ThumbnailFormat { get; set; } = "png"; // "png", "jpg", "webp"
         public bool ThumbnailOverride { get; set; } = false;
+
         // Frame Configuration (JSON)
         public string? JsonFrameConfig { get; set; } // Full config with discovery data for editor use
         public string? JsonFrameConfigRuntime { get; set; } // Optimized config for device runtime (stripped of discovery metadata, flattened structure)

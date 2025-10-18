@@ -18,6 +18,7 @@
  */
 
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useTheme } from '@mui/material/styles';
 import {
     FrameEngine_ElementRenderer,
     BaseElement,
@@ -88,6 +89,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
     onRiveDiscovery,
     onCanvasSettingsChange,
 }) => {
+    const theme = useTheme();
     const viewportRef = useRef<HTMLDivElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -125,6 +127,12 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         elementType: null,
     });
 
+    // Check if an element is locked
+    const isElementLocked = useCallback((elementId: string): boolean => {
+        const element = elements.find(el => el.id === elementId);
+        return element?.locked ?? false;
+    }, [elements]);
+
     // Convert PlacedElement[] to BaseElement[] for the shared renderer
     const baseElements: BaseElement[] = useMemo(() => {
         return elements.map(element => ({
@@ -137,7 +145,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 height: element.height,
             },
             properties: element.properties,
-            visible: element.visible ?? true, // Pass visibility flag
+            visible: element.visible ?? true,
+            locked: element.locked ?? false,
         }));
     }, [elements]);
 
@@ -165,18 +174,28 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
 
     // Create background configuration for the shared renderer
     const backgroundConfig: BackgroundConfig = useMemo(() => {
-        const bgType = (layout.backgroundType as 'color' | 'image' | 'rive') || 'color';
+        const bgType = (layout.backgroundType as 'color' | 'image' | 'video' | 'rive') || 'color';
 
         return {
             type: bgType,
             color: layout.backgroundColor,
             imageUrl: layout.backgroundImageUrl || undefined,
+            videoUrl: layout.backgroundVideoUrl || undefined,
             riveFile: layout.riveFile || undefined,
             riveStateMachine: layout.riveStateMachine || undefined,
             riveInputs: layout.riveInputs || undefined,
             riveBindings: layout.riveBindings || undefined,
         };
-    }, [layout.backgroundColor, layout.backgroundImageUrl, layout.backgroundType, layout.riveFile, layout.riveStateMachine, layout.riveInputs, layout.riveBindings]);
+    }, [
+        layout.backgroundColor,
+        layout.backgroundImageUrl,
+        layout.backgroundVideoUrl,
+        layout.backgroundType,
+        layout.riveFile,
+        layout.riveStateMachine,
+        layout.riveInputs,
+        layout.riveBindings
+    ]);
 
     // Canvas settings update handler
     const updateCanvasSettings = useCallback((updates: {
@@ -359,6 +378,12 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
     const handleElementMouseDown = useCallback((event: React.MouseEvent, elementId: string) => {
         if (previewMode) return;
 
+        // Check if element is locked - completely ignore locked elements on canvas
+        if (isElementLocked(elementId)) {
+            // Don't stop propagation - let the click pass through to canvas
+            return;
+        }
+
         event.stopPropagation();
 
         const element = elements.find(el => el.id === elementId);
@@ -389,21 +414,21 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             resizeHandle: null,
             hasAddedHistory: true,
         });
-    }, [previewMode, elements, selectedElementIds, onElementSelect, screenToCanvas, onStartElementOperation]);
+    }, [previewMode, elements, selectedElementIds, onElementSelect, screenToCanvas, onStartElementOperation, isElementLocked]);
 
     const handleElementMouseEnter = useCallback((event: React.MouseEvent, elementId: string) => {
         if (!selectedElementIds.includes(elementId) && !previewMode) {
             const target = event.currentTarget as HTMLElement;
-            target.style.outlineColor = '#999';
+            target.style.outlineColor = theme.palette.text.disabled;
         }
-    }, [selectedElementIds, previewMode]);
+    }, [selectedElementIds, previewMode, theme]);
 
     const handleElementMouseLeave = useCallback((event: React.MouseEvent, elementId: string) => {
         if (!selectedElementIds.includes(elementId) && !previewMode) {
             const target = event.currentTarget as HTMLElement;
-            target.style.outlineColor = '#ccc';
+            target.style.outlineColor = theme.palette.divider;
         }
-    }, [selectedElementIds, previewMode]);
+    }, [selectedElementIds, previewMode, theme]);
 
     // Render resize handles for selected elements
     const renderResizeHandles = useCallback(() => {
@@ -411,7 +436,10 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
 
         return elements.map(element => {
             const isSelected = selectedElementIds.includes(element.id);
-            if (!isSelected) return null;
+            const locked = element.locked ?? false;
+
+            // Don't show resize handles for locked elements
+            if (!isSelected || locked) return null;
 
             const handles = ['nw', 'ne', 'sw', 'se'];
 
@@ -423,8 +451,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                         position: 'absolute',
                         width: '16px',
                         height: '16px',
-                        backgroundColor: '#1976d2',
-                        border: '2px solid white',
+                        backgroundColor: theme.palette.primary.main,
+                        border: `2px solid ${theme.palette.background.paper}`,
                         cursor: `${handle}-resize`,
                         zIndex: 10,
                         left: handle.includes('w') ? element.x - 8 : element.x + element.width - 8,
@@ -461,7 +489,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 />
             ));
         }).flat();
-    }, [elements, selectedElementIds, previewMode, onElementSelect, screenToCanvas, onStartElementOperation]);
+    }, [elements, selectedElementIds, previewMode, onElementSelect, screenToCanvas, onStartElementOperation, theme]);
 
     // Global mouse move and up handlers
     useEffect(() => {
@@ -475,6 +503,11 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             }
 
             if (!previewMode && dragState.isDragging && dragState.elementId) {
+                // Check if element is locked - if so, don't allow dragging/resizing
+                if (isElementLocked(dragState.elementId)) {
+                    return;
+                }
+
                 const canvasPos = screenToCanvas(event.clientX, event.clientY);
                 const deltaX = canvasPos.x - dragState.startPos.x;
                 const deltaY = canvasPos.y - dragState.startPos.y;
@@ -565,7 +598,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             document.removeEventListener('mousemove', handleGlobalMouseMove);
             document.removeEventListener('mouseup', handleGlobalMouseUp);
         };
-    }, [isPanning, dragState, panStart, screenToCanvas, onElementUpdate, snapToGrid, snapToGridValue, previewMode]);
+    }, [isPanning, dragState, panStart, screenToCanvas, onElementUpdate, snapToGrid, snapToGridValue, previewMode, isElementLocked]);
 
     // Handle canvas click (clear selection)
     const handleCanvasClick = useCallback((event: React.MouseEvent) => {
@@ -697,7 +730,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             flex: 1,
             padding: '16px',
             overflow: 'hidden',
-            backgroundColor: '#f5f5f5',
+            backgroundColor: theme.palette.background.default,
             display: 'flex',
             flexDirection: 'column'
         }}>
@@ -734,28 +767,29 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             style={{
                                 padding: '8px 12px',
                                 fontSize: '12px',
-                                backgroundColor: '#fff',
-                                border: '1px solid #ccc',
+                                backgroundColor: theme.palette.background.paper,
+                                border: `1px solid ${theme.palette.divider}`,
                                 borderRadius: '4px',
                                 cursor: 'pointer',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                boxShadow: theme.shadows[2],
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px'
+                                gap: '4px',
+                                color: theme.palette.text.primary
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.palette.action.hover}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.palette.background.paper}
                             title="Reset view to fit and center"
                         >
                             🎯 Reset View
                         </button>
 
                         <div style={{
-                            backgroundColor: '#fff',
-                            border: '1px solid #ccc',
+                            backgroundColor: theme.palette.background.paper,
+                            border: `1px solid ${theme.palette.divider}`,
                             borderRadius: '4px',
                             padding: '8px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            boxShadow: theme.shadows[2],
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '6px',
@@ -767,7 +801,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 gap: '6px',
                                 fontSize: '12px',
                                 fontWeight: 500,
-                                color: '#333',
+                                color: theme.palette.text.primary,
                                 cursor: 'pointer'
                             }}>
                                 <input
@@ -785,7 +819,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 gap: '6px',
                                 fontSize: '12px',
                                 fontWeight: 500,
-                                color: '#333',
+                                color: theme.palette.text.primary,
                                 cursor: 'pointer'
                             }}>
                                 <input
@@ -802,7 +836,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 alignItems: 'center',
                                 gap: '6px',
                                 fontSize: '11px',
-                                color: '#666',
+                                color: theme.palette.text.secondary,
                                 minHeight: '28px',
                                 padding: '4px 0'
                             }}>
@@ -818,9 +852,11 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                         height: '24px',
                                         padding: '4px 6px',
                                         fontSize: '11px',
-                                        border: '1px solid #ccc',
+                                        border: `1px solid ${theme.palette.divider}`,
                                         borderRadius: '3px',
-                                        textAlign: 'center'
+                                        textAlign: 'center',
+                                        backgroundColor: theme.palette.background.paper,
+                                        color: theme.palette.text.primary
                                     }}
                                 />
                                 <span>px</span>
@@ -831,7 +867,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 alignItems: 'center',
                                 gap: '6px',
                                 fontSize: '11px',
-                                color: '#666',
+                                color: theme.palette.text.secondary,
                                 minHeight: '28px',
                                 padding: '4px 0'
                             }}>
@@ -843,7 +879,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                     style={{
                                         width: '24px',
                                         height: '24px',
-                                        border: '1px solid #ccc',
+                                        border: `1px solid ${theme.palette.divider}`,
                                         borderRadius: '3px',
                                         cursor: 'pointer',
                                         backgroundColor: 'transparent'
@@ -853,11 +889,11 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                         </div>
 
                         <div style={{
-                            backgroundColor: '#fff',
-                            border: '1px solid #ccc',
+                            backgroundColor: theme.palette.background.paper,
+                            border: `1px solid ${theme.palette.divider}`,
                             borderRadius: '4px',
                             padding: '8px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            boxShadow: theme.shadows[2],
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '6px',
@@ -868,7 +904,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 alignItems: 'center',
                                 gap: '6px',
                                 fontSize: '11px',
-                                color: '#666',
+                                color: theme.palette.text.secondary,
                                 minHeight: '28px',
                                 padding: '4px 0'
                             }}>
@@ -886,9 +922,11 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                         height: '24px',
                                         padding: '4px 6px',
                                         fontSize: '11px',
-                                        border: '1px solid #ccc',
+                                        border: `1px solid ${theme.palette.divider}`,
                                         borderRadius: '3px',
-                                        textAlign: 'center'
+                                        textAlign: 'center',
+                                        backgroundColor: theme.palette.background.paper,
+                                        color: theme.palette.text.primary
                                     }}
                                 />
                                 <span>px</span>
@@ -913,17 +951,18 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             style={{
                                 padding: '8px 12px',
                                 fontSize: '12px',
-                                backgroundColor: '#fff',
-                                border: '1px solid #ccc',
+                                backgroundColor: theme.palette.background.paper,
+                                border: `1px solid ${theme.palette.divider}`,
                                 borderRadius: '4px',
                                 cursor: 'pointer',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                boxShadow: theme.shadows[2],
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px'
+                                gap: '4px',
+                                color: theme.palette.text.primary
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.palette.action.hover}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.palette.background.paper}
                             title="Reset view to fit and center"
                         >
                             Reset View
@@ -948,8 +987,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                         className="frame-canvas-area"
                         style={{
                             position: 'relative',
-                            border: (!previewMode && dropZone.isActive) ? '2px dashed #1976d2' : 'none',
-                            boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                            border: (!previewMode && dropZone.isActive) ? `2px dashed ${theme.palette.primary.main}` : 'none',
+                            boxShadow: theme.shadows[4],
                             userSelect: 'none',
                             width: layout.width,
                             height: layout.height,
@@ -1017,8 +1056,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             <div style={{
                                 position: 'absolute',
                                 inset: '0',
-                                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                                border: '2px dashed #1976d2',
+                                backgroundColor: `${theme.palette.primary.main}1A`,
+                                border: `2px dashed ${theme.palette.primary.main}`,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -1026,7 +1065,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 zIndex: 10
                             }}>
                                 <div style={{
-                                    color: '#1976d2',
+                                    color: theme.palette.primary.main,
                                     fontSize: '18px',
                                     fontWeight: 500
                                 }}>
@@ -1043,7 +1082,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: '#999',
+                                color: theme.palette.text.disabled,
                                 zIndex: 1
                             }}>
                                 <div style={{ textAlign: 'center' }}>
@@ -1061,7 +1100,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: '#999',
+                                color: theme.palette.text.disabled,
                                 backgroundColor: 'rgba(255,255,255,0.8)',
                                 zIndex: 5
                             }}>
@@ -1080,7 +1119,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 marginTop: '16px',
                 textAlign: 'center',
                 fontSize: '14px',
-                color: '#666'
+                color: theme.palette.text.secondary
             }}>
                 Scale: {Math.round(viewport.scale * 100)}% |
                 Canvas: {layout.width}×{layout.height} |
@@ -1093,10 +1132,10 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                     <span> | Rive: {backgroundConfig.riveFile}</span>
                 )}
                 {previewMode && (
-                    <span style={{ color: '#ff9800', fontWeight: 500 }}> | PREVIEW MODE</span>
+                    <span style={{ color: theme.palette.warning.main, fontWeight: 500 }}> | PREVIEW MODE</span>
                 )}
                 <br />
-                <span style={{ fontSize: '12px', color: '#999' }}>
+                <span style={{ fontSize: '12px', color: theme.palette.text.disabled }}>
                     {previewMode ? (
                         'Wheel: Zoom | Shift+Wheel: Pan Horizontal | Middle Click+Drag: Pan'
                     ) : (

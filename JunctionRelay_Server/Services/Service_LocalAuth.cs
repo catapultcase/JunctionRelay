@@ -123,11 +123,32 @@ namespace JunctionRelayServer.Services
             return new OkObjectResult(new { message = "Logged out successfully", authMode = "local" });
         }
 
-        public async Task<IActionResult> GetAuthStatusAsync(HttpContext httpContext)
+        public async Task<IActionResult> GetAuthStatusAsync(HttpContext httpContext, string? authHeader)
         {
             var hasUsers = await _authService.HasAnyUsersAsync();
-            var isAuthenticated = httpContext.User.Identity?.IsAuthenticated ?? false;
-            var username = isAuthenticated ? httpContext.User.Identity?.Name : null;
+
+            // Check if there's a valid token in the auth header
+            bool isAuthenticated = false;
+            string? username = null;
+
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+            {
+                var token = authHeader.Substring("Bearer ".Length);
+                var principal = _jwtService.ValidateToken(token);
+
+                if (principal != null)
+                {
+                    isAuthenticated = true;
+                    username = principal.Identity?.Name;
+                }
+            }
+
+            // Fallback to checking httpContext if no auth header provided
+            if (!isAuthenticated && (httpContext.User.Identity?.IsAuthenticated ?? false))
+            {
+                isAuthenticated = true;
+                username = httpContext.User.Identity?.Name;
+            }
 
             return new OkObjectResult(new
             {
@@ -135,7 +156,10 @@ namespace JunctionRelayServer.Services
                 isConfigured = hasUsers,
                 requiresSetup = !hasUsers,
                 isAuthenticated = isAuthenticated,
-                currentUser = username,
+                user = username,
+                hasValidLicense = false,
+                licenseType = "Local",
+                backendAuthenticated = isAuthenticated,
                 authType = "Local"
             });
         }

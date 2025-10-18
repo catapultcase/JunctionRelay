@@ -38,6 +38,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ScreenshotMonitorIcon from '@mui/icons-material/ScreenshotMonitor';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
+import DevicesOtherIcon from '@mui/icons-material/DevicesOther';
 
 interface ServiceSettings {
     service_heartbeats_enabled: boolean;
@@ -51,6 +52,7 @@ interface DeviceManagementSectionProps {
     setScanModalOpen: (open: boolean) => void;
     setAddCustomDeviceModalOpen: (open: boolean) => void;
     setAddVirtualScreenModalOpen: (open: boolean) => void;
+    setAddVirtualDeviceModalOpen: (open: boolean) => void;
     checkForUpdates: () => Promise<void>;
     handleRefreshCloudDevices: () => Promise<void>;
     refreshingCloudDevices: boolean;
@@ -64,6 +66,7 @@ const DeviceManagementSection: React.FC<DeviceManagementSectionProps> = ({
     setScanModalOpen,
     setAddCustomDeviceModalOpen,
     setAddVirtualScreenModalOpen,
+    setAddVirtualDeviceModalOpen,
     checkForUpdates,
     handleRefreshCloudDevices,
     refreshingCloudDevices,
@@ -211,6 +214,18 @@ const DeviceManagementSection: React.FC<DeviceManagementSectionProps> = ({
                     data-testid="add-virtual-screen-button"
                 >
                     Create Virtual Screen
+                </Button>
+
+                {/* Add Virtual Device Button */}
+                <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={() => setAddVirtualDeviceModalOpen(true)}
+                    startIcon={<DevicesOtherIcon />}
+                    size="small"
+                    data-testid="add-virtual-device-button"
+                >
+                    Add Virtual Device
                 </Button>
 
                 {/* Check for Firmware Updates Button */}

@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { useTheme } from '@mui/material/styles';
 import type { FrameLayoutConfig, PlacedElement } from './FrameEngine_Types';
 
 interface ToolbarProps {
@@ -57,6 +58,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     onExport,
     onPublish,
 }) => {
+    const theme = useTheme();
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
     const handleAction = useCallback(async (actionName: string, action: () => Promise<void>) => {
@@ -92,7 +94,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
     // Keyboard shortcuts - disabled in preview mode
     React.useEffect(() => {
-        if (previewMode) return; // Don't register shortcuts in preview mode
+        if (previewMode) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.ctrlKey || e.metaKey) {
@@ -100,10 +102,8 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                     case 's':
                         e.preventDefault();
                         if (e.shiftKey && isDirty) {
-                            // Ctrl+Shift+S for full save
                             handleSave();
                         } else if (isDirty) {
-                            // Ctrl+S for quick save
                             handleQuickSave();
                         }
                         break;
@@ -123,65 +123,89 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isDirty, canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo, previewMode]);
 
-    const buttonStyle = {
-        padding: '6px 12px',
-        margin: '0 2px',
-        border: '1px solid #ddd',
-        borderRadius: '4px',
-        background: '#fff',
-        cursor: 'pointer',
-        fontSize: '14px',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px'
-    } as const;
+    const getButtonStyle = (variant: 'default' | 'primary' | 'success' | 'disabled' | 'preview') => {
+        const baseStyle = {
+            padding: '6px 12px',
+            margin: '0 2px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            transition: 'all 0.2s',
+            border: `1px solid ${theme.palette.divider}`,
+        };
 
-    const primaryButtonStyle = {
-        ...buttonStyle,
-        background: '#1976d2',
-        color: 'white',
-        border: '1px solid #1976d2'
-    } as const;
-
-    const secondaryButtonStyle = {
-        ...buttonStyle,
-        background: '#4caf50',
-        color: 'white',
-        border: '1px solid #4caf50'
-    } as const;
-
-    const disabledButtonStyle = {
-        ...buttonStyle,
-        background: '#f5f5f5',
-        color: '#999',
-        cursor: 'not-allowed'
-    } as const;
-
-    // Preview mode button style
-    const previewActiveButtonStyle = {
-        ...buttonStyle,
-        background: '#ff9800',
-        color: 'white',
-        border: '1px solid #ff9800'
-    } as const;
+        switch (variant) {
+            case 'primary':
+                return {
+                    ...baseStyle,
+                    background: theme.palette.primary.main,
+                    color: theme.palette.primary.contrastText,
+                    border: `1px solid ${theme.palette.primary.main}`,
+                };
+            case 'success':
+                return {
+                    ...baseStyle,
+                    background: theme.palette.success.main,
+                    color: theme.palette.success.contrastText,
+                    border: `1px solid ${theme.palette.success.main}`,
+                };
+            case 'disabled':
+                return {
+                    ...baseStyle,
+                    background: theme.palette.action.disabledBackground,
+                    color: theme.palette.action.disabled,
+                    cursor: 'not-allowed',
+                    border: `1px solid ${theme.palette.divider}`,
+                };
+            case 'preview':
+                return {
+                    ...baseStyle,
+                    background: theme.palette.warning.main,
+                    color: theme.palette.warning.contrastText,
+                    border: `1px solid ${theme.palette.warning.main}`,
+                };
+            default:
+                return {
+                    ...baseStyle,
+                    background: theme.palette.background.paper,
+                    color: theme.palette.text.primary,
+                    border: `1px solid ${theme.palette.divider}`,
+                };
+        }
+    };
 
     return (
         <div style={{
             height: '56px',
-            backgroundColor: previewMode ? '#f8f9fa' : '#fff',
-            borderBottom: '1px solid #e0e0e0',
+            backgroundColor: previewMode ? theme.palette.grey[100] : theme.palette.background.paper,
+            borderBottom: `1px solid ${theme.palette.divider}`,
             padding: '0 16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between'
         }}>
-            {/* Left Section - File Operations (Always visible, disabled in preview mode) */}
+            {/* Left Section - File Operations */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <button
                     onClick={handleQuickSave}
                     disabled={previewMode || !isDirty || isLoading}
-                    style={(previewMode || !isDirty || isLoading) ? disabledButtonStyle : primaryButtonStyle}
+                    style={getButtonStyle(
+                        (previewMode || !isDirty || isLoading) ? 'disabled' : 'primary'
+                    )}
                     title={previewMode ? "Quick Save (disabled in preview mode)" : "Quick Save (Ctrl+S) - Save with current thumbnail settings"}
+                    onMouseEnter={(e) => {
+                        if (!previewMode && isDirty && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.primary.dark;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!previewMode && isDirty && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.primary.main;
+                        }
+                    }}
                 >
                     {loadingAction === 'quickSave' ? '⏳' : '💾'} Quick Save
                 </button>
@@ -189,20 +213,49 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 <button
                     onClick={handleSave}
                     disabled={previewMode || !isDirty || isLoading}
-                    style={(previewMode || !isDirty || isLoading) ? disabledButtonStyle : secondaryButtonStyle}
+                    style={getButtonStyle(
+                        (previewMode || !isDirty || isLoading) ? 'disabled' : 'success'
+                    )}
                     title={previewMode ? "Save (disabled in preview mode)" : "Save & Manage Thumbnail (Ctrl+Shift+S) - Review and update thumbnail"}
+                    onMouseEnter={(e) => {
+                        if (!previewMode && isDirty && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.success.dark;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!previewMode && isDirty && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.success.main;
+                        }
+                    }}
                 >
                     {loadingAction === 'save' ? '⏳' : '🖼️'} Save
                 </button>
 
-                <div style={{ width: '1px', height: '24px', backgroundColor: '#ddd', margin: '0 8px' }} />
+                <div style={{
+                    width: '1px',
+                    height: '24px',
+                    backgroundColor: theme.palette.divider,
+                    margin: '0 8px'
+                }} />
 
                 {/* Undo/Redo */}
                 <button
                     onClick={onUndo}
                     disabled={previewMode || !canUndo || isLoading}
-                    style={(previewMode || !canUndo || isLoading) ? disabledButtonStyle : buttonStyle}
+                    style={getButtonStyle(
+                        (previewMode || !canUndo || isLoading) ? 'disabled' : 'default'
+                    )}
                     title={previewMode ? "Undo (disabled in preview mode)" : "Undo (Ctrl+Z)"}
+                    onMouseEnter={(e) => {
+                        if (!previewMode && canUndo && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.action.hover;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!previewMode && canUndo && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.background.paper;
+                        }
+                    }}
                 >
                     ↶
                 </button>
@@ -210,19 +263,31 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 <button
                     onClick={onRedo}
                     disabled={previewMode || !canRedo || isLoading}
-                    style={(previewMode || !canRedo || isLoading) ? disabledButtonStyle : buttonStyle}
+                    style={getButtonStyle(
+                        (previewMode || !canRedo || isLoading) ? 'disabled' : 'default'
+                    )}
                     title={previewMode ? "Redo (disabled in preview mode)" : "Redo (Ctrl+Shift+Z)"}
+                    onMouseEnter={(e) => {
+                        if (!previewMode && canRedo && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.action.hover;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!previewMode && canRedo && !isLoading) {
+                            e.currentTarget.style.background = theme.palette.background.paper;
+                        }
+                    }}
                 >
                     ↷
                 </button>
             </div>
 
-            {/* Center Section - Layout Info with Preview Mode indicator */}
+            {/* Center Section - Layout Info */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px' }}>
                 {previewMode && (
                     <div style={{
-                        backgroundColor: '#ff9800',
-                        color: 'white',
+                        backgroundColor: theme.palette.warning.main,
+                        color: theme.palette.warning.contrastText,
                         padding: '4px 12px',
                         borderRadius: '16px',
                         fontSize: '12px',
@@ -233,37 +298,49 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                         👁️ Preview Mode
                     </div>
                 )}
-                <div style={{ color: '#666' }}>
+                <div style={{ color: theme.palette.text.primary }}>
                     <span style={{ fontWeight: 500 }}>{layout.displayName}</span>
-                    {!previewMode && isDirty && <span style={{ color: '#ff9800', marginLeft: '4px' }}>●</span>}
+                    {!previewMode && isDirty && (
+                        <span style={{ color: theme.palette.warning.main, marginLeft: '4px' }}>●</span>
+                    )}
                 </div>
-                <div style={{ color: '#999' }}>
+                <div style={{ color: theme.palette.text.secondary }}>
                     {layout.width}×{layout.height}
                 </div>
-                <div style={{ color: '#999' }}>
+                <div style={{ color: theme.palette.text.secondary }}>
                     {elements.length} elements
                 </div>
                 {!previewMode && selectedElements.length > 0 && (
-                    <div style={{ color: '#1976d2' }}>
+                    <div style={{ color: theme.palette.primary.main }}>
                         {selectedElements.length} selected
                     </div>
                 )}
             </div>
 
-            {/* Right Section - Actions (Always visible, some disabled in preview mode) */}
+            {/* Right Section - Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {/* Preview Button - Always visible with different text and styles */}
+                {/* Preview Button */}
                 <button
                     onClick={handlePreview}
                     disabled={isLoading}
-                    style={previewMode ? previewActiveButtonStyle : {
-                        ...buttonStyle,
-                        background: '#4caf50',
-                        color: 'white',
-                        border: '1px solid #4caf50',
-                        ...(isLoading ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
-                    }}
+                    style={getButtonStyle(
+                        isLoading ? 'disabled' : (previewMode ? 'preview' : 'success')
+                    )}
                     title={previewMode ? "Exit Preview Mode" : "Enter Preview Mode"}
+                    onMouseEnter={(e) => {
+                        if (!isLoading) {
+                            e.currentTarget.style.background = previewMode
+                                ? theme.palette.warning.dark
+                                : theme.palette.success.dark;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!isLoading) {
+                            e.currentTarget.style.background = previewMode
+                                ? theme.palette.warning.main
+                                : theme.palette.success.main;
+                        }
+                    }}
                 >
                     {loadingAction === 'preview' ? '⏳' : previewMode ? '✏️' : '👁️'}
                     {previewMode ? 'Edit' : 'Preview'}
@@ -272,8 +349,20 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 <button
                     onClick={handleExport}
                     disabled={previewMode || isLoading || !layout.id}
-                    style={(previewMode || isLoading || !layout.id) ? disabledButtonStyle : buttonStyle}
+                    style={getButtonStyle(
+                        (previewMode || isLoading || !layout.id) ? 'disabled' : 'default'
+                    )}
                     title={previewMode ? "Export Layout Package (disabled in preview mode)" : "Export Layout Package"}
+                    onMouseEnter={(e) => {
+                        if (!previewMode && !isLoading && layout.id) {
+                            e.currentTarget.style.background = theme.palette.action.hover;
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!previewMode && !isLoading && layout.id) {
+                            e.currentTarget.style.background = theme.palette.background.paper;
+                        }
+                    }}
                 >
                     {loadingAction === 'export' ? '⏳' : '📤'} Export
                 </button>
@@ -283,14 +372,30 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                         onClick={handlePublish}
                         disabled={previewMode || isLoading || isDirty}
                         style={{
-                            ...buttonStyle,
-                            background: previewMode ? '#f5f5f5' : '#9c27b0',
-                            color: previewMode ? '#999' : 'white',
-                            border: previewMode ? '1px solid #ddd' : '1px solid #9c27b0',
-                            cursor: previewMode ? 'not-allowed' : 'pointer',
-                            ...((!previewMode && (isLoading || isDirty)) ? { background: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {})
+                            ...getButtonStyle(
+                                (previewMode || isLoading || isDirty) ? 'disabled' : 'default'
+                            ),
+                            background: (previewMode || isLoading || isDirty)
+                                ? theme.palette.action.disabledBackground
+                                : theme.palette.secondary.main,
+                            color: (previewMode || isLoading || isDirty)
+                                ? theme.palette.action.disabled
+                                : theme.palette.secondary.contrastText,
+                            border: (previewMode || isLoading || isDirty)
+                                ? `1px solid ${theme.palette.divider}`
+                                : `1px solid ${theme.palette.secondary.main}`,
                         }}
                         title={previewMode ? "Publish Layout (disabled in preview mode)" : "Publish Layout"}
+                        onMouseEnter={(e) => {
+                            if (!previewMode && !isLoading && !isDirty) {
+                                e.currentTarget.style.background = theme.palette.secondary.dark;
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (!previewMode && !isLoading && !isDirty) {
+                                e.currentTarget.style.background = theme.palette.secondary.main;
+                            }
+                        }}
                     >
                         {loadingAction === 'publish' ? '⏳' : '🚀'} Publish
                     </button>

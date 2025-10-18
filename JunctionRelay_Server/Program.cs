@@ -1,3 +1,22 @@
+/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 using System.Data;
 using Microsoft.Data.Sqlite;
 using System.Runtime.InteropServices;
@@ -83,6 +102,9 @@ var framesPath = Path.Combine(dataDirectory, "frameengine", "frames");
 var firmwareDirectory = Path.Combine(dataDirectory, "firmware");
 var releaseCacheDirectory = Path.Combine(firmwareDirectory, "releases");
 var riveDirectory = Path.Combine(dataDirectory, "frameengine", "rive");
+var assetsDirectory = Path.Combine(dataDirectory, "frameengine", "assets");
+var videosDirectory = Path.Combine(dataDirectory, "frameengine", "videos");
+var thumbnailsDirectory = Path.Combine(dataDirectory, "frameengine", "thumbnails");
 
 // Ensure all directories exist
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -91,6 +113,9 @@ Directory.CreateDirectory(framesPath);
 Directory.CreateDirectory(firmwareDirectory);
 Directory.CreateDirectory(releaseCacheDirectory);
 Directory.CreateDirectory(riveDirectory);
+Directory.CreateDirectory(assetsDirectory);
+Directory.CreateDirectory(videosDirectory);
+Directory.CreateDirectory(thumbnailsDirectory);
 
 Console.WriteLine($"[STARTUP] Data directory:      {dataDirectory}");
 Console.WriteLine($"[STARTUP] Database path:       {dbPath}");
@@ -99,6 +124,9 @@ Console.WriteLine($"[STARTUP] Frames directory:    {framesPath}");
 Console.WriteLine($"[STARTUP] Firmware directory:  {firmwareDirectory}");
 Console.WriteLine($"[STARTUP] Release cache:       {releaseCacheDirectory}");
 Console.WriteLine($"[STARTUP] Rive directory:      {riveDirectory}");
+Console.WriteLine($"[STARTUP] Assets directory:    {assetsDirectory}");
+Console.WriteLine($"[STARTUP] Videos directory:    {videosDirectory}");
+Console.WriteLine($"[STARTUP] Thumbnails directory: {thumbnailsDirectory}");
 
 // Handle pending database updates
 var pending = dbPath + ".pending";

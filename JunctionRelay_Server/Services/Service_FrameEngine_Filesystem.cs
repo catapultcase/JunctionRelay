@@ -20,6 +20,7 @@
 using JunctionRelayServer.Models;
 using JunctionRelayServer.Utils;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace JunctionRelayServer.Services
 {
@@ -90,6 +91,7 @@ namespace JunctionRelayServer.Services
                 OrphanedRiveFiles = new List<string>(),
                 OrphanedThumbnails = new List<string>(),
                 OrphanedFrameImages = new List<string>(),
+                OrphanedAssets = new List<string>(),
                 TotalOrphanedFiles = 0,
                 EstimatedSizeMB = 0
             };
@@ -108,10 +110,14 @@ namespace JunctionRelayServer.Services
                 // Audit frame images (rendered frames in output directory)
                 await AuditFrameImages(frameLayouts, report);
 
+                // Audit assets (background images and videos)
+                await AuditAssets(frameLayouts, report);
+
                 // Calculate totals
                 report.TotalOrphanedFiles = report.OrphanedRiveFiles.Count +
                                            report.OrphanedThumbnails.Count +
-                                           report.OrphanedFrameImages.Count;
+                                           report.OrphanedFrameImages.Count +
+                                           report.OrphanedAssets.Count;
             }
             catch (Exception ex)
             {
@@ -211,6 +217,28 @@ namespace JunctionRelayServer.Services
                     }
                 }
 
+                // Delete orphaned assets (background images and videos)
+                foreach (var asset in report.OrphanedAssets)
+                {
+                    try
+                    {
+                        var filePath = GetAssetFullPath(asset);
+                        if (File.Exists(filePath))
+                        {
+                            var fileInfo = new FileInfo(filePath);
+                            var sizeMB = fileInfo.Length / (1024.0 * 1024.0);
+
+                            File.Delete(filePath);
+                            result.DeletedFiles.Add(asset);
+                            result.FreedSpaceMB += sizeMB;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Errors.Add($"Failed to delete asset '{asset}': {ex.Message}");
+                    }
+                }
+
                 result.DeletedCount = result.DeletedFiles.Count;
             }
             catch (Exception ex)
@@ -241,12 +269,52 @@ namespace JunctionRelayServer.Services
                     .Select(fl => fl.RiveFile!)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+                // Extract asset element references from jsonFrameElements
+                var referencedAssetRiveFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var layout in frameLayouts)
+                {
+                    if (!string.IsNullOrEmpty(layout.JsonFrameElements))
+                    {
+                        try
+                        {
+                            var elements = JsonSerializer.Deserialize<List<JsonElement>>(layout.JsonFrameElements);
+                            if (elements != null)
+                            {
+                                foreach (var element in elements)
+                                {
+                                    if (element.TryGetProperty("type", out var typeProperty))
+                                    {
+                                        var elementType = typeProperty.GetString();
+
+                                        if (element.TryGetProperty("properties", out var properties))
+                                        {
+                                            // Asset Rive elements
+                                            if (elementType == "asset-rive" &&
+                                                properties.TryGetProperty("assetRiveFile", out var riveFile))
+                                            {
+                                                var file = riveFile.GetString();
+                                                if (!string.IsNullOrEmpty(file))
+                                                    referencedAssetRiveFiles.Add(file);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[SERVICE_FRAMEENGINE_FILESYSTEM] Error parsing elements for layout {layout.Id}: {ex.Message}");
+                        }
+                    }
+                }
+
                 // Find orphaned files
                 foreach (var riveFile in riveFiles)
                 {
                     var fileName = Path.GetFileName(riveFile);
 
-                    if (!referencedRiveFiles.Contains(fileName))
+                    if (!referencedRiveFiles.Contains(fileName) && !referencedAssetRiveFiles.Contains(fileName))
                     {
                         report.OrphanedRiveFiles.Add(fileName);
 
@@ -344,6 +412,133 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        // Audit assets (background images and videos in separate directories)
+        private async Task AuditAssets(List<Model_Frame_Layout> frameLayouts, OrphanedFilesReport report)
+        {
+            try
+            {
+                // Extract asset element references from jsonFrameElements
+                var referencedAssetImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var referencedAssetVideos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var layout in frameLayouts)
+                {
+                    if (!string.IsNullOrEmpty(layout.JsonFrameElements))
+                    {
+                        try
+                        {
+                            var elements = JsonSerializer.Deserialize<List<JsonElement>>(layout.JsonFrameElements);
+                            if (elements != null)
+                            {
+                                foreach (var element in elements)
+                                {
+                                    if (element.TryGetProperty("type", out var typeProperty))
+                                    {
+                                        var elementType = typeProperty.GetString();
+
+                                        if (element.TryGetProperty("properties", out var properties))
+                                        {
+                                            // Asset Image elements
+                                            if (elementType == "asset-image" &&
+                                                properties.TryGetProperty("assetImageUrl", out var imageUrl))
+                                            {
+                                                var url = imageUrl.GetString();
+                                                if (!string.IsNullOrEmpty(url))
+                                                    referencedAssetImages.Add(url);
+                                            }
+
+                                            // Asset Video elements
+                                            if (elementType == "asset-video" &&
+                                                properties.TryGetProperty("assetVideoUrl", out var videoUrl))
+                                            {
+                                                var url = videoUrl.GetString();
+                                                if (!string.IsNullOrEmpty(url))
+                                                    referencedAssetVideos.Add(url);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[SERVICE_FRAMEENGINE_FILESYSTEM] Error parsing elements for layout {layout.Id}: {ex.Message}");
+                        }
+                    }
+                }
+
+                // ========================================
+                // Audit Background Images (assets folder)
+                // ========================================
+                var assetsPath = GetAssetsUserPath();
+                if (Directory.Exists(assetsPath))
+                {
+                    var imageExtensions = new[] { ".png", ".jpg", ".jpeg", ".webp", ".gif" };
+                    var imageFiles = Directory.GetFiles(assetsPath, "*.*")
+                        .Where(f => imageExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                        .ToList();
+
+                    // Get list of background images referenced by frame layouts
+                    var referencedImages = frameLayouts
+                        .Where(fl => !string.IsNullOrEmpty(fl.BackgroundImageUrl))
+                        .Select(fl => fl.BackgroundImageUrl!)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    // Find orphaned image files
+                    foreach (var imageFile in imageFiles)
+                    {
+                        var fileName = Path.GetFileName(imageFile);
+
+                        if (!referencedImages.Contains(fileName) && !referencedAssetImages.Contains(fileName))
+                        {
+                            report.OrphanedAssets.Add(fileName);
+
+                            // Add to estimated size
+                            var fileInfo = new FileInfo(imageFile);
+                            report.EstimatedSizeMB += fileInfo.Length / (1024.0 * 1024.0);
+                        }
+                    }
+                }
+
+                // ========================================
+                // Audit Background Videos (videos folder)
+                // ========================================
+                var videosPath = GetVideosUserPath();
+                if (Directory.Exists(videosPath))
+                {
+                    var videoExtensions = new[] { ".mp4", ".webm", ".ogg", ".mov", ".avi" };
+                    var videoFiles = Directory.GetFiles(videosPath, "*.*")
+                        .Where(f => videoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                        .ToList();
+
+                    // Get list of background videos referenced by frame layouts
+                    var referencedVideos = frameLayouts
+                        .Where(fl => !string.IsNullOrEmpty(fl.BackgroundVideoUrl))
+                        .Select(fl => fl.BackgroundVideoUrl!)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    // Find orphaned video files
+                    foreach (var videoFile in videoFiles)
+                    {
+                        var fileName = Path.GetFileName(videoFile);
+
+                        if (!referencedVideos.Contains(fileName) && !referencedAssetVideos.Contains(fileName))
+                        {
+                            report.OrphanedAssets.Add(fileName);
+
+                            // Add to estimated size
+                            var fileInfo = new FileInfo(videoFile);
+                            report.EstimatedSizeMB += fileInfo.Length / (1024.0 * 1024.0);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_FRAMEENGINE_FILESYSTEM] Error auditing assets: {ex.Message}");
+            }
+        }
+
         // Path helper methods
         private string GetRiveUserPath()
         {
@@ -369,6 +564,24 @@ namespace JunctionRelayServer.Services
             return Path.Combine(dataDir, "frameengine", "frames");
         }
 
+        // Get assets user path (background images)
+        private string GetAssetsUserPath()
+        {
+            var dbPath = _dbPathProvider.DbPath;
+            var dataDir = Path.GetDirectoryName(dbPath) ??
+                         Path.Combine(_webHostEnvironment.ContentRootPath, "data");
+            return Path.Combine(dataDir, "frameengine", "assets");
+        }
+
+        // Get videos user path (background videos)
+        private string GetVideosUserPath()
+        {
+            var dbPath = _dbPathProvider.DbPath;
+            var dataDir = Path.GetDirectoryName(dbPath) ??
+                         Path.Combine(_webHostEnvironment.ContentRootPath, "data");
+            return Path.Combine(dataDir, "frameengine", "videos");
+        }
+
         private string GetRiveUserFilePath(string fileName)
         {
             return Path.Combine(GetRiveUserPath(), fileName);
@@ -383,6 +596,22 @@ namespace JunctionRelayServer.Services
         {
             return Path.Combine(GetFramesPath(), fileName);
         }
+
+        // Get asset full path (checks both images and videos folders)
+        private string GetAssetFullPath(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            var videoExtensions = new[] { ".mp4", ".webm", ".ogg", ".mov", ".avi" };
+
+            // If it's a video, look in videos folder
+            if (videoExtensions.Contains(extension))
+            {
+                return Path.Combine(GetVideosUserPath(), fileName);
+            }
+
+            // Otherwise, look in assets folder (images)
+            return Path.Combine(GetAssetsUserPath(), fileName);
+        }
     }
 
     // DTOs for filesystem operations
@@ -391,6 +620,7 @@ namespace JunctionRelayServer.Services
         public List<string> OrphanedRiveFiles { get; set; } = new();
         public List<string> OrphanedThumbnails { get; set; } = new();
         public List<string> OrphanedFrameImages { get; set; } = new();
+        public List<string> OrphanedAssets { get; set; } = new();
         public int TotalOrphanedFiles { get; set; }
         public double EstimatedSizeMB { get; set; }
     }

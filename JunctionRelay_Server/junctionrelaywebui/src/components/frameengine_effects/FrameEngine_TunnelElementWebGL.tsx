@@ -17,25 +17,6 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/*
- * This file is part of JunctionRelay.
- *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
- *
- * JunctionRelay is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * JunctionRelay is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
- */
-
 import React, { useEffect, useRef, useCallback } from 'react';
 
 interface TunnelElementProps {
@@ -45,7 +26,7 @@ interface TunnelElementProps {
     height: number;
     primaryColor?: string;
     secondaryColor?: string;
-    backgroundColor?: string;
+    backgroundColor?: string; // Accepts any valid CSS color or 'transparent'
     tunnelType?: 'circular' | 'square' | 'hexagon' | 'star' | 'spiral';
     speed?: number;
     depth?: number;
@@ -287,6 +268,9 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
     const timeRef = useRef<number>(0);
     const isMountedRef = useRef(true);
 
+    // Check if background is transparent
+    const isTransparent = backgroundColor === 'transparent' || backgroundColor === 'rgba(0,0,0,0)' || backgroundColor === 'rgba(0, 0, 0, 0)';
+
     const hexToRgb = (hex: string): [number, number, number] => {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
         if (result) {
@@ -366,7 +350,7 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
         if (!canvas) return false;
 
         const gl = canvas.getContext('webgl', {
-            alpha: backgroundColor === 'transparent',
+            alpha: isTransparent,
             premultipliedAlpha: false,
             antialias: true
         });
@@ -413,7 +397,7 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
         return true;
-    }, [width, height, backgroundColor]);
+    }, [width, height, isTransparent]);
 
     const createBuffers = useCallback(() => {
         const gl = glRef.current;
@@ -498,7 +482,7 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
         gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
         gl.viewport(0, 0, width, height);
 
-        if (backgroundColor === 'transparent') {
+        if (isTransparent) {
             gl.clearColor(0, 0, 0, 0);
         } else {
             const bgColor = hexToRgb(backgroundColor);
@@ -584,7 +568,7 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, width, height);
 
-        if (backgroundColor === 'transparent') {
+        if (isTransparent) {
             gl.clearColor(0, 0, 0, 0);
         } else {
             const bgColor = hexToRgb(backgroundColor);
@@ -621,7 +605,7 @@ export const FrameEngine_TunnelElementWebGL: React.FC<TunnelElementProps> = ({
         if (isMountedRef.current) {
             animationRef.current = requestAnimationFrame(animate);
         }
-    }, [width, height, primaryColor, secondaryColor, backgroundColor, speed, depth, ringSpacing, rotation, twist, pulseSpeed, pulseAmount, colorCycle, colorCycleSpeed, perspective, glow, glowIntensity, curveTargetX, curveTargetY, curveStrength, banking, pitch, originX, originY, scanlines, scanlineIntensity, chromatic, chromaticAmount, pixelate, pixelSize, depthFade, fadeEnd, tunnelType]);
+    }, [width, height, primaryColor, secondaryColor, backgroundColor, isTransparent, speed, depth, ringSpacing, rotation, twist, pulseSpeed, pulseAmount, colorCycle, colorCycleSpeed, perspective, glow, glowIntensity, curveTargetX, curveTargetY, curveStrength, banking, pitch, originX, originY, scanlines, scanlineIntensity, chromatic, chromaticAmount, pixelate, pixelSize, depthFade, fadeEnd, tunnelType]);
 
     useEffect(() => {
         if (initWebGL()) {

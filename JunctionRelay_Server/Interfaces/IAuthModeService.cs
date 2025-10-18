@@ -35,7 +35,7 @@ namespace JunctionRelayServer.Interfaces
         Task<IActionResult> GetCurrentUserAsync(HttpContext httpContext);
         Task<IActionResult> ValidateTokenAsync(HttpContext httpContext);
         Task<IActionResult> LogoutAsync(HttpContext httpContext);
-        Task<IActionResult> GetAuthStatusAsync(HttpContext httpContext);
+        Task<IActionResult> GetAuthStatusAsync(HttpContext httpContext, string? authHeader);
         Task<IActionResult> SetupAsync(JsonElement request);
         Task<IActionResult> ChangePasswordAsync(JsonElement request, HttpContext httpContext);
         Task<IActionResult> ChangeUsernameAsync(JsonElement request, HttpContext httpContext);

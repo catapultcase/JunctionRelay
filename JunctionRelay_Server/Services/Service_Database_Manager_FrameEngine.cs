@@ -1,6 +1,20 @@
 ﻿/*
  * This file is part of JunctionRelay.
- * (license header unchanged)
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using Dapper;
@@ -48,23 +62,24 @@ namespace JunctionRelayServer.Services
 
         public async Task<int> CreateFrameLayoutAsync(Model_Frame_Layout frameLayout)
         {
-            // Validate before saving
             ValidateFrameLayout(frameLayout);
 
             const string sql = @"
         INSERT INTO FrameLayouts 
           (DisplayName, Description, LayoutType,
            IsTemplate, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
-           BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageData, BackgroundOpacity,
+           BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageFit, BackgroundVideoUrl, 
+           BackgroundVideoFit, VideoLoop, VideoMuted, VideoAutoplay, BackgroundOpacity,
            Width, Height, Orientation, RiveFile,
-           JsonFrameConfig, JsonFrameElements,
+           JsonFrameConfig, JsonFrameConfigRuntime, JsonFrameElements,
            HasThumbnail, ThumbnailPath, ThumbnailGeneratedAt, ThumbnailFormat, ThumbnailOverride)
         VALUES 
           (@DisplayName, @Description, @LayoutType,
            @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
-           @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageData, @BackgroundOpacity,
+           @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageFit, @BackgroundVideoUrl,
+           @BackgroundVideoFit, @VideoLoop, @VideoMuted, @VideoAutoplay, @BackgroundOpacity,
            @Width, @Height, @Orientation, @RiveFile,
-           @JsonFrameConfig, @JsonFrameElements,
+           @JsonFrameConfig, @JsonFrameConfigRuntime, @JsonFrameElements,
            @HasThumbnail, @ThumbnailPath, @ThumbnailGeneratedAt, @ThumbnailFormat, @ThumbnailOverride);
         SELECT last_insert_rowid();
     ";
@@ -79,10 +94,8 @@ namespace JunctionRelayServer.Services
 
         public async Task<bool> UpdateFrameLayoutAsync(Model_Frame_Layout frameLayout)
         {
-            // Validate before updating
             ValidateFrameLayout(frameLayout);
 
-            // Ensure it exists
             const string check = "SELECT COUNT(1) FROM FrameLayouts WHERE Id = @Id";
             var exists = await _db.ExecuteScalarAsync<int>(check, new { frameLayout.Id }) > 0;
             if (!exists)
@@ -105,7 +118,12 @@ namespace JunctionRelayServer.Services
                   BackgroundType        = @BackgroundType,
                   BackgroundColor       = @BackgroundColor,
                   BackgroundImageUrl    = @BackgroundImageUrl,
-                  BackgroundImageData   = @BackgroundImageData,
+                  BackgroundImageFit    = @BackgroundImageFit,
+                  BackgroundVideoUrl    = @BackgroundVideoUrl,
+                  BackgroundVideoFit    = @BackgroundVideoFit,
+                  VideoLoop             = @VideoLoop,
+                  VideoMuted            = @VideoMuted,
+                  VideoAutoplay         = @VideoAutoplay,
                   BackgroundOpacity     = @BackgroundOpacity,
                   Width                 = @Width,
                   Height                = @Height,
@@ -141,7 +159,6 @@ namespace JunctionRelayServer.Services
                 ? newName.Trim()
                 : $"{original.DisplayName} (Copy)";
 
-            // Ensure unique name
             var counter = 1;
             var baseName = cloneName;
             while (await GetFrameLayoutByNameAsync(cloneName) != null)
@@ -164,15 +181,20 @@ namespace JunctionRelayServer.Services
                 BackgroundType = original.BackgroundType,
                 BackgroundColor = original.BackgroundColor,
                 BackgroundImageUrl = original.BackgroundImageUrl,
-                BackgroundImageData = original.BackgroundImageData,
+                BackgroundImageFit = original.BackgroundImageFit,
+                BackgroundVideoUrl = original.BackgroundVideoUrl,
+                BackgroundVideoFit = original.BackgroundVideoFit,
+                VideoLoop = original.VideoLoop,
+                VideoMuted = original.VideoMuted,
+                VideoAutoplay = original.VideoAutoplay,
                 BackgroundOpacity = original.BackgroundOpacity,
                 Width = original.Width,
                 Height = original.Height,
                 Orientation = original.Orientation,
                 RiveFile = original.RiveFile,
                 JsonFrameConfig = original.JsonFrameConfig,
+                JsonFrameConfigRuntime = original.JsonFrameConfigRuntime,
                 JsonFrameElements = original.JsonFrameElements,
-                // Reset thumbnail override for clones - they get auto-generated thumbnails
                 ThumbnailOverride = false
             };
 
@@ -183,11 +205,13 @@ namespace JunctionRelayServer.Services
         {
             try
             {
-                // The service handles its own path resolution
                 var contentRootPath = _webHostEnvironment.ContentRootPath;
                 var dbPath = _dbPathProvider.DbPath;
                 var dataDir = Path.GetDirectoryName(dbPath) ?? throw new InvalidOperationException("Invalid database path");
-                var riveUserPath = Path.Combine(dataDir, "frameengine", "rive");
+                var templatesPath = Path.Combine(contentRootPath, "frameengine", "templates");
+                var rivePath = Path.Combine(dataDir, "frameengine", "rive");
+                var assetsPath = Path.Combine(dataDir, "frameengine", "assets");
+                var videosPath = Path.Combine(dataDir, "frameengine", "videos");
                 var templatePackagesPath = Path.Combine(contentRootPath, "frameengine", "template-packages");
 
                 if (!Directory.Exists(templatePackagesPath))
@@ -211,7 +235,6 @@ namespace JunctionRelayServer.Services
                     {
                         var templateName = Path.GetFileNameWithoutExtension(zipFile);
 
-                        // Check if template already exists
                         var existing = await GetFrameLayoutByNameAsync(templateName);
                         if (existing != null && existing.IsTemplate)
                         {
@@ -221,11 +244,9 @@ namespace JunctionRelayServer.Services
 
                         Console.WriteLine($"Importing template: {templateName}");
 
-                        // Use existing import method with internal path resolution
                         var zipData = await File.ReadAllBytesAsync(zipFile);
-                        var layoutId = await ImportFrameLayoutPackageAsync(zipData, contentRootPath, riveUserPath, dbPath);
+                        var layoutId = await ImportFrameLayoutPackageAsync(zipData, contentRootPath, templatesPath, rivePath, assetsPath, videosPath, dbPath);
 
-                        // Convert imported layout to template
                         var importedLayout = await GetFrameLayoutByIdAsync(layoutId);
                         if (importedLayout != null)
                         {
@@ -317,7 +338,6 @@ namespace JunctionRelayServer.Services
             if (frameLayout.BackgroundOpacity < 0 || frameLayout.BackgroundOpacity > 1)
                 throw new ArgumentException("BackgroundOpacity must be between 0 and 1");
 
-            // Validate JSON if provided
             if (!string.IsNullOrEmpty(frameLayout.JsonFrameConfig))
             {
                 try
@@ -343,22 +363,78 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        public async Task<(byte[] zipData, string filename)> ExportFrameLayoutPackageAsync(int id, string riveTemplatesPath, string riveUserPath, string dbPath, string contentRootPath)
+        public async Task<(byte[] zipData, string filename)> ExportFrameLayoutPackageAsync(
+            int id,
+            string templatesPath,
+            string rivePath,
+            string assetsPath,
+            string videosPath,
+            string dbPath,
+            string contentRootPath)
         {
             var frameLayout = await GetFrameLayoutByIdAsync(id);
             if (frameLayout == null)
                 throw new InvalidOperationException($"Frame layout with ID {id} not found");
 
-            // Require Rive file
-            if (string.IsNullOrEmpty(frameLayout.RiveFile))
-                throw new InvalidOperationException("Frame layout must have a Rive file to export as package");
+            var packageContents = new List<string> { "config.json" };
 
-            // Locate the Rive file (user files override templates)
-            var riveFilePath = GetRiveFilePath(frameLayout.RiveFile, riveUserPath, riveTemplatesPath);
-            if (string.IsNullOrEmpty(riveFilePath) || !System.IO.File.Exists(riveFilePath))
-                throw new FileNotFoundException($"Rive file '{frameLayout.RiveFile}' not found on disk");
+            string? riveFilePath = null;
+            if (!string.IsNullOrEmpty(frameLayout.RiveFile))
+            {
+                riveFilePath = GetAssetFilePath(frameLayout.RiveFile, rivePath, templatesPath);
+                if (!string.IsNullOrEmpty(riveFilePath) && System.IO.File.Exists(riveFilePath))
+                {
+                    packageContents.Add($"rive/{frameLayout.RiveFile}");
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Rive file '{frameLayout.RiveFile}' not found, exporting without it");
+                    frameLayout.RiveFile = null;
+                }
+            }
 
-            // Create clean export data - STORE JSON AS RAW STRINGS
+            string? backgroundImagePath = null;
+            string? backgroundImageFileName = null;
+            if (!string.IsNullOrEmpty(frameLayout.BackgroundImageUrl) &&
+                !frameLayout.BackgroundImageUrl.StartsWith("http://") &&
+                !frameLayout.BackgroundImageUrl.StartsWith("https://"))
+            {
+                backgroundImageFileName = Path.GetFileName(frameLayout.BackgroundImageUrl);
+                backgroundImagePath = GetAssetFilePath(backgroundImageFileName, assetsPath, templatesPath);
+
+                if (!string.IsNullOrEmpty(backgroundImagePath) && System.IO.File.Exists(backgroundImagePath))
+                {
+                    packageContents.Add($"assets/{backgroundImageFileName}");
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Background image '{frameLayout.BackgroundImageUrl}' not found");
+                    backgroundImagePath = null;
+                    backgroundImageFileName = null;
+                }
+            }
+
+            string? backgroundVideoPath = null;
+            string? backgroundVideoFileName = null;
+            if (!string.IsNullOrEmpty(frameLayout.BackgroundVideoUrl) &&
+                !frameLayout.BackgroundVideoUrl.StartsWith("http://") &&
+                !frameLayout.BackgroundVideoUrl.StartsWith("https://"))
+            {
+                backgroundVideoFileName = Path.GetFileName(frameLayout.BackgroundVideoUrl);
+                backgroundVideoPath = GetAssetFilePath(backgroundVideoFileName, videosPath, templatesPath);
+
+                if (!string.IsNullOrEmpty(backgroundVideoPath) && System.IO.File.Exists(backgroundVideoPath))
+                {
+                    packageContents.Add($"videos/{backgroundVideoFileName}");
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Background video '{frameLayout.BackgroundVideoUrl}' not found");
+                    backgroundVideoPath = null;
+                    backgroundVideoFileName = null;
+                }
+            }
+
             var exportData = new
             {
                 type = "frame_layout_package",
@@ -372,22 +448,25 @@ namespace JunctionRelayServer.Services
                 orientation = frameLayout.Orientation,
                 backgroundType = frameLayout.BackgroundType,
                 backgroundColor = frameLayout.BackgroundColor,
+                backgroundImageUrl = backgroundImageFileName != null ? $"assets/{backgroundImageFileName}" : frameLayout.BackgroundImageUrl,
+                backgroundImageFit = frameLayout.BackgroundImageFit,
+                backgroundVideoUrl = backgroundVideoFileName != null ? $"videos/{backgroundVideoFileName}" : frameLayout.BackgroundVideoUrl,
+                backgroundVideoFit = frameLayout.BackgroundVideoFit,
+                videoLoop = frameLayout.VideoLoop,
+                videoMuted = frameLayout.VideoMuted,
+                videoAutoplay = frameLayout.VideoAutoplay,
                 backgroundOpacity = frameLayout.BackgroundOpacity,
                 riveFile = frameLayout.RiveFile,
-                thumbnailOverride = frameLayout.ThumbnailOverride, // Include thumbnail override flag
-
-                // Store as raw JSON strings - this is the key fix
+                thumbnailOverride = frameLayout.ThumbnailOverride,
                 jsonFrameConfigRaw = frameLayout.JsonFrameConfig ?? "{}",
+                jsonFrameConfigRuntimeRaw = frameLayout.JsonFrameConfigRuntime ?? "{}",
                 jsonFrameElementsRaw = frameLayout.JsonFrameElements ?? "[]",
-
-                packageContents = new[] { "config.json", frameLayout.RiveFile }
+                packageContents = packageContents.ToArray()
             };
 
-            // Create ZIP in memory
             using var memoryStream = new MemoryStream();
             using (var archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true))
             {
-                // Add config.json
                 var configEntry = archive.CreateEntry("config.json");
                 using (var configStream = configEntry.Open())
                 {
@@ -395,15 +474,36 @@ namespace JunctionRelayServer.Services
                     await configStream.WriteAsync(jsonBytes, 0, jsonBytes.Length);
                 }
 
-                // Add Rive file
-                var riveEntry = archive.CreateEntry(frameLayout.RiveFile);
-                using (var riveStream = riveEntry.Open())
+                if (!string.IsNullOrEmpty(riveFilePath) && System.IO.File.Exists(riveFilePath))
                 {
-                    var riveBytes = await System.IO.File.ReadAllBytesAsync(riveFilePath);
-                    await riveStream.WriteAsync(riveBytes, 0, riveBytes.Length);
+                    var riveEntry = archive.CreateEntry($"rive/{frameLayout.RiveFile}");
+                    using (var riveStream = riveEntry.Open())
+                    {
+                        var riveBytes = await System.IO.File.ReadAllBytesAsync(riveFilePath);
+                        await riveStream.WriteAsync(riveBytes, 0, riveBytes.Length);
+                    }
                 }
 
-                // Add thumbnail if available
+                if (!string.IsNullOrEmpty(backgroundImagePath) && System.IO.File.Exists(backgroundImagePath))
+                {
+                    var imageEntry = archive.CreateEntry($"assets/{backgroundImageFileName}");
+                    using (var imageStream = imageEntry.Open())
+                    {
+                        var imageBytes = await System.IO.File.ReadAllBytesAsync(backgroundImagePath);
+                        await imageStream.WriteAsync(imageBytes, 0, imageBytes.Length);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(backgroundVideoPath) && System.IO.File.Exists(backgroundVideoPath))
+                {
+                    var videoEntry = archive.CreateEntry($"videos/{backgroundVideoFileName}");
+                    using (var videoStream = videoEntry.Open())
+                    {
+                        var videoBytes = await System.IO.File.ReadAllBytesAsync(backgroundVideoPath);
+                        await videoStream.WriteAsync(videoBytes, 0, videoBytes.Length);
+                    }
+                }
+
                 if (frameLayout.HasThumbnail && !string.IsNullOrEmpty(frameLayout.ThumbnailPath))
                 {
                     string thumbnailPath;
@@ -438,23 +538,19 @@ namespace JunctionRelayServer.Services
             return (zipBytes, filename);
         }
 
-        // Helper method to find Rive file (user files override templates)
-        private static string? GetRiveFilePath(string riveFileName, string riveUserPath, string riveTemplatesPath)
+        private static string? GetAssetFilePath(string fileName, string userPath, string templatesPath)
         {
-            // Check user directory first
-            var userFile = Path.Combine(riveUserPath, riveFileName);
+            var userFile = Path.Combine(userPath, fileName);
             if (System.IO.File.Exists(userFile))
                 return userFile;
 
-            // Fallback to templates
-            var templateFile = Path.Combine(riveTemplatesPath, riveFileName);
+            var templateFile = Path.Combine(templatesPath, fileName);
             if (System.IO.File.Exists(templateFile))
                 return templateFile;
 
             return null;
         }
 
-        // Helper method to sanitize filename
         private static string SanitizeFilename(string filename)
         {
             var invalid = Path.GetInvalidFileNameChars();
@@ -462,12 +558,18 @@ namespace JunctionRelayServer.Services
             return string.IsNullOrWhiteSpace(sanitized) ? "frame_layout" : sanitized;
         }
 
-        public async Task<int> ImportFrameLayoutPackageAsync(byte[] zipData, string contentRootPath, string riveUserPath, string dbPath)
+        public async Task<int> ImportFrameLayoutPackageAsync(
+    byte[] zipData,
+    string contentRootPath,
+    string templatesPath,
+    string rivePath,
+    string assetsPath,
+    string videosPath,
+    string dbPath)
         {
             using var zipStream = new MemoryStream(zipData);
             using var archive = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Read);
 
-            // Extract config.json
             var configEntry = archive.GetEntry("config.json");
             if (configEntry == null)
                 throw new InvalidOperationException("Invalid import package: config.json not found");
@@ -479,7 +581,6 @@ namespace JunctionRelayServer.Services
                 configJson = await reader.ReadToEndAsync();
             }
 
-            // Parse config
             var importData = JsonSerializer.Deserialize<JsonElement>(configJson);
 
             if (!importData.TryGetProperty("type", out var typeProperty) ||
@@ -488,27 +589,68 @@ namespace JunctionRelayServer.Services
                 throw new InvalidOperationException("Invalid import package: not a frame layout package");
             }
 
-            // Extract layout data
             var displayName = importData.GetProperty("displayName").GetString() ?? "Imported Layout";
             var description = importData.GetProperty("description").GetString();
             var layoutType = importData.GetProperty("layoutType").GetString() ?? "COMPOSITE_MODE";
             var width = importData.GetProperty("width").GetInt32();
             var height = importData.GetProperty("height").GetInt32();
             var orientation = importData.GetProperty("orientation").GetString() ?? "landscape";
-            var backgroundType = importData.GetProperty("backgroundType").GetString() ?? "rive";
+            var backgroundType = importData.GetProperty("backgroundType").GetString() ?? "color";
             var backgroundColor = importData.GetProperty("backgroundColor").GetString() ?? "#FFFFFF";
+
+            string? backgroundImageUrl = null;
+            if (importData.TryGetProperty("backgroundImageUrl", out var imageUrlProp))
+            {
+                backgroundImageUrl = imageUrlProp.GetString();
+            }
+
+            string? backgroundImageFit = "cover";
+            if (importData.TryGetProperty("backgroundImageFit", out var imageFitProp))
+            {
+                backgroundImageFit = imageFitProp.GetString() ?? "cover";
+            }
+
+            string? backgroundVideoUrl = null;
+            if (importData.TryGetProperty("backgroundVideoUrl", out var videoUrlProp))
+            {
+                backgroundVideoUrl = videoUrlProp.GetString();
+            }
+
+            string? backgroundVideoFit = "cover";
+            if (importData.TryGetProperty("backgroundVideoFit", out var videoFitProp))
+            {
+                backgroundVideoFit = videoFitProp.GetString() ?? "cover";
+            }
+
+            bool videoLoop = true;
+            if (importData.TryGetProperty("videoLoop", out var videoLoopProp))
+            {
+                videoLoop = videoLoopProp.GetBoolean();
+            }
+
+            bool videoMuted = true;
+            if (importData.TryGetProperty("videoMuted", out var videoMutedProp))
+            {
+                videoMuted = videoMutedProp.GetBoolean();
+            }
+
+            bool videoAutoplay = true;
+            if (importData.TryGetProperty("videoAutoplay", out var videoAutoplayProp))
+            {
+                videoAutoplay = videoAutoplayProp.GetBoolean();
+            }
+
             var backgroundOpacity = importData.GetProperty("backgroundOpacity").GetDouble();
             var riveFile = importData.GetProperty("riveFile").GetString();
 
-            // Extract thumbnail override flag (default to false for imported layouts)
             var thumbnailOverride = false;
             if (importData.TryGetProperty("thumbnailOverride", out var thumbnailOverrideProp))
             {
                 thumbnailOverride = thumbnailOverrideProp.GetBoolean();
             }
 
-            // KEY FIX: Extract JSON as raw strings
             var jsonFrameConfig = "{}";
+            var jsonFrameConfigRuntime = "{}";
             var jsonFrameElements = "[]";
 
             if (importData.TryGetProperty("jsonFrameConfigRaw", out var configRaw))
@@ -517,8 +659,16 @@ namespace JunctionRelayServer.Services
             }
             else if (importData.TryGetProperty("jsonFrameConfig", out var configOld))
             {
-                // Handle old format - re-serialize the object back to string
                 jsonFrameConfig = JsonSerializer.Serialize(configOld);
+            }
+
+            if (importData.TryGetProperty("jsonFrameConfigRuntimeRaw", out var configRuntimeRaw))
+            {
+                jsonFrameConfigRuntime = configRuntimeRaw.GetString() ?? "{}";
+            }
+            else if (importData.TryGetProperty("jsonFrameConfigRuntime", out var configRuntimeOld))
+            {
+                jsonFrameConfigRuntime = JsonSerializer.Serialize(configRuntimeOld);
             }
 
             if (importData.TryGetProperty("jsonFrameElementsRaw", out var elementsRaw))
@@ -527,26 +677,23 @@ namespace JunctionRelayServer.Services
             }
             else if (importData.TryGetProperty("jsonFrameElements", out var elementsOld))
             {
-                // Handle old format - re-serialize the object back to string
                 jsonFrameElements = JsonSerializer.Serialize(elementsOld);
             }
 
-            // Ensure unique name
             var uniqueName = await EnsureUniqueLayoutName(displayName);
 
-            // Extract and save Rive file
             string? savedRiveFileName = null;
             if (!string.IsNullOrEmpty(riveFile))
             {
-                var riveEntry = archive.GetEntry(riveFile);
+                var riveEntry = archive.GetEntry($"rive/{riveFile}") ?? archive.GetEntry(riveFile);
                 if (riveEntry != null)
                 {
                     var riveFileName = Path.GetFileNameWithoutExtension(riveFile);
                     var riveExtension = Path.GetExtension(riveFile);
-                    savedRiveFileName = GenerateUniqueRiveFilename(riveUserPath, riveFileName, riveExtension);
+                    savedRiveFileName = GenerateUniqueFilename(rivePath, riveFileName, riveExtension);
 
-                    var riveFilePath = Path.Combine(riveUserPath, savedRiveFileName);
-                    Directory.CreateDirectory(riveUserPath);
+                    var riveFilePath = Path.Combine(rivePath, savedRiveFileName);
+                    Directory.CreateDirectory(rivePath);
 
                     using var riveStream = riveEntry.Open();
                     using var riveFileStream = new FileStream(riveFilePath, FileMode.Create);
@@ -554,7 +701,56 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            // Create new frame layout
+            string? savedImageFileName = null;
+            if (!string.IsNullOrEmpty(backgroundImageUrl) &&
+                !backgroundImageUrl.StartsWith("http://") &&
+                !backgroundImageUrl.StartsWith("https://"))
+            {
+                var imageFileName = Path.GetFileName(backgroundImageUrl);
+                var imageEntry = archive.GetEntry($"assets/{imageFileName}") ?? archive.GetEntry(imageFileName);
+
+                if (imageEntry != null)
+                {
+                    var imageName = Path.GetFileNameWithoutExtension(imageFileName);
+                    var imageExtension = Path.GetExtension(imageFileName);
+                    savedImageFileName = GenerateUniqueFilename(assetsPath, imageName, imageExtension);
+
+                    var imageFilePath = Path.Combine(assetsPath, savedImageFileName);
+                    Directory.CreateDirectory(assetsPath);
+
+                    using var imageStream = imageEntry.Open();
+                    using var imageFileStream = new FileStream(imageFilePath, FileMode.Create);
+                    await imageStream.CopyToAsync(imageFileStream);
+
+                    backgroundImageUrl = $"/frameengine/assets/{savedImageFileName}";
+                }
+            }
+
+            string? savedVideoFileName = null;
+            if (!string.IsNullOrEmpty(backgroundVideoUrl) &&
+                !backgroundVideoUrl.StartsWith("http://") &&
+                !backgroundVideoUrl.StartsWith("https://"))
+            {
+                var videoFileName = Path.GetFileName(backgroundVideoUrl);
+                var videoEntry = archive.GetEntry($"videos/{videoFileName}") ?? archive.GetEntry(videoFileName);
+
+                if (videoEntry != null)
+                {
+                    var videoName = Path.GetFileNameWithoutExtension(videoFileName);
+                    var videoExtension = Path.GetExtension(videoFileName);
+                    savedVideoFileName = GenerateUniqueFilename(videosPath, videoName, videoExtension);
+
+                    var videoFilePath = Path.Combine(videosPath, savedVideoFileName);
+                    Directory.CreateDirectory(videosPath);
+
+                    using var videoStream = videoEntry.Open();
+                    using var videoFileStream = new FileStream(videoFilePath, FileMode.Create);
+                    await videoStream.CopyToAsync(videoFileStream);
+
+                    backgroundVideoUrl = $"/frameengine/videos/{savedVideoFileName}";
+                }
+            }
+
             var newFrameLayout = new Model_Frame_Layout
             {
                 DisplayName = uniqueName,
@@ -565,10 +761,18 @@ namespace JunctionRelayServer.Services
                 Orientation = orientation,
                 BackgroundType = backgroundType,
                 BackgroundColor = backgroundColor,
+                BackgroundImageUrl = backgroundImageUrl,
+                BackgroundImageFit = backgroundImageFit,
+                BackgroundVideoUrl = backgroundVideoUrl,
+                BackgroundVideoFit = backgroundVideoFit,
+                VideoLoop = videoLoop,
+                VideoMuted = videoMuted,
+                VideoAutoplay = videoAutoplay,
                 BackgroundOpacity = backgroundOpacity,
                 RiveFile = savedRiveFileName,
-                JsonFrameConfig = jsonFrameConfig,      // Now properly formatted JSON strings
-                JsonFrameElements = jsonFrameElements,  // Now properly formatted JSON strings
+                JsonFrameConfig = jsonFrameConfig,
+                JsonFrameConfigRuntime = jsonFrameConfigRuntime,
+                JsonFrameElements = jsonFrameElements,
                 IsTemplate = false,
                 IsDraft = true,
                 IsPublished = false,
@@ -576,13 +780,11 @@ namespace JunctionRelayServer.Services
                 LastModified = DateTime.UtcNow,
                 CreatedBy = "Import",
                 Version = "1.0",
-                ThumbnailOverride = thumbnailOverride   // Import the thumbnail override setting
+                ThumbnailOverride = thumbnailOverride
             };
 
-            // Save to database
             var layoutId = await CreateFrameLayoutAsync(newFrameLayout);
 
-            // Extract and save thumbnail if present
             var thumbnailEntry = archive.Entries.FirstOrDefault(e =>
                 e.Name.StartsWith("thumbnail.") &&
                 (e.Name.EndsWith(".png") || e.Name.EndsWith(".jpg") || e.Name.EndsWith(".jpeg") || e.Name.EndsWith(".webp")));
@@ -600,13 +802,11 @@ namespace JunctionRelayServer.Services
                 using var thumbnailFileStream = new FileStream(thumbnailPath, FileMode.Create);
                 await thumbnailStream.CopyToAsync(thumbnailFileStream);
 
-                // Update layout with thumbnail info
                 newFrameLayout.Id = layoutId;
                 newFrameLayout.HasThumbnail = true;
                 newFrameLayout.ThumbnailPath = Path.Combine("frameengine", "thumbnails", thumbnailFileName).Replace("\\", "/");
                 newFrameLayout.ThumbnailFormat = thumbnailFormat;
                 newFrameLayout.ThumbnailGeneratedAt = DateTime.UtcNow;
-                // Keep the imported thumbnail override setting
 
                 await UpdateFrameLayoutAsync(newFrameLayout);
             }
@@ -614,7 +814,6 @@ namespace JunctionRelayServer.Services
             return layoutId;
         }
 
-        // Helper method to ensure unique layout name
         private async Task<string> EnsureUniqueLayoutName(string baseName)
         {
             var uniqueName = baseName;
@@ -629,8 +828,7 @@ namespace JunctionRelayServer.Services
             return uniqueName;
         }
 
-        // Helper method to generate unique Rive filename
-        private static string GenerateUniqueRiveFilename(string directory, string baseName, string extension)
+        private static string GenerateUniqueFilename(string directory, string baseName, string extension)
         {
             var filename = $"{baseName}{extension}";
             var counter = 1;
@@ -644,28 +842,11 @@ namespace JunctionRelayServer.Services
             return filename;
         }
 
-        // Helper method to get thumbnails directory
         private static string GetThumbnailsDirectory(string dbPath)
         {
             var dataDir = Path.GetDirectoryName(dbPath)!;
             return Path.Combine(dataDir, "frameengine", "thumbnails");
         }
 
-
-        // Check if a template thumbnail exists in the application's template directory
-
-        private static bool HasTemplateThumbnail(string templateFileName)
-        {
-            try
-            {
-                var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-                var templatePath = Path.Combine(appDirectory, "frameengine", "templates", $"{templateFileName}.png");
-                return File.Exists(templatePath);
-            }
-            catch
-            {
-                return false;
-            }
-        }
     }
 }

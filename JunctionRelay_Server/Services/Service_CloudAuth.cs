@@ -265,6 +265,7 @@ namespace JunctionRelayServer.Services
                     hasValidLicense = false,
                     licenseType = "Cloud",
                     backendAuthenticated = false,
+                    profileImageUrl = (string?)null,
                     error = "Cloud API not configured"
                 });
             }
@@ -283,7 +284,8 @@ namespace JunctionRelayServer.Services
                         user = (string?)null,
                         hasValidLicense = false,
                         licenseType = "Cloud",
-                        backendAuthenticated = false
+                        backendAuthenticated = false,
+                        profileImageUrl = (string?)null
                     });
                 }
 
@@ -299,7 +301,8 @@ namespace JunctionRelayServer.Services
                         user = userInfo.TryGetProperty("email", out var email) ? email.GetString() : userId,
                         hasValidLicense = userInfo.TryGetProperty("hasValidLicense", out var license) && license.GetBoolean(),
                         licenseType = userInfo.TryGetProperty("hasValidLicense", out var lic) && lic.GetBoolean() ? "Pro" : "Cloud",
-                        backendAuthenticated = true
+                        backendAuthenticated = true,
+                        profileImageUrl = userInfo.TryGetProperty("profileImageUrl", out var imgUrl) ? imgUrl.GetString() : null  // ✅ Add this
                     });
                 }
                 else
@@ -311,7 +314,8 @@ namespace JunctionRelayServer.Services
                         user = (string?)null,
                         hasValidLicense = false,
                         licenseType = "Cloud",
-                        backendAuthenticated = false
+                        backendAuthenticated = false,
+                        profileImageUrl = (string?)null
                     });
                 }
             }
@@ -325,7 +329,8 @@ namespace JunctionRelayServer.Services
                     user = (string?)null,
                     hasValidLicense = false,
                     licenseType = "Cloud",
-                    backendAuthenticated = false
+                    backendAuthenticated = false,
+                    profileImageUrl = (string?)null
                 });
             }
         }

@@ -36,9 +36,11 @@ import {
     Grain as OscilloscopeIcon,
     Explore as TunnelIcon,
     Cloud as WeatherIcon,
-    AllOut as Tunnel2DIcon,
+    Image as ImageIcon,
+    VideoLibrary as VideoIcon,
+    Animation as RiveIcon,
 } from '@mui/icons-material';
-import { FrameEngine_ElementProperties } from './FrameEngine_ElementProperties';
+import { FrameEngine_ElementProperties } from './properties/FrameEngine_ElementProperties';
 import type { PlacedElement, ElementType } from './FrameEngine_Types';
 
 interface ElementTemplate {
@@ -50,7 +52,7 @@ interface ElementTemplate {
     defaultWidth: number;
     defaultHeight: number;
     defaultProperties: Record<string, any>;
-    category: 'basic' | 'data' | 'media' | 'layout' | 'effects';
+    category: 'basic' | 'data' | 'media' | 'layout' | 'effects' | 'assets';
 }
 
 interface ElementLibraryProps {
@@ -71,7 +73,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'library' | 'properties'>('library');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'clock', 'oscilloscope', 'tunnel', 'weather'])
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'clock', 'oscilloscope', 'tunnel', 'weather', 'assetImage', 'assetVideo', 'assetRive'])
     );
 
     useEffect(() => {
@@ -280,6 +282,57 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             },
             category: 'effects',
         },
+        {
+            id: 'asset-image',
+            name: 'Asset Image',
+            description: 'Display an uploaded image asset',
+            type: 'asset-image',
+            icon: <ImageIcon />,
+            defaultWidth: 200,
+            defaultHeight: 150,
+            defaultProperties: {
+                assetImageUrl: '',
+                imageFit: 'cover',
+                opacity: 1,
+            },
+            category: 'assets',
+        },
+        {
+            id: 'asset-video',
+            name: 'Asset Video',
+            description: 'Display an uploaded video asset',
+            type: 'asset-video',
+            icon: <VideoIcon />,
+            defaultWidth: 320,
+            defaultHeight: 180,
+            defaultProperties: {
+                assetVideoUrl: '',
+                videoFit: 'cover',
+                videoLoop: true,
+                videoMuted: true,
+                videoAutoplay: true,
+                opacity: 1,
+            },
+            category: 'assets',
+        },
+        {
+            id: 'asset-rive',
+            name: 'Asset Rive',
+            description: 'Display an uploaded Rive animation',
+            type: 'asset-rive',
+            icon: <RiveIcon />,
+            defaultWidth: 200,
+            defaultHeight: 200,
+            defaultProperties: {
+                assetRiveFile: '',
+                riveStateMachine: '',
+                riveInputs: {},
+                riveBindings: {},
+                riveFit: 'cover',
+                opacity: 1,
+            },
+            category: 'assets',
+        },
     ];
 
     const handleElementDragStart = useCallback((template: ElementTemplate, event: React.DragEvent) => {
@@ -324,6 +377,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
         media: 'Media Elements',
         layout: 'Layout Elements',
         effects: 'Visual Effects',
+        assets: 'Asset Elements',
     };
 
     return (
