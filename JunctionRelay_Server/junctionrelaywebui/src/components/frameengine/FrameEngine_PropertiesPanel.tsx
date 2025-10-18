@@ -40,6 +40,7 @@ interface FrameEngine_PropertiesPanelProps {
     onElementDuplicate?: (elementId: string) => void;
     onElementReorder?: (fromIndex: number, toIndex: number) => void;
     onElementVisibilityToggle: (elementId: string) => void;
+    onElementLockToggle: (elementId: string) => void;
     discoveredMachines?: DiscoveredStateMachine[];
     discoveredBindings?: DiscoveredDataBinding[];
 }
@@ -55,6 +56,7 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     onElementDuplicate,
     onElementReorder,
     onElementVisibilityToggle,
+    onElementLockToggle,
     discoveredMachines = [],
     discoveredBindings = [],
 }) => {
@@ -211,6 +213,7 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                         onElementDuplicate={onElementDuplicate}
                         onElementReorder={onElementReorder}
                         onElementVisibilityToggle={onElementVisibilityToggle}
+                        onElementLockToggle={onElementLockToggle}
                     />
                 )}
             </div>

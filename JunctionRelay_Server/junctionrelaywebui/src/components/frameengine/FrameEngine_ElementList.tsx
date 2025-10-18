@@ -18,6 +18,7 @@
  */
 
 import React, { useState } from 'react';
+import { useTheme } from '@mui/material/styles';
 import {
     Sensors as SensorsIcon,
     TextFields as TextIcon,
@@ -34,6 +35,10 @@ import {
     Grain as OscilloscopeIcon,
     Explore as TunnelIcon,
     Cloud as WeatherIcon,
+    VideoLibrary as VideoIcon,
+    Animation as RiveIcon,
+    Lock as LockIcon,
+    LockOpen as LockOpenIcon,
 } from '@mui/icons-material';
 import type { PlacedElement, ElementType } from './FrameEngine_Types';
 
@@ -45,6 +50,7 @@ interface ElementListProps {
     onElementDuplicate?: (elementId: string) => void;
     onElementReorder?: (fromIndex: number, toIndex: number) => void;
     onElementVisibilityToggle: (elementId: string) => void;
+    onElementLockToggle: (elementId: string) => void;
 }
 
 export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
@@ -55,7 +61,9 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
     onElementDuplicate,
     onElementReorder,
     onElementVisibilityToggle,
+    onElementLockToggle,
 }) => {
+    const theme = useTheme();
     const [draggedElement, setDraggedElement] = useState<string | null>(null);
     const [dragOverElement, setDragOverElement] = useState<string | null>(null);
 
@@ -71,6 +79,9 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
             case 'oscilloscope': return <OscilloscopeIcon fontSize="small" />;
             case 'tunnel': return <TunnelIcon fontSize="small" />;
             case 'weather': return <WeatherIcon fontSize="small" />;
+            case 'asset-image': return <ImageIcon fontSize="small" />;
+            case 'asset-video': return <VideoIcon fontSize="small" />;
+            case 'asset-rive': return <RiveIcon fontSize="small" />;
             default: return <SensorsIcon fontSize="small" />;
         }
     };
@@ -99,6 +110,18 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 return `Tunnel (${element.properties.tunnelType || 'circular'}, ${mode})`;
             case 'weather':
                 return `Weather (${element.properties.weatherType || 'clear'})`;
+            case 'asset-image':
+                return element.properties.assetImageUrl
+                    ? `Image: ${element.properties.assetImageUrl}`
+                    : 'Image Asset';
+            case 'asset-video':
+                return element.properties.assetVideoUrl
+                    ? `Video: ${element.properties.assetVideoUrl}`
+                    : 'Video Asset';
+            case 'asset-rive':
+                return element.properties.assetRiveFile
+                    ? `Rive: ${element.properties.assetRiveFile}`
+                    : 'Rive Asset';
             default:
                 const elementType = element.type as string;
                 return elementType.charAt(0).toUpperCase() + elementType.slice(1);
@@ -154,14 +177,24 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
             {/* Fixed Header */}
             <div style={{
                 padding: '12px',
-                backgroundColor: '#f8f9fa',
-                borderBottom: '1px solid #e0e0e0',
+                backgroundColor: theme.palette.mode === 'dark'
+                    ? theme.palette.grey[800]
+                    : theme.palette.grey[100],
+                borderBottom: `1px solid ${theme.palette.divider}`,
                 flexShrink: 0
             }}>
-                <div style={{ fontSize: '12px', fontWeight: 500, color: '#333' }}>
+                <div style={{
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: theme.palette.text.primary
+                }}>
                     Canvas Elements ({elements.length})
                 </div>
-                <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                <div style={{
+                    fontSize: '10px',
+                    color: theme.palette.text.secondary,
+                    marginTop: '2px'
+                }}>
                     Click to select • Drag to reorder
                 </div>
             </div>
@@ -173,7 +206,11 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 minHeight: 0
             }}>
                 {elements.length === 0 ? (
-                    <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
+                    <div style={{
+                        padding: '16px',
+                        textAlign: 'center',
+                        color: theme.palette.text.disabled
+                    }}>
                         <div style={{ fontSize: '32px', marginBottom: '8px' }}>📦</div>
                         <div style={{ fontSize: '12px' }}>No elements on canvas</div>
                         <div style={{ fontSize: '11px', marginTop: '4px' }}>
@@ -185,6 +222,7 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                         const isSelected = selectedElements.some(sel => sel.id === element.id);
                         const isDragOver = dragOverElement === element.id;
                         const isVisible = element.visible ?? true;
+                        const isLocked = element.locked ?? false;
 
                         return (
                             <div
@@ -198,9 +236,17 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                 style={{
                                     padding: '8px 12px',
                                     cursor: 'pointer',
-                                    backgroundColor: isSelected ? '#e3f2fd' : isDragOver ? '#f0f8ff' : '#fff',
-                                    borderBottom: '1px solid #f0f0f0',
-                                    borderLeft: isSelected ? '3px solid #1976d2' : '3px solid transparent',
+                                    backgroundColor: isSelected
+                                        ? (theme.palette.mode === 'dark'
+                                            ? theme.palette.primary.dark
+                                            : theme.palette.primary.light)
+                                        : isDragOver
+                                            ? theme.palette.action.hover
+                                            : theme.palette.background.paper,
+                                    borderBottom: `1px solid ${theme.palette.divider}`,
+                                    borderLeft: isSelected
+                                        ? `3px solid ${theme.palette.primary.main}`
+                                        : '3px solid transparent',
                                     opacity: isVisible ? 1 : 0.5,
                                     transition: 'all 0.2s',
                                     display: 'flex',
@@ -209,18 +255,26 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                 }}
                                 onMouseEnter={(e) => {
                                     if (!isSelected) {
-                                        e.currentTarget.style.backgroundColor = '#f8f9fa';
+                                        e.currentTarget.style.backgroundColor = theme.palette.action.hover;
                                     }
                                 }}
                                 onMouseLeave={(e) => {
                                     if (!isSelected) {
-                                        e.currentTarget.style.backgroundColor = '#fff';
+                                        e.currentTarget.style.backgroundColor = theme.palette.background.paper;
                                     }
                                 }}
                             >
-                                <DragIcon style={{ color: '#999', fontSize: '16px', cursor: 'grab' }} />
+                                <DragIcon style={{
+                                    color: theme.palette.text.disabled,
+                                    fontSize: '16px',
+                                    cursor: 'grab'
+                                }} />
 
-                                <div style={{ color: isSelected ? '#1976d2' : '#666' }}>
+                                <div style={{
+                                    color: isSelected
+                                        ? theme.palette.primary.main
+                                        : theme.palette.text.secondary
+                                }}>
                                     {getElementIcon(element.type)}
                                 </div>
 
@@ -228,19 +282,49 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                     <div style={{
                                         fontSize: '12px',
                                         fontWeight: isSelected ? 600 : 400,
-                                        color: isSelected ? '#1976d2' : '#333',
+                                        color: isSelected
+                                            ? theme.palette.primary.main
+                                            : theme.palette.text.primary,
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis'
                                     }}>
-                                        {element.type.charAt(0).toUpperCase() + element.type.slice(1)}: {getElementDisplayName(element)}
+                                        {element.type.charAt(0).toUpperCase() + element.type.slice(1).replace(/-/g, ' ')}: {getElementDisplayName(element)}
                                     </div>
-                                    <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                                    <div style={{
+                                        fontSize: '10px',
+                                        color: theme.palette.text.secondary,
+                                        marginTop: '2px'
+                                    }}>
                                         ({Math.round(element.x)}, {Math.round(element.y)}) • {element.width}×{element.height}
                                     </div>
                                 </div>
 
                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onElementLockToggle(element.id);
+                                        }}
+                                        style={{
+                                            border: 'none',
+                                            background: 'none',
+                                            cursor: 'pointer',
+                                            padding: '2px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            color: isLocked
+                                                ? theme.palette.warning.main
+                                                : theme.palette.text.secondary
+                                        }}
+                                        title={isLocked ? 'Unlock element' : 'Lock element'}
+                                    >
+                                        {isLocked ?
+                                            <LockIcon style={{ fontSize: '14px' }} /> :
+                                            <LockOpenIcon style={{ fontSize: '14px' }} />
+                                        }
+                                    </button>
+
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -253,7 +337,7 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                             padding: '2px',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            color: '#666'
+                                            color: theme.palette.text.secondary
                                         }}
                                         title={isVisible ? 'Hide element' : 'Show element'}
                                     >
@@ -275,7 +359,7 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                             padding: '2px',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            color: '#666'
+                                            color: theme.palette.text.secondary
                                         }}
                                         title="Duplicate element"
                                     >
@@ -294,7 +378,7 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                                             padding: '2px',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            color: '#d32f2f'
+                                            color: theme.palette.error.main
                                         }}
                                         title="Delete element"
                                     >

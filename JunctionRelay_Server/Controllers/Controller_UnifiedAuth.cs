@@ -507,7 +507,8 @@ namespace JunctionRelayServer.Controllers
 
         private async Task<IActionResult> HandleLocalAuthStatus()
         {
-            return await _localAuthService.GetAuthStatusAsync(HttpContext);
+            var authHeader = Request.Headers.Authorization.FirstOrDefault();
+            return await _localAuthService.GetAuthStatusAsync(HttpContext, authHeader);
         }
 
         private async Task<IActionResult> HandleCloudAuthStatus()

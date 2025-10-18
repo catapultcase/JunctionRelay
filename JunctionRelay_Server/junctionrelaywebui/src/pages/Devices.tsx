@@ -35,6 +35,7 @@ import DeviceManagementSection from '../components/Device_ManagementSection';
 import DeviceAddDeviceModal from '../components/Device_AddDeviceModal';
 import DeviceAddCustomDeviceModal from '../components/Device_AddCustomDeviceModal';
 import DeviceAddVirtualScreenModal from '../components/Device_AddVirtualScreenModal';
+import DeviceAddVirtualDeviceModal from '../components/Device_AddVirtualDeviceModal';
 import DeviceScanResults from '../components/Device_ScanResults';
 
 import {
@@ -114,6 +115,7 @@ const Devices: React.FC = () => {
     const [updatingDevices, setUpdatingDevices] = useState<Set<number>>(new Set());
     const [addCustomDeviceModalOpen, setAddCustomDeviceModalOpen] = useState(false);
     const [addVirtualScreenModalOpen, setAddVirtualScreenModalOpen] = useState(false);
+    const [addVirtualDeviceModalOpen, setAddVirtualDeviceModalOpen] = useState(false);
     const [addCloudDeviceModalOpen, setAddCloudDeviceModalOpen] = useState(false);
     const [refreshingCloudDevices, setRefreshingCloudDevices] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<{ name: string; ipAddress: string } | null>(null);
@@ -264,6 +266,7 @@ const Devices: React.FC = () => {
             setAddCustomDeviceModalOpen(true);
         };
         const handleAddVirtualScreen = () => setAddVirtualScreenModalOpen(true);
+        const handleAddVirtualDevice = () => setAddVirtualDeviceModalOpen(true);
         const handleAddCloudDevice = () => setAddCloudDeviceModalOpen(true);
         const handleRefresh = () => fetchDevices(false, true);
         const handleSearch = () => setScanModalOpen(true);
@@ -276,6 +279,7 @@ const Devices: React.FC = () => {
 
         window.addEventListener('bottom-action-add-device', handleAddDevice);
         window.addEventListener('bottom-action-add-virtual-screen', handleAddVirtualScreen);
+        window.addEventListener('bottom-action-add-virtual-device', handleAddVirtualDevice);
         window.addEventListener('bottom-action-add-cloud-device', handleAddCloudDevice);
         window.addEventListener('bottom-action-refresh', handleRefresh);
         window.addEventListener('bottom-action-search', handleSearch);
@@ -285,6 +289,7 @@ const Devices: React.FC = () => {
         return () => {
             window.removeEventListener('bottom-action-add-device', handleAddDevice);
             window.removeEventListener('bottom-action-add-virtual-screen', handleAddVirtualScreen);
+            window.removeEventListener('bottom-action-add-virtual-device', handleAddVirtualDevice);
             window.removeEventListener('bottom-action-add-cloud-device', handleAddCloudDevice);
             window.removeEventListener('bottom-action-refresh', handleRefresh);
             window.removeEventListener('bottom-action-search', handleSearch);
@@ -572,6 +577,7 @@ const Devices: React.FC = () => {
                     setAddCustomDeviceModalOpen(open);
                 }}
                 setAddVirtualScreenModalOpen={setAddVirtualScreenModalOpen}
+                setAddVirtualDeviceModalOpen={setAddVirtualDeviceModalOpen}
                 checkForUpdates={checkForUpdates}
                 handleRefreshCloudDevices={handleRefreshCloudDevices}
                 refreshingCloudDevices={refreshingCloudDevices}
@@ -677,6 +683,12 @@ const Devices: React.FC = () => {
             <DeviceAddVirtualScreenModal
                 open={addVirtualScreenModalOpen}
                 onClose={() => setAddVirtualScreenModalOpen(false)}
+                onDeviceAdded={fetchDevices}
+            />
+
+            <DeviceAddVirtualDeviceModal
+                open={addVirtualDeviceModalOpen}
+                onClose={() => setAddVirtualDeviceModalOpen(false)}
                 onDeviceAdded={fetchDevices}
             />
 

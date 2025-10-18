@@ -476,7 +476,7 @@ namespace JunctionRelayServer.Services
                     DisplayName NVARCHAR(100) NOT NULL,
                     Description NVARCHAR(500),
                     LayoutType NVARCHAR(50) NOT NULL,
-    
+
                     -- Status and Metadata
                     IsTemplate BOOLEAN NOT NULL DEFAULT 0,
                     IsDraft BOOLEAN NOT NULL DEFAULT 1,
@@ -485,31 +485,39 @@ namespace JunctionRelayServer.Services
                     LastModified DATETIME,
                     CreatedBy NVARCHAR(100),
                     Version NVARCHAR(20),
-    
+
                     -- Background Configuration
                     BackgroundType NVARCHAR(20),
                     BackgroundColor NVARCHAR(20),
                     BackgroundImageUrl NVARCHAR(500),
-                    BackgroundImageData TEXT,
+                    BackgroundImageFit NVARCHAR(20) DEFAULT 'cover',
                     BackgroundOpacity REAL,
-    
+
+                    -- Video Background Configuration
+                    BackgroundVideoUrl NVARCHAR(500),
+                    BackgroundVideoFit NVARCHAR(20) DEFAULT 'cover',
+                    VideoLoop BOOLEAN DEFAULT 1,
+                    VideoMuted BOOLEAN DEFAULT 1,
+                    VideoAutoplay BOOLEAN DEFAULT 1,
+
                     -- Frame Dimensions and Orientation
                     Width INTEGER,
                     Height INTEGER,
                     Orientation NVARCHAR(20),
-    
+
                     -- Rive Configuration
                     RiveFile NVARCHAR(500),
-    
+
                     -- Thumbnail Configuration
                     ThumbnailPath NVARCHAR(255),
                     ThumbnailGeneratedAt DATETIME,
                     HasThumbnail BOOLEAN NOT NULL DEFAULT 0,
                     ThumbnailFormat NVARCHAR(10) DEFAULT 'png',
                     ThumbnailOverride BOOLEAN NOT NULL DEFAULT 0,
-    
+
                     -- Frame Configuration (JSON)
                     JsonFrameConfig TEXT,
+                    JsonFrameConfigRuntime TEXT,
                     JsonFrameElements TEXT,
                     FieldsToSend TEXT
                 );
@@ -942,16 +950,12 @@ namespace JunctionRelayServer.Services
             // Define schema updates
             var schemaUpdates = new Dictionary<string, (string columnName, string columnType)[]>
             {
-                ["FrameLayouts"] = new (string, string)[]
-                {
-                    ("JsonFrameConfigRuntime", "TEXT")
-                },
                 ["Devices"] = new (string, string)[]
                 {
-                    ("HttpPort", "INTEGER"),
-                    ("WebSocketPort", "INTEGER"),
-                    ("MqttPort", "INTEGER"),
-                    ("Hostname", "TEXT")
+            ("HttpPort", "INTEGER"),
+            ("WebSocketPort", "INTEGER"),
+            ("MqttPort", "INTEGER"),
+            ("Hostname", "TEXT")
                 }
             };
 
@@ -967,9 +971,9 @@ namespace JunctionRelayServer.Services
                     try
                     {
                         var columnExists = _db.ExecuteScalar<int>(@"
-                            SELECT COUNT(*) 
-                            FROM pragma_table_info(@tableName) 
-                            WHERE name = @columnName",
+                    SELECT COUNT(*) 
+                    FROM pragma_table_info(@tableName) 
+                    WHERE name = @columnName",
                             new { tableName, columnName }) > 0;
 
                         if (!columnExists)

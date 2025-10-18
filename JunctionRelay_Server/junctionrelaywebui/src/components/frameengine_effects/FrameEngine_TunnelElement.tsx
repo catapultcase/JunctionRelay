@@ -26,7 +26,7 @@ interface TunnelElementProps {
     height: number;
     primaryColor?: string;
     secondaryColor?: string;
-    backgroundColor?: string;
+    backgroundColor?: string; // Accepts any valid CSS color or 'transparent'
 
     // Tunnel parameters
     tunnelType?: 'circular' | 'square' | 'hexagon' | 'star' | 'spiral';
@@ -105,6 +105,9 @@ export const FrameEngine_TunnelElement: React.FC<TunnelElementProps> = ({
     const animationRef = useRef<number | null>(null);
     const timeRef = useRef<number>(0);
     const isMountedRef = useRef(true);
+
+    // Check if background is transparent
+    const isTransparent = backgroundColor === 'transparent' || backgroundColor === 'rgba(0,0,0,0)' || backgroundColor === 'rgba(0, 0, 0, 0)';
 
     // Parse color to RGB
     const hexToRgb = (hex: string) => {
@@ -248,8 +251,8 @@ export const FrameEngine_TunnelElement: React.FC<TunnelElementProps> = ({
 
         timeRef.current += 0.016 * speed;
 
-        // Clear with background (handle transparency)
-        if (backgroundColor === 'transparent') {
+        // Clear with background
+        if (isTransparent) {
             offCtx.clearRect(0, 0, width, height);
         } else {
             offCtx.fillStyle = backgroundColor;
@@ -405,7 +408,7 @@ export const FrameEngine_TunnelElement: React.FC<TunnelElementProps> = ({
         }
 
         // Copy to main canvas
-        if (backgroundColor === 'transparent') {
+        if (isTransparent) {
             ctx.clearRect(0, 0, width, height);
         } else {
             ctx.fillStyle = backgroundColor;
@@ -426,7 +429,7 @@ export const FrameEngine_TunnelElement: React.FC<TunnelElementProps> = ({
         if (isMountedRef.current) {
             animationRef.current = requestAnimationFrame(animate);
         }
-    }, [width, height, primaryColor, secondaryColor, backgroundColor, tunnelType, speed,
+    }, [width, height, primaryColor, secondaryColor, backgroundColor, isTransparent, tunnelType, speed,
         depth, ringSpacing, rotation, twist, pulseSpeed, pulseAmount, scanlines,
         scanlineIntensity, chromatic, chromaticAmount, pixelate, pixelSize, colorCycle,
         colorCycleSpeed, perspective, glow, glowIntensity, curveTargetX, curveTargetY,

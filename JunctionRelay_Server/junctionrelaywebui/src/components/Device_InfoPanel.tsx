@@ -136,17 +136,14 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
     ];
 
     const isVirtualScreen = deviceData?.type === 'Virtual Screen';
+    const isVirtualDevice = deviceData?.type === 'Virtual Device';
+    const isVirtualType = isVirtualScreen || isVirtualDevice;
 
-    // Split fields into two columns for Virtual Screen layout
-    const midpoint = Math.ceil(infoFields.length / 2);
-    const leftColumnFields = infoFields.slice(0, midpoint);
-    const rightColumnFields = infoFields.slice(midpoint);
-
+    // Virtual Screen: Only 4 fields + preview
     if (isVirtualScreen) {
-        // Virtual Screen Layout: Full-width device info above, preview below
         return (
             <Box>
-                {/* Full-width Device Info Card with 2 columns */}
+                {/* Device Info Card - 2 columns layout */}
                 <Paper elevation={2} sx={{
                     p: isMobile ? 2 : 3,
                     borderRadius: 2,
@@ -164,143 +161,53 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                     </Typography>
 
                     <Grid container spacing={isMobile ? 2 : 3}>
-                        {/* Left Column */}
+                        {/* Left Column - Name and Description */}
                         <Grid item xs={12} md={6}>
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableBody>
-                                        {leftColumnFields.map(({ key, label }) => (
-                                            <TableRow key={key}>
-                                                <TableCell sx={{
-                                                    width: '40%',
-                                                    padding: isMobile ? '6px 8px' : '8px 16px',
-                                                    borderBottom: '1px solid #eee'
-                                                }}>
-                                                    <Typography variant="body2" fontWeight="medium" sx={{
-                                                        fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                                    }}>
-                                                        {label}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{
-                                                    padding: isMobile ? '6px 8px' : '8px 16px',
-                                                    borderBottom: '1px solid #eee'
-                                                }}>
-                                                    {alwaysEditableFields.includes(key) ? (
-                                                        key === 'pollRate' || key === 'sendRate' ? (
-                                                            <TextField
-                                                                fullWidth
-                                                                size="small"
-                                                                type="number"
-                                                                value={deviceData[key] ?? 0}
-                                                                onChange={handleNumberChange(key)}
-                                                                slotProps={{ htmlInput: { min: 0 } }}
-                                                                sx={{
-                                                                    '& .MuiInputBase-input': {
-                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
-                                                                    }
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            <TextField
-                                                                fullWidth
-                                                                size="small"
-                                                                value={deviceData[key] ?? ""}
-                                                                onChange={handleTextChange(key)}
-                                                                sx={{
-                                                                    '& .MuiInputBase-input': {
-                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
-                                                                    }
-                                                                }}
-                                                            />
-                                                        )
-                                                    ) : (
-                                                        <Typography variant="body2" sx={{
-                                                            fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                                        }}>
-                                                            {deviceData[key] !== undefined ? String(deviceData[key]) : "—"}
-                                                        </Typography>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
+                            <TextField
+                                fullWidth
+                                label="Device Name"
+                                size="small"
+                                value={deviceData.name ?? ""}
+                                onChange={handleTextChange('name')}
+                                sx={{ mb: 2 }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="Description"
+                                size="small"
+                                multiline
+                                rows={3}
+                                value={deviceData.description ?? ""}
+                                onChange={handleTextChange('description')}
+                            />
                         </Grid>
 
-                        {/* Right Column */}
+                        {/* Right Column - Poll Rate and Send Rate */}
                         <Grid item xs={12} md={6}>
-                            <TableContainer>
-                                <Table size="small">
-                                    <TableBody>
-                                        {rightColumnFields.map(({ key, label }) => (
-                                            <TableRow key={key}>
-                                                <TableCell sx={{
-                                                    width: '40%',
-                                                    padding: isMobile ? '6px 8px' : '8px 16px',
-                                                    borderBottom: '1px solid #eee'
-                                                }}>
-                                                    <Typography variant="body2" fontWeight="medium" sx={{
-                                                        fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                                    }}>
-                                                        {label}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{
-                                                    padding: isMobile ? '6px 8px' : '8px 16px',
-                                                    borderBottom: '1px solid #eee'
-                                                }}>
-                                                    {alwaysEditableFields.includes(key) ? (
-                                                        key === 'pollRate' || key === 'sendRate' ? (
-                                                            <TextField
-                                                                fullWidth
-                                                                size="small"
-                                                                type="number"
-                                                                value={deviceData[key] ?? 0}
-                                                                onChange={handleNumberChange(key)}
-                                                                slotProps={{ htmlInput: { min: 0 } }}
-                                                                sx={{
-                                                                    '& .MuiInputBase-input': {
-                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
-                                                                    }
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            <TextField
-                                                                fullWidth
-                                                                size="small"
-                                                                value={deviceData[key] ?? ""}
-                                                                onChange={handleTextChange(key)}
-                                                                sx={{
-                                                                    '& .MuiInputBase-input': {
-                                                                        fontSize: isMobile ? '0.8rem' : '0.875rem',
-                                                                        padding: isMobile ? '6px 8px' : '8px 12px'
-                                                                    }
-                                                                }}
-                                                            />
-                                                        )
-                                                    ) : (
-                                                        <Typography variant="body2" sx={{
-                                                            fontSize: isMobile ? '0.8rem' : '0.875rem'
-                                                        }}>
-                                                            {deviceData[key] !== undefined ? String(deviceData[key]) : "—"}
-                                                        </Typography>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
+                            <TextField
+                                fullWidth
+                                label="Default Poll Rate (ms)"
+                                size="small"
+                                type="number"
+                                value={deviceData.pollRate ?? 5000}
+                                onChange={handleNumberChange('pollRate')}
+                                slotProps={{ htmlInput: { min: 0 } }}
+                                sx={{ mb: 2 }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="Default Send Rate (ms)"
+                                size="small"
+                                type="number"
+                                value={deviceData.sendRate ?? 5000}
+                                onChange={handleNumberChange('sendRate')}
+                                slotProps={{ htmlInput: { min: 0 } }}
+                            />
                         </Grid>
                     </Grid>
                 </Paper>
 
-                {/* Virtual Screen Preview - Full Width */}
+                {/* Virtual Screen Preview */}
                 <Paper elevation={2} sx={{
                     p: 0,
                     height: '600px',
@@ -350,7 +257,118 @@ const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
         );
     }
 
-    // Original Layout for non-Virtual Screen devices
+    // Virtual Device: 5 fields + Connection card with IP and WebSocket port
+    if (isVirtualDevice) {
+        return (
+            <Box>
+                {/* Device Info Card - 2 columns layout */}
+                <Paper elevation={2} sx={{
+                    p: isMobile ? 2 : 3,
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    mb: 3
+                }}>
+                    <Typography variant="subtitle1" gutterBottom sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mb: isMobile ? 1.5 : 2,
+                        fontSize: isMobile ? '1rem' : '1.1rem'
+                    }}>
+                        <InfoIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                        Device Info
+                    </Typography>
+
+                    <Grid container spacing={isMobile ? 2 : 3}>
+                        {/* Left Column - Name and Description */}
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Device Name"
+                                size="small"
+                                value={deviceData.name ?? ""}
+                                onChange={handleTextChange('name')}
+                                sx={{ mb: 2 }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="Description"
+                                size="small"
+                                multiline
+                                rows={3}
+                                value={deviceData.description ?? ""}
+                                onChange={handleTextChange('description')}
+                            />
+                        </Grid>
+
+                        {/* Right Column - Poll Rate and Send Rate */}
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Default Poll Rate (ms)"
+                                size="small"
+                                type="number"
+                                value={deviceData.pollRate ?? 5000}
+                                onChange={handleNumberChange('pollRate')}
+                                slotProps={{ htmlInput: { min: 0 } }}
+                                sx={{ mb: 2 }}
+                            />
+                            <TextField
+                                fullWidth
+                                label="Default Send Rate (ms)"
+                                size="small"
+                                type="number"
+                                value={deviceData.sendRate ?? 5000}
+                                onChange={handleNumberChange('sendRate')}
+                                slotProps={{ htmlInput: { min: 0 } }}
+                            />
+                        </Grid>
+                    </Grid>
+                </Paper>
+
+                {/* Connection Configuration Card */}
+                <Paper elevation={2} sx={{
+                    p: isMobile ? 2 : 3,
+                    borderRadius: 2,
+                    overflow: 'hidden'
+                }}>
+                    <Typography variant="subtitle1" gutterBottom sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mb: isMobile ? 1.5 : 2,
+                        fontSize: isMobile ? '1rem' : '1.1rem'
+                    }}>
+                        <PortIcon sx={{ mr: 1, fontSize: isMobile ? '1.1rem' : '1.2rem' }} />
+                        Connection Configuration
+                    </Typography>
+
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField
+                            fullWidth
+                            label="IP Address"
+                            size="small"
+                            type="text"
+                            value={deviceData.ipAddress ?? ""}
+                            onChange={handleTextChange('ipAddress')}
+                            placeholder="192.168.1.100"
+                            helperText="IP address for network communication"
+                        />
+                        <TextField
+                            fullWidth
+                            label="WebSocket Port"
+                            size="small"
+                            type="number"
+                            value={deviceData.webSocketPort ?? 8080}
+                            onChange={handleNumberChange('webSocketPort')}
+                            slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                            helperText="Port for WebSocket communication"
+                        />
+                    </Box>
+                </Paper>
+            </Box>
+        );
+    }
+
+    // Original Layout for non-Virtual devices
     return (
         <Box>
             <Box sx={{

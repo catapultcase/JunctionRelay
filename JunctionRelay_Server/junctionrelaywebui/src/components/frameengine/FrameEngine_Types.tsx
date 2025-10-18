@@ -23,7 +23,10 @@ export type ElementType =
     | 'clock'
     | 'oscilloscope'
     | 'tunnel'
-    | 'weather';
+    | 'weather'
+    | 'asset-image'
+    | 'asset-video'
+    | 'asset-rive';
 
 export interface PlacedElement {
     id: string;
@@ -35,59 +38,8 @@ export interface PlacedElement {
     properties: Record<string, any>;
     sensorId?: string;
     visible?: boolean;
+    locked?: boolean;
     zIndex?: number;
-}
-
-// ============================================================================
-// Layout Configuration
-// ============================================================================
-
-export interface FrameLayoutConfig {
-    id?: number;
-    displayName: string;
-    description?: string;
-    layoutType: string;
-    width: number;
-    height: number;
-    orientation?: string;
-    backgroundColor?: string;
-    backgroundType?: string;
-    backgroundImageUrl?: string | null;
-    backgroundImageData?: Uint8Array | null;
-    backgroundOpacity?: number;
-    riveFile?: string | null;
-    riveStateMachine?: string | null;
-    riveInputs?: Record<string, any> | null;
-    riveBindings?: Record<string, any> | null;
-    rows?: number;
-    columns?: number;
-    isTemplate: boolean;
-    isDraft?: boolean;
-    isPublished?: boolean;
-    created?: string;
-    lastModified?: string;
-    canvasSettings?: {
-        grid: {
-            snapToGrid: boolean;
-            showGrid: boolean;
-            gridSize: number;
-            gridColor: string;
-        };
-        elementPadding: number;
-    };
-}
-
-// ============================================================================
-// Sensor Data
-// ============================================================================
-
-export interface AvailableSensor {
-    id: string;
-    name: string;
-    value: string;
-    unit: string;
-    type: 'environmental' | 'system' | 'custom';
-    isOnline: boolean;
 }
 
 // ============================================================================
@@ -114,6 +66,89 @@ export interface DiscoveredDataBinding {
     ref?: any;
 }
 
+export interface RiveConfiguration {
+    discoveredMachines: DiscoveredStateMachine[];
+    discoveredBindings: DiscoveredDataBinding[];
+    lastDiscoveryUpdate: string;
+    activeStateMachine?: string;
+    globalInputMappings?: Record<string, any>;
+    discoveryMetadata?: {
+        totalInputs: number;
+        inputTypeBreakdown: Record<string, number>;
+        discoveryAttempts: number;
+        lastSuccessfulDiscovery: string;
+    };
+}
+
+// ============================================================================
+// Layout Configuration
+// ============================================================================
+
+export interface FrameLayoutConfig {
+    id?: number;
+    displayName: string;
+    description?: string;
+    layoutType: string;
+    width: number;
+    height: number;
+    orientation?: string;
+    backgroundColor?: string;
+    backgroundType?: string;
+    backgroundImageUrl?: string | null;
+    backgroundImageFit?: 'cover' | 'contain' | 'fill' | 'tile' | 'stretch' | 'none';
+    backgroundOpacity?: number;
+    backgroundVideoUrl?: string | null;
+    backgroundVideoFit?: 'cover' | 'contain' | 'fill' | 'stretch' | 'none';
+    videoLoop?: boolean;
+    videoMuted?: boolean;
+    videoAutoplay?: boolean;
+    riveFile?: string | null;
+    riveStateMachine?: string | null;
+    riveInputs?: Record<string, any> | null;
+    riveBindings?: Record<string, any> | null;
+    riveConfiguration?: RiveConfiguration;
+    rows?: number;
+    columns?: number;
+    isTemplate: boolean;
+    isDraft?: boolean;
+    isPublished?: boolean;
+    created?: string;
+    lastModified?: string;
+    createdBy?: string;
+    version?: string;
+    thumbnailOverride?: boolean; // ← ADD THIS LINE
+    jsonFrameConfig?: string; // ← ADD THIS LINE TOO
+    jsonFrameElements?: string; // ← AND THIS LINE
+    canvasSettings?: {
+        grid: {
+            snapToGrid: boolean;
+            showGrid: boolean;
+            gridSize: number;
+            gridColor: string;
+        };
+        elementPadding: number;
+    };
+}
+
+// ============================================================================
+// Sensor Data
+// ============================================================================
+export interface AvailableSensor {
+    id: string;
+    name: string;
+    value: string;
+    unit: string;
+    type: 'environmental' | 'system' | 'custom';
+    isOnline: boolean;
+    externalId: string; // ← ADD THIS LINE
+    decimalPlaces: number; // ← ADD THIS LINE
+    lastUpdated: string; // ← ADD THIS LINE
+}
+
+// ============================================================================
+// Rive File Info
+// ============================================================================
+
 export interface RiveFileInfo {
     filename: string;
     displayName: string;
@@ -122,13 +157,44 @@ export interface RiveFileInfo {
 }
 
 // ============================================================================
+// Background Image Types
+// ============================================================================
+
+export interface BackgroundImageInfo {
+    filename: string;
+    displayName: string;
+    uploadDate: string;
+    fileSize: number;
+}
+
+// ============================================================================
+// Background Video Types
+// ============================================================================
+
+export interface BackgroundVideoInfo {
+    filename: string;
+    displayName: string;
+    uploadDate: string;
+    fileSize: number;
+    duration?: number;
+    width?: number;
+    height?: number;
+}
+
+// ============================================================================
 // Background Configuration
 // ============================================================================
 
 export interface BackgroundConfig {
-    type: 'color' | 'image' | 'rive';
+    type: 'color' | 'image' | 'video' | 'rive';
     color?: string;
     imageUrl?: string;
+    imageFit?: 'cover' | 'contain' | 'fill' | 'tile' | 'stretch' | 'none';
+    videoUrl?: string;
+    videoFit?: 'cover' | 'contain' | 'fill' | 'stretch' | 'none';
+    videoLoop?: boolean;
+    videoMuted?: boolean;
+    videoAutoplay?: boolean;
     riveFile?: string;
     riveStateMachine?: string;
     riveInputs?: Record<string, any>;
@@ -151,6 +217,8 @@ export interface BaseElement {
     type: ElementType;
     position: ElementPosition;
     properties: Record<string, any>;
+    visible?: boolean;
+    locked?: boolean;
 }
 
 export interface RendererConfig {

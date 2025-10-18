@@ -41,6 +41,7 @@ interface OrphanedFilesReport {
     orphanedRiveFiles: string[];
     orphanedThumbnails: string[];
     orphanedFrameImages: string[];
+    orphanedAssets: string[];
     totalOrphanedFiles: number;
     estimatedSizeMB: number;
 }
@@ -106,16 +107,17 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
         }
     }, [onShowSnackbar]);
 
-    // Initial load
+    // Initial load - UPDATED: fetch platform info too
     useEffect(() => {
         const init = async () => {
             await Promise.all([
+                fetchPlatformInfo(),
                 fetchAutoCleanupSettings(),
                 fetchOrphanedFilesAudit()
             ]);
         };
         init();
-    }, [fetchAutoCleanupSettings, fetchOrphanedFilesAudit]);
+    }, [fetchPlatformInfo, fetchAutoCleanupSettings, fetchOrphanedFilesAudit]);
 
     // Handle auto-cleanup toggle
     const handleAutoCleanupToggle = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,7 +233,7 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
             </Box>
 
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Monitor and clean up orphaned Rive files, thumbnails, and frame images that are no longer used by any frame layouts. This will prevent unnecessary files from being added to your database backups.
+                Monitor and clean up orphaned Rive files, thumbnails, frame images, and assets (images, videos, etc.) that are no longer used by any frame layouts. This will prevent unnecessary files from being added to your database backups.
             </Typography>
 
             <Divider sx={{ mb: 2 }} />
@@ -262,7 +264,7 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
                         )}
                     </Box>
 
-                    {/* Breakdown */}
+                    {/* Breakdown - UPDATED: Added orphanedAssets */}
                     {orphanedReport.totalOrphanedFiles > 0 && (
                         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
                             {orphanedReport.orphanedRiveFiles.length > 0 && (
@@ -284,6 +286,14 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
                             {orphanedReport.orphanedFrameImages.length > 0 && (
                                 <Chip
                                     label={`${orphanedReport.orphanedFrameImages.length} frame images`}
+                                    size="small"
+                                    color="warning"
+                                    variant="outlined"
+                                />
+                            )}
+                            {orphanedReport.orphanedAssets.length > 0 && (
+                                <Chip
+                                    label={`${orphanedReport.orphanedAssets.length} assets`}
                                     size="small"
                                     color="warning"
                                     variant="outlined"
@@ -326,7 +336,7 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
                     Refresh Audit
                 </Button>
 
-                {/* ADDED: Open Directory Button - Windows Only */}
+                {/* Open Directory Button - Windows Only */}
                 {isWindows && (
                     <Tooltip title="⚠️ It is recommended to not manually clean files. Windows cannot detect which files are in use by JunctionRelay. Use the cleanup tools on this page instead.">
                         <Button

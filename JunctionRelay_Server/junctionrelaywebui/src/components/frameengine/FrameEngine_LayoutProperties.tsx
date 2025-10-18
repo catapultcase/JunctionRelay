@@ -23,7 +23,9 @@ import {
     type DiscoveredInput,
     type DiscoveredStateMachine,
     type DiscoveredDataBinding,
-    type RiveFileInfo
+    type RiveFileInfo,
+    type BackgroundImageInfo,
+    type BackgroundVideoInfo
 } from './FrameEngine_RiveCore';
 import { useTheme } from '@mui/material/styles';
 
@@ -37,8 +39,13 @@ interface FrameLayoutConfig {
     backgroundColor?: string;
     backgroundType?: string;
     backgroundImageUrl?: string | null;
-    backgroundImageData?: Uint8Array | null;
+    backgroundImageFit?: 'cover' | 'contain' | 'fill' | 'tile' | 'stretch' | 'none';
     backgroundOpacity?: number;
+    backgroundVideoUrl?: string | null;
+    backgroundVideoFit?: 'cover' | 'contain' | 'fill' | 'stretch' | 'none';
+    videoLoop?: boolean;
+    videoMuted?: boolean;
+    videoAutoplay?: boolean;
     riveFile?: string | null;
     riveStateMachine?: string | null;
     riveInputs?: Record<string, any> | null;
@@ -74,15 +81,27 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
     const [riveUploadLoading, setRiveUploadLoading] = useState(false);
     const [riveLoadingError, setRiveLoadingError] = useState<string | null>(null);
 
-    // Load available Rive files on component mount
+    // Background image-related state
+    const [availableBackgroundImages, setAvailableBackgroundImages] = useState<BackgroundImageInfo[]>([]);
+    const [bgImageUploadLoading, setBgImageUploadLoading] = useState(false);
+    const [bgImageLoadingError, setBgImageLoadingError] = useState<string | null>(null);
+
+    // Background video-related state
+    const [availableBackgroundVideos, setAvailableBackgroundVideos] = useState<BackgroundVideoInfo[]>([]);
+    const [bgVideoUploadLoading, setBgVideoUploadLoading] = useState(false);
+    const [bgVideoLoadingError, setBgVideoLoadingError] = useState<string | null>(null);
+
+    // Load available files on component mount
     React.useEffect(() => {
         loadAvailableRiveFiles();
+        loadAvailableBackgroundImages();
+        loadAvailableBackgroundVideos();
     }, []);
 
     // Load available Rive files from backend
     const loadAvailableRiveFiles = async () => {
         try {
-            const response = await fetch('/api/frameengine/rive-files');
+            const response = await fetch('/api/frameengine/rive');
             if (response.ok) {
                 const files = await response.json();
                 setAvailableRiveFiles(files);
@@ -91,6 +110,36 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
             }
         } catch (error) {
             console.error('Error loading Rive files:', error);
+        }
+    };
+
+    // Load available background images from backend
+    const loadAvailableBackgroundImages = async () => {
+        try {
+            const response = await fetch('/api/frameengine/images');
+            if (response.ok) {
+                const files = await response.json();
+                setAvailableBackgroundImages(files);
+            } else {
+                console.error('Failed to load background images');
+            }
+        } catch (error) {
+            console.error('Error loading background images:', error);
+        }
+    };
+
+    // Load available background videos from backend
+    const loadAvailableBackgroundVideos = async () => {
+        try {
+            const response = await fetch('/api/frameengine/videos');
+            if (response.ok) {
+                const files = await response.json();
+                setAvailableBackgroundVideos(files);
+            } else {
+                console.error('Failed to load background videos');
+            }
+        } catch (error) {
+            console.error('Error loading background videos:', error);
         }
     };
 
@@ -135,6 +184,97 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
             setRiveLoadingError('Upload failed: ' + (error as Error).message);
         } finally {
             setRiveUploadLoading(false);
+        }
+    };
+
+    // Handle background image upload
+    const handleBackgroundImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const validExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+        const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+
+        if (!validExtensions.includes(fileExt)) {
+            setBgImageLoadingError('Please select a valid image file (PNG, JPG, JPEG, WebP, or GIF)');
+            return;
+        }
+
+        setBgImageUploadLoading(true);
+        setBgImageLoadingError(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('backgroundImage', file);
+
+            const response = await fetch('/api/frameengine/upload-image', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                await loadAvailableBackgroundImages();
+                onLayoutUpdate({
+                    backgroundType: 'image',
+                    backgroundImageUrl: result.filename
+                });
+                event.target.value = '';
+            } else {
+                const error = await response.json();
+                setBgImageLoadingError(error.message || 'Upload failed');
+            }
+        } catch (error) {
+            setBgImageLoadingError('Upload failed: ' + (error as Error).message);
+        } finally {
+            setBgImageUploadLoading(false);
+        }
+    };
+
+    // Handle background video upload
+    const handleBackgroundVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const validExtensions = ['.mp4', '.webm', '.ogg'];
+        const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+
+        if (!validExtensions.includes(fileExt)) {
+            setBgVideoLoadingError('Please select a valid video file (MP4, WebM, or OGG)');
+            return;
+        }
+
+        setBgVideoUploadLoading(true);
+        setBgVideoLoadingError(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('backgroundVideo', file);
+
+            const response = await fetch('/api/frameengine/upload-video', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                await loadAvailableBackgroundVideos();
+                onLayoutUpdate({
+                    backgroundType: 'video',
+                    backgroundVideoUrl: result.filename,
+                    videoLoop: true,
+                    videoMuted: true,
+                    videoAutoplay: true
+                });
+                event.target.value = '';
+            } else {
+                const error = await response.json();
+                setBgVideoLoadingError(error.message || 'Upload failed');
+            }
+        } catch (error) {
+            setBgVideoLoadingError('Upload failed: ' + (error as Error).message);
+        } finally {
+            setBgVideoUploadLoading(false);
         }
     };
 
@@ -333,6 +473,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                             <option value="none">None</option>
                             <option value="color">Solid Color</option>
                             <option value="image">Image</option>
+                            <option value="video">Video</option>
                             <option value="rive">Rive Component</option>
                         </select>
                     </div>
@@ -342,6 +483,7 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                         <label style={labelStyle}>
                             Background Color {layout.backgroundType === 'rive' && '(Behind Rive)'}
                             {layout.backgroundType === 'image' && '(Behind Image)'}
+                            {layout.backgroundType === 'video' && '(Behind Video)'}
                         </label>
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <input
@@ -361,17 +503,258 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                     </div>
 
                     {layout.backgroundType === 'image' && (
-                        <div>
-                            <label style={labelStyle}>
-                                Image URL
-                            </label>
-                            <input
-                                type="text"
-                                value={layout.backgroundImageUrl || ''}
-                                onChange={(e) => onLayoutUpdate({ backgroundImageUrl: e.target.value })}
-                                style={inputStyle}
-                                placeholder="https://example.com/image.jpg"
-                            />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <label style={labelStyle}>
+                                    Upload New Background Image
+                                </label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleBackgroundImageUpload}
+                                    disabled={bgImageUploadLoading}
+                                    style={{
+                                        ...inputStyle,
+                                        padding: '6px 8px',
+                                        cursor: bgImageUploadLoading ? 'not-allowed' : 'pointer'
+                                    }}
+                                />
+                                {bgImageUploadLoading && (
+                                    <div style={{ ...helperTextStyle, color: theme.palette.text.secondary }}>
+                                        Uploading background image...
+                                    </div>
+                                )}
+                                {bgImageLoadingError && (
+                                    <div style={{ ...helperTextStyle, color: theme.palette.error.main }}>
+                                        {bgImageLoadingError}
+                                    </div>
+                                )}
+                            </div>
+
+                            {availableBackgroundImages.length > 0 && (
+                                <div>
+                                    <label style={labelStyle}>
+                                        Or Select Existing Image
+                                    </label>
+                                    <select
+                                        value={layout.backgroundImageUrl || ''}
+                                        onChange={(e) => onLayoutUpdate({
+                                            backgroundImageUrl: e.target.value || null
+                                        })}
+                                        style={inputStyle}
+                                    >
+                                        <option value="">Select a background image...</option>
+                                        {availableBackgroundImages.map((file) => (
+                                            <option key={file.filename} value={file.filename}>
+                                                {file.displayName} ({Math.round(file.fileSize / 1024)}KB)
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Image Fit Mode */}
+                            {layout.backgroundImageUrl && (
+                                <div>
+                                    <label style={labelStyle}>
+                                        Image Fit Mode
+                                    </label>
+                                    <select
+                                        value={layout.backgroundImageFit || 'cover'}
+                                        onChange={(e) => onLayoutUpdate({
+                                            backgroundImageFit: e.target.value as any
+                                        })}
+                                        style={inputStyle}
+                                    >
+                                        <option value="cover">Cover (fill frame, may crop)</option>
+                                        <option value="contain">Contain (fit inside, may letterbox)</option>
+                                        <option value="fill">Fill (stretch to fit)</option>
+                                        <option value="tile">Tile (repeat pattern)</option>
+                                        <option value="stretch">Stretch (distort to fit)</option>
+                                        <option value="none">None (original size)</option>
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Image Preview */}
+                            {layout.backgroundImageUrl && (
+                                <div style={{
+                                    padding: '8px',
+                                    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[100],
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    color: theme.palette.text.secondary
+                                }}>
+                                    <div><strong>Current Image:</strong> {layout.backgroundImageUrl}</div>
+                                    <div style={{ marginTop: '8px' }}>
+                                        <img
+                                            src={`/api/frameengine/images/${layout.backgroundImageUrl}/content`}
+                                            alt="Background preview"
+                                            style={{
+                                                maxWidth: '100%',
+                                                maxHeight: '150px',
+                                                objectFit: 'contain',
+                                                border: `1px solid ${theme.palette.divider}`,
+                                                borderRadius: '4px'
+                                            }}
+                                            onError={(e) => {
+                                                const target = e.target as HTMLImageElement;
+                                                target.style.display = 'none';
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {layout.backgroundType === 'video' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <label style={labelStyle}>
+                                    Upload New Background Video
+                                </label>
+                                <input
+                                    type="file"
+                                    accept="video/mp4,video/webm,video/ogg"
+                                    onChange={handleBackgroundVideoUpload}
+                                    disabled={bgVideoUploadLoading}
+                                    style={{
+                                        ...inputStyle,
+                                        padding: '6px 8px',
+                                        cursor: bgVideoUploadLoading ? 'not-allowed' : 'pointer'
+                                    }}
+                                />
+                                {bgVideoUploadLoading && (
+                                    <div style={{ ...helperTextStyle, color: theme.palette.text.secondary }}>
+                                        Uploading background video...
+                                    </div>
+                                )}
+                                {bgVideoLoadingError && (
+                                    <div style={{ ...helperTextStyle, color: theme.palette.error.main }}>
+                                        {bgVideoLoadingError}
+                                    </div>
+                                )}
+                            </div>
+
+                            {availableBackgroundVideos.length > 0 && (
+                                <div>
+                                    <label style={labelStyle}>
+                                        Or Select Existing Video
+                                    </label>
+                                    <select
+                                        value={layout.backgroundVideoUrl || ''}
+                                        onChange={(e) => onLayoutUpdate({
+                                            backgroundVideoUrl: e.target.value || null
+                                        })}
+                                        style={inputStyle}
+                                    >
+                                        <option value="">Select a background video...</option>
+                                        {availableBackgroundVideos.map((file) => (
+                                            <option key={file.filename} value={file.filename}>
+                                                {file.displayName} ({Math.round(file.fileSize / 1024)}KB)
+                                                {file.duration && ` - ${Math.round(file.duration)}s`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Video Fit Mode */}
+                            {layout.backgroundVideoUrl && (
+                                <div>
+                                    <label style={labelStyle}>
+                                        Video Fit Mode
+                                    </label>
+                                    <select
+                                        value={layout.backgroundVideoFit || 'cover'}
+                                        onChange={(e) => onLayoutUpdate({
+                                            backgroundVideoFit: e.target.value as any
+                                        })}
+                                        style={inputStyle}
+                                    >
+                                        <option value="cover">Cover (fill frame, may crop)</option>
+                                        <option value="contain">Contain (fit inside, may letterbox)</option>
+                                        <option value="fill">Fill (stretch to fit)</option>
+                                        <option value="stretch">Stretch (distort to fit)</option>
+                                        <option value="none">None (original size)</option>
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Video Playback Controls */}
+                            {layout.backgroundVideoUrl && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <label style={labelStyle}>
+                                        Video Playback Options
+                                    </label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="videoLoop"
+                                            checked={layout.videoLoop ?? true}
+                                            onChange={(e) => onLayoutUpdate({ videoLoop: e.target.checked })}
+                                        />
+                                        <label htmlFor="videoLoop" style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer' }}>
+                                            Loop video
+                                        </label>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="videoMuted"
+                                            checked={layout.videoMuted ?? true}
+                                            onChange={(e) => onLayoutUpdate({ videoMuted: e.target.checked })}
+                                        />
+                                        <label htmlFor="videoMuted" style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer' }}>
+                                            Mute audio
+                                        </label>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="videoAutoplay"
+                                            checked={layout.videoAutoplay ?? true}
+                                            onChange={(e) => onLayoutUpdate({ videoAutoplay: e.target.checked })}
+                                        />
+                                        <label htmlFor="videoAutoplay" style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer' }}>
+                                            Autoplay
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Video Preview */}
+                            {layout.backgroundVideoUrl && (
+                                <div style={{
+                                    padding: '8px',
+                                    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[100],
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    color: theme.palette.text.secondary
+                                }}>
+                                    <div><strong>Current Video:</strong> {layout.backgroundVideoUrl}</div>
+                                    <div style={{ marginTop: '8px' }}>
+                                        <video
+                                            src={`/api/frameengine/videos/${layout.backgroundVideoUrl}/content`}
+                                            controls
+                                            muted
+                                            loop
+                                            style={{
+                                                maxWidth: '100%',
+                                                maxHeight: '150px',
+                                                border: `1px solid ${theme.palette.divider}`,
+                                                borderRadius: '4px',
+                                                backgroundColor: '#000'
+                                            }}
+                                            onError={(e) => {
+                                                const target = e.target as HTMLVideoElement;
+                                                target.style.display = 'none';
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

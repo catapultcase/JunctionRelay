@@ -400,11 +400,12 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
                 elementPadding: elementPadding,
             };
 
-            // Create background config with refs (these will be updated by sensor data)
+            // FIXED: Create background config with video support
             const bgConfig: BackgroundConfig = {
-                type: (background?.type as 'color' | 'image' | 'rive') || 'color',
+                type: (background?.type as 'color' | 'image' | 'video' | 'rive') || 'color',
                 color: background?.color,
                 imageUrl: (background as any)?.imageUrl,
+                videoUrl: (background as any)?.videoUrl, // ADD THIS
                 riveFile: config.frameConfig?.rive?.fileUrl,
                 riveStateMachine: (config as any).riveStateMachine || (background as any)?.riveStateMachine,
                 riveInputs: backgroundInputs.current,
