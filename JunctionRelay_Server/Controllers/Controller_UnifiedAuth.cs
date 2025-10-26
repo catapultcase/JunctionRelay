@@ -20,6 +20,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using JunctionRelayServer.Interfaces;
+using JunctionRelayServer.Services;
 using System.Text.Json;
 
 namespace JunctionRelayServer.Controllers
@@ -31,15 +32,18 @@ namespace JunctionRelayServer.Controllers
         private readonly IAuthModeService _authModeService;
         private readonly ILocalAuthService _localAuthService;
         private readonly ICloudAuthService _cloudAuthService;
+        private readonly Service_CloudSessionStore _cloudSessionStore;
 
         public Controller_UnifiedAuth(
             IAuthModeService authModeService,
             ILocalAuthService localAuthService,
-            ICloudAuthService cloudAuthService)
+            ICloudAuthService cloudAuthService,
+            Service_CloudSessionStore cloudSessionStore)
         {
             _authModeService = authModeService ?? throw new ArgumentNullException(nameof(authModeService));
             _localAuthService = localAuthService ?? throw new ArgumentNullException(nameof(localAuthService));
             _cloudAuthService = cloudAuthService ?? throw new ArgumentNullException(nameof(cloudAuthService));
+            _cloudSessionStore = cloudSessionStore ?? throw new ArgumentNullException(nameof(cloudSessionStore));
         }
 
         [HttpGet("status")]
@@ -303,6 +307,41 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        [HttpPost("tokens/force-refresh")]
+        public async Task<IActionResult> ForceTokenRefresh()
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return BadRequest(new { message = "Token refresh is only available in cloud mode" });
+                }
+
+                var (success, message, newToken) = await _cloudSessionStore.ForceRefreshTokenAsync();
+
+                if (success)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        message = message,
+                        tokenPreview = newToken?.Substring(0, Math.Min(20, newToken.Length)) + "..."
+                    });
+                }
+                else
+                {
+                    return StatusCode(500, new { success = false, message = message });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error forcing token refresh: {ex.Message}");
+                return StatusCode(500, new { message = "Error forcing token refresh" });
+            }
+        }
+
         [HttpGet("sessions")]
         public async Task<IActionResult> GetSessions()
         {
@@ -401,7 +440,7 @@ namespace JunctionRelayServer.Controllers
                 return authMode switch
                 {
                     "local" => await _localAuthService.ChangePasswordAsync(request, HttpContext),
-                    "cloud" => await _cloudAuthService.ChangePasswordAsync(request, Request.Headers.Authorization.FirstOrDefault()),
+                    "cloud" => BadRequest(new { message = "Password changes are managed through your cloud account at https://accounts.junctionrelay.com/user" }),
                     "none" => BadRequest(new { message = "Authentication is disabled" }),
                     _ => BadRequest(new { message = "Unknown authentication mode" })
                 };
@@ -469,7 +508,7 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        private async Task<IActionResult> ValidateLocalTokenDirectly(string authHeader)
+        private Task<IActionResult> ValidateLocalTokenDirectly(string authHeader)
         {
             var token = authHeader.Substring("Bearer ".Length);
             var jwtService = HttpContext.RequestServices.GetRequiredService<IService_Jwt>();
@@ -477,32 +516,32 @@ namespace JunctionRelayServer.Controllers
 
             if (principal == null)
             {
-                return new UnauthorizedObjectResult(new { valid = false, message = "Token is invalid" });
+                return Task.FromResult<IActionResult>(new UnauthorizedObjectResult(new { valid = false, message = "Token is invalid" }));
             }
 
             var username = principal.Identity?.Name ?? "unknown";
             var userId = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown";
 
-            return new OkObjectResult(new
+            return Task.FromResult<IActionResult>(new OkObjectResult(new
             {
                 valid = true,
                 username = username,
                 userId = userId,
                 authMode = "local",
                 authType = "Local"
-            });
+            }));
         }
 
-        private async Task<IActionResult> HandleNoneAuthStatus()
+        private Task<IActionResult> HandleNoneAuthStatus()
         {
-            return Ok(new
+            return Task.FromResult<IActionResult>(Ok(new
             {
                 authMode = "none",
                 isAuthenticated = false,
                 isConfigured = true,
                 requiresSetup = false,
                 message = "Authentication is disabled"
-            });
+            }));
         }
 
         private async Task<IActionResult> HandleLocalAuthStatus()
@@ -515,6 +554,135 @@ namespace JunctionRelayServer.Controllers
         {
             var authHeader = Request.Headers.Authorization.FirstOrDefault();
             return await _cloudAuthService.GetAuthStatusAsync(authHeader);
+        }
+
+        // --------------------------------------------------------------------
+        // FALLBACK AUTHENTICATION ENDPOINTS
+        // --------------------------------------------------------------------
+
+        [HttpGet("fallback/status")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetFallbackStatus()
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return BadRequest(new { message = "Fallback authentication is only available in cloud mode" });
+                }
+
+                return await _cloudAuthService.GetFallbackStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error getting fallback status: {ex.Message}");
+                return StatusCode(500, new { message = "Error getting fallback status" });
+            }
+        }
+
+        [HttpPost("fallback/enable")]
+        public async Task<IActionResult> EnableFallback([FromBody] JsonElement request)
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return BadRequest(new { message = "Fallback authentication can only be enabled in cloud mode" });
+                }
+
+                // Verify cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Authentication required" });
+                }
+
+                // Validate the cloud token by checking user info
+                var userInfoResult = await _cloudAuthService.GetUserInfoAsync(authHeader);
+                if (userInfoResult is not OkObjectResult)
+                {
+                    return Unauthorized(new { message = "Invalid or expired cloud authentication" });
+                }
+
+                return await _cloudAuthService.EnableFallbackAsync(request);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error enabling fallback: {ex.Message}");
+                return StatusCode(500, new { message = "Error enabling fallback authentication" });
+            }
+        }
+
+        [HttpPost("fallback/disable")]
+        public async Task<IActionResult> DisableFallback([FromBody] JsonElement request)
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return BadRequest(new { message = "Fallback authentication can only be disabled in cloud mode" });
+                }
+
+                // Verify cloud authentication
+                var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                {
+                    return Unauthorized(new { message = "Authentication required" });
+                }
+
+                // Validate the cloud token by checking user info
+                var userInfoResult = await _cloudAuthService.GetUserInfoAsync(authHeader);
+                if (userInfoResult is not OkObjectResult)
+                {
+                    return Unauthorized(new { message = "Invalid or expired cloud authentication" });
+                }
+
+                var removeUser = request.TryGetProperty("removeUser", out var removeUserElement) && removeUserElement.GetBoolean();
+                return await _cloudAuthService.DisableFallbackAsync(removeUser);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error disabling fallback: {ex.Message}");
+                return StatusCode(500, new { message = "Error disabling fallback authentication" });
+            }
+        }
+
+        [HttpPost("fallback/login")]
+        [AllowAnonymous]
+        public async Task<IActionResult> FallbackLogin([FromBody] JsonElement request)
+        {
+            try
+            {
+                var authMode = await _authModeService.GetCurrentAuthModeAsync();
+
+                if (authMode != "cloud")
+                {
+                    return BadRequest(new { message = "Fallback login is only available when system is in cloud mode" });
+                }
+
+                // Perform fallback login
+                var loginResult = await _cloudAuthService.LoginWithFallbackAsync(request);
+
+                // If login was successful, switch to local mode
+                if (loginResult is OkObjectResult okResult)
+                {
+                    await _authModeService.SetAuthModeAsync("local");
+                    Console.WriteLine("[UNIFIED_AUTH] Successfully switched to local mode after fallback login");
+                }
+
+                return loginResult;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during fallback login: {ex.Message}");
+                return StatusCode(500, new { message = "Error during fallback login" });
+            }
         }
     }
 }

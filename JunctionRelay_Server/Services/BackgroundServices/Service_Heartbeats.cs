@@ -32,7 +32,7 @@ using Dapper;
 using System.Text.Json;
 using JunctionRelayServer.Services;
 
-namespace JunctionRelay_Server.Services.BackgroundServices
+namespace JunctionRelayServer.Services.BackgroundServices
 {
     public class Service_Heartbeats : BackgroundService
     {

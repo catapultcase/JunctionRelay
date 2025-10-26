@@ -22,6 +22,8 @@ using JunctionRelayServer.Services.FactoryServices;
 using JunctionRelayServer.Utils;
 using JunctionRelayServer.Services.BackgroundServices;
 using System.Collections.Concurrent;
+using System.Data;
+using Dapper;
 
 namespace JunctionRelayServer.Services
 {
@@ -50,9 +52,33 @@ namespace JunctionRelayServer.Services
                 await _startupSignals.DatabaseInitialized.Task;
                 Console.WriteLine("[STARTUP] ✅ Database initialization confirmed");
 
+                // Update collector states on startup
+                using (var dbScope = _serviceProvider.CreateScope())
+                {
+                    var db = dbScope.ServiceProvider.GetRequiredService<IDbConnection>();
+
+                    // Re-lock collectors with external access tokens
+                    var reLockedCount = db.Execute("UPDATE Collectors SET SecurityStatus = 'Locked' WHERE ExternalAccessToken = 1 AND SecurityStatus != 'Locked'");
+                    if (reLockedCount > 0)
+                    {
+                        Console.WriteLine($"[STARTUP] 🔒 Re-locked {reLockedCount} collector(s) with external access tokens");
+                    }
+
+                    // Update EventEngine collectors to always show "Active" status
+                    var eventEngineCount = db.Execute("UPDATE Collectors SET Status = 'Active' WHERE CollectorType = 'EventEngine' AND Status != 'Active'");
+                    if (eventEngineCount > 0)
+                    {
+                        Console.WriteLine($"[STARTUP] ✅ Updated {eventEngineCount} EventEngine collector(s) to Active status");
+                    }
+                }
+
                 // Wait for event engine to be initialized
                 await _startupSignals.EventEngineInitialized.Task;
                 Console.WriteLine("[STARTUP] ✅ Event engine initialization confirmed");
+
+                // Wait for collector testing to complete BEFORE starting services/junctions
+                await _startupSignals.CollectorTestingComplete.Task;
+                Console.WriteLine("[STARTUP] ✅ Collector testing confirmed");
 
                 // Start services and junctions
                 await StartActiveServicesAsync();

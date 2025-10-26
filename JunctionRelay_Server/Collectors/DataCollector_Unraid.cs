@@ -51,16 +51,6 @@ namespace JunctionRelayServer.Collectors
             _client.DefaultRequestHeaders.Add("x-api-key", _apiKey);
         }
 
-        private int GetDecimalPlaces(string value)
-        {
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0;
-
-            string s = numericValue.ToString();
-            int idx = s.IndexOf('.');
-            return idx < 0 ? 0 : s.Length - idx - 1;
-        }
-
         private async Task<JObject> ExecuteGraphQLQuery(string query, CancellationToken cancellationToken = default)
         {
             var payload = new { query = query };
@@ -131,31 +121,31 @@ namespace JunctionRelayServer.Collectors
             try
             {
                 JObject result = await ExecuteGraphQLQuery(query, cancellationToken);
-                JToken info = result["data"]?["info"];
+                JToken? info = result["data"]?["info"];
                 if (info != null)
                 {
-                    JToken os = info["os"];
+                    JToken? os = info["os"];
                     if (os != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "system.platform", os["platform"]?.ToString(), "N/A", "System");
-                        AddSensorIfNotNull(sensors, collector, "system.distro", os["distro"]?.ToString(), "N/A", "System");
-                        AddSensorIfNotNull(sensors, collector, "system.release", os["release"]?.ToString(), "N/A", "System");
-                        AddSensorIfNotNull(sensors, collector, "system.uptime", os["uptime"]?.ToString(), "seconds", "System");
+                        AddSensorIfNotNull(sensors, collector, "system.platform", os["platform"]?.ToString() ?? "", "N/A", "System");
+                        AddSensorIfNotNull(sensors, collector, "system.distro", os["distro"]?.ToString() ?? "", "N/A", "System");
+                        AddSensorIfNotNull(sensors, collector, "system.release", os["release"]?.ToString() ?? "", "N/A", "System");
+                        AddSensorIfNotNull(sensors, collector, "system.uptime", os["uptime"]?.ToString() ?? "", "seconds", "System");
                     }
-                    JToken cpu = info["cpu"];
+                    JToken? cpu = info["cpu"];
                     if (cpu != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "cpu.manufacturer", cpu["manufacturer"]?.ToString(), "N/A", "CPU");
-                        AddSensorIfNotNull(sensors, collector, "cpu.brand", cpu["brand"]?.ToString(), "N/A", "CPU");
-                        AddSensorIfNotNull(sensors, collector, "cpu.cores", cpu["cores"]?.ToString(), "cores", "CPU");
-                        AddSensorIfNotNull(sensors, collector, "cpu.threads", cpu["threads"]?.ToString(), "threads", "CPU");
+                        AddSensorIfNotNull(sensors, collector, "cpu.manufacturer", cpu["manufacturer"]?.ToString() ?? "", "N/A", "CPU");
+                        AddSensorIfNotNull(sensors, collector, "cpu.brand", cpu["brand"]?.ToString() ?? "", "N/A", "CPU");
+                        AddSensorIfNotNull(sensors, collector, "cpu.cores", cpu["cores"]?.ToString() ?? "", "cores", "CPU");
+                        AddSensorIfNotNull(sensors, collector, "cpu.threads", cpu["threads"]?.ToString() ?? "", "threads", "CPU");
                     }
-                    JToken memory = info["memory"];
+                    JToken? memory = info["memory"];
                     if (memory != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "memory.total", memory["total"]?.ToString(), "bytes", "Memory");
-                        AddSensorIfNotNull(sensors, collector, "memory.free", memory["free"]?.ToString(), "bytes", "Memory");
-                        AddSensorIfNotNull(sensors, collector, "memory.used", memory["used"]?.ToString(), "bytes", "Memory");
+                        AddSensorIfNotNull(sensors, collector, "memory.total", memory["total"]?.ToString() ?? "", "bytes", "Memory");
+                        AddSensorIfNotNull(sensors, collector, "memory.free", memory["free"]?.ToString() ?? "", "bytes", "Memory");
+                        AddSensorIfNotNull(sensors, collector, "memory.used", memory["used"]?.ToString() ?? "", "bytes", "Memory");
                     }
                 }
             }
@@ -184,30 +174,30 @@ namespace JunctionRelayServer.Collectors
             try
             {
                 JObject result = await ExecuteGraphQLQuery(query, cancellationToken);
-                JToken arrayInfo = result["data"]?["array"];
+                JToken? arrayInfo = result["data"]?["array"];
                 if (arrayInfo != null)
                 {
-                    AddSensorIfNotNull(sensors, collector, "array.state", arrayInfo["state"]?.ToString(), "N/A", "Array");
+                    AddSensorIfNotNull(sensors, collector, "array.state", arrayInfo["state"]?.ToString() ?? "", "N/A", "Array");
 
                     // Storage capacity in kilobytes
-                    JToken storageCap = arrayInfo["capacity"]?["kilobytes"];
+                    JToken? storageCap = arrayInfo["capacity"]?["kilobytes"];
                     if (storageCap != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "array.storage.free", storageCap["free"]?.ToString(), "KB", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.storage.used", storageCap["used"]?.ToString(), "KB", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.storage.total", storageCap["total"]?.ToString(), "KB", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.free", storageCap["free"]?.ToString() ?? "", "KB", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.used", storageCap["used"]?.ToString() ?? "", "KB", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.storage.total", storageCap["total"]?.ToString() ?? "", "KB", "Array");
                     }
 
                     // Disk slot capacity (number of disk bays)
-                    JToken diskCap = arrayInfo["capacity"]?["disks"];
+                    JToken? diskCap = arrayInfo["capacity"]?["disks"];
                     if (diskCap != null)
                     {
-                        AddSensorIfNotNull(sensors, collector, "array.diskslots.free", diskCap["free"]?.ToString(), "slots", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.diskslots.used", diskCap["used"]?.ToString(), "slots", "Array");
-                        AddSensorIfNotNull(sensors, collector, "array.diskslots.total", diskCap["total"]?.ToString(), "slots", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.free", diskCap["free"]?.ToString() ?? "", "slots", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.used", diskCap["used"]?.ToString() ?? "", "slots", "Array");
+                        AddSensorIfNotNull(sensors, collector, "array.diskslots.total", diskCap["total"]?.ToString() ?? "", "slots", "Array");
                     }
 
-                    JArray disks = arrayInfo["disks"] as JArray;
+                    JArray? disks = arrayInfo["disks"] as JArray;
                     if (disks != null)
                     {
                         foreach (JToken disk in disks)
@@ -278,7 +268,7 @@ namespace JunctionRelayServer.Collectors
                 Name = deviceName ?? externalId.Replace(".", " ").Replace("_", " "),
                 Value = value,
                 Unit = unit,
-                DecimalPlaces = GetDecimalPlaces(value),
+                DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(value),
                 Category = category,
                 DeviceName = deviceName ?? collector.Name,
                 SensorType = "GraphQL",

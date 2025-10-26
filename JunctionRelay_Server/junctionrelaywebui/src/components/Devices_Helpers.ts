@@ -273,34 +273,21 @@ export const getDeviceStatusInfo = (
 
 // Helper function to get device type info
 export const getDeviceTypeInfo = (device: any): { label: string; color: "primary" | "secondary" | "default" | "info"; icon: React.ReactNode } => {
+    // Determine color based on device properties
+    let color: "primary" | "secondary" | "default" | "info" = "default";
+
     // Check for Cloud Device type first (before other checks)
     if (device.type === "Cloud Device") {
-        return {
-            label: "Cloud Device",
-            color: "info",
-            icon: null // Will be added in the component
-        };
-    }
-
-    if (device.isGateway) {
-        return {
-            label: "Gateway",
-            color: "primary",
-            icon: null // Will be added in the component
-        };
-    }
-
-    if (device.gatewayId && !device.isGateway) {
-        return {
-            label: "Child",
-            color: "secondary",
-            icon: null // Will be added in the component
-        };
+        color = "info";
+    } else if (device.isGateway) {
+        color = "primary";
+    } else if (device.gatewayId && !device.isGateway) {
+        color = "secondary";
     }
 
     return {
-        label: "Standalone",
-        color: "default",
+        label: device.type || "Unknown",
+        color: color,
         icon: null // Will be added in the component
     };
 };

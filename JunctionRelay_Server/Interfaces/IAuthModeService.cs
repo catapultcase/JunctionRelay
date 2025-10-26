@@ -59,9 +59,14 @@ namespace JunctionRelayServer.Interfaces
         Task<IActionResult> ActivateLicenseAsync(JsonElement request, string? authHeader);
         Task<IActionResult> RemoveLicenseAsync(string? authHeader);
         Task<IActionResult> UpdateProfileAsync(JsonElement request, string? authHeader);
-        Task<IActionResult> ChangePasswordAsync(JsonElement request, string? authHeader);
         Task<IActionResult> CreateCheckoutAsync(JsonElement request, string? authHeader);
         Task<IActionResult> GetSubscriptionStatusAsync(string? authHeader);
         Task<IActionResult> GetTokenInfoAsync(string? authHeader);
+
+        // Fallback authentication methods
+        Task<IActionResult> GetFallbackStatusAsync();
+        Task<IActionResult> EnableFallbackAsync(JsonElement request);
+        Task<IActionResult> DisableFallbackAsync(bool removeUser);
+        Task<IActionResult> LoginWithFallbackAsync(JsonElement request);
     }
 }

@@ -19,6 +19,7 @@
 
 import React, { useCallback, useMemo } from 'react';
 import { FrameEngine_ECGElement } from '../frameengine_effects/FrameEngine_ECGElement';
+import { FrameEngine_GaugeElement } from '../frameengine_effects/FrameEngine_GaugeElement';
 import { FrameEngine_ClockElement } from '../frameengine_effects/FrameEngine_ClockElement';
 import { FrameEngine_OscilloscopeElement } from '../frameengine_effects/FrameEngine_OscilloscopeElement';
 import { FrameEngine_TunnelElement } from '../frameengine_effects/FrameEngine_TunnelElement';
@@ -26,7 +27,11 @@ import { FrameEngine_TunnelElementWebGL } from '../frameengine_effects/FrameEngi
 import { FrameEngine_WeatherElement } from '../frameengine_effects/FrameEngine_WeatherElement';
 import { FrameEngine_Asset_Image } from '../frameengine_effects/FrameEngine_Asset_Image';
 import { FrameEngine_Asset_Video } from '../frameengine_effects/FrameEngine_Asset_Video';
-import { FrameEngine_Asset_Rive } from '../frameengine_effects/FrameEngine_Asset_Rive';
+import {
+    FrameEngine_Asset_Rive,
+    DiscoveredStateMachine as AssetRiveDiscoveredStateMachine,
+    DiscoveredDataBinding as AssetRiveDiscoveredDataBinding
+} from '../frameengine_effects/FrameEngine_Asset_Rive';
 
 const loadedFonts = new Set<string>();
 
@@ -83,6 +88,15 @@ export interface TextElement extends BaseElement {
 
 export interface ECGElement extends BaseElement {
     type: 'ecg';
+    properties: {
+        sensorTag?: string;
+        visibilitySensorTag?: string;
+        [key: string]: any;
+    };
+}
+
+export interface GaugeElement extends BaseElement {
+    type: 'gauge';
     properties: {
         sensorTag?: string;
         visibilitySensorTag?: string;
@@ -172,6 +186,7 @@ interface ElementRendererProps {
     onElementMouseDown?: (event: React.MouseEvent, elementId: string) => void;
     onElementMouseEnter?: (event: React.MouseEvent, elementId: string) => void;
     onElementMouseLeave?: (event: React.MouseEvent, elementId: string) => void;
+    onElementRiveDiscovery?: (elementId: string, machines: AssetRiveDiscoveredStateMachine[], bindings: AssetRiveDiscoveredDataBinding[]) => void;
     children?: React.ReactNode;
 }
 
@@ -197,6 +212,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
     onElementMouseDown,
     onElementMouseEnter,
     onElementMouseLeave,
+    onElementRiveDiscovery,
     children
 }) => {
     const isElementVisible = useCallback((element: BaseElement): boolean => {
@@ -238,7 +254,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
     const getElementStyles = useCallback((element: BaseElement, isSelected: boolean): React.CSSProperties => {
         const props = element.properties;
         const isLocked = element.locked ?? false;
-        const isVisualEffect = element.type === 'ecg' || element.type === 'clock' ||
+        const isVisualEffect = element.type === 'ecg' || element.type === 'gauge' || element.type === 'clock' ||
             element.type === 'oscilloscope' || element.type === 'tunnel' || element.type === 'weather' ||
             element.type === 'asset-image' || element.type === 'asset-video' || element.type === 'asset-rive';
 
@@ -322,7 +338,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
         };
     }, [config.elementPadding]);
 
-    const getSensorData = useCallback((element: SensorElement | ECGElement | OscilloscopeElement | TunnelElement | WeatherElement) => {
+    const getSensorData = useCallback((element: SensorElement | ECGElement | GaugeElement | OscilloscopeElement | TunnelElement | WeatherElement) => {
         const sensorTag = element.properties.sensorTag;
         if (!sensorTag) return null;
 
@@ -395,6 +411,43 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                         yAxisMax={element.properties.yAxisMax || 100}
                         lineWidth={element.properties.lineWidth || 2}
                         gridScrollSpeed={element.properties.gridScrollSpeed ?? 0.5}
+                    />
+                );
+            }
+
+            case 'gauge': {
+                const gaugeElement = element as GaugeElement;
+                const data = getSensorData(gaugeElement);
+                const sensorValue = data?.value != null ? parseFloat(data.value) : undefined;
+
+                return (
+                    <FrameEngine_GaugeElement
+                        sensorTag={element.properties.sensorTag || ''}
+                        sensorValue={sensorValue}
+                        width={element.position.width}
+                        height={element.position.height}
+                        gaugeType={element.properties.gaugeType || 'semicircle'}
+                        minValue={element.properties.minValue ?? 0}
+                        maxValue={element.properties.maxValue ?? 100}
+                        valueLabel={element.properties.valueLabel || ''}
+                        showLabels={element.properties.showLabels !== false}
+                        showTicks={element.properties.showTicks !== false}
+                        pointerType={element.properties.pointerType || 'needle'}
+                        pointerColor={element.properties.pointerColor || '#464A4F'}
+                        pointerLength={element.properties.pointerLength ?? 0.7}
+                        pointerWidth={element.properties.pointerWidth ?? 15}
+                        pointerElastic={element.properties.pointerElastic !== false}
+                        pointerAnimationDelay={element.properties.pointerAnimationDelay ?? 0}
+                        arcColors={element.properties.arcColors || [
+                            { limit: 33, color: '#5BE12C' },
+                            { limit: 66, color: '#F5CD19' },
+                            { limit: 100, color: '#EA4228' }
+                        ]}
+                        arcPadding={element.properties.arcPadding ?? 0.02}
+                        arcWidth={element.properties.arcWidth ?? 0.2}
+                        cornerRadius={element.properties.cornerRadius ?? 5}
+                        valueLabelColor={element.properties.valueLabelColor || '#333'}
+                        tickLabelColor={element.properties.tickLabelColor || '#666'}
                     />
                 );
             }
@@ -589,6 +642,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                         opacity={element.properties.opacity ?? 1}
                         width={element.position.width}
                         height={element.position.height}
+                        onRiveDiscovery={onElementRiveDiscovery ? (machines, bindings) => onElementRiveDiscovery(element.id, machines, bindings) : undefined}
                     />
                 );
             }

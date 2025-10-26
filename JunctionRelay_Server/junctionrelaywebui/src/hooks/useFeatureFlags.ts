@@ -22,9 +22,9 @@ export interface FeatureFlags {
     top_bar_show_host_charts?: boolean;
     device_actions_alignment?: string;
     junction_actions_alignment?: string;
-    mobile_navigation_on_desktop?: string;
-    top_bar_show_current_version?: string;
-    [key: string]: boolean | string | undefined;
+    mobile_navigation_on_desktop?: boolean;
+    top_bar_show_current_version?: boolean;
+    [key: string]: boolean | string | number | undefined;
 }
 
 export const useFeatureFlags = () => {

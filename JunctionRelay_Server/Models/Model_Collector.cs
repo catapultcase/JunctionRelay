@@ -27,6 +27,7 @@ namespace JunctionRelayServer.Models
         // This property explicitly indicates which concrete implementation to use.
         public required string CollectorType { get; set; }
         public required string Status { get; set; }
+        public string SecurityStatus { get; set; } = "Unlocked"; // "Locked" or "Unlocked"
         // Optional properties
         public string? Description { get; set; }
         // Settings

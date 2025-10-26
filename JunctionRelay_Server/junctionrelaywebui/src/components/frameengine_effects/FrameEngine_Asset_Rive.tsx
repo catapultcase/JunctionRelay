@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     useRive,
     Layout,
@@ -112,6 +112,7 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
             src: riveFileUrl,
             autoplay: true,
             autoBind: true,
+            useDevicePixelRatio: true,
             layout: new Layout({
                 fit: layoutFit,
                 alignment: Alignment.Center
@@ -131,8 +132,23 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
     const { rive, RiveComponent } = useRive(riveOptions || { src: '', autoplay: false });
 
     // Discovery logic - STREAMLINED VERSION (same as background renderer)
+    // Use a ref to track if we've already discovered for this file
+    const discoveredFileRef = useRef<string | null>(null);
+    const hasRunDiscoveryRef = useRef<boolean>(false);
+
     useEffect(() => {
         if (!rive || !assetRiveFile) return;
+
+        // Only discover once per file to prevent infinite loops
+        if (discoveredFileRef.current === assetRiveFile && hasRunDiscoveryRef.current) {
+            return;
+        }
+
+        // Reset if file changed
+        if (discoveredFileRef.current !== assetRiveFile) {
+            discoveredFileRef.current = assetRiveFile;
+            hasRunDiscoveryRef.current = false;
+        }
 
         let attempts = 0;
         let stopped = false;
@@ -203,66 +219,53 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
 
                 try {
                     const vmi = (rive as any).viewModelInstance;
-                    if (vmi) {
-                        console.log("Found viewModelInstance on asset Rive:", vmi);
+                    if (vmi && (vmi as any).properties) {
+                        (vmi as any).properties.forEach((prop: any) => {
+                            const propertyName = prop.name;
+                            const accessors = [
+                                { fn: 'number', type: 'number' as const },
+                                { fn: 'string', type: 'string' as const },
+                                { fn: 'boolean', type: 'boolean' as const },
+                                { fn: 'color', type: 'color' as const },
+                                { fn: 'trigger', type: 'trigger' as const },
+                                { fn: 'enum', type: 'enum' as const },
+                                { fn: 'list', type: 'list' as const },
+                                { fn: 'image', type: 'image' as const },
+                            ];
 
-                        if ((vmi as any).properties) {
-                            console.log("Found properties on viewModelInstance:", (vmi as any).properties);
+                            for (const accessor of accessors) {
+                                try {
+                                    const binding = (vmi as any)[accessor.fn]?.(propertyName);
+                                    if (binding && (binding.value !== undefined || accessor.type === 'trigger' || accessor.type === 'list')) {
+                                        let currentValue = null;
+                                        try {
+                                            if (accessor.type === 'trigger') {
+                                                currentValue = null;
+                                            } else if (accessor.type === 'list') {
+                                                currentValue = `List (${binding.length || 0} items)`;
+                                            } else {
+                                                currentValue = binding.value;
+                                            }
+                                        } catch { }
 
-                            (vmi as any).properties.forEach((prop: any) => {
-                                const propertyName = prop.name;
-                                console.log(`Trying property from instance: ${propertyName}`);
-
-                                const accessors = [
-                                    { fn: 'number', type: 'number' as const },
-                                    { fn: 'string', type: 'string' as const },
-                                    { fn: 'boolean', type: 'boolean' as const },
-                                    { fn: 'color', type: 'color' as const },
-                                    { fn: 'trigger', type: 'trigger' as const },
-                                    { fn: 'enum', type: 'enum' as const },
-                                    { fn: 'list', type: 'list' as const },
-                                    { fn: 'image', type: 'image' as const },
-                                ];
-
-                                for (const accessor of accessors) {
-                                    try {
-                                        const binding = (vmi as any)[accessor.fn]?.(propertyName);
-                                        if (binding && (binding.value !== undefined || accessor.type === 'trigger' || accessor.type === 'list')) {
-                                            let currentValue = null;
-                                            try {
-                                                if (accessor.type === 'trigger') {
-                                                    currentValue = null;
-                                                } else if (accessor.type === 'list') {
-                                                    currentValue = `List (${binding.length || 0} items)`;
-                                                } else {
-                                                    currentValue = binding.value;
-                                                }
-                                            } catch { }
-
-                                            console.log(`✓ Found ${propertyName} as ${accessor.type}:`, currentValue);
-                                            dataBindings.push({
-                                                name: propertyName,
-                                                type: accessor.type,
-                                                currentValue: currentValue,
-                                                ref: binding
-                                            });
-                                            break;
-                                        }
-                                    } catch { }
-                                }
-                            });
-                        } else {
-                            console.log("No properties found on viewModelInstance - no data bindings exist");
-                        }
-                    } else {
-                        console.log("No viewModelInstance found - autoBind may be disabled or no data bindings exist");
+                                        dataBindings.push({
+                                            name: propertyName,
+                                            type: accessor.type,
+                                            currentValue: currentValue,
+                                            ref: binding
+                                        });
+                                        break;
+                                    }
+                                } catch { }
+                            }
+                        });
                     }
                 } catch (error) {
                     console.error("Error during asset Rive data binding discovery:", error);
                 }
 
-                console.log('🔍 Asset Rive discovered state machines:', machines);
-                console.log('🔍 Asset Rive discovered data bindings:', dataBindings);
+                // Mark that we've run discovery for this file
+                hasRunDiscoveryRef.current = true;
 
                 if (onRiveDiscovery) {
                     onRiveDiscovery(machines, dataBindings);
@@ -271,10 +274,12 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
                 const totalInputs = machines.reduce((sum, m) => sum + m.inputs.length, 0);
                 const totalBindings = dataBindings.length;
 
-                if ((totalInputs === 0 && smNames.length > 0) || (totalBindings === 0 && attempts < 10)) {
-                    if (attempts < maxAttempts) {
-                        setTimeout(discoverAll, 120 * attempts);
-                    }
+                // Only retry if we found NOTHING (no machines AND no inputs AND no bindings)
+                // Don't retry just because there are no bindings - many Rive files don't use data bindings
+                const foundNothing = machines.length === 0 && totalInputs === 0 && totalBindings === 0;
+
+                if (foundNothing && attempts < maxAttempts) {
+                    setTimeout(discoverAll, 120 * attempts);
                 }
 
             } catch (error) {

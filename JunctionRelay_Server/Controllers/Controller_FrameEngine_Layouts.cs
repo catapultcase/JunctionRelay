@@ -437,18 +437,18 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
-        private async Task<List<Model_JunctionScreenLayout>> GetAllScreenConfigurationsWithUrlPaths()
+        private Task<List<Model_JunctionScreenLayout>> GetAllScreenConfigurationsWithUrlPaths()
         {
             try
             {
                 // This should be implemented to get all screen configurations
                 // For now, return empty list as placeholder
-                return new List<Model_JunctionScreenLayout>();
+                return Task.FromResult(new List<Model_JunctionScreenLayout>());
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error getting screen configurations: {ex.Message}");
-                return new List<Model_JunctionScreenLayout>();
+                return Task.FromResult(new List<Model_JunctionScreenLayout>());
             }
         }
     }

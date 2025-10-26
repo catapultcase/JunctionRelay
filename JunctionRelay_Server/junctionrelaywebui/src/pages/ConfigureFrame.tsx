@@ -173,9 +173,15 @@ const ConfigureFrame: React.FC = () => {
         previewMode: false,
     });
 
-    // Rive discovery state
+    // Rive discovery state - background
     const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredStateMachine[]>([]);
     const [discoveredBindings, setDiscoveredBindings] = useState<DiscoveredDataBinding[]>([]);
+
+    // Rive discovery state - per element (for asset-rive elements)
+    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Record<string, {
+        machines: DiscoveredStateMachine[];
+        bindings: DiscoveredDataBinding[];
+    }>>({});
 
     // Load the existing frame layout on mount
     useEffect(() => {
@@ -323,48 +329,60 @@ const ConfigureFrame: React.FC = () => {
         setDiscoveredBindings(bindings);
 
         if (machines.length > 0 || bindings.length > 0) {
-            const discoveryMetadata = {
-                totalInputs: machines.reduce((sum, m) => sum + m.inputs.length, 0),
-                totalBindings: bindings.length,
-                inputTypeBreakdown: {} as Record<string, number>,
-                bindingTypeBreakdown: {} as Record<string, number>,
-                discoveryAttempts: (state.layout.riveConfiguration?.discoveryMetadata?.discoveryAttempts || 0) + 1,
-                lastSuccessfulDiscovery: new Date().toISOString()
-            };
+            // Use setState functional update to avoid dependency on discoveryAttempts
+            setState(prev => {
+                const discoveryMetadata = {
+                    totalInputs: machines.reduce((sum, m) => sum + m.inputs.length, 0),
+                    totalBindings: bindings.length,
+                    inputTypeBreakdown: {} as Record<string, number>,
+                    bindingTypeBreakdown: {} as Record<string, number>,
+                    discoveryAttempts: (prev.layout.riveConfiguration?.discoveryMetadata?.discoveryAttempts || 0) + 1,
+                    lastSuccessfulDiscovery: new Date().toISOString()
+                };
 
-            machines.forEach(machine => {
-                machine.inputs.forEach(input => {
-                    discoveryMetadata.inputTypeBreakdown[input.type] =
-                        (discoveryMetadata.inputTypeBreakdown[input.type] || 0) + 1;
+                machines.forEach(machine => {
+                    machine.inputs.forEach(input => {
+                        discoveryMetadata.inputTypeBreakdown[input.type] =
+                            (discoveryMetadata.inputTypeBreakdown[input.type] || 0) + 1;
+                    });
                 });
+
+                bindings.forEach(binding => {
+                    discoveryMetadata.bindingTypeBreakdown[binding.type] =
+                        (discoveryMetadata.bindingTypeBreakdown[binding.type] || 0) + 1;
+                });
+
+                const updatedRiveConfiguration = {
+                    discoveredMachines: machines,
+                    discoveredBindings: bindings,
+                    lastDiscoveryUpdate: new Date().toISOString(),
+                    activeStateMachine: prev.layout.riveStateMachine || machines[0]?.name,
+                    globalInputMappings: prev.layout.riveConfiguration?.globalInputMappings || {},
+                    discoveryMetadata
+                };
+
+                console.log('Persisting Rive discovery to layout configuration:', updatedRiveConfiguration);
+
+                return {
+                    ...prev,
+                    layout: {
+                        ...prev.layout,
+                        riveConfiguration: updatedRiveConfiguration
+                    },
+                    isDirty: true
+                };
             });
-
-            bindings.forEach(binding => {
-                discoveryMetadata.bindingTypeBreakdown[binding.type] =
-                    (discoveryMetadata.bindingTypeBreakdown[binding.type] || 0) + 1;
-            });
-
-            const updatedRiveConfiguration = {
-                discoveredMachines: machines,
-                discoveredBindings: bindings,
-                lastDiscoveryUpdate: new Date().toISOString(),
-                activeStateMachine: state.layout.riveStateMachine || machines[0]?.name,
-                globalInputMappings: state.layout.riveConfiguration?.globalInputMappings || {},
-                discoveryMetadata
-            };
-
-            console.log('Persisting Rive discovery to layout configuration:', updatedRiveConfiguration);
-
-            setState(prev => ({
-                ...prev,
-                layout: {
-                    ...prev.layout,
-                    riveConfiguration: updatedRiveConfiguration
-                },
-                isDirty: true
-            }));
         }
-    }, [state.layout.riveStateMachine, state.layout.riveConfiguration?.globalInputMappings, state.layout.riveConfiguration?.discoveryMetadata?.discoveryAttempts]);
+    }, []); // Empty dependency array - all data comes from function parameters or setState callback
+
+    // Handle Rive discovery for individual asset-rive elements
+    const handleElementRiveDiscovery = useCallback((elementId: string, machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => {
+        console.log(`📡 Element Rive Discovery for ${elementId}:`, { machines, bindings });
+        setElementRiveDiscoveries(prev => ({
+            ...prev,
+            [elementId]: { machines, bindings }
+        }));
+    }, []);
 
     // Update layout properties
     const updateLayout = useCallback((updates: Partial<FrameLayoutConfig>) => {
@@ -510,7 +528,7 @@ const ConfigureFrame: React.FC = () => {
         }));
 
         try {
-            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings);
+            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings, elementRiveDiscoveries);
 
             if (!state.layout.thumbnailOverride) {
                 setModalState(prev => ({
@@ -535,7 +553,7 @@ const ConfigureFrame: React.FC = () => {
 
             setTimeout(() => {
                 setModalState(prev => ({ ...prev, savingProgress: false }));
-            }, 2000);
+            }, 800);
 
         } catch (error) {
             setModalState(prev => ({ ...prev, savingProgress: false }));
@@ -562,7 +580,7 @@ const ConfigureFrame: React.FC = () => {
         }));
 
         try {
-            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings, customThumbnail);
+            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings, elementRiveDiscoveries, customThumbnail);
 
             if (customThumbnail) {
                 await uploadCustomThumbnail(state.layout.id, customThumbnail);
@@ -588,7 +606,7 @@ const ConfigureFrame: React.FC = () => {
 
             setTimeout(() => {
                 setModalState(prev => ({ ...prev, savingProgress: false }));
-            }, 2000);
+            }, 800);
 
         } catch (error) {
             setModalState(prev => ({ ...prev, savingProgress: false }));
@@ -615,7 +633,7 @@ const ConfigureFrame: React.FC = () => {
                 layout: { ...prev.layout, thumbnailOverride: false }
             }));
 
-            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings);
+            await performSave(state.layout, state.elements, discoveredMachines, discoveredBindings, elementRiveDiscoveries);
 
             setModalState(prev => ({
                 ...prev,
@@ -636,7 +654,7 @@ const ConfigureFrame: React.FC = () => {
 
             setTimeout(() => {
                 setModalState(prev => ({ ...prev, savingProgress: false }));
-            }, 2000);
+            }, 800);
 
         } catch (error) {
             setModalState(prev => ({ ...prev, savingProgress: false }));
@@ -677,15 +695,6 @@ const ConfigureFrame: React.FC = () => {
             setState(prev => ({ ...prev, error }));
         }
     }, [state.layout.id, state.layout.displayName]);
-
-    // Publish layout
-    const handlePublish = useCallback(async () => {
-        setState(prev => ({
-            ...prev,
-            layout: { ...prev.layout, isPublished: true, isDraft: false },
-            isDirty: true,
-        }));
-    }, []);
 
     if (state.isLoading) {
         return (
@@ -799,7 +808,6 @@ const ConfigureFrame: React.FC = () => {
                     onRedo={handleRedo}
                     onPreview={generatePreview}
                     onExport={handleExportClick}
-                    onPublish={handlePublish}
                 />
             </div>
 
@@ -830,6 +838,7 @@ const ConfigureFrame: React.FC = () => {
                             onElementLockToggle={handleElementLockToggle}
                             discoveredMachines={discoveredMachines}
                             discoveredBindings={discoveredBindings}
+                            elementRiveDiscoveries={elementRiveDiscoveries}
                         />
                     </div>
                 )}
@@ -858,6 +867,7 @@ const ConfigureFrame: React.FC = () => {
                         onCanvasClick={clearSelection}
                         onStartElementOperation={startElementOperation}
                         onRiveDiscovery={handleRiveDiscovery}
+                        onElementRiveDiscovery={handleElementRiveDiscovery}
                         onCanvasSettingsChange={handleCanvasSettingsChange}
                     />
                 </div>

@@ -31,6 +31,7 @@ import { useNavigate } from "react-router-dom";
 // Icon imports
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import BiotechIcon from '@mui/icons-material/Biotech';
 import CloudIcon from '@mui/icons-material/Cloud';
 import DnsIcon from '@mui/icons-material/Dns';
 import HomeIcon from '@mui/icons-material/Home';
@@ -91,16 +92,20 @@ const CollectorTableRow = memo(({
     allColumns,
     onDelete,
     onEdit,
+    onTest,
     isFrameEngine = false,
     onCardClick,
+    id,
 }: {
     collector: any,
     visibleCols: string[],
     allColumns: CollectorColumn[],
     onDelete: (e: React.MouseEvent, id: number) => void,
     onEdit: (e: React.MouseEvent, collector: any) => void,
+    onTest?: (e: React.MouseEvent, id: number) => void,
     isFrameEngine?: boolean,
     onCardClick?: () => void,
+    id?: string,
 }) => {
     const navigate = useNavigate();
 
@@ -142,16 +147,51 @@ const CollectorTableRow = memo(({
                 }
                 return collector.url || "—";
             case "accessToken":
-                return collector.accessToken ? "********" : "Not set";
-            case "status":
-                const statusColor = collector.status === 'Active' ? 'success' :
-                    collector.status === 'Inactive' ? 'error' : 'default';
+                // Use the accessTokenStatus from backend if available, otherwise fall back to old logic
+                return collector.accessTokenStatus || (collector.accessToken ? "********" : "Not set");
+            case "securityStatus":
+                // Show security status with color coding
+                const securityStatus = (collector as any).securityStatus || 'Unlocked';
+                const securityColor = securityStatus === 'Locked' ? 'warning' : 'default';
                 return (
                     <Chip
-                        label={collector.status || 'Unknown'}
+                        label={securityStatus}
+                        color={securityColor}
+                        size="small"
+                    />
+                );
+            case "status":
+                // Determine status color based on value
+                let statusColor: "default" | "success" | "error" | "warning" = 'default';
+                const status = collector.status || 'Unknown';
+
+                if (status === 'Active' || status === 'Tested') {
+                    statusColor = 'success';
+                } else if (status === 'Inactive' || status === 'Error') {
+                    statusColor = 'error';
+                } else if (status === 'Warning') {
+                    statusColor = 'warning';
+                }
+
+                return (
+                    <Chip
+                        label={status}
                         color={statusColor}
                         size="small"
                     />
+                );
+            case "lastTested":
+                // Format the last tested timestamp
+                if (!collector.lastTested) {
+                    return <Typography variant="body2" color="text.secondary">Never</Typography>;
+                }
+                const lastTestedDate = new Date(collector.lastTested + 'Z');
+                return (
+                    <Tooltip title={lastTestedDate.toLocaleString()}>
+                        <Typography variant="body2">
+                            {lastTestedDate.toLocaleDateString()} {lastTestedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                    </Tooltip>
                 );
             case "actions":
                 // Hide edit/delete buttons for FrameEngine collectors
@@ -167,10 +207,23 @@ const CollectorTableRow = memo(({
 
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                        {onTest && (
+                            <Tooltip title="Test Connection">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => onTest(e, collector.id)}
+                                    color="secondary"
+                                >
+                                    <BiotechIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         <Tooltip title="Edit">
                             <IconButton
                                 size="small"
                                 onClick={(e) => onEdit(e, collector)}
+                                data-collector-id={collector.id}
+                                data-action="edit"
                             >
                                 <EditIcon fontSize="small" />
                             </IconButton>
@@ -188,13 +241,14 @@ const CollectorTableRow = memo(({
             default:
                 return collector[field] || "—";
         }
-    }, [collector, onDelete, onEdit, isFrameEngine]);
+    }, [collector, onDelete, onEdit, onTest, isFrameEngine]);
 
     return (
         <TableRow
             hover
             onClick={handleRowClick}
             sx={{ cursor: "pointer" }}
+            id={id}
         >
             {visibleCols.map((field) => {
                 const colDef = allColumns.find((c) => c.field === field)!;
@@ -208,9 +262,12 @@ const CollectorTableRow = memo(({
                         case "url":
                             return { minWidth: 200, width: 'auto' };
                         case "accessToken":
-                            return { minWidth: 120, width: 120 };
+                        case "securityStatus":
+                            return { minWidth: 100, width: 100 };
                         case "status":
                             return { minWidth: 100, width: 100 };
+                        case "lastTested":
+                            return { minWidth: 160, width: 160 };
                         case "actions":
                             return { minWidth: 120, width: 120 };
                         default:

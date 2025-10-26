@@ -74,6 +74,8 @@ namespace JunctionRelayServer.Controllers
                     link.DeviceName = device.Name;
                     link.DeviceDescription = device.Description;
                     link.DeviceStatus = device.Status;
+                    link.DevicePollRate = device.PollRate;
+                    link.DeviceSendRate = device.SendRate;
                 }
             }
 
@@ -86,6 +88,8 @@ namespace JunctionRelayServer.Controllers
                     link.CollectorName = collector.Name;
                     link.CollectorDescription = collector.Description;
                     link.CollectorStatus = collector.Status;
+                    link.CollectorPollRate = collector.PollRate;
+                    link.CollectorSendRate = collector.SendRate;
                 }
             }
 

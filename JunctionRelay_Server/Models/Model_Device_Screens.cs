@@ -35,5 +35,6 @@ public class Model_Device_Screens
 
     public bool SupportsConfigPayloads { get; set; } = true;
     public bool SupportsSensorPayloads { get; set; } = true;
+    public bool SupportsStopPayloads { get; set; } = true;
     public bool? UseKeepAlive {  get; set; } = false;
 }

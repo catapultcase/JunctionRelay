@@ -29,6 +29,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import LinkIcon from '@mui/icons-material/Link';
 import InfoIcon from '@mui/icons-material/Info';
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import SendIcon from '@mui/icons-material/Send';
 
 interface GatewayDevice {
     id: number;
@@ -47,7 +49,7 @@ interface JunctionConfigPanelProps {
     loading: boolean;
     settingsExpanded: boolean;
     onSettingsExpandedChange: (expanded: boolean) => void;
-    onSaveJunction: () => Promise<void>;
+    onJunctionDataChange: (updatedData: any, field: string, immediate?: boolean) => void;
     onConnectToMQTTBroker: () => Promise<void>;
 }
 
@@ -72,7 +74,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
     loading,
     settingsExpanded,
     onSettingsExpandedChange,
-    onSaveJunction,
+    onJunctionDataChange,
     onConnectToMQTTBroker
 }) => {
     const [gatewayDevices, setGatewayDevices] = useState<GatewayDevice[]>([]);
@@ -124,10 +126,10 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
     // Auto-enable compression for FrameEngine modes
     useEffect(() => {
         if (compressionRequired && !junctionData?.compressPayload) {
-            setJunctionData({
+            onJunctionDataChange({
                 ...junctionData,
                 compressPayload: true
-            });
+            }, 'compressPayload', true);
         }
     }, [compressionRequired, junctionData?.compressPayload]);
 
@@ -139,10 +141,10 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
     // Handle gateway device selection
     const handleGatewayDeviceChange = (event: SelectChangeEvent<string>) => {
         const deviceId = event.target.value ? parseInt(event.target.value) : undefined;
-        setJunctionData({
+        onJunctionDataChange({
             ...junctionData,
             gatewayDeviceId: deviceId
-        });
+        }, 'gatewayDeviceId', true);
     };
 
     // Helper function to determine if a gateway device should be shown
@@ -158,7 +160,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
             // Don't allow disabling compression in FrameEngine modes
             return;
         }
-        setJunctionData({ ...junctionData, compressPayload: checked });
+        onJunctionDataChange({ ...junctionData, compressPayload: checked }, 'compressPayload', true);
     };
 
     return (
@@ -187,7 +189,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                     fullWidth
                                     label="Name"
                                     value={junctionData.name || ""}
-                                    onChange={(e) => setJunctionData({ ...junctionData, name: e.target.value })}
+                                    onChange={(e) => onJunctionDataChange({ ...junctionData, name: e.target.value }, 'name')}
                                     size="small"
                                 />
                                 <FormControl fullWidth size="small">
@@ -195,7 +197,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                     <Select
                                         value={junctionData.type || ""}
                                         label="Type"
-                                        onChange={(e) => setJunctionData({ ...junctionData, type: e.target.value })}
+                                        onChange={(e) => onJunctionDataChange({ ...junctionData, type: e.target.value }, 'type', true)}
                                     >
                                         {JUNCTION_TYPES.map((type) => (
                                             <MenuItem key={type} value={type}>{type}</MenuItem>
@@ -207,7 +209,7 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                                 fullWidth
                                 label="Description"
                                 value={junctionData.description || ""}
-                                onChange={(e) => setJunctionData({ ...junctionData, description: e.target.value })}
+                                onChange={(e) => onJunctionDataChange({ ...junctionData, description: e.target.value }, 'description')}
                                 multiline
                                 rows={2}
                                 size="small"
@@ -216,89 +218,135 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                         </CardContent>
                     </Card>
 
-                    {/* Junction Configuration */}
-                    <Card>
-                        <CardContent sx={{ pb: 1 }}>
-                            <Typography variant="subtitle1" gutterBottom>Junction Configuration</Typography>
+                    {/* Junction Configuration - 2 Column Grid */}
+                    <Box
+                        display="grid"
+                        gridTemplateColumns={{ xs: '1fr', md: 'repeat(2, 1fr)' }}
+                        gap={2}
+                    >
+                        {/* General Settings Card */}
+                        <Card>
+                            <CardContent sx={{ p: 2.5 }}>
+                                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                                    <SettingsIcon fontSize="small" color="action" />
+                                    <Typography variant="subtitle1">General Settings</Typography>
+                                </Box>
+                                <Box display="flex" flexWrap="wrap" gap={1.5}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.showOnDashboard || false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, showOnDashboard: e.target.checked }, 'showOnDashboard', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Show on Dashboard"
+                                    />
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.autoStartOnLaunch || false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, autoStartOnLaunch: e.target.checked }, 'autoStartOnLaunch', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Auto-Start on JunctionRelay Launch"
+                                    />
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={compressionRequired || junctionData.compressPayload || false}
+                                                onChange={(e) => handleCompressionToggle(e.target.checked)}
+                                                size="small"
+                                                disabled={junctionData.type === "MQTT Junction" || compressionRequired}
+                                            />
+                                        }
+                                        label={
+                                            <Box component="span" sx={{
+                                                opacity: (junctionData.type === "MQTT Junction" || compressionRequired) ? 0.6 : 1
+                                            }}>
+                                                Enable Payload Compression
+                                                {compressionRequired && " (Required)"}
+                                            </Box>
+                                        }
+                                    />
+                                </Box>
+                                {compressionRequired && (
+                                    <Alert severity="info" sx={{ mt: 2 }}>
+                                        <strong>Compression Required:</strong> Payload compression is automatically enabled and required for FrameEngine modes (Pre-rendered Frames and Frame Reassembly).
+                                        FrameEngine transmits rendered image data or Rive animation instructions which benefit significantly from compression to reduce bandwidth and improve transmission speed.
+                                    </Alert>
+                                )}
+                            </CardContent>
+                        </Card>
 
-                            <Box display="flex" flexWrap="wrap" gap={1}>
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={junctionData.showOnDashboard || false}
-                                            onChange={(e) => setJunctionData({ ...junctionData, showOnDashboard: e.target.checked })}
-                                            size="small"
-                                        />
-                                    }
-                                    label="Show on Dashboard"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={junctionData.autoStartOnLaunch || false}
-                                            onChange={(e) => setJunctionData({ ...junctionData, autoStartOnLaunch: e.target.checked })}
-                                            size="small"
-                                        />
-                                    }
-                                    label="Auto Start on Launch"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={compressionRequired || junctionData.compressPayload || false}
-                                            onChange={(e) => handleCompressionToggle(e.target.checked)}
-                                            size="small"
-                                            disabled={junctionData.type === "MQTT Junction" || compressionRequired}
-                                        />
-                                    }
-                                    label={
-                                        <Box component="span" sx={{
-                                            opacity: (junctionData.type === "MQTT Junction" || compressionRequired) ? 0.6 : 1
-                                        }}>
-                                            Enable Payload Compression
-                                            {compressionRequired && " (Required)"}
-                                        </Box>
-                                    }
-                                />
-                            </Box>
-
-                            {compressionRequired && (
-                                <Alert severity="info" sx={{ mt: 2 }}>
-                                    <strong>Compression Required:</strong> Payload compression is automatically enabled and required for FrameEngine modes (Pre-rendered Frames and Frame Reassembly).
-                                    FrameEngine transmits rendered image data or Rive animation instructions which benefit significantly from compression to reduce bandwidth and improve transmission speed.
+                        {/* Testing & Validation Card */}
+                        <Card>
+                            <CardContent sx={{ p: 2.5 }}>
+                                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                                    <VerifiedUserIcon fontSize="small" color="action" />
+                                    <Typography variant="subtitle1">Testing & Validation</Typography>
+                                </Box>
+                                <Box display="flex" flexWrap="wrap" gap={1.5}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.allowStartOnCollectorTestFailure || false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, allowStartOnCollectorTestFailure: e.target.checked }, 'allowStartOnCollectorTestFailure', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Allow Start if Collector Tests Fail"
+                                    />
+                                </Box>
+                                <Alert severity="warning" sx={{ mt: 2 }}>
+                                    When disabled (default), junction startup will abort if any linked collectors fail their connection tests. Enable this to allow the junction to start despite test failures.
                                 </Alert>
-                            )}
+                            </CardContent>
+                        </Card>
 
-                            <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={1} mt={1}>
-                                {/* 
-                                    <TextField
-                                        fullWidth
-                                        label="Retry Count"
-                                        type="number"
-                                        value={junctionData.retryCount || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, retryCount: parseInt(e.target.value) || 0 })}
-                                        size="small"
+                        {/* Payload Control Card */}
+                        <Card sx={{ gridColumn: { xs: '1', md: 'span 2' } }}>
+                            <CardContent sx={{ p: 2.5 }}>
+                                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                                    <SendIcon fontSize="small" color="action" />
+                                    <Typography variant="subtitle1">Payload Control</Typography>
+                                </Box>
+                                <Box display="flex" flexWrap="wrap" gap={1.5}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.sendConfigPayload !== false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, sendConfigPayload: e.target.checked }, 'sendConfigPayload', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Send Config Payload"
                                     />
-                                    <TextField
-                                        fullWidth
-                                        label="Retry Interval (ms)"
-                                        type="number"
-                                        value={junctionData.retryIntervalMs || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, retryIntervalMs: parseInt(e.target.value) || 0 })}
-                                        size="small"
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.sendSensorPayloads !== false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, sendSensorPayloads: e.target.checked }, 'sendSensorPayloads', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Send Sensor Payloads"
                                     />
-                                    <TextField
-                                        fullWidth
-                                        label="Stream Timeout (ms)"
-                                        type="number"
-                                        value={junctionData.streamAutoTimeoutMs || 0}
-                                        onChange={(e) => setJunctionData({ ...junctionData, streamAutoTimeoutMs: parseInt(e.target.value) || 0 })}
-                                        size="small"
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={junctionData.sendStopPayload !== false}
+                                                onChange={(e) => onJunctionDataChange({ ...junctionData, sendStopPayload: e.target.checked }, 'sendStopPayload', true)}
+                                                size="small"
+                                            />
+                                        }
+                                        label="Send Stop Payload"
                                     />
-                                    */}
-                            </Box>
-                        </CardContent>
-                    </Card>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Box>
 
                     {/* Gateway Configuration */}
                     {shouldShowGatewaySelection() && (
@@ -425,19 +473,6 @@ const Junction_ConfigPanel: React.FC<JunctionConfigPanelProps> = ({
                             </CardContent>
                         </Card>
                     )}
-
-                    {/* Save Button aligned right */}
-                    <Box display="flex" justifyContent="flex-end">
-                        <Button
-                            variant="contained"
-                            onClick={onSaveJunction}
-                            startIcon={<SaveIcon />}
-                            disabled={loading}
-                            size="small"
-                        >
-                            Save Junction Settings
-                        </Button>
-                    </Box>
                 </Box>
             </AccordionDetails>
         </Accordion>

@@ -468,7 +468,7 @@ namespace JunctionRelayServer.Services
                 }
 
                 // ========================================
-                // Audit Background Images (assets folder)
+                // Audit Background Images (images folder)
                 // ========================================
                 var assetsPath = GetAssetsUserPath();
                 if (Directory.Exists(assetsPath))
@@ -570,7 +570,7 @@ namespace JunctionRelayServer.Services
             var dbPath = _dbPathProvider.DbPath;
             var dataDir = Path.GetDirectoryName(dbPath) ??
                          Path.Combine(_webHostEnvironment.ContentRootPath, "data");
-            return Path.Combine(dataDir, "frameengine", "assets");
+            return Path.Combine(dataDir, "frameengine", "images");
         }
 
         // Get videos user path (background videos)
@@ -609,7 +609,7 @@ namespace JunctionRelayServer.Services
                 return Path.Combine(GetVideosUserPath(), fileName);
             }
 
-            // Otherwise, look in assets folder (images)
+            // Otherwise, look in images folder
             return Path.Combine(GetAssetsUserPath(), fileName);
         }
     }

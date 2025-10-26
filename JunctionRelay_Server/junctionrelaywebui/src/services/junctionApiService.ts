@@ -27,6 +27,10 @@ export interface JunctionUpdatePayload {
     HealthCheckIntervalMs?: number;
     EnableNotifications?: boolean;
     CompressPayload?: boolean;
+    AllowStartOnCollectorTestFailure?: boolean;
+    SendConfigPayload?: boolean;
+    SendSensorPayloads?: boolean;
+    SendStopPayload?: boolean;
 }
 export interface JunctionData {
     id: number;

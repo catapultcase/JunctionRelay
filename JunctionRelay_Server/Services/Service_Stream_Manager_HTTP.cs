@@ -32,25 +32,28 @@ namespace JunctionRelayServer.Services
         private readonly ConcurrentDictionary<int, long> _streamLatencies = new();
         private readonly Service_Stream_History_Manager _historyManager;
         private readonly Service_Image_Processor _imageProcessor;
+        private readonly Service_BlitMode_ResourceMonitor _blitResourceMonitor;
 
         public Service_Stream_Manager_HTTP(
             IServiceScopeFactory scopeFactory,
             Service_Stream_History_Manager historyManager,
-            Service_Image_Processor imageProcessor)
+            Service_Image_Processor imageProcessor,
+            Service_BlitMode_ResourceMonitor blitResourceMonitor)
         {
             _scopeFactory = scopeFactory;
             _historyManager = historyManager;
             _imageProcessor = imageProcessor;
+            _blitResourceMonitor = blitResourceMonitor;
         }
 
-        public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
+        public IEnumerable<Model_StreamInfo_DTO> GetActiveStreams(bool showCompressed = false)
         {
             return _streamingTokens.Select(kvp =>
             {
                 var info = kvp.Value;
-                return new
+                return new Model_StreamInfo_DTO
                 {
-                    StreamKey = kvp.Key,
+                    StreamKey = kvp.Key.ToString(),
                     DeviceName = info.DeviceName,
                     DeviceMac = "HTTP",
                     ScreenId = info.ScreenId,
@@ -67,7 +70,15 @@ namespace JunctionRelayServer.Services
                     LastFrameLayoutType = info.LastFrameLayoutType,
                     IsGatewayMode = info.IsGatewayMode,
                     GatewayTarget = info.GatewayTarget,
-                    Health = new
+                    ConfigPayloadPrefix = info.ConfigPayloadPrefix,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
+                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+                    CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
+                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
+                    Health = new Model_StreamHealth_DTO
                     {
                         ConnectionState = info.Health.ConnectionState,
                         SuccessRate = info.Health.SuccessRate,
@@ -76,13 +87,12 @@ namespace JunctionRelayServer.Services
                         ConsecutiveFailures = info.Health.ConsecutiveFailures,
                         ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
                         ConnectionRecreated = info.Health.KeepAlivePoolRecreated,
-                        LastWebSocketState = (string?)null,
                         AverageLatency = info.Health.AverageLatency,
                         MaxLatency = info.Health.MaxLatency,
                         MinLatency = info.Health.MinLatency == long.MaxValue ? 0L : info.Health.MinLatency,
-                        LastSuccessTime = info.Health.LastSuccessTime,
-                        LastFailureTime = info.Health.LastFailureTime,
-                        ConnectionRecreationCount = info.Health.PoolRecreationCount,
+                        LastSuccessTime = info.Health.LastSuccessTime ?? DateTime.MinValue,
+                        LastFailureTime = info.Health.LastFailureTime ?? DateTime.MinValue,
+                        PoolRecreationCount = info.Health.PoolRecreationCount,
                         IsFrameMode = info.Health.IsFrameMode,
                         PayloadType = info.Health.PayloadType,
                         FramesSent = info.Health.FramesSent,
@@ -94,18 +104,8 @@ namespace JunctionRelayServer.Services
                         AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
                         MaxFrameRenderTime = info.Health.MaxFrameRenderTime,
                         MinFrameRenderTime = info.Health.MinFrameRenderTime == long.MaxValue ? 0L : info.Health.MinFrameRenderTime,
-                        FrameHealthSummary = info.Health.GetFrameHealthSummary(),
-                        GatewayMessagesSent = info.Health.PayloadsSent,
-                        GatewayHealthSummary = info.Health.GetGatewayHealthSummary()
-                    },
-                    ConfigPayloadPrefix = info.ConfigPayloadPrefix,
-                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
-                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
-                    CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
-                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
-                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
-                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview()
+                        GatewayMessagesSent = info.Health.PayloadsSent
+                    }
                 };
             });
         }
@@ -465,6 +465,12 @@ namespace JunctionRelayServer.Services
                         {
                             try
                             {
+                                // Start timing the entire frame processing
+                                var frameStopwatch = Stopwatch.StartNew();
+                                long renderTimeMs = 0;
+                                long conversionTimeMs = 0;
+                                long compressionTimeMs = 0;
+
                                 using var frameScope = _scopeFactory.CreateScope();
                                 var virtualStreamManager = frameScope.ServiceProvider.GetRequiredService<Service_Stream_Manager_Virtual>();
                                 var frameLayoutDb = frameScope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
@@ -508,8 +514,12 @@ namespace JunctionRelayServer.Services
                                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Error generating sensor data: {sensorEx.Message}");
                                 }
 
+                                // Time the frame capture (Puppeteer rendering)
+                                var renderTimer = Stopwatch.StartNew();
                                 var pngBytes = await virtualStreamManager.CaptureFrameForBlitMode(
                                     screen.Id, sensorData, frameLayout, junctionId, actualLinkId ?? 0, screenOverride);
+                                renderTimer.Stop();
+                                renderTimeMs = renderTimer.ElapsedMilliseconds;
 
                                 if (pngBytes == null || pngBytes.Length == 0)
                                 {
@@ -517,17 +527,26 @@ namespace JunctionRelayServer.Services
                                     continue;
                                 }
 
+                                // Time the RGB565 conversion
+                                var conversionTimer = Stopwatch.StartNew();
                                 var imageResult = await _imageProcessor.ConvertToRgb565Async(pngBytes, frameLayout.Width, frameLayout.Height);
+                                conversionTimer.Stop();
+                                conversionTimeMs = conversionTimer.ElapsedMilliseconds;
+
                                 if (!imageResult.Success || imageResult.Data == null)
                                 {
                                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] RGB565 conversion failed: {imageResult.ErrorMessage ?? "Unknown error"}");
                                     continue;
                                 }
 
+                                // Time the payload generation (includes compression if enabled)
+                                var compressionTimer = Stopwatch.StartNew();
                                 var blitPayload = loopPayloadService.GenerateBlitFramePayload(
                                     imageResult.Data,
                                     junction.CompressPayload,
                                     isGatewayMode);
+                                compressionTimer.Stop();
+                                compressionTimeMs = compressionTimer.ElapsedMilliseconds;
 
                                 Stopwatch stopwatch = Stopwatch.StartNew();
                                 var result = await info.HttpSender!.SendPayloadWithHealthAsync(blitPayload);
@@ -544,6 +563,15 @@ namespace JunctionRelayServer.Services
                                 {
                                     info.UpdateLastSentFrame(pngBytes, "BLIT_MODE");
                                     Console.WriteLine($"[SERVICE_STREAM_MANAGER_HTTP] Blit frame sent: {blitPayload.Length} bytes (original: {imageResult.Data.Length} bytes)");
+
+                                    // Record frame metrics for resource monitoring
+                                    var sessionId = $"J{junctionId}_D{deviceId}_S{screen.Id}_L{actualLinkId}";
+                                    _blitResourceMonitor.RecordFrameProcessed(
+                                        sessionId,
+                                        blitPayload.Length,
+                                        renderTimeMs,
+                                        conversionTimeMs,
+                                        compressionTimeMs);
                                 }
                                 else
                                 {

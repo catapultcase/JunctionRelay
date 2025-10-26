@@ -67,6 +67,10 @@ namespace JunctionRelayServer.Collectors
 
             // Parse calendar using Ical.Net
             var calendar = Calendar.Load(content);
+            if (calendar == null)
+            {
+                return sensors;
+            }
             var episodesByDate = ParseEpisodesByDate(calendar);
 
             // Create individual episode sensors
@@ -261,7 +265,7 @@ namespace JunctionRelayServer.Collectors
             }
         }
 
-        private EpisodeInfo FindCurrentEpisode(Dictionary<DateTime, List<EpisodeInfo>> episodesByDate, DateTime now)
+        private EpisodeInfo? FindCurrentEpisode(Dictionary<DateTime, List<EpisodeInfo>> episodesByDate, DateTime now)
         {
             foreach (var dateGroup in episodesByDate)
             {
@@ -282,9 +286,9 @@ namespace JunctionRelayServer.Collectors
             return null;
         }
 
-        private EpisodeInfo FindNextEpisode(Dictionary<DateTime, List<EpisodeInfo>> episodesByDate, DateTime now)
+        private EpisodeInfo? FindNextEpisode(Dictionary<DateTime, List<EpisodeInfo>> episodesByDate, DateTime now)
         {
-            EpisodeInfo nextEpisode = null;
+            EpisodeInfo? nextEpisode = null;
             DateTime? nextAirTime = null;
 
             foreach (var dateGroup in episodesByDate.OrderBy(d => d.Key))
@@ -318,7 +322,7 @@ namespace JunctionRelayServer.Collectors
             return episodes.OrderBy(e => e.AirDateUtc).ToList();
         }
 
-        private string FormatEpisodeTitle(EpisodeInfo episodeInfo)
+        private string? FormatEpisodeTitle(EpisodeInfo? episodeInfo)
         {
             if (episodeInfo == null) return null;
             return $"{episodeInfo.SeriesTitle} S{episodeInfo.Season:D2}E{episodeInfo.Episode:D2}";

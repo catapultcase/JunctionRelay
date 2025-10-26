@@ -257,31 +257,22 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                Console.WriteLine($"[DEBUG] GetThumbnail called for ID: {id}");
-
                 var frameLayout = await _frameLayoutService.GetFrameLayoutByIdAsync(id);
                 if (frameLayout == null)
                 {
-                    Console.WriteLine($"[DEBUG] Frame layout with ID {id} not found in database");
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
                 }
 
-                Console.WriteLine($"[DEBUG] Frame layout found - HasThumbnail: {frameLayout.HasThumbnail}, ThumbnailPath: '{frameLayout.ThumbnailPath}', IsTemplate: {frameLayout.IsTemplate}");
-
                 if (!frameLayout.HasThumbnail || string.IsNullOrEmpty(frameLayout.ThumbnailPath))
                 {
-                    Console.WriteLine($"[DEBUG] No thumbnail available - HasThumbnail: {frameLayout.HasThumbnail}, ThumbnailPath null/empty: {string.IsNullOrEmpty(frameLayout.ThumbnailPath)}");
                     return NotFound(new { message = "No thumbnail available for this frame layout" });
                 }
 
                 // All thumbnails are now served from the data directory
                 var thumbnailPath = GetFullThumbnailPath(frameLayout.ThumbnailPath);
-                Console.WriteLine($"[DEBUG] Resolved thumbnail path: '{thumbnailPath}'");
 
                 if (!System.IO.File.Exists(thumbnailPath))
                 {
-                    Console.WriteLine($"[DEBUG] Thumbnail file does not exist at: '{thumbnailPath}'");
-
                     // File missing, update database
                     frameLayout.HasThumbnail = false;
                     frameLayout.ThumbnailPath = null;
@@ -289,9 +280,7 @@ namespace JunctionRelayServer.Controllers
                     return NotFound(new { message = "Thumbnail file not found" });
                 }
 
-                Console.WriteLine($"[DEBUG] Thumbnail file exists, reading file...");
                 var fileBytes = await System.IO.File.ReadAllBytesAsync(thumbnailPath);
-                Console.WriteLine($"[DEBUG] File read successfully, size: {fileBytes.Length} bytes");
 
                 var contentType = frameLayout.ThumbnailFormat switch
                 {
@@ -300,13 +289,11 @@ namespace JunctionRelayServer.Controllers
                     _ => "image/png"
                 };
 
-                Console.WriteLine($"[DEBUG] Serving thumbnail with content type: {contentType}");
                 return File(fileBytes, contentType, $"thumbnail-{id}.{frameLayout.ThumbnailFormat}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DEBUG] Exception in GetThumbnail: {ex.Message}");
-                Console.WriteLine($"[DEBUG] Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"Error retrieving thumbnail for ID {id}: {ex.Message}");
                 return StatusCode(500, new { message = "Error retrieving thumbnail", error = ex.Message });
             }
         }
@@ -374,7 +361,7 @@ namespace JunctionRelayServer.Controllers
             return Path.Combine(dataDir, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
         }
 
-        private async Task DeleteThumbnailFile(string relativePath)
+        private Task DeleteThumbnailFile(string relativePath)
         {
             try
             {
@@ -388,6 +375,7 @@ namespace JunctionRelayServer.Controllers
             {
                 Console.WriteLine($"Warning: Failed to delete thumbnail file {relativePath}: {ex.Message}");
             }
+            return Task.CompletedTask;
         }
     }
 

@@ -302,39 +302,10 @@ public class Controller_Settings : ControllerBase
 
         foreach (var setting in settingsDict)
         {
-            // Handle boolean flags
-            if (setting.Key == "top_bar_show_host_charts" ||
-                setting.Key == "device_custom_firmware_flashing" ||
-                setting.Key == "junction_hyperlink_rows" ||
-                setting.Key == "junction_import_export" ||
-                setting.Key == "service_eventengine_enabled")
-            {
-                flags[setting.Key] = string.Equals(setting.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
-            }
-            // Handle alignment settings as strings (normalize case)
-            else if (setting.Key == "device_actions_alignment" ||
-                     setting.Key == "junction_actions_alignment")
-            {
-                // Normalize alignment values to lowercase for consistency
-                var alignmentValue = setting.Value?.Trim()?.ToLowerInvariant();
+            var trimmedValue = setting.Value?.Trim() ?? "";
 
-                // Validate alignment values and provide sensible defaults
-                if (alignmentValue == "left" || alignmentValue == "center" || alignmentValue == "right")
-                {
-                    flags[setting.Key] = alignmentValue;
-                }
-                else
-                {
-                    // Default to 'right' for invalid values
-                    flags[setting.Key] = "right";
-                    Console.WriteLine($"Invalid alignment value '{setting.Value}' for {setting.Key}, defaulting to 'right'");
-                }
-            }
-            // Handle other settings as strings
-            else
-            {
-                flags[setting.Key] = setting.Value?.Trim() ?? "";
-            }
+            // Auto-detect and convert based on value content and key naming
+            flags[setting.Key] = InferSettingType(setting.Key, trimmedValue);
         }
 
         // Ensure alignment flags exist with defaults if not in database
@@ -357,6 +328,43 @@ public class Controller_Settings : ControllerBase
         return Ok(flags);
     }
 
+    /// <summary>
+    /// Infers the type of a setting based on its key and value, and returns the appropriately typed object.
+    /// This method uses heuristics to automatically determine if a setting should be boolean, integer, or string.
+    /// </summary>
+    private static object InferSettingType(string key, string value)
+    {
+        // 1. Check for boolean values (most common case)
+        if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // 2. Check for integer values
+        if (int.TryParse(value, out var intValue))
+        {
+            return intValue;
+        }
+
+        // 3. Handle special alignment settings (validate known values)
+        if (key.EndsWith("_alignment", StringComparison.OrdinalIgnoreCase))
+        {
+            var alignmentValue = value.ToLowerInvariant();
+            if (alignmentValue == "left" || alignmentValue == "center" || alignmentValue == "right")
+            {
+                return alignmentValue;
+            }
+
+            // Invalid alignment value - default to "right"
+            Console.WriteLine($"Invalid alignment value '{value}' for {key}, defaulting to 'right'");
+            return "right";
+        }
+
+        // 4. Default to string for everything else
+        return value;
+    }
+
     [HttpPost("toggle/{key}")]
     public async Task<IActionResult> ToggleByKey(
         string key,
@@ -377,6 +385,42 @@ public class Controller_Settings : ControllerBase
             message = $"Setting '{key}' set to '{newValue}'. Authentication changes take effect immediately.",
             enabled = req.Enabled
         });
+    }
+
+    // GET: /api/settings/collector-testing
+    [HttpGet("collector-testing")]
+    public async Task<IActionResult> GetCollectorTestingSettings()
+    {
+        var enabled = await _settingsService.GetBoolSettingAsync("collector_testing_enabled", false);
+        var frequency = await _settingsService.GetIntSettingAsync("collector_testing_frequency", 6);
+
+        return Ok(new
+        {
+            enabled = enabled,
+            frequency = frequency
+        });
+    }
+
+    // POST: /api/settings/collector-testing
+    [HttpPost("collector-testing")]
+    public async Task<IActionResult> UpdateCollectorTestingSettings([FromBody] CollectorTestingSettingsRequest request)
+    {
+        if (request.Enabled.HasValue)
+        {
+            await _settingsService.SetSettingAsync("collector_testing_enabled", request.Enabled.Value.ToString());
+        }
+
+        if (request.Frequency.HasValue)
+        {
+            if (request.Frequency.Value < 1)
+            {
+                return BadRequest(new { message = "Frequency must be at least 1 hour" });
+            }
+
+            await _settingsService.SetSettingAsync("collector_testing_frequency", request.Frequency.Value.ToString());
+        }
+
+        return Ok(new { message = "Settings updated successfully" });
     }
 }
 
@@ -626,4 +670,11 @@ public class Controller_Cache : ControllerBase
 
         return $"{(int)age.TotalDays} day{((int)age.TotalDays != 1 ? "s" : "")} ago";
     }
+}
+
+// Request model for collector testing settings
+public class CollectorTestingSettingsRequest
+{
+    public bool? Enabled { get; set; }
+    public int? Frequency { get; set; }
 }

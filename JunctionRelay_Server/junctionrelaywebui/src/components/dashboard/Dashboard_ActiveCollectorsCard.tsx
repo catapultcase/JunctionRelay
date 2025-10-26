@@ -29,17 +29,27 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import DeselectIcon from '@mui/icons-material/Deselect';
 import StorageIcon from '@mui/icons-material/Storage';
 import AspectRatioIcon from '@mui/icons-material/AspectRatio';
-import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import ECGCollectorVisualization from './Dashboard_ECGCollectorVisualization';
 
 interface ActiveCollectorsCardProps {
     defaultExpanded?: boolean;
     storageKey?: string;
+    // WebSocket data passed from parent
+    collectors?: any[];
+    connectionStatus?: 'connecting' | 'connected' | 'disconnected' | 'error' | 'disabled';
+    isConnected?: boolean;
+    connect?: () => void;
+    disconnect?: () => void;
 }
 
 const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
     defaultExpanded = true,
-    storageKey = 'active_collectors_expanded'
+    storageKey = 'active_collectors_expanded',
+    collectors: collectorsFromProps = [],
+    connectionStatus: connectionStatusFromProps = 'disconnected',
+    isConnected: isConnectedFromProps = false,
+    connect: connectFromProps,
+    disconnect: disconnectFromProps
 }) => {
     const [expanded, setExpanded] = useState<boolean>(() => {
         const saved = localStorage.getItem(storageKey);
@@ -54,23 +64,24 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
         return saved ? JSON.parse(saved) : [];
     });
 
+    // Track which collectors have been manually deselected by the user
+    const [manuallyDeselected, setManuallyDeselected] = useState<Set<string>>(() => {
+        const saved = localStorage.getItem(`${storageKey}_manually_deselected`);
+        return saved ? new Set(JSON.parse(saved)) : new Set();
+    });
+
     // NEW: ECG width control with localStorage persistence
     const [ecgWidth, setEcgWidth] = useState<number>(() => {
         const saved = localStorage.getItem(`${storageKey}_ecg_width`);
         return saved ? parseInt(saved, 10) : 400; // Default to current size
     });
 
-    // Only use WebSocket hook when expanded
-    const {
-        collectors,
-        connectionStatus,
-        isConnected,
-        lastUpdate,
-        disconnect,
-        connect
-    } = useDashboardWebSocket({
-        enabled: expanded
-    });
+    // Use props passed from parent Dashboard (single WebSocket connection)
+    const collectors = collectorsFromProps;
+    const connectionStatus = connectionStatusFromProps;
+    const isConnected = isConnectedFromProps;
+    const connect = connectFromProps;
+    const disconnect = disconnectFromProps;
 
     // Get unique collector identifiers
     const availableCollectors = useMemo(() => {
@@ -81,7 +92,7 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
         }));
     }, [collectors]);
 
-    // Auto-select new collectors when they appear
+    // Auto-select new collectors when they appear (but respect manual deselections)
     useEffect(() => {
         if (availableCollectors.length > 0) {
             setSelectedCollectors(prev => {
@@ -92,8 +103,8 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
                     return currentKeys;
                 }
 
-                // Add any new collectors that aren't in our selection
-                const newKeys = currentKeys.filter(key => !prev.includes(key));
+                // Add any new collectors that aren't in our selection AND haven't been manually deselected
+                const newKeys = currentKeys.filter(key => !prev.includes(key) && !manuallyDeselected.has(key));
                 if (newKeys.length > 0) {
                     return [...prev, ...newKeys];
                 }
@@ -101,8 +112,15 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
                 // Remove any collectors that no longer exist
                 return prev.filter(key => currentKeys.includes(key));
             });
+
+            // Clean up manuallyDeselected set - remove keys that no longer exist
+            setManuallyDeselected(prev => {
+                const currentKeys = availableCollectors.map(c => c.key);
+                const updated = new Set([...prev].filter(key => currentKeys.includes(key)));
+                return updated.size !== prev.size ? updated : prev;
+            });
         }
-    }, [availableCollectors]);
+    }, [availableCollectors, manuallyDeselected]);
 
     // Save expansion state
     useEffect(() => {
@@ -113,6 +131,11 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
     useEffect(() => {
         localStorage.setItem(`${storageKey}_selected`, JSON.stringify(selectedCollectors));
     }, [selectedCollectors, storageKey]);
+
+    // Save manually deselected collectors
+    useEffect(() => {
+        localStorage.setItem(`${storageKey}_manually_deselected`, JSON.stringify([...manuallyDeselected]));
+    }, [manuallyDeselected, storageKey]);
 
     // NEW: Save ECG width to localStorage
     useEffect(() => {
@@ -154,15 +177,47 @@ const ActiveCollectorsCard: React.FC<ActiveCollectorsCardProps> = ({
 
     const handleCollectorSelectionChange = (event: SelectChangeEvent<string[]>) => {
         const value = event.target.value;
-        setSelectedCollectors(typeof value === 'string' ? value.split(',') : value);
+        const newSelection = typeof value === 'string' ? value.split(',') : value;
+
+        // Determine which collectors were deselected
+        const deselected = selectedCollectors.filter(key => !newSelection.includes(key));
+
+        // Add deselected items to manuallyDeselected set
+        if (deselected.length > 0) {
+            setManuallyDeselected(prev => {
+                const updated = new Set(prev);
+                deselected.forEach(key => updated.add(key));
+                return updated;
+            });
+        }
+
+        // Determine which collectors were selected
+        const reselected = newSelection.filter(key => !selectedCollectors.includes(key));
+
+        // Remove re-selected items from manuallyDeselected set
+        if (reselected.length > 0) {
+            setManuallyDeselected(prev => {
+                const updated = new Set(prev);
+                reselected.forEach(key => updated.delete(key));
+                return updated;
+            });
+        }
+
+        setSelectedCollectors(newSelection);
     };
 
     const handleSelectAll = () => {
-        setSelectedCollectors(availableCollectors.map(c => c.key));
+        const allKeys = availableCollectors.map(c => c.key);
+        setSelectedCollectors(allKeys);
+        // Clear manuallyDeselected when selecting all
+        setManuallyDeselected(new Set());
     };
 
     const handleDeselectAll = () => {
+        const allKeys = availableCollectors.map(c => c.key);
         setSelectedCollectors([]);
+        // Mark all as manually deselected
+        setManuallyDeselected(new Set(allKeys));
     };
 
     // NEW: Handle ECG width change

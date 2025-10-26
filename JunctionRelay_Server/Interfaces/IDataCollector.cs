@@ -36,6 +36,7 @@ namespace JunctionRelayServer.Interfaces
         // New method to fetch only selected sensors
         Task<List<Model_Sensor>> FetchSelectedSensorsAsync(Model_Collector collector, List<string> selectedSensorIds, CancellationToken cancellationToken = default);
 
+        // Test connection without fetching sensors (for API-based collectors)
         Task<bool> TestConnectionAsync(Model_Collector collector, CancellationToken cancellationToken = default);
 
         // Optional persistent session methods

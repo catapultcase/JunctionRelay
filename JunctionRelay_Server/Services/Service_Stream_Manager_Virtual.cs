@@ -102,7 +102,7 @@ namespace JunctionRelayServer.Services
             return (virtualDevice.Id, virtualScreen.Id, virtualScreenUrl);
         }
 
-        public async void StopBlitModeVirtualScreen(int originalScreenId)
+        public async Task StopBlitModeVirtualScreen(int originalScreenId)
         {
             if (_blitModeVirtualScreens.TryGetValue(originalScreenId, out var screenTuple))
             {
@@ -234,14 +234,14 @@ namespace JunctionRelayServer.Services
             return (virtualDevice, virtualScreen, virtualScreenUrl);
         }
 
-        public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
+        public IEnumerable<Model_StreamInfo_DTO> GetActiveStreams(bool showCompressed = false)
         {
             return _streamingTokens.Select(kvp =>
             {
                 var info = kvp.Value;
-                return new
+                return new Model_StreamInfo_DTO
                 {
-                    StreamKey = kvp.Key,
+                    StreamKey = kvp.Key.ToString(),
                     DeviceName = info.DeviceName,
                     DeviceMac = "Virtual",
                     ScreenId = info.ScreenId,
@@ -253,12 +253,20 @@ namespace JunctionRelayServer.Services
                     Protocol = info.Protocol ?? "Virtual",
                     SensorsCount = info.SensorsCount,
                     HasLastFrame = info.LastGeneratedFrameBytes != null,
-                    LastFrameSize = info.LastFrameSize,
+                    LastFrameSize = (int?)info.LastFrameSize,
                     LastFrameTime = info.LastFrameGeneratedTime,
                     LastFrameLayoutType = info.LastFrameLayoutType,
                     IsGatewayMode = false,
                     GatewayTarget = "N/A",
-                    Health = new
+                    ConfigPayloadPrefix = info.ConfigPayloadPrefix,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
+                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+                    CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
+                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
+                    Health = new Model_StreamHealth_DTO
                     {
                         ConnectionState = info.Health.ConnectionState,
                         SuccessRate = info.Health.SuccessRate,
@@ -266,14 +274,11 @@ namespace JunctionRelayServer.Services
                         ErrorType = info.Health.ErrorType,
                         ConsecutiveFailures = info.Health.ConsecutiveFailures,
                         ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
-                        ConnectionRecreated = false,
-                        LastWebSocketState = (string?)null,
                         AverageLatency = info.Health.AverageLatency,
                         MaxLatency = (long)info.Latency,
                         MinLatency = (long)info.Latency,
-                        LastSuccessTime = info.Health.LastSuccessTime,
-                        LastFailureTime = info.Health.LastFailureTime,
-                        ConnectionRecreationCount = 0,
+                        LastSuccessTime = info.Health.LastSuccessTime ?? DateTime.MinValue,
+                        LastFailureTime = info.Health.LastFailureTime ?? DateTime.MinValue,
                         IsFrameMode = info.Health.IsFrameMode,
                         PayloadType = info.Health.PayloadType,
                         FramesSent = info.Health.FramesSent,
@@ -285,18 +290,8 @@ namespace JunctionRelayServer.Services
                         AverageFrameRenderTime = info.Health.AverageFrameRenderTime,
                         MaxFrameRenderTime = info.Health.MaxFrameRenderTime,
                         MinFrameRenderTime = info.Health.MinFrameRenderTime,
-                        FrameHealthSummary = info.Health.GetFrameHealthSummary(),
-                        GatewayMessagesSent = 0,
-                        GatewayHealthSummary = new { message = "Not in gateway mode" }
-                    },
-                    ConfigPayloadPrefix = info.ConfigPayloadPrefix,
-                    ConfigPayloadJson = showCompressed ? info.GetCompressedConfigPayloadPreview() : info.ConfigPayloadJson,
-                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
-                    CompressedConfigPayloadPrefix = info.CompressedConfigPayloadPrefix,
-                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
-                    ConfigPayloadCompressed = info.GetCompressedConfigPayloadPreview(),
-                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview()
+                        GatewayMessagesSent = 0
+                    }
                 };
             });
         }
@@ -344,9 +339,7 @@ namespace JunctionRelayServer.Services
             var screenLayoutOverrides = await junctionLinkDb.GetJunctionScreenLayoutsByScreenIdAsync(junctionId, screen.Id);
             Model_JunctionScreenLayout? screenOverride = screenLayoutOverrides.FirstOrDefault(o => o.DeviceScreenId == screen.Id);
 
-            string protocolString = isCompositeMode ? "Virtual (Frame Assembly)"
-                                  : isBlitMode ? "Virtual (Pre-rendered Frames)"
-                                  : "Virtual";
+            string protocolString = "Virtual";
 
             var info = new Service_StreamInfo_Virtual
             {
@@ -464,6 +457,13 @@ namespace JunctionRelayServer.Services
                             info.UpdateCompressedLastSentPayloadPrefix(sensorPayload.CompressedPrefix);
                         }
 
+                        // Notify FrameEngine that sensor data is now available for this virtual screen
+                        // This allows screenshots to proceed once data has been received
+                        if (deviceId < 0) // Negative deviceId indicates virtual device
+                        {
+                            _puppeteerEngine.NotifySensorDataReceived($"{deviceId}");
+                        }
+
                         var healthResult = new VirtualStreamHealthResult
                         {
                             Success = true,
@@ -497,6 +497,10 @@ namespace JunctionRelayServer.Services
                                             var frameLayout = await frameLayoutDb.GetFrameLayoutByIdAsync(frameLayoutId.Value);
                                             if (frameLayout != null)
                                             {
+                                                // Update canvas dimensions from actual frame layout
+                                                info.CanvasWidth = frameLayout.Width;
+                                                info.CanvasHeight = frameLayout.Height;
+
                                                 var frameBytes = await _puppeteerEngine.CaptureScreenshot(
                                                     deviceId.ToString(),
                                                     frameLayout.Width,
@@ -505,7 +509,9 @@ namespace JunctionRelayServer.Services
                                                     storedLinkId,
                                                     originalScreenId);
 
-                                                info.UpdateLastGeneratedFrame(frameBytes, frameLayout.LayoutType ?? "BLIT", DateTime.UtcNow);
+                                                // Store the frame for preview/debugging purposes
+                                                // Keep the actual layout type (COMPOSITE_MODE) - this Virtual stream is Frame mode
+                                                info.UpdateLastGeneratedFrame(frameBytes, frameLayout.LayoutType ?? "COMPOSITE_MODE", DateTime.UtcNow);
                                             }
                                         }
                                     }

@@ -66,6 +66,10 @@ namespace JunctionRelayServer.Collectors
 
             // Parse calendar using Ical.Net
             var calendar = Calendar.Load(content);
+            if (calendar == null)
+            {
+                return sensors;
+            }
             var eventsByDate = ParseEventsByDate(calendar);
 
             // Create individual event sensors
@@ -115,9 +119,9 @@ namespace JunctionRelayServer.Collectors
                         LastUpdated = DateTime.UtcNow,
                         CustomAttribute1 = eventInfo.StartTimeString,
                         CustomAttribute2 = eventInfo.EndTimeString,
-                        CustomAttribute3 = TruncateString(eventInfo.Title, 100) ?? "Untitled Event",
-                        CustomAttribute4 = TruncateString(eventInfo.Description, 200),
-                        CustomAttribute5 = TruncateString(eventInfo.Location, 100),
+                        CustomAttribute3 = TruncateString(eventInfo.Title ?? "Untitled Event", 100),
+                        CustomAttribute4 = TruncateString(eventInfo.Description ?? "", 200),
+                        CustomAttribute5 = TruncateString(eventInfo.Location ?? "", 100),
                         CustomAttribute6 = eventInfo.IsAllDay.ToString().ToLower(),
                         CustomAttribute7 = durationMinutes.ToString("F0"),
                         CustomAttribute8 = date.ToString("yyyy-MM-dd")
@@ -152,7 +156,10 @@ namespace JunctionRelayServer.Collectors
                 nextEvent?.Title ?? "No upcoming events", "Next", collector));
 
             // Time until next event
-            sensors.Add(CreateTimeUntilSensor(nextEvent, now, collector));
+            if (nextEvent != null)
+            {
+                sensors.Add(CreateTimeUntilSensor(nextEvent, now, collector));
+            }
 
             // Daily convenience sensors
             var todayEvents = eventsByDate.ContainsKey(today) ? eventsByDate[today] : new List<EventInfo>();
@@ -266,7 +273,7 @@ namespace JunctionRelayServer.Collectors
             return eventInfo;
         }
 
-        private EventInfo FindCurrentEvent(Dictionary<DateTime, List<EventInfo>> eventsByDate, DateTime now)
+        private EventInfo? FindCurrentEvent(Dictionary<DateTime, List<EventInfo>> eventsByDate, DateTime now)
         {
             foreach (var dateGroup in eventsByDate)
             {
@@ -287,9 +294,9 @@ namespace JunctionRelayServer.Collectors
             return null;
         }
 
-        private EventInfo FindNextEvent(Dictionary<DateTime, List<EventInfo>> eventsByDate, DateTime now)
+        private EventInfo? FindNextEvent(Dictionary<DateTime, List<EventInfo>> eventsByDate, DateTime now)
         {
-            EventInfo nextEvent = null;
+            EventInfo? nextEvent = null;
             DateTime? nextEventTime = null;
 
             foreach (var dateGroup in eventsByDate.OrderBy(d => d.Key))

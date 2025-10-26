@@ -78,6 +78,33 @@ export const getDefaultElementProperties = (elementType: ElementType): Record<st
                 gridScrollSpeed: 0.5
             };
 
+        case 'gauge':
+            return {
+                sensorTag: '',
+                gaugeType: 'semicircle',
+                minValue: 0,
+                maxValue: 100,
+                valueLabel: '',
+                showLabels: true,
+                showTicks: true,
+                pointerType: 'needle',
+                pointerColor: '#464A4F',
+                pointerLength: 0.7,
+                pointerWidth: 15,
+                pointerElastic: true,
+                pointerAnimationDelay: 0,
+                arcColors: [
+                    { limit: 33, color: '#5BE12C' },
+                    { limit: 66, color: '#F5CD19' },
+                    { limit: 100, color: '#EA4228' }
+                ],
+                arcPadding: 0.02,
+                arcWidth: 0.2,
+                cornerRadius: 5,
+                valueLabelColor: '#333',
+                tickLabelColor: '#666'
+            };
+
         case 'oscilloscope':
             return {
                 sensorTag: '',

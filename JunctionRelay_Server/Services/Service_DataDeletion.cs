@@ -118,7 +118,7 @@ namespace JunctionRelayServer.Services
                 {
                     Path.Combine(dbDirectory, "frameengine", "frames"),
                     Path.Combine(dbDirectory, "frameengine", "rive"),
-                    Path.Combine(dbDirectory, "frameengine", "assets"),
+                    Path.Combine(dbDirectory, "frameengine", "images"),
                     Path.Combine(dbDirectory, "frameengine", "videos"),
                     Path.Combine(dbDirectory, "frameengine", "thumbnails")
                 };
@@ -154,7 +154,7 @@ namespace JunctionRelayServer.Services
                 Path.Combine(dbDirectory, "keys"),
                 Path.Combine(dbDirectory, "frameengine", "frames"),
                 Path.Combine(dbDirectory, "frameengine", "rive"),
-                Path.Combine(dbDirectory, "frameengine", "assets"),
+                Path.Combine(dbDirectory, "frameengine", "images"),
                 Path.Combine(dbDirectory, "frameengine", "videos"),
                 Path.Combine(dbDirectory, "frameengine", "thumbnails"),
                 Path.Combine(dbDirectory, "firmware"),

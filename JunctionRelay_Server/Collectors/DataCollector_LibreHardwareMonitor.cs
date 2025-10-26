@@ -31,24 +31,7 @@ namespace JunctionRelayServer.Collectors
 
         public int CollectorId { get; private set; }
 
-        public string CollectorName => "LibreHardwareMonitor";
-
-        // Helper method to detect decimal places in a value
-        private int GetDecimalPlaces(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return 0;
-
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0;
-
-            var valueStr = numericValue.ToString();
-            int decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1) return 0;
-            return valueStr.Length - decimalIndex - 1;
-        }
-
-        public void ApplyConfiguration(Model_Collector collector)
+        public string CollectorName => "LibreHardwareMonitor";public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
                 ?? throw new ArgumentException("Collector.URL is required.");
@@ -242,7 +225,7 @@ namespace JunctionRelayServer.Collectors
                             Category = sensorType,
                             Unit = GetSensorUnit(sensorType),
                             Value = strippedValue,
-                            DecimalPlaces = GetDecimalPlaces(strippedValue),
+                            DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(strippedValue),
                             ExternalId = $"{sensorId}::{sensorName}",
                             SensorType = "API",
                             DeviceName = collector.Name,

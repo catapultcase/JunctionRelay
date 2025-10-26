@@ -18,7 +18,6 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { LiveStateMachineTesting } from './FrameEngine_RiveLive';
 import {
     type DiscoveredInput,
     type DiscoveredStateMachine,
@@ -828,16 +827,29 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                                 </div>
                             )}
 
-                            {/* Live State Machine Testing - applies to all state machines automatically */}
+                            {/* Bindings Configuration Reference */}
                             {layout.riveFile && (discoveredMachines.length > 0 || discoveredBindings.length > 0) && (
-                                <LiveStateMachineTesting
-                                    discoveredMachines={discoveredMachines}
-                                    discoveredBindings={discoveredBindings}
-                                    riveFile={layout.riveFile}
-                                    layout={layout}
-                                    onInputChange={handleRiveInputChange}
-                                    onBindingChange={handleRiveBindingChange}
-                                />
+                                <div style={{
+                                    padding: '10px',
+                                    backgroundColor: theme.palette.mode === 'dark'
+                                        ? 'rgba(33, 150, 243, 0.1)'
+                                        : 'rgba(33, 150, 243, 0.05)',
+                                    borderRadius: '6px',
+                                    border: `1px solid ${theme.palette.primary.main}`,
+                                    fontSize: '12px',
+                                    color: theme.palette.text.primary,
+                                    textAlign: 'center',
+                                }}>
+                                    <div style={{ marginBottom: '4px', fontWeight: 500 }}>
+                                        💡 Configure state machines and data bindings
+                                    </div>
+                                    <div style={{
+                                        fontSize: '11px',
+                                        color: theme.palette.text.secondary
+                                    }}>
+                                        Switch to the <strong>Bindings</strong> tab to manage inputs and data bindings
+                                    </div>
+                                </div>
                             )}
                         </div>
                     )}

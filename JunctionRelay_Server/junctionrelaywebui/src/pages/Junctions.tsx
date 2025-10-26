@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,7 +79,7 @@ const Junctions = () => {
     // Fetch service settings
     const fetchServiceSettings = useCallback(async () => {
         try {
-            const response = await fetch('/api/settings/feature-flags');
+            const response = await fetch('/api/settings/flags');
             if (response.ok) {
                 const settings = await response.json();
                 setAutostartEnabled(String(settings.junction_autostart_enabled).toLowerCase() === 'true');
@@ -94,10 +94,10 @@ const Junctions = () => {
     const updateServiceSetting = useCallback(async (key: string, value: boolean) => {
         setLoadingSettings(true);
         try {
-            const response = await fetch('/api/settings/feature-flags', {
+            const response = await fetch(`/api/settings/toggle/${key}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [key]: value.toString() })
+                body: JSON.stringify({ enabled: value })
             });
 
             if (response.ok) {

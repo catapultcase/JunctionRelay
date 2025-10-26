@@ -22,7 +22,6 @@ using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Models;
 using Newtonsoft.Json;
 using JunctionRelayServer.Models.Requests;
-using JunctionRelay_Server.Models.Requests;
 using System.Diagnostics;
 using JunctionRelayServer.Models.DeviceSync;
 using System.IO.Ports;

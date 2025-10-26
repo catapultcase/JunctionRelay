@@ -2,7 +2,7 @@
 #define DEVICE_H
 
 // Device identification define
-#define DEVICE_CROWPANEL7
+#define DEVICE_CROWPANEL5
 
 #include "DeviceConfig.h"
 #include "Manager_Connections.h"
@@ -17,7 +17,7 @@
 #include <vector>
 
 #define DEVICE_CLASS                    "JunctionRelay Display"
-#define DEVICE_MODEL                    "CrowPanel7 7-inch"
+#define DEVICE_MODEL                    "CrowPanel5 5-inch"
 #define DEVICE_MANUFACTURER             "Elecrow"
 #define DEVICE_HAS_CUSTOM_FIRMWARE      false
 #define DEVICE_MCU                      "ESP32-S3-WROOM-1-N4R8"
@@ -87,9 +87,9 @@ struct HardwareInventory {
     bool isGateway = DEVICE_IS_GATEWAY;
 };
 
-class Device_CrowPanel7 : public DeviceConfig {
+class Device_CrowPanel5 : public DeviceConfig {
 public:
-    Device_CrowPanel7(Manager_Connections* connMgr);
+    Device_CrowPanel5(Manager_Connections* connMgr);
 
     // Returns hardware inventory
     HardwareInventory detectHardware();
@@ -153,7 +153,7 @@ public:
         return macStr.c_str();
     }
 
-    // Custom LGFX device class for Elecrow 7-inch panel
+    // Custom LGFX device class for Elecrow 5-inch panel
     class CustomLGFX : public lgfx::LGFX_Device {
     public:
         lgfx::Bus_RGB   _bus_instance;
@@ -172,6 +172,6 @@ private:
 };
 
 // Alias the class to the generic Device name for build system
-typedef Device_CrowPanel7 Device;
+typedef Device_CrowPanel5 Device;
 
 #endif // DEVICE_H

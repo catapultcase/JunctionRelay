@@ -31,32 +31,7 @@ namespace JunctionRelayServer.Collectors
         public string CollectorName => "GenericAPI";
 
         private string _endpoint = string.Empty;
-        private string _accessToken = string.Empty;
-
-        // Helper method to detect decimal places in a value
-        private int GetDecimalPlaces(string value)
-        {
-            // Handle null or empty values
-            if (string.IsNullOrEmpty(value))
-                return 0;
-
-            // Try to parse as decimal to validate it's a numeric value
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0; // Non-numeric values have 0 decimal places
-
-            // Convert to string to analyze decimal places
-            string valueStr = numericValue.ToString();
-
-            // Find the decimal point
-            int decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1)
-                return 0; // No decimal point found
-
-            // Count digits after decimal point
-            return valueStr.Length - decimalIndex - 1;
-        }
-
-        // Helper method to determine appropriate unit based on key name
+        private string _accessToken = string.Empty;// Helper method to determine appropriate unit based on key name
         private string DetermineUnit(string key, object value)
         {
             var lowerKey = key.ToLowerInvariant();
@@ -220,7 +195,7 @@ namespace JunctionRelayServer.Collectors
                         continue;
                     case JsonValueKind.Null:
                         valueString = "null";
-                        rawValue = null;
+                        rawValue = null!;
                         break;
                     default:
                         valueString = value.ToString();
@@ -233,8 +208,8 @@ namespace JunctionRelayServer.Collectors
                     ExternalId = key.ToLowerInvariant().Replace(" ", "_"),
                     Name = key,
                     Value = valueString,
-                    Unit = DetermineUnit(key, rawValue),
-                    DecimalPlaces = GetDecimalPlaces(valueString),
+                    Unit = rawValue != null ? DetermineUnit(key, rawValue) : "",
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(valueString),
                     Category = DetermineCategory(key),
                     DeviceName = collector.Name,
                     SensorType = "API",

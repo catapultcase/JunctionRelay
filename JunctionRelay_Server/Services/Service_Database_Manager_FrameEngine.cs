@@ -210,7 +210,7 @@ namespace JunctionRelayServer.Services
                 var dataDir = Path.GetDirectoryName(dbPath) ?? throw new InvalidOperationException("Invalid database path");
                 var templatesPath = Path.Combine(contentRootPath, "frameengine", "templates");
                 var rivePath = Path.Combine(dataDir, "frameengine", "rive");
-                var assetsPath = Path.Combine(dataDir, "frameengine", "assets");
+                var assetsPath = Path.Combine(dataDir, "frameengine", "images");
                 var videosPath = Path.Combine(dataDir, "frameengine", "videos");
                 var templatePackagesPath = Path.Combine(contentRootPath, "frameengine", "template-packages");
 
@@ -363,6 +363,241 @@ namespace JunctionRelayServer.Services
             }
         }
 
+
+        /// <summary>
+        /// Generates the export package configuration object in the format expected by import
+        /// </summary>
+        public object GenerateExportConfig(
+            Model_Frame_Layout frameLayout,
+            string? backgroundImageFileName,
+            string? backgroundVideoFileName,
+            string exportedFrameConfig,
+            string exportedFrameConfigRuntime,
+            string exportedFrameElements,
+            List<string> packageContents)
+        {
+            return new
+            {
+                type = "frame_layout_package",
+                exportDate = DateTime.UtcNow.ToString("O"),
+                layoutId = frameLayout.Id,
+                displayName = frameLayout.DisplayName,
+                description = frameLayout.Description,
+                layoutType = frameLayout.LayoutType,
+                width = frameLayout.Width,
+                height = frameLayout.Height,
+                orientation = frameLayout.Orientation,
+                backgroundType = frameLayout.BackgroundType,
+                backgroundColor = frameLayout.BackgroundColor,
+                backgroundImageUrl = backgroundImageFileName != null ? $"images/{backgroundImageFileName}" :
+                    (!string.IsNullOrEmpty(frameLayout.BackgroundImageUrl) && !frameLayout.BackgroundImageUrl.StartsWith("http") ? $"images/{Path.GetFileName(frameLayout.BackgroundImageUrl)}" : frameLayout.BackgroundImageUrl),
+                backgroundImageFit = frameLayout.BackgroundImageFit,
+                backgroundVideoUrl = backgroundVideoFileName != null ? $"videos/{backgroundVideoFileName}" :
+                    (!string.IsNullOrEmpty(frameLayout.BackgroundVideoUrl) && !frameLayout.BackgroundVideoUrl.StartsWith("http") ? $"videos/{Path.GetFileName(frameLayout.BackgroundVideoUrl)}" : frameLayout.BackgroundVideoUrl),
+                backgroundVideoFit = frameLayout.BackgroundVideoFit,
+                videoLoop = frameLayout.VideoLoop,
+                videoMuted = frameLayout.VideoMuted,
+                videoAutoplay = frameLayout.VideoAutoplay,
+                backgroundOpacity = frameLayout.BackgroundOpacity,
+                riveFile = frameLayout.RiveFile,
+                thumbnailOverride = frameLayout.ThumbnailOverride,
+                jsonFrameConfigRaw = exportedFrameConfig,
+                jsonFrameConfigRuntimeRaw = exportedFrameConfigRuntime,
+                jsonFrameElementsRaw = exportedFrameElements,
+                packageContents = packageContents.ToArray()
+            };
+        }
+
+        /// <summary>
+        /// Generates export config with JSON path processing for consistency with local exports.
+        /// Processes embedded JSON to add path prefixes (images/, videos/, rive/) to all asset URLs.
+        /// </summary>
+        public object GenerateSimpleExportConfig(Model_Frame_Layout frameLayout, List<string> assetPaths)
+        {
+            return new
+            {
+                type = "frame_layout_package",
+                exportDate = DateTime.UtcNow.ToString("O"),
+                layoutId = frameLayout.Id,
+                displayName = frameLayout.DisplayName,
+                description = frameLayout.Description,
+                layoutType = frameLayout.LayoutType,
+                width = frameLayout.Width,
+                height = frameLayout.Height,
+                orientation = frameLayout.Orientation,
+                backgroundType = frameLayout.BackgroundType,
+                backgroundColor = frameLayout.BackgroundColor,
+                // Add images/ prefix if not already there and not a URL
+                backgroundImageUrl = !string.IsNullOrEmpty(frameLayout.BackgroundImageUrl) && !frameLayout.BackgroundImageUrl.StartsWith("http")
+                    ? (frameLayout.BackgroundImageUrl.StartsWith("images/") ? frameLayout.BackgroundImageUrl : $"images/{Path.GetFileName(frameLayout.BackgroundImageUrl)}")
+                    : frameLayout.BackgroundImageUrl,
+                backgroundImageFit = frameLayout.BackgroundImageFit,
+                // Add videos/ prefix if not already there and not a URL
+                backgroundVideoUrl = !string.IsNullOrEmpty(frameLayout.BackgroundVideoUrl) && !frameLayout.BackgroundVideoUrl.StartsWith("http")
+                    ? (frameLayout.BackgroundVideoUrl.StartsWith("videos/") ? frameLayout.BackgroundVideoUrl : $"videos/{Path.GetFileName(frameLayout.BackgroundVideoUrl)}")
+                    : frameLayout.BackgroundVideoUrl,
+                backgroundVideoFit = frameLayout.BackgroundVideoFit,
+                videoLoop = frameLayout.VideoLoop,
+                videoMuted = frameLayout.VideoMuted,
+                videoAutoplay = frameLayout.VideoAutoplay,
+                backgroundOpacity = frameLayout.BackgroundOpacity,
+                riveFile = frameLayout.RiveFile,
+                thumbnailOverride = frameLayout.ThumbnailOverride,
+                jsonFrameConfigRaw = ProcessFrameConfigForExport(
+                    frameLayout.JsonFrameConfig ?? "{}",
+                    frameLayout.BackgroundImageUrl,
+                    frameLayout.BackgroundVideoUrl),
+                jsonFrameConfigRuntimeRaw = ProcessFrameConfigForExport(
+                    frameLayout.JsonFrameConfigRuntime ?? "{}",
+                    frameLayout.BackgroundImageUrl,
+                    frameLayout.BackgroundVideoUrl),
+                jsonFrameElementsRaw = ProcessFrameElementsForExport(frameLayout.JsonFrameElements ?? "[]"),
+                packageContents = assetPaths.ToArray()
+            };
+        }
+        /// <summary>
+        /// Processes jsonFrameElements to add path prefixes (images/, videos/, rive/) to asset URLs
+        /// </summary>
+        private string ProcessFrameElementsForExport(string jsonFrameElements)
+        {
+            try
+            {
+                var elementsArray = JsonSerializer.Deserialize<JsonElement>(jsonFrameElements);
+                if (elementsArray.ValueKind != JsonValueKind.Array)
+                    return jsonFrameElements;
+
+                var updatedElements = new List<object>();
+
+                foreach (var element in elementsArray.EnumerateArray())
+                {
+                    var elementDict = new Dictionary<string, object?>();
+
+                    // Copy all properties
+                    foreach (var prop in element.EnumerateObject())
+                    {
+                        elementDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+
+                    // Process properties if they exist
+                    if (element.TryGetProperty("type", out var typeProperty) &&
+                        element.TryGetProperty("properties", out var propertiesElement))
+                    {
+                        var elementType = typeProperty.GetString();
+                        var properties = new Dictionary<string, object?>();
+
+                        foreach (var prop in propertiesElement.EnumerateObject())
+                        {
+                            properties[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                        }
+
+                        // Add path prefixes based on element type
+                        if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var imageUrl))
+                        {
+                            var url = imageUrl.GetString();
+                            if (!string.IsNullOrEmpty(url) && !url.StartsWith("http") && !url.StartsWith("images/"))
+                            {
+                                properties["assetImageUrl"] = $"images/{Path.GetFileName(url)}";
+                            }
+                        }
+                        else if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var videoUrl))
+                        {
+                            var url = videoUrl.GetString();
+                            if (!string.IsNullOrEmpty(url) && !url.StartsWith("http") && !url.StartsWith("videos/"))
+                            {
+                                properties["assetVideoUrl"] = $"videos/{Path.GetFileName(url)}";
+                            }
+                        }
+                        else if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var riveFile))
+                        {
+                            var file = riveFile.GetString();
+                            if (!string.IsNullOrEmpty(file) && !file.StartsWith("rive/"))
+                            {
+                                properties["assetRiveFile"] = $"rive/{Path.GetFileName(file)}";
+                            }
+                        }
+
+                        elementDict["properties"] = properties;
+                    }
+
+                    updatedElements.Add(elementDict);
+                }
+
+                return JsonSerializer.Serialize(updatedElements);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to process frame elements: {ex.Message}");
+                return jsonFrameElements;
+            }
+        }
+
+        /// <summary>
+        /// Processes jsonFrameConfig or jsonFrameConfigRuntime to add path prefixes to background URLs
+        /// </summary>
+        private string ProcessFrameConfigForExport(string jsonFrameConfig, string? backgroundImageUrl, string? backgroundVideoUrl)
+        {
+            try
+            {
+                var frameConfig = JsonSerializer.Deserialize<JsonElement>(jsonFrameConfig);
+                if (frameConfig.ValueKind != JsonValueKind.Object)
+                    return jsonFrameConfig;
+
+                var configDict = new Dictionary<string, object?>();
+                foreach (var prop in frameConfig.EnumerateObject())
+                {
+                    configDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                }
+
+                if (configDict.TryGetValue("frameConfig", out var frameConfigObj) && frameConfigObj != null)
+                {
+                    var frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                        JsonSerializer.Serialize(frameConfigObj)) ?? new Dictionary<string, object?>();
+
+                    if (frameConfigDict.TryGetValue("background", out var backgroundObj) && backgroundObj != null)
+                    {
+                        var backgroundDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                            JsonSerializer.Serialize(backgroundObj)) ?? new Dictionary<string, object?>();
+
+                        // Update background image URL
+                        if (backgroundDict.ContainsKey("imageUrl") && backgroundDict["imageUrl"] != null)
+                        {
+                            var imageUrl = backgroundDict["imageUrl"]?.ToString();
+                            if (!string.IsNullOrEmpty(imageUrl) && !imageUrl.StartsWith("http"))
+                            {
+                                if (!imageUrl.StartsWith("images/"))
+                                {
+                                    backgroundDict["imageUrl"] = $"images/{Path.GetFileName(imageUrl)}";
+                                }
+                            }
+                        }
+
+                        // Update background video URL
+                        if (backgroundDict.ContainsKey("videoUrl") && backgroundDict["videoUrl"] != null)
+                        {
+                            var videoUrl = backgroundDict["videoUrl"]?.ToString();
+                            if (!string.IsNullOrEmpty(videoUrl) && !videoUrl.StartsWith("http"))
+                            {
+                                if (!videoUrl.StartsWith("videos/"))
+                                {
+                                    backgroundDict["videoUrl"] = $"videos/{Path.GetFileName(videoUrl)}";
+                                }
+                            }
+                        }
+
+                        frameConfigDict["background"] = backgroundDict;
+                    }
+
+                    configDict["frameConfig"] = frameConfigDict;
+                }
+
+                return JsonSerializer.Serialize(configDict);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to process frame config: {ex.Message}");
+                return jsonFrameConfig;
+            }
+        }
         public async Task<(byte[] zipData, string filename)> ExportFrameLayoutPackageAsync(
             int id,
             string templatesPath,
@@ -435,34 +670,266 @@ namespace JunctionRelayServer.Services
                 }
             }
 
-            var exportData = new
+            // Process element assets (asset-image, asset-video, asset-rive components)
+            var elementAssets = new Dictionary<string, (string physicalPath, string zipPath, string newUrl)>();
+            string exportedFrameElements = frameLayout.JsonFrameElements ?? "[]";
+
+            try
             {
-                type = "frame_layout_package",
-                exportDate = DateTime.UtcNow.ToString("O"),
-                layoutId = frameLayout.Id,
-                displayName = frameLayout.DisplayName,
-                description = frameLayout.Description,
-                layoutType = frameLayout.LayoutType,
-                width = frameLayout.Width,
-                height = frameLayout.Height,
-                orientation = frameLayout.Orientation,
-                backgroundType = frameLayout.BackgroundType,
-                backgroundColor = frameLayout.BackgroundColor,
-                backgroundImageUrl = backgroundImageFileName != null ? $"assets/{backgroundImageFileName}" : frameLayout.BackgroundImageUrl,
-                backgroundImageFit = frameLayout.BackgroundImageFit,
-                backgroundVideoUrl = backgroundVideoFileName != null ? $"videos/{backgroundVideoFileName}" : frameLayout.BackgroundVideoUrl,
-                backgroundVideoFit = frameLayout.BackgroundVideoFit,
-                videoLoop = frameLayout.VideoLoop,
-                videoMuted = frameLayout.VideoMuted,
-                videoAutoplay = frameLayout.VideoAutoplay,
-                backgroundOpacity = frameLayout.BackgroundOpacity,
-                riveFile = frameLayout.RiveFile,
-                thumbnailOverride = frameLayout.ThumbnailOverride,
-                jsonFrameConfigRaw = frameLayout.JsonFrameConfig ?? "{}",
-                jsonFrameConfigRuntimeRaw = frameLayout.JsonFrameConfigRuntime ?? "{}",
-                jsonFrameElementsRaw = frameLayout.JsonFrameElements ?? "[]",
-                packageContents = packageContents.ToArray()
-            };
+                var elementsArray = JsonSerializer.Deserialize<JsonElement>(exportedFrameElements);
+                if (elementsArray.ValueKind == JsonValueKind.Array)
+                {
+                    var updatedElements = new List<JsonElement>();
+
+                    foreach (var element in elementsArray.EnumerateArray())
+                    {
+                        var elementDict = new Dictionary<string, object?>();
+
+                        // Copy all properties
+                        foreach (var prop in element.EnumerateObject())
+                        {
+                            elementDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                        }
+
+                        // Check element type and process assets
+                        if (element.TryGetProperty("type", out var typeProperty))
+                        {
+                            var elementType = typeProperty.GetString();
+
+                            if (element.TryGetProperty("properties", out var propertiesElement))
+                            {
+                                var properties = new Dictionary<string, object?>();
+                                foreach (var prop in propertiesElement.EnumerateObject())
+                                {
+                                    properties[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                                }
+
+                                // Handle asset-image elements
+                                if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var assetImageUrl))
+                                {
+                                    var imageUrl = assetImageUrl.GetString();
+                                    if (!string.IsNullOrEmpty(imageUrl) &&
+                                        !imageUrl.StartsWith("http://") &&
+                                        !imageUrl.StartsWith("https://"))
+                                    {
+                                        var fileName = Path.GetFileName(imageUrl);
+                                        var filePath = GetAssetFilePath(fileName, assetsPath, templatesPath);
+
+                                        if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
+                                        {
+                                            var zipPath = $"images/{fileName}";
+                                            if (!elementAssets.ContainsKey(fileName))
+                                            {
+                                                elementAssets[fileName] = (filePath, zipPath, $"images/{fileName}");
+                                                packageContents.Add(zipPath);
+                                            }
+                                            properties["assetImageUrl"] = $"images/{fileName}";
+                                        }
+                                    }
+                                }
+
+                                // Handle asset-video elements
+                                if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var assetVideoUrl))
+                                {
+                                    var videoUrl = assetVideoUrl.GetString();
+                                    if (!string.IsNullOrEmpty(videoUrl) &&
+                                        !videoUrl.StartsWith("http://") &&
+                                        !videoUrl.StartsWith("https://"))
+                                    {
+                                        var fileName = Path.GetFileName(videoUrl);
+                                        var filePath = GetAssetFilePath(fileName, videosPath, templatesPath);
+
+                                        if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
+                                        {
+                                            var zipPath = $"videos/{fileName}";
+                                            if (!elementAssets.ContainsKey(fileName))
+                                            {
+                                                elementAssets[fileName] = (filePath, zipPath, $"videos/{fileName}");
+                                                packageContents.Add(zipPath);
+                                            }
+                                            properties["assetVideoUrl"] = $"videos/{fileName}";
+                                        }
+                                    }
+                                }
+
+                                // Handle asset-rive elements
+                                if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var assetRiveFile))
+                                {
+                                    var riveFileStr = assetRiveFile.GetString();
+                                    if (!string.IsNullOrEmpty(riveFileStr))
+                                    {
+                                        var filePath = GetAssetFilePath(riveFileStr, rivePath, templatesPath);
+
+                                        if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
+                                        {
+                                            var zipPath = $"rive/{riveFileStr}";
+                                            if (!elementAssets.ContainsKey(riveFileStr))
+                                            {
+                                                elementAssets[riveFileStr] = (filePath, zipPath, riveFileStr);
+                                                packageContents.Add(zipPath);
+                                            }
+                                            properties["assetRiveFile"] = riveFileStr;
+                                        }
+                                    }
+                                }
+
+                                elementDict["properties"] = properties;
+                            }
+                        }
+
+                        updatedElements.Add(JsonSerializer.SerializeToElement(elementDict));
+                    }
+
+                    exportedFrameElements = JsonSerializer.Serialize(updatedElements);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to process element assets: {ex.Message}");
+            }
+
+            // Update jsonFrameConfig to use relative paths for export
+            string exportedFrameConfig = frameLayout.JsonFrameConfig ?? "{}";
+            try
+            {
+                var frameConfig = JsonSerializer.Deserialize<JsonElement>(exportedFrameConfig);
+                if (frameConfig.ValueKind == JsonValueKind.Object)
+                {
+                    var configDict = new Dictionary<string, object?>();
+                    foreach (var prop in frameConfig.EnumerateObject())
+                    {
+                        configDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+
+                    if (configDict.TryGetValue("frameConfig", out var frameConfigObj) && frameConfigObj != null)
+                    {
+                        var frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                            JsonSerializer.Serialize(frameConfigObj)) ?? new Dictionary<string, object?>();
+
+                        if (frameConfigDict.TryGetValue("background", out var backgroundObj) && backgroundObj != null)
+                        {
+                            var backgroundDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                                JsonSerializer.Serialize(backgroundObj)) ?? new Dictionary<string, object?>();
+
+                            // Update background image URL to relative path if we're exporting the file
+                            if (backgroundImageFileName != null)
+                            {
+                                backgroundDict["imageUrl"] = $"images/{backgroundImageFileName}";
+                            }
+                            // If not exporting file, keep just filename
+                            else if (backgroundDict.ContainsKey("imageUrl") && backgroundDict["imageUrl"] != null)
+                            {
+                                var currentImageUrl = backgroundDict["imageUrl"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentImageUrl) && !currentImageUrl.StartsWith("http"))
+                                {
+                                    backgroundDict["imageUrl"] = Path.GetFileName(currentImageUrl);
+                                }
+                            }
+
+                            // Update background video URL to relative path if we're exporting the file
+                            if (backgroundVideoFileName != null)
+                            {
+                                backgroundDict["videoUrl"] = $"videos/{backgroundVideoFileName}";
+                            }
+                            // If not exporting file, keep just filename
+                            else if (backgroundDict.ContainsKey("videoUrl") && backgroundDict["videoUrl"] != null)
+                            {
+                                var currentVideoUrl = backgroundDict["videoUrl"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentVideoUrl) && !currentVideoUrl.StartsWith("http"))
+                                {
+                                    backgroundDict["videoUrl"] = Path.GetFileName(currentVideoUrl);
+                                }
+                            }
+
+                            frameConfigDict["background"] = backgroundDict;
+                        }
+
+                        configDict["frameConfig"] = frameConfigDict;
+                    }
+
+                    exportedFrameConfig = JsonSerializer.Serialize(configDict);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to update jsonFrameConfig for export: {ex.Message}");
+            }
+
+            // Update jsonFrameConfigRuntime to use relative paths for export
+            string exportedFrameConfigRuntime = frameLayout.JsonFrameConfigRuntime ?? "{}";
+            try
+            {
+                var frameConfigRuntime = JsonSerializer.Deserialize<JsonElement>(exportedFrameConfigRuntime);
+                if (frameConfigRuntime.ValueKind == JsonValueKind.Object)
+                {
+                    var configDict = new Dictionary<string, object?>();
+                    foreach (var prop in frameConfigRuntime.EnumerateObject())
+                    {
+                        configDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+
+                    if (configDict.TryGetValue("frameConfig", out var frameConfigObj) && frameConfigObj != null)
+                    {
+                        var frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                            JsonSerializer.Serialize(frameConfigObj)) ?? new Dictionary<string, object?>();
+
+                        if (frameConfigDict.TryGetValue("background", out var backgroundObj) && backgroundObj != null)
+                        {
+                            var backgroundDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                                JsonSerializer.Serialize(backgroundObj)) ?? new Dictionary<string, object?>();
+
+                            // Update background image URL to relative path if we're exporting the file
+                            if (backgroundImageFileName != null)
+                            {
+                                backgroundDict["imageUrl"] = $"images/{backgroundImageFileName}";
+                            }
+                            // If not exporting file, keep just filename format
+                            else if (backgroundDict.ContainsKey("imageUrl") && backgroundDict["imageUrl"] != null)
+                            {
+                                var currentImageUrl = backgroundDict["imageUrl"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentImageUrl) && !currentImageUrl.StartsWith("http"))
+                                {
+                                    backgroundDict["imageUrl"] = $"assets/{Path.GetFileName(currentImageUrl)}";
+                                }
+                            }
+
+                            // Update background video URL to relative path if we're exporting the file
+                            if (backgroundVideoFileName != null)
+                            {
+                                backgroundDict["videoUrl"] = $"videos/{backgroundVideoFileName}";
+                            }
+                            // If not exporting file, keep just filename format
+                            else if (backgroundDict.ContainsKey("videoUrl") && backgroundDict["videoUrl"] != null)
+                            {
+                                var currentVideoUrl = backgroundDict["videoUrl"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentVideoUrl) && !currentVideoUrl.StartsWith("http"))
+                                {
+                                    backgroundDict["videoUrl"] = $"videos/{Path.GetFileName(currentVideoUrl)}";
+                                }
+                            }
+
+                            frameConfigDict["background"] = backgroundDict;
+                        }
+
+                        configDict["frameConfig"] = frameConfigDict;
+                    }
+
+                    exportedFrameConfigRuntime = JsonSerializer.Serialize(configDict);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to update jsonFrameConfigRuntime for export: {ex.Message}");
+            }
+
+            var exportData = GenerateExportConfig(
+                frameLayout,
+                backgroundImageFileName,
+                backgroundVideoFileName,
+                exportedFrameConfig,
+                exportedFrameConfigRuntime,
+                exportedFrameElements,
+                packageContents);
 
             using var memoryStream = new MemoryStream();
             using (var archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true))
@@ -486,7 +953,7 @@ namespace JunctionRelayServer.Services
 
                 if (!string.IsNullOrEmpty(backgroundImagePath) && System.IO.File.Exists(backgroundImagePath))
                 {
-                    var imageEntry = archive.CreateEntry($"assets/{backgroundImageFileName}");
+                    var imageEntry = archive.CreateEntry($"images/{backgroundImageFileName}");
                     using (var imageStream = imageEntry.Open())
                     {
                         var imageBytes = await System.IO.File.ReadAllBytesAsync(backgroundImagePath);
@@ -501,6 +968,20 @@ namespace JunctionRelayServer.Services
                     {
                         var videoBytes = await System.IO.File.ReadAllBytesAsync(backgroundVideoPath);
                         await videoStream.WriteAsync(videoBytes, 0, videoBytes.Length);
+                    }
+                }
+
+                // Write element assets to ZIP
+                foreach (var asset in elementAssets.Values)
+                {
+                    if (System.IO.File.Exists(asset.physicalPath))
+                    {
+                        var assetEntry = archive.CreateEntry(asset.zipPath);
+                        using (var assetStream = assetEntry.Open())
+                        {
+                            var assetBytes = await System.IO.File.ReadAllBytesAsync(asset.physicalPath);
+                            await assetStream.WriteAsync(assetBytes, 0, assetBytes.Length);
+                        }
                     }
                 }
 
@@ -522,7 +1003,8 @@ namespace JunctionRelayServer.Services
                     if (System.IO.File.Exists(thumbnailPath))
                     {
                         var thumbnailFormat = frameLayout.ThumbnailFormat ?? "png";
-                        var thumbnailEntry = archive.CreateEntry($"thumbnail.{thumbnailFormat}");
+                        var thumbnailFileName = $"thumbnail.{thumbnailFormat}";
+                        var thumbnailEntry = archive.CreateEntry($"thumbnails/{thumbnailFileName}");
                         using (var thumbnailStream = thumbnailEntry.Open())
                         {
                             var thumbnailBytes = await System.IO.File.ReadAllBytesAsync(thumbnailPath);
@@ -685,7 +1167,7 @@ namespace JunctionRelayServer.Services
             string? savedRiveFileName = null;
             if (!string.IsNullOrEmpty(riveFile))
             {
-                var riveEntry = archive.GetEntry($"rive/{riveFile}") ?? archive.GetEntry(riveFile);
+                var riveEntry = archive.GetEntry($"rive/{riveFile}");
                 if (riveEntry != null)
                 {
                     var riveFileName = Path.GetFileNameWithoutExtension(riveFile);
@@ -707,7 +1189,7 @@ namespace JunctionRelayServer.Services
                 !backgroundImageUrl.StartsWith("https://"))
             {
                 var imageFileName = Path.GetFileName(backgroundImageUrl);
-                var imageEntry = archive.GetEntry($"assets/{imageFileName}") ?? archive.GetEntry(imageFileName);
+                var imageEntry = archive.GetEntry($"images/{imageFileName}");
 
                 if (imageEntry != null)
                 {
@@ -722,7 +1204,7 @@ namespace JunctionRelayServer.Services
                     using var imageFileStream = new FileStream(imageFilePath, FileMode.Create);
                     await imageStream.CopyToAsync(imageFileStream);
 
-                    backgroundImageUrl = $"/frameengine/assets/{savedImageFileName}";
+                    backgroundImageUrl = savedImageFileName;
                 }
             }
 
@@ -732,7 +1214,7 @@ namespace JunctionRelayServer.Services
                 !backgroundVideoUrl.StartsWith("https://"))
             {
                 var videoFileName = Path.GetFileName(backgroundVideoUrl);
-                var videoEntry = archive.GetEntry($"videos/{videoFileName}") ?? archive.GetEntry(videoFileName);
+                var videoEntry = archive.GetEntry($"videos/{videoFileName}");
 
                 if (videoEntry != null)
                 {
@@ -747,8 +1229,232 @@ namespace JunctionRelayServer.Services
                     using var videoFileStream = new FileStream(videoFilePath, FileMode.Create);
                     await videoStream.CopyToAsync(videoFileStream);
 
-                    backgroundVideoUrl = $"/frameengine/videos/{savedVideoFileName}";
+                    backgroundVideoUrl = savedVideoFileName;
                 }
+            }
+
+            // Update jsonFrameConfig with transformed background paths (Note: background URLs should be just filenames, not full paths)
+            try
+            {
+                var frameConfig = JsonSerializer.Deserialize<JsonElement>(jsonFrameConfig);
+                if (frameConfig.ValueKind == JsonValueKind.Object)
+                {
+                    var configDict = new Dictionary<string, object?>();
+                    foreach (var prop in frameConfig.EnumerateObject())
+                    {
+                        configDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+
+                    // Update background paths in nested structure to match root-level transformed paths
+                    if (configDict.TryGetValue("frameConfig", out var frameConfigObj) && frameConfigObj != null)
+                    {
+                        var frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                            JsonSerializer.Serialize(frameConfigObj)) ?? new Dictionary<string, object?>();
+
+                        if (frameConfigDict.TryGetValue("background", out var backgroundObj) && backgroundObj != null)
+                        {
+                            var backgroundDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                                JsonSerializer.Serialize(backgroundObj)) ?? new Dictionary<string, object?>();
+
+                            if (!string.IsNullOrEmpty(backgroundImageUrl))
+                            {
+                                backgroundDict["imageUrl"] = backgroundImageUrl;
+                            }
+
+                            if (!string.IsNullOrEmpty(backgroundVideoUrl))
+                            {
+                                backgroundDict["videoUrl"] = backgroundVideoUrl;
+                            }
+
+                            frameConfigDict["background"] = backgroundDict;
+                        }
+
+                        configDict["frameConfig"] = frameConfigDict;
+                    }
+
+                    jsonFrameConfig = JsonSerializer.Serialize(configDict);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to update jsonFrameConfig paths: {ex.Message}");
+            }
+
+            // Update jsonFrameConfigRuntime with transformed background paths
+            try
+            {
+                var frameConfigRuntime = JsonSerializer.Deserialize<JsonElement>(jsonFrameConfigRuntime);
+                if (frameConfigRuntime.ValueKind == JsonValueKind.Object)
+                {
+                    var configDict = new Dictionary<string, object?>();
+                    foreach (var prop in frameConfigRuntime.EnumerateObject())
+                    {
+                        configDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+
+                    // Update background paths in nested structure to match root-level transformed paths
+                    if (configDict.TryGetValue("frameConfig", out var frameConfigObj) && frameConfigObj != null)
+                    {
+                        var frameConfigDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                            JsonSerializer.Serialize(frameConfigObj)) ?? new Dictionary<string, object?>();
+
+                        if (frameConfigDict.TryGetValue("background", out var backgroundObj) && backgroundObj != null)
+                        {
+                            var backgroundDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                                JsonSerializer.Serialize(backgroundObj)) ?? new Dictionary<string, object?>();
+
+                            if (!string.IsNullOrEmpty(backgroundImageUrl))
+                            {
+                                backgroundDict["imageUrl"] = backgroundImageUrl;
+                            }
+
+                            if (!string.IsNullOrEmpty(backgroundVideoUrl))
+                            {
+                                backgroundDict["videoUrl"] = backgroundVideoUrl;
+                            }
+
+                            frameConfigDict["background"] = backgroundDict;
+                        }
+
+                        configDict["frameConfig"] = frameConfigDict;
+                    }
+
+                    jsonFrameConfigRuntime = JsonSerializer.Serialize(configDict);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to update jsonFrameConfigRuntime paths: {ex.Message}");
+            }
+
+            // Process element assets from jsonFrameElements
+            try
+            {
+                var elementsArray = JsonSerializer.Deserialize<JsonElement>(jsonFrameElements);
+                if (elementsArray.ValueKind == JsonValueKind.Array)
+                {
+                    var updatedElements = new List<JsonElement>();
+
+                    foreach (var element in elementsArray.EnumerateArray())
+                    {
+                        var elementDict = new Dictionary<string, object?>();
+
+                        // Copy all properties
+                        foreach (var prop in element.EnumerateObject())
+                        {
+                            elementDict[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                        }
+
+                        // Check element type and process assets
+                        if (element.TryGetProperty("type", out var elementTypeProperty))
+                        {
+                            var elementType = elementTypeProperty.GetString();
+
+                            if (element.TryGetProperty("properties", out var propertiesElement))
+                            {
+                                var properties = new Dictionary<string, object?>();
+                                foreach (var prop in propertiesElement.EnumerateObject())
+                                {
+                                    properties[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                                }
+
+                                // Handle asset-image elements
+                                if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var assetImageUrl))
+                                {
+                                    var imageUrl = assetImageUrl.GetString();
+                                    if (!string.IsNullOrEmpty(imageUrl) &&
+                                        !imageUrl.StartsWith("http://") &&
+                                        !imageUrl.StartsWith("https://"))
+                                    {
+                                        var imageFileName = Path.GetFileName(imageUrl);
+                                        var imageEntry = archive.GetEntry($"images/{imageFileName}");
+
+                                        if (imageEntry != null)
+                                        {
+                                            var imageName = Path.GetFileNameWithoutExtension(imageFileName);
+                                            var imageExtension = Path.GetExtension(imageFileName);
+                                            var savedElementImageFileName = GenerateUniqueFilename(assetsPath, imageName, imageExtension);
+
+                                            var imageFilePath = Path.Combine(assetsPath, savedElementImageFileName);
+                                            Directory.CreateDirectory(assetsPath);
+
+                                            using var imageStream = imageEntry.Open();
+                                            using var imageFileStream = new FileStream(imageFilePath, FileMode.Create);
+                                            await imageStream.CopyToAsync(imageFileStream);
+
+                                            properties["assetImageUrl"] = savedElementImageFileName;
+                                        }
+                                    }
+                                }
+
+                                // Handle asset-video elements
+                                if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var assetVideoUrl))
+                                {
+                                    var videoUrl = assetVideoUrl.GetString();
+                                    if (!string.IsNullOrEmpty(videoUrl) &&
+                                        !videoUrl.StartsWith("http://") &&
+                                        !videoUrl.StartsWith("https://"))
+                                    {
+                                        var videoFileName = Path.GetFileName(videoUrl);
+                                        var videoEntry = archive.GetEntry($"videos/{videoFileName}");
+
+                                        if (videoEntry != null)
+                                        {
+                                            var videoName = Path.GetFileNameWithoutExtension(videoFileName);
+                                            var videoExtension = Path.GetExtension(videoFileName);
+                                            var savedElementVideoFileName = GenerateUniqueFilename(videosPath, videoName, videoExtension);
+
+                                            var videoFilePath = Path.Combine(videosPath, savedElementVideoFileName);
+                                            Directory.CreateDirectory(videosPath);
+
+                                            using var videoStream = videoEntry.Open();
+                                            using var videoFileStream = new FileStream(videoFilePath, FileMode.Create);
+                                            await videoStream.CopyToAsync(videoFileStream);
+
+                                            properties["assetVideoUrl"] = savedElementVideoFileName;
+                                        }
+                                    }
+                                }
+
+                                // Handle asset-rive elements
+                                if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var assetRiveFile))
+                                {
+                                    var riveFileStr = assetRiveFile.GetString();
+                                    if (!string.IsNullOrEmpty(riveFileStr))
+                                    {
+                                        var riveEntry = archive.GetEntry($"rive/{riveFileStr}");
+
+                                        if (riveEntry != null)
+                                        {
+                                            var riveFileName = Path.GetFileNameWithoutExtension(riveFileStr);
+                                            var riveExtension = Path.GetExtension(riveFileStr);
+                                            var savedRiveFileName2 = GenerateUniqueFilename(rivePath, riveFileName, riveExtension);
+
+                                            var riveFilePath2 = Path.Combine(rivePath, savedRiveFileName2);
+                                            Directory.CreateDirectory(rivePath);
+
+                                            using var riveStream = riveEntry.Open();
+                                            using var riveFileStream = new FileStream(riveFilePath2, FileMode.Create);
+                                            await riveStream.CopyToAsync(riveFileStream);
+
+                                            properties["assetRiveFile"] = savedRiveFileName2;
+                                        }
+                                    }
+                                }
+
+                                elementDict["properties"] = properties;
+                            }
+                        }
+
+                        updatedElements.Add(JsonSerializer.SerializeToElement(elementDict));
+                    }
+
+                    jsonFrameElements = JsonSerializer.Serialize(updatedElements);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to process element assets during import: {ex.Message}");
             }
 
             var newFrameLayout = new Model_Frame_Layout
@@ -785,8 +1491,9 @@ namespace JunctionRelayServer.Services
 
             var layoutId = await CreateFrameLayoutAsync(newFrameLayout);
 
+            // Look for thumbnail in thumbnails/ folder
             var thumbnailEntry = archive.Entries.FirstOrDefault(e =>
-                e.Name.StartsWith("thumbnail.") &&
+                e.FullName.StartsWith("thumbnails/") &&
                 (e.Name.EndsWith(".png") || e.Name.EndsWith(".jpg") || e.Name.EndsWith(".jpeg") || e.Name.EndsWith(".webp")));
 
             if (thumbnailEntry != null)

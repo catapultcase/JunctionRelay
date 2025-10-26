@@ -292,43 +292,17 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            // Create Notifications table
+            // Notifications table removed - now using WebSocket-only push notifications with in-memory cache
+
+            // Create NotificationSettings table
             _db.Execute(@"
-                CREATE TABLE IF NOT EXISTS Notifications (
-                    Id TEXT PRIMARY KEY,
-                    Type TEXT NOT NULL DEFAULT 'info' CHECK(Type IN ('success', 'error', 'warning', 'info')),
-                    Message TEXT NOT NULL,
-                    Title TEXT,
-                    Category TEXT NOT NULL DEFAULT 'system' CHECK(Category IN ('api', 'auth', 'cloud', 'system')),
-                    Duration INTEGER,
-                    Persistent BOOLEAN NOT NULL DEFAULT 0,
-                    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    IsDelivered BOOLEAN NOT NULL DEFAULT 0,
-                    DeliveredAt DATETIME,
-                    ExpiresAt DATETIME,
-                    StructuredContent TEXT
+                CREATE TABLE IF NOT EXISTS NotificationSettings (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Category TEXT NOT NULL UNIQUE,
+                    Enabled BOOLEAN NOT NULL DEFAULT 1,
+                    DefaultDurationMs INTEGER NOT NULL DEFAULT 6000,
+                    Description TEXT
                 );
-            ");
-
-            // Create indexes for Notifications table
-            _db.Execute(@"
-                CREATE INDEX IF NOT EXISTS idx_notifications_pending ON Notifications(IsDelivered, CreatedAt);
-            ");
-
-            _db.Execute(@"
-                CREATE INDEX IF NOT EXISTS idx_notifications_category ON Notifications(Category);
-            ");
-
-            _db.Execute(@"
-                CREATE INDEX IF NOT EXISTS idx_notifications_created ON Notifications(CreatedAt);
-            ");
-
-            _db.Execute(@"
-                CREATE INDEX IF NOT EXISTS idx_notifications_expires_at ON Notifications(ExpiresAt);
-            ");
-
-            _db.Execute(@"
-                CREATE INDEX IF NOT EXISTS idx_notifications_pending_with_expiry ON Notifications(IsDelivered, ExpiresAt, CreatedAt);
             ");
 
             // Create DeviceI2CDevices table
@@ -630,6 +604,7 @@ namespace JunctionRelayServer.Services
                     CollectorType TEXT NOT NULL,
                     Description TEXT,
                     Status TEXT DEFAULT 'Offline',
+                    SecurityStatus TEXT DEFAULT 'Unlocked',
                     URL TEXT,
                     AccessToken TEXT,
                     ExternalAccessToken BOOLEAN DEFAULT 0,
@@ -874,9 +849,23 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
+            // Create LoggingSettings table for debug and logging configuration
+            _db.Execute(@"
+                CREATE TABLE IF NOT EXISTS LoggingSettings (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Category TEXT NOT NULL UNIQUE,
+                    Enabled INTEGER DEFAULT 1,
+                    LogIntervalMinutes INTEGER DEFAULT 60,
+                    Description TEXT,
+                    LastLoggedAt DATETIME,
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+
             // Create unique index for JunctionScreenLayouts
             _db.Execute(@"
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_junction_screen_unique 
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_junction_screen_unique
                 ON JunctionScreenLayouts(JunctionId, DeviceScreenId);
             ");
 
@@ -885,6 +874,7 @@ namespace JunctionRelayServer.Services
 
         public async Task SeedInitialSettingsAsync()
         {
+            // General application settings
             var defaultSettings = new List<(string Key, string Value, string Description)>
             {
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
@@ -902,19 +892,9 @@ namespace JunctionRelayServer.Services
                 ("mobile_show_navigation_row", "false", "If true, add a navigation bar to the bottom of the mobile experience"),
                 ("top_bar_show_current_version", "true", "If true, the current app version will be displayed in the navbar"),
                 ("top_bar_show_host_charts", "false", "If true, show the tab for host charts"),
-                ("notifications_enabled", "true", "Master toggle for the notification system"),
-                ("notifications_api_calls", "true", "Show notifications for API success/error events"),
-                ("notifications_auth_events", "true", "Show notifications for authentication events (login, logout, etc.)"),
-                ("notifications_cloud_sync", "true", "Show notifications for cloud synchronization events"),
-                ("notifications_system", "true", "Show notifications for system events (theme changes, updates, etc.)"),
-                ("notifications_backend_polling", "true", "Enable polling the backend for server-generated notifications"),
-                ("notifications_polling_interval", "15000", "How often to poll for backend notifications (milliseconds)"),
-                ("notifications_duration_success", "6000", "How long success notifications stay visible (milliseconds)"),
-                ("notifications_duration_error", "8000", "How long error notifications stay visible (milliseconds)"),
-                ("notifications_max_concurrent", "5", "Maximum number of notifications to show at once"),
                 ("service_connection_status_enabled", "true", "Master toggle for the connection status monitoring service"),
                 ("service_eventengine_enabled", "false", "Master toggle for the EventEngine service"),
-                ("service_heartbeats_enabled", "true", "Master toggle for the heartbeat monitoring service"),
+                ("service_heartbeats_enabled", "true", "Master toggle for the heartbeat monitoring service")
             };
 
             int addedCount = 0;
@@ -926,7 +906,7 @@ namespace JunctionRelayServer.Services
                 {
                     await Task.Yield();
                     _db.Execute(@"
-                        INSERT INTO Settings (Key, Value, Description) 
+                        INSERT INTO Settings (Key, Value, Description)
                         VALUES (@Key, @Value, @Description)",
                         new
                         {
@@ -940,6 +920,44 @@ namespace JunctionRelayServer.Services
             if (addedCount > 0)
             {
                 Console.WriteLine($"✅ Added {addedCount} missing settings to the database.");
+            }
+
+            // Notification category settings (stored in NotificationSettings table)
+            var notificationCategories = new List<(string Category, bool Enabled, int DefaultDurationMs, string Description)>
+            {
+                ("notifications_system", true, 6000, "System notifications (updates, theme changes, etc.)"),
+                ("notifications_api", true, 6000, "API operation notifications (success/error events)"),
+                ("notifications_auth", true, 8000, "Authentication notifications (login, logout, session events)"),
+                ("notifications_cloud", true, 6000, "Cloud synchronization notifications"),
+                ("notifications_junction_events", true, 5000, "Show notifications for junction start/stop/error events"),
+                ("notifications_collector_tests", true, 3000, "Show notifications for collector test progress and results"),
+                ("notifications_cloud_health_reports", true, 5000, "Show notifications for cloud health report sync events")
+            };
+
+            int notificationSettingsAdded = 0;
+            foreach (var category in notificationCategories)
+            {
+                var exists = _db.ExecuteScalar<int>("SELECT COUNT(*) FROM NotificationSettings WHERE Category = @Category",
+                                                   new { Category = category.Category }) > 0;
+                if (!exists)
+                {
+                    await Task.Yield();
+                    _db.Execute(@"
+                        INSERT INTO NotificationSettings (Category, Enabled, DefaultDurationMs, Description)
+                        VALUES (@Category, @Enabled, @DefaultDurationMs, @Description)",
+                        new
+                        {
+                            Category = category.Category,
+                            Enabled = category.Enabled,
+                            DefaultDurationMs = category.DefaultDurationMs,
+                            Description = category.Description
+                        });
+                    notificationSettingsAdded++;
+                }
+            }
+            if (notificationSettingsAdded > 0)
+            {
+                Console.WriteLine($"✅ Added {notificationSettingsAdded} notification settings to the database.");
             }
         }
 
@@ -956,6 +974,28 @@ namespace JunctionRelayServer.Services
             ("WebSocketPort", "INTEGER"),
             ("MqttPort", "INTEGER"),
             ("Hostname", "TEXT")
+                },
+                ["LoggingSettings"] = new (string, string)[]
+                {
+            ("MaxLogRetentionDays", "INTEGER DEFAULT 30"),
+            ("MaxLogFileSizeMB", "INTEGER DEFAULT 100"),
+            ("AutoCleanupEnabled", "INTEGER DEFAULT 1"),
+            ("LastCleanupAt", "DATETIME")
+                },
+                ["Collectors"] = new (string, string)[]
+                {
+            ("SecurityStatus", "TEXT DEFAULT 'Unlocked'")
+                },
+                ["Junctions"] = new (string, string)[]
+                {
+            ("AllowStartOnCollectorTestFailure", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("SendConfigPayload", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("SendSensorPayloads", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("SendStopPayload", "BOOLEAN NOT NULL DEFAULT 1")
+                },
+                ["DeviceScreens"] = new (string, string)[]
+                {
+            ("SupportsStopPayloads", "BOOLEAN NOT NULL DEFAULT 0")
                 }
             };
 

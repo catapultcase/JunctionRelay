@@ -21,6 +21,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useTheme } from '@mui/material/styles';
 import { FrameEngine_LayoutProperties } from './FrameEngine_LayoutProperties';
 import { FrameEngine_ElementList } from './FrameEngine_ElementList';
+import { FrameEngine_BindingsPanel } from './FrameEngine_BindingsPanel';
 import type {
     FrameLayoutConfig,
     PlacedElement,
@@ -43,6 +44,10 @@ interface FrameEngine_PropertiesPanelProps {
     onElementLockToggle: (elementId: string) => void;
     discoveredMachines?: DiscoveredStateMachine[];
     discoveredBindings?: DiscoveredDataBinding[];
+    elementRiveDiscoveries?: Record<string, {
+        machines: DiscoveredStateMachine[];
+        bindings: DiscoveredDataBinding[];
+    }>;
 }
 
 export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelProps> = ({
@@ -59,11 +64,12 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     onElementLockToggle,
     discoveredMachines = [],
     discoveredBindings = [],
+    elementRiveDiscoveries = {},
 }) => {
     const theme = useTheme();
-    const [activeSection, setActiveSection] = useState<'layout' | 'element'>('layout');
+    const [activeSection, setActiveSection] = useState<'layout' | 'element' | 'bindings'>('layout');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography'])
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'bindings-background', 'bindings-assets', 'bindings-sensors'])
     );
 
     // Switch to element properties when elements are selected
@@ -135,13 +141,21 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     const layoutButtonStyle = {
         ...getButtonStyle(activeSection === 'layout'),
         borderTopLeftRadius: '4px',
-        borderBottomLeftRadius: '4px',
+        borderBottomRightRadius: '0',
     };
 
     const elementButtonStyle = {
         ...getButtonStyle(activeSection === 'element'),
         borderTopRightRadius: '4px',
+        borderBottomLeftRadius: '0',
+    };
+
+    const bindingsButtonStyle = {
+        ...getButtonStyle(activeSection === 'bindings'),
+        borderRadius: '0',
+        borderBottomLeftRadius: '4px',
         borderBottomRightRadius: '4px',
+        marginTop: '4px',
     };
 
     return (
@@ -149,42 +163,62 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
             {/* Header */}
             <div style={headerStyle}>
                 <h3 style={titleStyle}>Layout & Elements</h3>
-                <div style={{ display: 'flex', marginTop: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', marginTop: '8px' }}>
+                    <div style={{ display: 'flex' }}>
+                        <button
+                            onClick={() => setActiveSection('layout')}
+                            style={layoutButtonStyle}
+                            onMouseEnter={(e) => {
+                                if (activeSection !== 'layout') {
+                                    e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                        ? theme.palette.grey[800]
+                                        : theme.palette.grey[200];
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (activeSection !== 'layout') {
+                                    e.currentTarget.style.backgroundColor = theme.palette.background.default;
+                                }
+                            }}
+                        >
+                            Layout
+                        </button>
+                        <button
+                            onClick={() => setActiveSection('element')}
+                            style={elementButtonStyle}
+                            onMouseEnter={(e) => {
+                                if (activeSection !== 'element') {
+                                    e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                        ? theme.palette.grey[800]
+                                        : theme.palette.grey[200];
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (activeSection !== 'element') {
+                                    e.currentTarget.style.backgroundColor = theme.palette.background.default;
+                                }
+                            }}
+                        >
+                            Elements {elements.length > 0 && `(${elements.length})`}
+                        </button>
+                    </div>
                     <button
-                        onClick={() => setActiveSection('layout')}
-                        style={layoutButtonStyle}
+                        onClick={() => setActiveSection('bindings')}
+                        style={bindingsButtonStyle}
                         onMouseEnter={(e) => {
-                            if (activeSection !== 'layout') {
+                            if (activeSection !== 'bindings') {
                                 e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
                                     ? theme.palette.grey[800]
                                     : theme.palette.grey[200];
                             }
                         }}
                         onMouseLeave={(e) => {
-                            if (activeSection !== 'layout') {
+                            if (activeSection !== 'bindings') {
                                 e.currentTarget.style.backgroundColor = theme.palette.background.default;
                             }
                         }}
                     >
-                        Layout
-                    </button>
-                    <button
-                        onClick={() => setActiveSection('element')}
-                        style={elementButtonStyle}
-                        onMouseEnter={(e) => {
-                            if (activeSection !== 'element') {
-                                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
-                                    ? theme.palette.grey[800]
-                                    : theme.palette.grey[200];
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            if (activeSection !== 'element') {
-                                e.currentTarget.style.backgroundColor = theme.palette.background.default;
-                            }
-                        }}
-                    >
-                        Elements {elements.length > 0 && `(${elements.length})`}
+                        Bindings
                     </button>
                 </div>
             </div>
@@ -204,7 +238,7 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                         discoveredMachines={discoveredMachines}
                         discoveredBindings={discoveredBindings}
                     />
-                ) : (
+                ) : activeSection === 'element' ? (
                     <FrameEngine_ElementList
                         elements={elements}
                         selectedElements={selectedElements}
@@ -214,6 +248,19 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
                         onElementReorder={onElementReorder}
                         onElementVisibilityToggle={onElementVisibilityToggle}
                         onElementLockToggle={onElementLockToggle}
+                    />
+                ) : (
+                    <FrameEngine_BindingsPanel
+                        layout={layout}
+                        elements={elements}
+                        onLayoutUpdate={onLayoutUpdate}
+                        onElementUpdate={onElementUpdate}
+                        onElementSelect={onElementSelect}
+                        expandedSections={expandedSections}
+                        onToggleSection={toggleSection}
+                        discoveredMachines={discoveredMachines}
+                        discoveredBindings={discoveredBindings}
+                        elementRiveDiscoveries={elementRiveDiscoveries}
                     />
                 )}
             </div>

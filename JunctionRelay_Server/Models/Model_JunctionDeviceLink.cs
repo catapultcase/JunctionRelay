@@ -41,6 +41,8 @@ namespace JunctionRelayServer.Models
         public string? DeviceName { get; set; }
         public string? DeviceDescription { get; set; }
         public string? DeviceStatus { get; set; }
+        public int? DevicePollRate { get; set; }
+        public int? DeviceSendRate { get; set; }
 
         public List<Model_JunctionScreenLayout> ScreenLayouts { get; set; } = new();
     }

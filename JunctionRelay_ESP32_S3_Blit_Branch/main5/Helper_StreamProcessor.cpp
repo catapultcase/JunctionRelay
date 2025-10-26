@@ -113,10 +113,17 @@ void Helper_StreamProcessor::processData(uint8_t* data, size_t length) {
         return;
     }
 
-    // Check for chunked messages at the start of new messages only
+    // Check for special message types at the start of new messages only
     if (streamReadingHeader && streamBytesRead == 0 && length > 0) {
+        // Check for chunked messages first
         if (isChunkedMessage(data, length)) {
             handleChunkedMessage(data, length);
+            return;
+        }
+        
+        // Check for plain JSON binary (like blit_config)
+        if (isPlainJsonBinary(data, length)) {
+            handlePlainJsonBinary(data, length);
             return;
         }
     }
@@ -417,6 +424,14 @@ void Helper_StreamProcessor::handleChunkedMessage(uint8_t* payload, size_t lengt
     }
 }
 
+void Helper_StreamProcessor::handlePlainJsonBinary(uint8_t* data, size_t length) {
+    Serial.printf("[StreamProcessor] Plain JSON binary detected (%u bytes)\n", length);
+    
+    // Forward directly to screen router as JSON config
+    forwardToScreenRouter(data, length);
+    messagesProcessed++;
+}
+
 void Helper_StreamProcessor::processReassembledMessage(uint8_t* data, size_t length) {
     Serial.printf("[StreamProcessor] Processing reassembled message (%u bytes)\n", length);
     
@@ -487,6 +502,14 @@ bool Helper_StreamProcessor::isChunkedMessage(uint8_t* payload, size_t length) {
     }
     
     return memcmp(payload, chunkStart, chunkStartLen) == 0;
+}
+
+bool Helper_StreamProcessor::isPlainJsonBinary(uint8_t* payload, size_t length) {
+    // Check if it starts with '{'
+    if (length > 0 && payload[0] == '{') {
+        return true;
+    }
+    return false;
 }
 
 void Helper_StreamProcessor::resetStreamState() {
@@ -579,6 +602,7 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
     } else if (strcmp(type, "config") == 0 || 
                strcmp(type, "rive_config") == 0 ||
                strcmp(type, "rive_sensor") == 0 ||
+               strcmp(type, "blit_config") == 0 ||
                strcmp(type, "blit_frame") == 0) {
         if (configQueue && xQueueSend(configQueue, &doc, 0) == pdTRUE) {
             // Queued successfully
@@ -609,7 +633,7 @@ void Helper_StreamProcessor::forwardToScreenRouter(uint8_t* data, size_t length)
     }
 }
 
-// Chunk management methods (simplified from original)
+// Chunk management methods
 ChunkBuffer* Helper_StreamProcessor::getOrCreateChunkBuffer(String messageId, int totalSize, int totalChunks) {
     auto it = activeChunks.find(messageId);
     if (it != activeChunks.end()) {

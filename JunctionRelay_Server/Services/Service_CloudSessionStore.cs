@@ -159,6 +159,35 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        public async Task<(bool success, string? message, string? newToken)> ForceRefreshTokenAsync()
+        {
+            Console.WriteLine("[CLOUD_SESSION] 🔄 Force refresh requested");
+
+            // Clear access token to force refresh
+            ClearAccessTokenOnly();
+
+            try
+            {
+                var newToken = await GetValidAccessTokenAsync();
+
+                if (!string.IsNullOrEmpty(newToken))
+                {
+                    Console.WriteLine("[CLOUD_SESSION] ✅ Force refresh completed successfully");
+                    return (true, "Token refreshed successfully", newToken);
+                }
+                else
+                {
+                    Console.WriteLine("[CLOUD_SESSION] ❌ Force refresh failed - no token returned");
+                    return (false, "Token refresh failed - no token returned", null);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_SESSION] ❌ Force refresh failed: {ex.Message}");
+                return (false, $"Token refresh failed: {ex.Message}", null);
+            }
+        }
+
         public async Task<string?> GetValidAccessTokenAsync(CancellationToken cancellationToken = default)
         {
             EnsureInitialized();

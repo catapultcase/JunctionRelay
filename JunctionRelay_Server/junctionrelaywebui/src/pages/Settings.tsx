@@ -34,12 +34,12 @@ import History from '@mui/icons-material/History';
 import PeopleIcon from '@mui/icons-material/People';
 import StorageIcon from '@mui/icons-material/Storage';
 import MemoryIcon from '@mui/icons-material/Memory';
-import TableChartIcon from '@mui/icons-material/TableChart';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SecurityIcon from '@mui/icons-material/Security';
 import BackupIcon from '@mui/icons-material/Backup';
+import BugReportIcon from '@mui/icons-material/BugReport';
 
 import Settings_UserManagement from '../components/Settings_UserManagement';
 import Settings_SessionManagement from '../components/Settings_SessionManagement';
@@ -47,6 +47,9 @@ import Settings_Database from '../components/Settings_Database';
 import Settings_Backups from '../components/Settings_CloudBackups';
 import StreamHistorySettings from '../components/StreamHistorySettings';
 import DashboardSettings from '../components/dashboard/Dashboard_Settings';
+import Settings_DebugLogging from '../components/Settings_DebugLogging';
+import Settings_NotificationCard from '../components/Settings_NotificationCard';
+import Settings_LocalCache from '../components/Settings_LocalCache';
 
 
 interface SettingItem {
@@ -106,8 +109,9 @@ const Settings: React.FC = () => {
                 dashboardSettings: false,
                 database: false,
                 cloudBackups: false,
+                debugLogging: false,
                 cache: false,
-                columns: false,
+                localCache: false,
                 appSettings: true
             };
         } catch {
@@ -119,8 +123,9 @@ const Settings: React.FC = () => {
                 dashboardSettings: false,
                 database: false,
                 cloudBackups: false,
+                debugLogging: false,
                 cache: false,
-                columns: false,
+                localCache: false,
                 appSettings: true
             };
         }
@@ -753,7 +758,39 @@ const Settings: React.FC = () => {
                     </AccordionDetails>
                 </Accordion>
 
+                {/* Notifications */}
+                <Accordion
+                    expanded={accordionStates.pushNotifications}
+                    onChange={handleAccordionChange('pushNotifications')}
+                    elevation={isMobile ? 1 : 2}
+                >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <NotificationsIcon sx={{ mr: 1 }} />
+                            <Typography variant="h6">Notifications</Typography>
+                        </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
+                        <Settings_NotificationCard />
+                    </AccordionDetails>
+                </Accordion>
 
+                {/* Debug & Logging */}
+                <Accordion
+                    expanded={accordionStates.debugLogging}
+                    onChange={handleAccordionChange('debugLogging')}
+                    elevation={isMobile ? 1 : 2}
+                >
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <BugReportIcon sx={{ mr: 1 }} />
+                            <Typography variant="h6">Debug & Logging</Typography>
+                        </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
+                        <Settings_DebugLogging />
+                    </AccordionDetails>
+                </Accordion>
 
                 {/* Stream History Settings */}
                 <Accordion
@@ -895,133 +932,20 @@ const Settings: React.FC = () => {
                     </AccordionDetails>
                 </Accordion>
 
-                {/* Column Settings */}
+                {/* Local Cache Settings */}
                 <Accordion
-                    expanded={accordionStates.columns}
-                    onChange={handleAccordionChange('columns')}
+                    expanded={accordionStates.localCache}
+                    onChange={handleAccordionChange('localCache')}
                     elevation={isMobile ? 1 : 2}
                 >
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <TableChartIcon sx={{ mr: 1 }} />
-                            <Typography variant="h6">Table Columns</Typography>
+                            <StorageIcon sx={{ mr: 1 }} />
+                            <Typography variant="h6">Local Cache</Typography>
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails sx={{ px: isMobile ? 1 : 3 }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Reset table column preferences and visibility settings.
-                        </Typography>
-
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Button
-                                variant="outlined"
-                                color="warning"
-                                startIcon={<SettingsBackupRestoreIcon />}
-                                onClick={() => {
-                                    try {
-                                        const keys = [];
-                                        for (let i = 0; i < localStorage.length; i++) {
-                                            const key = localStorage.key(i);
-                                            if (key) keys.push(key);
-                                        }
-
-                                        const columnKeys = keys.filter(key =>
-                                            key.includes('columns') ||
-                                            key.includes('_sensors_') ||
-                                            key.includes('junction') ||
-                                            key.includes('collector') ||
-                                            key.includes('devices_visible_columns') ||
-                                            key.includes('devices_sort_state') ||
-                                            key.includes('devices_refresh_interval') ||
-                                            key.includes('dashboard_visible_junction_cols') ||
-                                            key.includes('junction_sort_state') ||
-                                            key.includes('_unified') ||
-                                            key.includes('_jr') ||
-                                            key.includes('_other')
-                                        );
-
-                                        let resetCount = 0;
-                                        columnKeys.forEach(key => {
-                                            localStorage.removeItem(key);
-                                            resetCount++;
-                                        });
-
-                                        showSnackbar(`Reset ${resetCount} settings. Refresh to see changes.`, "success");
-                                    } catch (error) {
-                                        console.error("Error resetting column preferences:", error);
-                                        showSnackbar("Error resetting column preferences", "error");
-                                    }
-                                }}
-                                size="small"
-                                fullWidth={isMobile}
-                            >
-                                Reset All Columns
-                            </Button>
-
-                            <Box sx={{
-                                display: 'flex',
-                                flexDirection: isMobile ? 'column' : 'row',
-                                flexWrap: 'wrap',
-                                gap: 1
-                            }}>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => {
-                                        localStorage.removeItem('junction_sensors_columns');
-                                        showSnackbar("Reset Junction columns", "success");
-                                    }}
-                                    sx={{ flex: isMobile ? 'none' : '1 1 calc(50% - 4px)' }}
-                                    fullWidth={isMobile}
-                                >
-                                    Junctions
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => {
-                                        localStorage.removeItem('dashboard_visible_junction_cols');
-                                        showSnackbar("Reset Dashboard columns", "success");
-                                    }}
-                                    sx={{ flex: isMobile ? 'none' : '1 1 calc(50% - 4px)' }}
-                                    fullWidth={isMobile}
-                                >
-                                    Dashboard
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => {
-                                        localStorage.removeItem('devices_visible_columns_jr');
-                                        localStorage.removeItem('devices_visible_columns_other');
-                                        showSnackbar("Reset Device columns", "success");
-                                    }}
-                                    sx={{ flex: isMobile ? 'none' : '1 1 calc(50% - 4px)' }}
-                                    fullWidth={isMobile}
-                                >
-                                    Devices
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => {
-                                        const keys = [];
-                                        for (let i = 0; i < localStorage.length; i++) {
-                                            const key = localStorage.key(i);
-                                            if (key && key.includes('collector') && key.includes('columns')) {
-                                                keys.push(key);
-                                            }
-                                        }
-                                        keys.forEach(key => localStorage.removeItem(key));
-                                        showSnackbar("Reset Collector columns", "success");
-                                    }}
-                                    sx={{ flex: isMobile ? 'none' : '1 1 calc(50% - 4px)' }}
-                                    fullWidth={isMobile}
-                                >
-                                    Collectors
-                                </Button>
-                            </Box>
-                        </Box>
+                        <Settings_LocalCache />
                     </AccordionDetails>
                 </Accordion>
 

@@ -64,11 +64,13 @@ import {
     ShowChart as ShowChartIcon,
     Apps as AppsIcon,
     Extension as ExtensionIcon,
+    CloudUpload as CloudUploadIcon,
 } from '@mui/icons-material';
 import FrameEngine_Gallery from './FrameEngine_Gallery';
+import FrameEngine_CloudVersionsModal from './FrameEngine_CloudVersionsModal';
 
 // Types
-type ViewMode = 'gallery' | 'table' | 'standard' | 'mini';
+type ViewMode = 'gallery' | 'table';
 type SortDirection = 'asc' | 'desc';
 
 interface FrameLayoutListItem {
@@ -103,7 +105,9 @@ interface FrameEngineListingSectionProps {
     onDelete: (e: React.MouseEvent, id: string) => void;
     onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
+    onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void;
     isMobile?: boolean;
+    hasProLicense?: boolean;
 }
 
 // Column definitions
@@ -133,179 +137,6 @@ const getFrameLayoutTypeInfo = (type: string) => {
     return typeMap[type] || { color: "default" as const, icon: <PhotoIcon fontSize="small" /> };
 };
 
-// Memoized Frame Layout Card component for tile views
-const FrameLayoutCard = memo(({
-    frameLayout,
-    viewMode,
-    onDelete,
-    onEdit,
-    onClone,
-}: {
-    frameLayout: FrameLayoutListItem,
-    viewMode: 'standard' | 'mini',
-    onDelete: (e: React.MouseEvent, id: string) => void,
-    onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-    onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
-}) => {
-    const navigate = useNavigate();
-    const typeInfo = getFrameLayoutTypeInfo(frameLayout.layoutType);
-
-    return (
-        <Card
-            variant="outlined"
-            sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s ease-in-out',
-                position: 'relative',
-                minHeight: viewMode === 'mini' ? 120 : 220,
-                display: 'flex',
-                flexDirection: 'column',
-                '&:hover': {
-                    boxShadow: 6,
-                    transform: 'translateY(-2px)',
-                    backgroundColor: 'action.hover'
-                },
-                border: '1px solid',
-                borderColor: frameLayout.isTemplate ? 'success.main' : 'divider',
-            }}
-            onClick={() => navigate(`/configure-frame/${frameLayout.id}`)}
-        >
-            {frameLayout.isTemplate && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: viewMode === 'mini' ? 4 : 8,
-                        right: viewMode === 'mini' ? 4 : 8,
-                        backgroundColor: 'success.main',
-                        color: 'success.contrastText',
-                        px: viewMode === 'mini' ? 0.5 : 1.5,
-                        py: viewMode === 'mini' ? 0.25 : 0.5,
-                        borderRadius: viewMode === 'mini' ? 1 : 2,
-                        fontSize: viewMode === 'mini' ? '0.6rem' : '0.75rem',
-                        fontWeight: 'bold',
-                        textTransform: 'uppercase',
-                        boxShadow: 1,
-                        zIndex: 1
-                    }}
-                >
-                    {viewMode === 'mini' ? '●' : 'TEMPLATE'}
-                </Box>
-            )}
-
-            <CardContent sx={{
-                flex: 1,
-                pt: viewMode === 'mini' ? 2.5 : 5,
-                p: viewMode === 'mini' ? 1 : 2
-            }}>
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    mb: viewMode === 'mini' ? 0.5 : 1,
-                    gap: 0.5
-                }}>
-                    {typeInfo.icon}
-                    <Typography
-                        variant={viewMode === 'mini' ? 'body2' : 'h6'}
-                        sx={{
-                            fontSize: viewMode === 'mini' ? '0.75rem' : { xs: '1rem', sm: '1.1rem' },
-                            fontWeight: 600,
-                            lineHeight: viewMode === 'mini' ? 1.2 : 1.5,
-                            flex: 1
-                        }}
-                        noWrap
-                    >
-                        {frameLayout.displayName}
-                    </Typography>
-                </Box>
-
-                {viewMode === 'standard' && (
-                    <>
-                        <Divider sx={{ mb: 1 }} />
-                        <Box sx={{ mb: 1 }}>
-                            <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                <strong>Type:</strong> {frameLayout.layoutType || "Unknown"}
-                            </Typography>
-                            {frameLayout.description && (
-                                <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                    <strong>Description:</strong> {frameLayout.description}
-                                </Typography>
-                            )}
-                        </Box>
-                    </>
-                )}
-
-                <Box sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: viewMode === 'mini' ? 0.5 : 1,
-                    mt: 'auto'
-                }}>
-                    <Chip
-                        label={viewMode === 'mini'
-                            ? frameLayout.layoutType?.substring(0, 8) + (frameLayout.layoutType?.length > 8 ? '...' : '')
-                            : frameLayout.layoutType
-                        }
-                        color={typeInfo.color}
-                        size="small"
-                        sx={{
-                            fontSize: viewMode === 'mini' ? '0.6rem' : '0.7rem',
-                            height: viewMode === 'mini' ? 18 : 22
-                        }}
-                    />
-                </Box>
-
-                {viewMode === 'standard' && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEdit(e, frameLayout);
-                                    }}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <Tooltip title="Clone">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClone(e, frameLayout);
-                                }}
-                            >
-                                <ContentCopyIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Delete">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(e, frameLayout.id);
-                                    }}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
-                )}
-            </CardContent>
-        </Card>
-    );
-});
-
 // Memoized TableRow component
 const FrameLayoutTableRow = memo(({
     frameLayout,
@@ -314,6 +145,8 @@ const FrameLayoutTableRow = memo(({
     onDelete,
     onEdit,
     onClone,
+    hasProLicense,
+    onShowSnackbar,
 }: {
     frameLayout: FrameLayoutListItem,
     visibleCols: string[],
@@ -321,8 +154,11 @@ const FrameLayoutTableRow = memo(({
     onDelete: (e: React.MouseEvent, id: string) => void,
     onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
+    hasProLicense?: boolean,
+    onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void,
 }) => {
     const navigate = useNavigate();
+    const [cloudVersionsModalOpen, setCloudVersionsModalOpen] = React.useState(false);
 
     const getFrameLayoutCell = useCallback((field: string) => {
         switch (field) {
@@ -397,6 +233,19 @@ const FrameLayoutTableRow = memo(({
                             </IconButton>
                         </Tooltip>
                         {!frameLayout.isTemplate && (
+                            <Tooltip title="Cloud Versions (Pro)">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCloudVersionsModalOpen(true);
+                                    }}
+                                >
+                                    <CloudUploadIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        {!frameLayout.isTemplate && (
                             <Tooltip title="Delete">
                                 <IconButton
                                     size="small"
@@ -414,6 +263,7 @@ const FrameLayoutTableRow = memo(({
     }, [frameLayout, onDelete, onEdit, onClone]);
 
     return (
+        <>
         <TableRow
             hover
             onClick={() => navigate(`/configure-frame/${frameLayout.id}`)}
@@ -462,6 +312,16 @@ const FrameLayoutTableRow = memo(({
                 );
             })}
         </TableRow>
+    
+        <FrameEngine_CloudVersionsModal
+            open={cloudVersionsModalOpen}
+            onClose={() => setCloudVersionsModalOpen(false)}
+            templateId={parseInt(frameLayout.id, 10)}
+            templateName={frameLayout.displayName}
+            hasProLicense={hasProLicense || false}
+            onShowSnackbar={onShowSnackbar}
+        />
+        </>
     );
 });
 
@@ -478,7 +338,9 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
     onDelete,
     onEdit,
     onClone,
-    isMobile = false
+    onShowSnackbar,
+    isMobile = false,
+    hasProLicense = false
 }) => {
     const [anchorCols, setAnchorCols] = useState<HTMLElement | null>(null);
 
@@ -529,24 +391,6 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
         });
     }, [frameLayouts, sortState]);
 
-    const getGridColumns = () => {
-        if (viewMode === 'mini') {
-            return {
-                xs: 'repeat(2, 1fr)',
-                sm: 'repeat(3, 1fr)',
-                md: 'repeat(4, 1fr)',
-                lg: 'repeat(6, 1fr)'
-            };
-        } else if (viewMode === 'standard') {
-            return {
-                xs: '1fr',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(3, 1fr)',
-                lg: 'repeat(4, 1fr)'
-            };
-        }
-        return {};
-    };
 
     const handleViewModeChange = useCallback((event: React.MouseEvent<HTMLElement>, newViewMode: ViewMode) => {
         if (newViewMode !== null) {
@@ -612,18 +456,6 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
                                 <TableViewIcon />
                                 <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
                                     Table
-                                </Typography>
-                            </ToggleButton>
-                            <ToggleButton value="standard" aria-label="standard tiles">
-                                <DashboardIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Standard
-                                </Typography>
-                            </ToggleButton>
-                            <ToggleButton value="mini" aria-label="mini tiles">
-                                <ViewModuleIcon />
-                                <Typography variant="caption" sx={{ ml: 0.5, display: { xs: 'none', sm: 'inline' } }}>
-                                    Mini
                                 </Typography>
                             </ToggleButton>
                         </ToggleButtonGroup>
@@ -703,6 +535,8 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
                     onDelete={onDelete}
                     onEdit={onEdit}
                     onClone={onClone}
+                    onShowSnackbar={onShowSnackbar}
+                    hasProLicense={hasProLicense}
                 />
             ) : viewMode === 'table' ? (
                 <TableContainer component={Paper} sx={{ mb: 4 }}>
@@ -775,6 +609,8 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
                                         onDelete={onDelete}
                                         onEdit={onEdit}
                                         onClone={onClone}
+                                        hasProLicense={hasProLicense}
+                                        onShowSnackbar={onShowSnackbar}
                                     />
                                 ))
                             ) : (
@@ -787,32 +623,7 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
                         </TableBody>
                     </Table>
                 </TableContainer>
-            ) : (
-                /* Tile Views (Standard/Mini) */
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: getGridColumns(),
-                    gap: viewMode === 'mini' ? 1 : 2,
-                    mb: 4
-                }}>
-                    {sortedFrameLayouts.length > 0 ? (
-                        sortedFrameLayouts.map((frameLayout) => (
-                            <FrameLayoutCard
-                                key={frameLayout.id}
-                                frameLayout={frameLayout}
-                                viewMode={viewMode as 'standard' | 'mini'}
-                                onDelete={onDelete}
-                                onEdit={onEdit}
-                                onClone={onClone}
-                            />
-                        ))
-                    ) : (
-                        <Paper sx={{ p: 3, textAlign: 'center', gridColumn: '1 / -1' }}>
-                            <Typography color="textSecondary">No frame layouts found</Typography>
-                        </Paper>
-                    )}
-                </Box>
-            )}
+            ) : null}
         </Box>
     );
 };

@@ -233,7 +233,7 @@ const FrameEngineManagementSection: React.FC<FrameEngineManagementSectionProps> 
             </Box>
 
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Monitor and clean up orphaned Rive files, thumbnails, frame images, and assets (images, videos, etc.) that are no longer used by any frame layouts. This will prevent unnecessary files from being added to your database backups.
+                Monitor and clean up orphaned Rive files, thumbnails, frame images, and media files (images, videos, etc.) that are no longer used by any frame layouts. This will prevent unnecessary files from being added to your database backups.
             </Typography>
 
             <Divider sx={{ mb: 2 }} />

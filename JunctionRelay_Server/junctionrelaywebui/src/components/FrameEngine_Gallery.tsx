@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useCallback, memo } from 'react';
+import FrameEngine_CloudVersionsModal from './FrameEngine_CloudVersionsModal';
 import {
     Box,
     Card,
@@ -43,6 +44,7 @@ import {
     Image as ImageIcon,
     BrokenImage as BrokenImageIcon,
     Dashboard as DashboardIcon,
+    CloudUpload as CloudUploadIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -65,6 +67,8 @@ interface FrameEngine_GalleryProps {
     onDelete: (e: React.MouseEvent, id: string) => void;
     onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
+    onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void;
+    hasProLicense?: boolean;
 }
 
 // Thumbnail Image Component with loading states and fallbacks
@@ -179,15 +183,20 @@ const GalleryCard = memo(({
     frameLayout,
     onDelete,
     onEdit,
-    onClone
+    onClone,
+    onShowSnackbar,
+    hasProLicense
 }: {
     frameLayout: FrameLayoutListItem;
     onDelete: (e: React.MouseEvent, id: string) => void;
     onEdit: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
+    onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void;
+    hasProLicense?: boolean;
 }) => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [thumbnailError, setThumbnailError] = useState(false);
+    const [cloudVersionsModalOpen, setCloudVersionsModalOpen] = useState(false);
     const navigate = useNavigate();
 
     const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -254,7 +263,7 @@ const GalleryCard = memo(({
             <ThumbnailImage frameLayout={frameLayout} onImageError={handleThumbnailError} />
 
             {/* Card Content - matching FrameXchange layout */}
-            <CardContent sx={{ flex: 1, pt: 2, pb: 1.5, display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ position: 'relative', flex: 1, pt: 2, pb: 1.5, display: 'flex', flexDirection: 'column' }}>
                 {/* Title */}
                 <Box sx={{ mb: 1 }}>
                     <Typography
@@ -402,6 +411,43 @@ const GalleryCard = memo(({
                         )}
                     </Box>
                 </Box>
+                {/* Absolutely positioned Cloud Versions button */}
+                {!frameLayout.isTemplate && (
+                    <Box
+                        sx={{
+                            position: 'absolute',
+                            bottom: 16,
+                            right: 16,
+                            zIndex: 10
+                        }}
+                    >
+                        <Tooltip title="Cloud Versions (Pro)">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setCloudVersionsModalOpen(true);
+                                }}
+                                sx={{
+                                    color: 'info.main',
+                                    backgroundColor: 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: 'info.main',
+                                    boxShadow: 2,
+                                    '&:hover': {
+                                        backgroundColor: 'info.main',
+                                        color: 'info.contrastText',
+                                        boxShadow: 4
+                                    }
+                                }}
+                            >
+                                <CloudUploadIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                )}
+
             </CardContent>
 
             {/* Actions Menu - simplified to just handle edge cases if needed */}
@@ -414,6 +460,15 @@ const GalleryCard = memo(({
             >
                 {/* Keep menu for any future additional actions */}
             </Menu>
+
+            <FrameEngine_CloudVersionsModal
+                open={cloudVersionsModalOpen}
+                onClose={() => setCloudVersionsModalOpen(false)}
+                templateId={Number(frameLayout.id)}
+                templateName={frameLayout.displayName}
+                hasProLicense={hasProLicense || false}
+                onShowSnackbar={onShowSnackbar}
+            />
         </Card>
     );
 });
@@ -423,7 +478,9 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
     frameLayouts,
     onDelete,
     onEdit,
-    onClone
+    onClone,
+    onShowSnackbar,
+    hasProLicense = false
 }) => {
     if (frameLayouts.length === 0) {
         return (
@@ -456,6 +513,8 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
                     onDelete={onDelete}
                     onEdit={onEdit}
                     onClone={onClone}
+                    onShowSnackbar={onShowSnackbar}
+                    hasProLicense={hasProLicense}
                 />
             ))}
         </Box>

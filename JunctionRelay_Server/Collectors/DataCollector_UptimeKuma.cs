@@ -32,29 +32,6 @@ namespace JunctionRelayServer.Collectors
 
         private string _fullEndpoint = string.Empty;
 
-        // Helper method to detect decimal places in a value
-        private int GetDecimalPlaces(string value)
-        {
-            // Handle null or empty values
-            if (string.IsNullOrEmpty(value))
-                return 0;
-
-            // Try to parse as decimal to validate it's a numeric value
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0; // Non-numeric values (including "N/A") have 0 decimal places
-
-            // Convert to string to analyze decimal places
-            string valueStr = numericValue.ToString();
-
-            // Find the decimal point
-            int decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1)
-                return 0; // No decimal point found
-
-            // Count digits after decimal point
-            return valueStr.Length - decimalIndex - 1;
-        }
-
         public void ApplyConfiguration(Model_Collector collector)
         {
             _fullEndpoint = collector.URL?.TrimEnd('/')
@@ -96,7 +73,7 @@ namespace JunctionRelayServer.Collectors
                     Name = name,
                     Value = statusText,
                     Unit = "Status",
-                    DecimalPlaces = GetDecimalPlaces(statusText),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(statusText),
                     Category = "Uptime Kuma",
                     DeviceName = collector.Name,
                     SensorType = "Metrics",

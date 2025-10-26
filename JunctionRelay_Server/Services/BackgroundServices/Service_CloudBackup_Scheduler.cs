@@ -100,8 +100,11 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     return;
                 }
 
+                // Get backend ID to fetch settings for this specific backend
+                var backendId = backendIdentityService.GetBackendId();
+
                 // Get backup status from cloud
-                var statusResponse = await CallCloudApiAsync("GET", "/cloud-backups/status", token);
+                var statusResponse = await CallCloudApiAsync("GET", $"/cloud-backups/status?backendId={backendId}", token);
                 if (!statusResponse.Success)
                 {
                     Console.WriteLine($"[CLOUD_BACKUP] ⚠️ Failed to get backup status: {statusResponse.ErrorMessage}");
@@ -226,14 +229,11 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     keysProp.GetBoolean() : true;
                 var includeIdentity = settings.TryGetProperty("includeIdentity", out var identityProp) ?
                     identityProp.GetBoolean() : true;
-                var includeFrameEngine = settings.TryGetProperty("includeFrameEngine", out var frameProp) ?
-                    frameProp.GetBoolean() : false;
 
                 var options = new Service_Backups.BackupOptions
                 {
                     IncludeKeys = includeKeys,
                     IncludeIdentity = includeIdentity,
-                    IncludeFrameEngine = includeFrameEngine
                 };
 
                 // Create local backup

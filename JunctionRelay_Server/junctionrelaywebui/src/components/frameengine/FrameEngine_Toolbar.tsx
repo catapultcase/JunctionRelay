@@ -37,7 +37,6 @@ interface ToolbarProps {
     onRedo: () => void;
     onPreview: () => Promise<void>;
     onExport: () => Promise<void>;
-    onPublish: () => Promise<void>;
 }
 
 const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
@@ -56,7 +55,6 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     onRedo,
     onPreview,
     onExport,
-    onPublish,
 }) => {
     const theme = useTheme();
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -83,10 +81,6 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
     const handleExport = useCallback(() => {
         handleAction('export', onExport);
     }, [handleAction, onExport]);
-
-    const handlePublish = useCallback(() => {
-        handleAction('publish', onPublish);
-    }, [handleAction, onPublish]);
 
     const handlePreview = useCallback(() => {
         handleAction('preview', onPreview);
@@ -366,40 +360,6 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 >
                     {loadingAction === 'export' ? '⏳' : '📤'} Export
                 </button>
-
-                {isEditing && !layout.isPublished && (
-                    <button
-                        onClick={handlePublish}
-                        disabled={previewMode || isLoading || isDirty}
-                        style={{
-                            ...getButtonStyle(
-                                (previewMode || isLoading || isDirty) ? 'disabled' : 'default'
-                            ),
-                            background: (previewMode || isLoading || isDirty)
-                                ? theme.palette.action.disabledBackground
-                                : theme.palette.secondary.main,
-                            color: (previewMode || isLoading || isDirty)
-                                ? theme.palette.action.disabled
-                                : theme.palette.secondary.contrastText,
-                            border: (previewMode || isLoading || isDirty)
-                                ? `1px solid ${theme.palette.divider}`
-                                : `1px solid ${theme.palette.secondary.main}`,
-                        }}
-                        title={previewMode ? "Publish Layout (disabled in preview mode)" : "Publish Layout"}
-                        onMouseEnter={(e) => {
-                            if (!previewMode && !isLoading && !isDirty) {
-                                e.currentTarget.style.background = theme.palette.secondary.dark;
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            if (!previewMode && !isLoading && !isDirty) {
-                                e.currentTarget.style.background = theme.palette.secondary.main;
-                            }
-                        }}
-                    >
-                        {loadingAction === 'publish' ? '⏳' : '🚀'} Publish
-                    </button>
-                )}
             </div>
         </div>
     );

@@ -50,7 +50,7 @@ namespace JunctionRelayServer.Controllers
         // ============================================================================
 
         [HttpPost("cleanup")]
-        public async Task<ActionResult> CleanupOldFrames([FromBody] CleanupFramesRequest? request = null)
+        public Task<ActionResult> CleanupOldFrames([FromBody] CleanupFramesRequest? request = null)
         {
             try
             {
@@ -60,11 +60,11 @@ namespace JunctionRelayServer.Controllers
 
                 _frameEngine.CleanupOldFrames(maxAge);
 
-                return Ok(new { message = "Frame cleanup completed successfully" });
+                return Task.FromResult<ActionResult>(Ok(new { message = "Frame cleanup completed successfully" }));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error during cleanup", error = ex.Message });
+                return Task.FromResult<ActionResult>(StatusCode(500, new { message = "Error during cleanup", error = ex.Message }));
             }
         }
 

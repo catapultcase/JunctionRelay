@@ -196,8 +196,8 @@ export const getDefaultCanvasSettings = () => ({
 export const getInitialLayout = (): FrameLayoutConfig => ({
     displayName: '',
     layoutType: 'PRE_RENDERED_IMAGE',
-    width: 792,
-    height: 272,
+    width: 800,
+    height: 600,
     orientation: 'landscape',
     backgroundColor: '#FFFFFF',
     backgroundType: 'color',

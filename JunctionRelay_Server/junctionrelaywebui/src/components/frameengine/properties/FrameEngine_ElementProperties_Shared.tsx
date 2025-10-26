@@ -57,28 +57,34 @@ export const ColorInput: React.FC<ColorInputProps> = ({
     placeholder,
     value,
     onChange
-}) => (
-    <div>
-        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
-            {label}
-        </label>
-        <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-                type="color"
-                value={value || defaultValue}
-                onChange={(e) => onChange(property, e.target.value)}
-                style={{ width: '48px', height: '32px', border: '1px solid #ccc', borderRadius: '4px' }}
-            />
-            <input
-                type="text"
-                value={value || defaultValue}
-                onChange={(e) => onChange(property, e.target.value)}
-                style={{ ...inputStyle, flex: 1 }}
-                placeholder={placeholder || defaultValue}
-            />
+}) => {
+    // Only use hex colors for color input (it doesn't support "transparent" or other color names)
+    const isValidHexColor = (color: string) => /^#[0-9A-F]{6}$/i.test(color);
+    const colorInputValue = isValidHexColor(value) ? value : (isValidHexColor(defaultValue) ? defaultValue : '#000000');
+
+    return (
+        <div>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
+                {label}
+            </label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                    type="color"
+                    value={colorInputValue}
+                    onChange={(e) => onChange(property, e.target.value)}
+                    style={{ width: '48px', height: '32px', border: '1px solid #ccc', borderRadius: '4px' }}
+                />
+                <input
+                    type="text"
+                    value={value || defaultValue}
+                    onChange={(e) => onChange(property, e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                    placeholder={placeholder || defaultValue}
+                />
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 interface TypographyControlsProps {
     prefix?: string;

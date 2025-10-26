@@ -80,14 +80,14 @@ namespace JunctionRelayServer.Services
             _mqttService.SetService(service);
         }
 
-        public IEnumerable<object> GetActiveStreams(bool showCompressed = false)
+        public IEnumerable<Model_StreamInfo_DTO> GetActiveStreams(bool showCompressed = false)
         {
             return _streamingTokens.Select(kvp =>
             {
                 var info = kvp.Value;
-                return new
+                return new Model_StreamInfo_DTO
                 {
-                    StreamKey = kvp.Key,
+                    StreamKey = kvp.Key.ToString(),
                     DeviceName = info.DeviceName,
                     DeviceMac = "Unknown",
                     ScreenId = info.ScreenId,
@@ -100,11 +100,23 @@ namespace JunctionRelayServer.Services
                     SensorsCount = info.SensorsCount,
                     HasLastFrame = false,
                     LastFrameSize = 0,
-                    LastFrameTime = (DateTime?)null,
+                    LastFrameTime = null,
                     LastFrameLayoutType = "",
                     IsGatewayMode = false,
                     GatewayTarget = "",
-                    Health = new
+                    ConfigPayloadPrefix = info.StandardConfigPayloadPrefix,
+                    ConfigPayloadJson = showCompressed ? info.GetCompressedStandardConfigPayloadPreview() : info.StandardConfigPayloadJson,
+                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
+                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
+                    CompressedConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
+                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
+                    ConfigPayloadCompressed = info.GetCompressedStandardConfigPayloadPreview(),
+                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
+                    MqttConfigPayloadPrefix = info.MqttConfigPayloadPrefix,
+                    MqttConfigPayloadJson = info.MqttConfigPayloadJson,
+                    CompressedMqttConfigPayloadPrefix = info.CompressedMqttConfigPayloadPrefix,
+                    MqttConfigPayloadCompressed = info.GetCompressedMqttConfigPayloadPreview(),
+                    Health = new Model_StreamHealth_DTO
                     {
                         ConnectionState = info.Health.ConnectionState,
                         SuccessRate = info.Health.SuccessRate,
@@ -113,7 +125,6 @@ namespace JunctionRelayServer.Services
                         ConsecutiveFailures = info.Health.ConsecutiveFailures,
                         ConsecutiveSuccesses = info.Health.ConsecutiveSuccesses,
                         ConnectionRecreated = info.Health.ConnectionRecreated,
-                        LastWebSocketState = (string?)null,
                         AverageLatency = info.Health.AverageLatency,
                         MaxLatency = info.Health.MaxLatency,
                         MinLatency = info.Health.MinLatency,
@@ -123,34 +134,19 @@ namespace JunctionRelayServer.Services
                         IsFrameMode = false,
                         PayloadType = "JSON",
                         FramesSent = 0,
-                        PayloadsSent = 0, // MQTT doesn't track total payloads sent
+                        PayloadsSent = 0,
                         CurrentFrameLayoutType = "",
                         AverageFrameSize = 0.0,
                         MaxFrameSize = 0,
                         MinFrameSize = 0,
                         AverageFrameRenderTime = 0.0,
-                        MaxFrameRenderTime = 0.0,
-                        MinFrameRenderTime = 0.0,
-                        FrameHealthSummary = "",
+                        MaxFrameRenderTime = 0,
+                        MinFrameRenderTime = 0,
                         GatewayMessagesSent = 0,
-                        GatewayHealthSummary = "",
                         AcknowledgmentTimeouts = info.Health.AcknowledgmentTimeouts,
                         PublishFailures = info.Health.PublishFailures,
                         TopicLatencies = info.Health.TopicLatencies
-                    },
-                    ConfigPayloadPrefix = info.StandardConfigPayloadPrefix,
-                    ConfigPayloadJson = showCompressed ? info.GetCompressedStandardConfigPayloadPreview() : info.StandardConfigPayloadJson,
-                    LastSentPayloadPrefix = info.LastSentPayloadPrefix,
-                    LastSentPayloadJson = showCompressed ? info.GetCompressedLastSentPayloadPreview() : info.LastSentPayloadJson,
-                    CompressedConfigPayloadPrefix = info.CompressedStandardConfigPayloadPrefix,
-                    CompressedLastSentPayloadPrefix = info.CompressedLastSentPayloadPrefix,
-                    ConfigPayloadCompressed = info.GetCompressedStandardConfigPayloadPreview(),
-                    LastSentPayloadCompressed = info.GetCompressedLastSentPayloadPreview(),
-                    // MQTT-specific fields
-                    MqttConfigPayloadPrefix = info.MqttConfigPayloadPrefix,
-                    MqttConfigPayloadJson = info.MqttConfigPayloadJson,
-                    CompressedMqttConfigPayloadPrefix = info.CompressedMqttConfigPayloadPrefix,
-                    MqttConfigPayloadCompressed = info.GetCompressedMqttConfigPayloadPreview()
+                    }
                 };
             });
         }

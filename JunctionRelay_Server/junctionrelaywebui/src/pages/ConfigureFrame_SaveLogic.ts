@@ -154,6 +154,10 @@ export const performSave = async (
     elements: PlacedElement[],
     discoveredMachines: DiscoveredStateMachine[],
     discoveredBindings: DiscoveredDataBinding[],
+    elementRiveDiscoveries?: Record<string, {
+        machines: DiscoveredStateMachine[];
+        bindings: DiscoveredDataBinding[];
+    }>,
     customThumbnail?: File
 ): Promise<void> => {
     try {
@@ -285,31 +289,65 @@ export const performSave = async (
         };
 
         // Build standalone frameElements array
-        const frameElements = elements.map((element, index) => ({
-            id: element.id,
-            type: element.type,
-            position: {
-                x: element.x,
-                y: element.y,
-                width: element.width,
-                height: element.height
-            },
-            display: {
-                visible: element.visible ?? true,
-                locked: element.locked ?? false,
-                zIndex: element.zIndex || index,
-                order: index
-            },
-            properties: element.properties || {},
-            ...(element.sensorId ? { sensorId: element.sensorId } : {}),
-            lastModified: new Date().toISOString(),
-            ...(element.type === 'sensor' && element.properties.riveMapping ? {
-                riveConnections: {
-                    mappedInputs: [element.properties.riveMapping],
-                    lastMappingUpdate: new Date().toISOString()
-                }
-            } : {})
-        }));
+        const frameElements = elements.map((element, index) => {
+            const baseElement = {
+                id: element.id,
+                type: element.type,
+                position: {
+                    x: element.x,
+                    y: element.y,
+                    width: element.width,
+                    height: element.height
+                },
+                display: {
+                    visible: element.visible ?? true,
+                    locked: element.locked ?? false,
+                    zIndex: element.zIndex || index,
+                    order: index
+                },
+                properties: element.properties || {},
+                ...(element.sensorId ? { sensorId: element.sensorId } : {}),
+                lastModified: new Date().toISOString(),
+            };
+
+            // Add sensor rive mapping if applicable
+            if (element.type === 'sensor' && element.properties.riveMapping) {
+                return {
+                    ...baseElement,
+                    riveConnections: {
+                        mappedInputs: [element.properties.riveMapping],
+                        lastMappingUpdate: new Date().toISOString()
+                    }
+                };
+            }
+
+            // Add asset-rive discoveries if applicable
+            if (element.type === 'asset-rive' && elementRiveDiscoveries && elementRiveDiscoveries[element.id]) {
+                const discovery = elementRiveDiscoveries[element.id];
+                return {
+                    ...baseElement,
+                    riveDiscovery: {
+                        machines: discovery.machines.map(machine => ({
+                            name: machine.name,
+                            inputNames: machine.inputNames,
+                            inputs: machine.inputs.map(input => ({
+                                name: input.name,
+                                type: input.type,
+                                currentValue: input.currentValue
+                            }))
+                        })),
+                        bindings: discovery.bindings.map(binding => ({
+                            name: binding.name,
+                            type: binding.type,
+                            currentValue: binding.currentValue
+                        })),
+                        lastUpdate: new Date().toISOString()
+                    }
+                };
+            }
+
+            return baseElement;
+        });
 
         // Prepare the save data
         const saveData = {

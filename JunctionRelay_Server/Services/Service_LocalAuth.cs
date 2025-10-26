@@ -20,7 +20,7 @@
 using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Interfaces;
 using JunctionRelayServer.Models;
-using JunctionRelay_Server.Models.Requests;
+using JunctionRelayServer.Models.Requests;
 using System.Text.Json;
 
 namespace JunctionRelayServer.Services

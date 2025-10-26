@@ -427,39 +427,102 @@ namespace JunctionRelayServer.Services
             var httpContext = _httpContextAccessor.HttpContext;
             string? scheme = "http";
             string? hostValue = null;
+            int port = 7180;
 
             if (httpContext?.Request != null)
             {
                 var request = httpContext.Request;
                 scheme = request.Scheme;
                 hostValue = request.Host.Host;
+                port = request.Host.Port ?? 7180;
+            }
+
+            // If we have a valid HTTP request with a proper IP address, use that first
+            // This is the most reliable source as it's the actual IP the client connected to
+            if (httpContext?.Request != null && !string.IsNullOrEmpty(hostValue))
+            {
+                // Check if hostValue is a valid IP address
+                if (System.Net.IPAddress.TryParse(hostValue, out var ipAddress))
+                {
+                    var baseUrl = $"{scheme}://{hostValue}:{port}";
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Using HTTP request IP: {baseUrl}");
+                    return baseUrl;
+                }
+
+                // Check if it's a valid hostname (contains dots but isn't just a container ID)
+                if (hostValue.Contains('.') && !hostValue.All(c => char.IsLetterOrDigit(c)))
+                {
+                    var baseUrl = $"{scheme}://{hostValue}:{port}";
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Using HTTP request hostname: {baseUrl}");
+                    return baseUrl;
+                }
             }
 
             try
             {
-                // Always resolve the true LAN/WAN IP, not "localhost"
+                // Try to get all network interfaces and find the best one
+                var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+
+                foreach (var iface in interfaces.Where(i =>
+                    i.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                    i.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback))
+                {
+                    var ipProps = iface.GetIPProperties();
+                    var ipv4Address = ipProps.UnicastAddresses
+                        .FirstOrDefault(addr =>
+                            addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                            !System.Net.IPAddress.IsLoopback(addr.Address) &&
+                            !addr.Address.ToString().StartsWith("169.254") && // ignore link-local
+                            !addr.Address.ToString().StartsWith("172.17") && // ignore Docker bridge network
+                            !addr.Address.ToString().StartsWith("172.18") &&
+                            !addr.Address.ToString().StartsWith("172.19") &&
+                            !addr.Address.ToString().StartsWith("172.20"))?.Address;
+
+                    if (ipv4Address != null)
+                    {
+                        var baseUrl = $"{scheme}://{ipv4Address}:{port}";
+                        Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Using network interface IP ({iface.Name}): {baseUrl}");
+                        return baseUrl;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Could not enumerate network interfaces: {ex.Message}");
+            }
+
+            // Fallback to DNS-based detection
+            try
+            {
                 var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
                 var localIP = host.AddressList
                     .FirstOrDefault(ip =>
                         ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
                         !System.Net.IPAddress.IsLoopback(ip) &&
-                        !ip.ToString().StartsWith("169.254") // ignore link-local
+                        !ip.ToString().StartsWith("169.254") &&
+                        !ip.ToString().StartsWith("172.17") &&
+                        !ip.ToString().StartsWith("172.18") &&
+                        !ip.ToString().StartsWith("172.19") &&
+                        !ip.ToString().StartsWith("172.20")
                     );
 
                 if (localIP != null)
                 {
-                    var port = httpContext?.Request?.Host.Port ?? 7180;
-                    return $"{scheme}://{localIP}:{port}";
+                    var baseUrl = $"{scheme}://{localIP}:{port}";
+                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Using DNS-resolved IP: {baseUrl}");
+                    return baseUrl;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Could not auto-detect IP: {ex.Message}");
+                Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] Could not auto-detect IP via DNS: {ex.Message}");
             }
 
-            // As a last fallback, return the hostname instead of localhost
+            // Last resort fallback - log a warning
             var machineName = System.Net.Dns.GetHostName();
-            return $"{scheme}://{machineName}:7180";
+            var fallbackUrl = $"{scheme}://{machineName}:{port}";
+            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] WARNING: Could not determine proper server URL. Using fallback: {fallbackUrl}");
+            return fallbackUrl;
         }
 
         private object? CloneJsonValue(JsonElement element)

@@ -36,9 +36,23 @@ namespace JunctionRelayServer.Services
         private readonly DataDirectoryProvider _dataDirectoryProvider;
         private readonly ConcurrentDictionary<string, IBrowser> _browsers = new();
         private readonly ConcurrentDictionary<string, IPage> _pages = new();
+        // Cache of last successful frame per screen (for fallback on errors)
+        // Key format: "frame_{deviceId}_{screenId}" - stores exactly ONE frame per screen
+        // Dictionary automatically replaces old frame when same key is used
         private readonly ConcurrentDictionary<string, byte[]> _lastSuccessfulFrames = new();
+        // Track screenshot count per page to trigger periodic reloads
+        private readonly ConcurrentDictionary<string, int> _pageScreenshotCounts = new();
+        // Track whether sensor data has been received for each page since creation/recreation
+        private readonly ConcurrentDictionary<string, bool> _pageHasSensorData = new();
         private readonly SemaphoreSlim _browserSemaphore = new(1, 1);
         private bool _disposed = false;
+
+        // Frame cache size limit to prevent unbounded memory growth
+        private const long MAX_CACHE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB total cache size
+        private long _currentCacheSizeBytes = 0;
+
+        // Memory leak mitigation: Reload page after N screenshots to clear Chromium buffers
+        private const int SCREENSHOTS_PER_RELOAD = 100; // Reload page every 100 screenshots
 
         public Service_FrameEngine_Puppeteer(
             IServiceScopeFactory scopeFactory,
@@ -84,8 +98,8 @@ namespace JunctionRelayServer.Services
                     linkId,
                     screenId);
 
-                // Store as last successful frame
-                _lastSuccessfulFrames[frameKey] = screenshotBytes;
+                // Store as last successful frame with size limits
+                CacheFrameWithLimits(frameKey, screenshotBytes);
 
                 return screenshotBytes;
             }
@@ -120,8 +134,8 @@ namespace JunctionRelayServer.Services
                     FullPage = false
                 });
 
-                // Store as last successful thumbnail
-                _lastSuccessfulFrames[frameKey] = screenshotBytes;
+                // Store as last successful thumbnail with size limits
+                CacheFrameWithLimits(frameKey, screenshotBytes);
 
                 return screenshotBytes;
             }
@@ -164,11 +178,11 @@ namespace JunctionRelayServer.Services
                 // Double-check after acquiring lock
                 if (_pages.TryGetValue(browserKey, out var existingPageLocked) && !existingPageLocked.IsClosed)
                 {
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Reusing existing page (locked) for key: {browserKey}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Reusing existing page (locked) for key: {browserKey}");
                     return existingPageLocked;
                 }
 
-                Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Creating new page for key: {browserKey}");
+                // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Creating new page for key: {browserKey}");
 
                 var browser = await GetOrCreateBrowser(browserKey);
                 IPage page = null;
@@ -176,7 +190,7 @@ namespace JunctionRelayServer.Services
                 try
                 {
                     page = await browser.NewPageAsync();
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page created successfully for key: {browserKey}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page created successfully for key: {browserKey}");
 
                     // Set viewport to exact dimensions
                     await page.SetViewportAsync(new ViewPortOptions
@@ -187,10 +201,10 @@ namespace JunctionRelayServer.Services
                         IsMobile = false,
                         HasTouch = false
                     });
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Viewport set to {width}x{height} for key: {browserKey}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Viewport set to {width}x{height} for key: {browserKey}");
 
                     var virtualScreenUrl = GetVirtualScreenFullscreenUrl(virtualScreenDeviceId);
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Loading virtual screen fullscreen URL: {virtualScreenUrl}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Loading virtual screen fullscreen URL: {virtualScreenUrl}");
 
                     try
                     {
@@ -231,14 +245,14 @@ namespace JunctionRelayServer.Services
                             {
                                 Timeout = 10000
                             });
-                            Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Virtual screen container found for key: {browserKey}");
+                            // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Virtual screen container found for key: {browserKey}");
 
                             // Wait for canvas (Rive) to render
                             await page.WaitForSelectorAsync("canvas", new WaitForSelectorOptions
                             {
                                 Timeout = 10000
                             });
-                            Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Canvas element found for key: {browserKey}");
+                            // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Canvas element found for key: {browserKey}");
                         }
                         catch (Exception selectorEx)
                         {
@@ -248,7 +262,7 @@ namespace JunctionRelayServer.Services
                         // Additional wait for Rive content to fully render
                         await Task.Delay(2000);
 
-                        Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Successfully navigated to virtual screen fullscreen URL for key: {browserKey}");
+                        // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Successfully navigated to virtual screen fullscreen URL for key: {browserKey}");
                     }
                     catch (Exception navEx)
                     {
@@ -296,7 +310,10 @@ namespace JunctionRelayServer.Services
 
                     // Store the page in dictionary
                     _pages[browserKey] = page;
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page stored successfully in _pages dictionary for key: {browserKey}");
+
+                    // Mark that this page hasn't received sensor data yet
+                    _pageHasSensorData[browserKey] = false;
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page stored successfully in _pages dictionary for key: {browserKey} - waiting for sensor data");
 
                     return page;
                 }
@@ -336,7 +353,7 @@ namespace JunctionRelayServer.Services
                 {
                     var serverAddress = addresses.First();
                     var baseUrl = serverAddress.Replace("0.0.0.0", "localhost").Replace("*", "localhost");
-                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Using actual server address: {baseUrl}");
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Using actual server address: {baseUrl}");
 
                     // Use dedicated fullscreen route
                     return $"{baseUrl}/device/{virtualScreenDeviceId}/virtual-screen/fullscreen";
@@ -485,7 +502,23 @@ namespace JunctionRelayServer.Services
                 "--hide-scrollbars",
                 "--mute-audio",
                 "--memory-pressure-off",
-                "--max_old_space_size=512"
+                "--max_old_space_size=512",
+
+                // Disable notifications to prevent OS from treating Puppeteer windows as notification targets
+                "--disable-notifications",                    // Disable browser notifications API
+                "--disable-features=Notifications",           // Disable notifications feature entirely
+                "--disable-background-mode",                  // Prevent browser from staying active in background
+
+                // Aggressive memory management to prevent screenshot buffer leaks
+                "--disable-canvas-aa",                    // Reduce canvas memory
+                "--disable-2d-canvas-clip-aa",            // Reduce 2D canvas overhead
+                "--disable-gl-drawing-for-tests",         // Reduce GPU memory
+                "--disable-accelerated-2d-canvas",        // Force CPU rendering (less memory)
+                "--num-raster-threads=1",                 // Limit raster thread memory
+                "--renderer-process-limit=1",             // Limit to 1 renderer process
+                "--disable-webgl",                        // Disable WebGL to save memory
+                "--disable-webgl2",                       // Disable WebGL2
+                "--js-flags=--max-old-space-size=256 --expose-gc",  // Limit V8 heap and expose GC
             };
 
             // Additional args for ARM architecture
@@ -513,11 +546,38 @@ namespace JunctionRelayServer.Services
             await CloseBrowserByKey(browserKey);
             await CloseBrowserByKey(thumbnailBrowserKey);
 
-            // Clean up last successful frames
+            // Clean up screenshot counters and sensor data tracking
+            _pageScreenshotCounts.TryRemove(browserKey, out _);
+            _pageScreenshotCounts.TryRemove(thumbnailBrowserKey, out _);
+            _pageHasSensorData.TryRemove(browserKey, out _);
+            _pageHasSensorData.TryRemove(thumbnailBrowserKey, out _);
+
+            // Clean up last successful frames for all screens associated with this device
+            var keysToRemove = _lastSuccessfulFrames.Keys
+                .Where(key => key.Contains($"_{virtualScreenDeviceId}_"))
+                .ToList();
+
+            foreach (var key in keysToRemove)
+            {
+                if (_lastSuccessfulFrames.TryRemove(key, out var removedFrame))
+                {
+                    Interlocked.Add(ref _currentCacheSizeBytes, -removedFrame.Length);
+                }
+            }
+
+            // Also remove the generic frame and thumbnail keys
             var frameKey = $"frame_{virtualScreenDeviceId}";
             var thumbnailKey = $"thumbnail_{virtualScreenDeviceId}";
-            _lastSuccessfulFrames.TryRemove(frameKey, out _);
-            _lastSuccessfulFrames.TryRemove(thumbnailKey, out _);
+            if (_lastSuccessfulFrames.TryRemove(frameKey, out var frame))
+            {
+                Interlocked.Add(ref _currentCacheSizeBytes, -frame.Length);
+            }
+            if (_lastSuccessfulFrames.TryRemove(thumbnailKey, out var thumbnail))
+            {
+                Interlocked.Add(ref _currentCacheSizeBytes, -thumbnail.Length);
+            }
+
+            Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Cleared {keysToRemove.Count + 2} cached frames for device {virtualScreenDeviceId}");
         }
 
         private async Task CloseBrowserByKey(string browserKey)
@@ -550,10 +610,11 @@ namespace JunctionRelayServer.Services
 
         private async Task<byte[]> CreateErrorFrame(int width, int height, string errorMessage)
         {
+            IBrowser? browser = null;
             try
             {
                 // Create a simple error page in memory
-                var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
                     Headless = true,
                     Args = new[] { "--no-sandbox", "--disable-dev-shm-usage" }
@@ -566,11 +627,11 @@ namespace JunctionRelayServer.Services
                 <html>
                 <head>
                     <style>
-                        body {{ 
-                            margin: 0; 
-                            padding: 20px; 
-                            background: #ff0000; 
-                            color: white; 
+                        body {{
+                            margin: 0;
+                            padding: 20px;
+                            background: #ff0000;
+                            color: white;
                             font-family: Arial, sans-serif;
                             display: flex;
                             flex-direction: column;
@@ -597,7 +658,6 @@ namespace JunctionRelayServer.Services
                     FullPage = false
                 });
 
-                await browser.CloseAsync();
                 return errorBytes;
             }
             catch (Exception ex)
@@ -605,6 +665,21 @@ namespace JunctionRelayServer.Services
                 Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Error creating error frame: {ex.Message}");
                 // Return minimal 1x1 PNG as absolute fallback
                 return CreateMinimalPng();
+            }
+            finally
+            {
+                // CRITICAL: Always close the browser to prevent memory leaks
+                if (browser != null && browser.IsConnected)
+                {
+                    try
+                    {
+                        await browser.CloseAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Error closing error frame browser: {ex.Message}");
+                    }
+                }
             }
         }
 
@@ -619,6 +694,38 @@ namespace JunctionRelayServer.Services
                 0x01, 0x00, 0x01, 0x5C, 0xC2, 0x5D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
                 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
             };
+        }
+
+        private void CacheFrameWithLimits(string frameKey, byte[] frameData)
+        {
+            // Remove old frame from cache size tracking if it exists (replacing old frame for this screen)
+            if (_lastSuccessfulFrames.TryGetValue(frameKey, out var oldFrame))
+            {
+                Interlocked.Add(ref _currentCacheSizeBytes, -oldFrame.Length);
+            }
+
+            // Check if total cache size would exceed limit
+            // Note: We store 1 frame per screen. If cache is too big, log a warning but allow it
+            // since we need at least 1 fallback frame per active screen
+            var newTotalSize = _currentCacheSizeBytes + frameData.Length;
+            if (newTotalSize > MAX_CACHE_SIZE_BYTES)
+            {
+                Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] WARNING: Frame cache size ({newTotalSize / 1024 / 1024}MB) exceeds limit ({MAX_CACHE_SIZE_BYTES / 1024 / 1024}MB) - {_lastSuccessfulFrames.Count} screens active");
+            }
+
+            // Store the frame (replaces old frame for this screen automatically)
+            _lastSuccessfulFrames[frameKey] = frameData;
+            Interlocked.Add(ref _currentCacheSizeBytes, frameData.Length);
+        }
+
+        /// <summary>
+        /// Notifies that sensor data has been received for a virtual screen.
+        /// Called when sensor payloads are sent to the virtual screen browser.
+        /// </summary>
+        public void NotifySensorDataReceived(string virtualScreenDeviceId)
+        {
+            var browserKey = $"screen_{virtualScreenDeviceId}";
+            _pageHasSensorData[browserKey] = true;
         }
 
         public void Dispose()
@@ -651,8 +758,11 @@ namespace JunctionRelayServer.Services
                 ActivePages = _pages.Count(kvp => !kvp.Value.IsClosed),
                 TotalPages = _pages.Count,
                 CachedFrames = _lastSuccessfulFrames.Count,
+                CachedFramesSizeMB = Math.Round(_currentCacheSizeBytes / 1024.0 / 1024.0, 2),
+                MaxCacheSizeMB = MAX_CACHE_SIZE_BYTES / 1024.0 / 1024.0,
                 BrowserKeys = _browsers.Keys.ToArray(),
                 PageKeys = _pages.Keys.ToArray(),
+                FrameKeys = _lastSuccessfulFrames.Keys.ToArray(),
                 DetectedBaseUrl = GetVirtualScreenFullscreenUrl("test")
             };
         }
@@ -690,6 +800,21 @@ namespace JunctionRelayServer.Services
 
             try
             {
+                // Check if page hasn't received sensor data yet - if so, return cached frame and wait
+                if (_pageHasSensorData.TryGetValue(browserKey, out var hasSensorData) && !hasSensorData)
+                {
+                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page {browserKey} waiting for sensor data, returning cached frame");
+
+                    // Return last successful frame if available
+                    if (_lastSuccessfulFrames.TryGetValue(frameKey, out var cachedFrame))
+                    {
+                        return cachedFrame;
+                    }
+
+                    // If no cached frame, proceed with screenshot anyway (first ever frame)
+                    Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] No cached frame available for {browserKey}, proceeding with screenshot despite no sensor data");
+                }
+
                 // Get existing page or create new one
                 IPage page;
                 if (_pages.TryGetValue(browserKey, out var existingPage) && !existingPage.IsClosed)
@@ -722,8 +847,48 @@ namespace JunctionRelayServer.Services
                     OptimizeForSpeed = false
                 });
 
-                // Store as last successful frame
-                _lastSuccessfulFrames[frameKey] = screenshotBytes;
+                // Store as last successful frame with size limits
+                CacheFrameWithLimits(frameKey, screenshotBytes);
+
+                // Memory leak mitigation: Track screenshots and recreate page periodically
+                var screenshotCount = _pageScreenshotCounts.AddOrUpdate(browserKey, 1, (key, count) => count + 1);
+                if (screenshotCount % SCREENSHOTS_PER_RELOAD == 0)
+                {
+                    // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Recreating page {browserKey} after {screenshotCount} screenshots to clear memory buffers");
+                    try
+                    {
+                        // Close the existing page to free memory
+                        if (!page.IsClosed)
+                        {
+                            await page.CloseAsync();
+                            // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Closed old page {browserKey}");
+                        }
+
+                        // Remove from dictionary so GetOrCreatePage will make a fresh one
+                        _pages.TryRemove(browserKey, out _);
+
+                        // Create a brand new page - this ensures completely fresh state
+                        // GetOrCreatePage will automatically mark _pageHasSensorData[browserKey] = false
+                        page = await GetOrCreatePage(browserKey, virtualScreenDeviceId, width, height);
+
+                        // Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Page {browserKey} recreated successfully - waiting for sensor data before next screenshot");
+                    }
+                    catch (Exception recreateEx)
+                    {
+                        Console.WriteLine($"[SERVICE_FRAMEENGINE_PUPPETEER] Failed to recreate page {browserKey}: {recreateEx.Message}");
+                        // Continue anyway - recreation is best-effort for memory management
+                        // Try to get/create a working page
+                        try
+                        {
+                            page = await GetOrCreatePage(browserKey, virtualScreenDeviceId, width, height);
+                        }
+                        catch
+                        {
+                            // If we can't get a page, throw to fall back to cached frame
+                            throw;
+                        }
+                    }
+                }
 
                 // Save to disk if we have valid IDs
                 if (junctionId > 0 && originalScreenId > 0)

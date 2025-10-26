@@ -32,6 +32,7 @@ import {
     Sensors as SensorsIcon,
     TextFields as TextIcon,
     ShowChart as ChartIcon,
+    Speed as GaugeIcon,
     Schedule as ClockIcon,
     Grain as OscilloscopeIcon,
     Explore as TunnelIcon,
@@ -73,7 +74,7 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'library' | 'properties'>('library');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'clock', 'oscilloscope', 'tunnel', 'weather', 'assetImage', 'assetVideo', 'assetRive'])
+        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'gauge', 'gauge-data', 'gauge-style', 'gauge-pointer', 'gauge-colors', 'clock', 'oscilloscope', 'tunnel', 'weather', 'assetImage', 'assetVideo', 'assetRive'])
     );
 
     useEffect(() => {
@@ -180,6 +181,41 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                 yAxisMax: 100,
                 lineWidth: 2,
                 gridScrollSpeed: 0.5,
+            },
+            category: 'data',
+        },
+        {
+            id: 'gauge-display',
+            name: 'Gauge',
+            description: 'Circular gauge for sensor values',
+            type: 'gauge',
+            icon: <GaugeIcon />,
+            defaultWidth: 200,
+            defaultHeight: 200,
+            defaultProperties: {
+                sensorTag: '',
+                gaugeType: 'semicircle',
+                minValue: 0,
+                maxValue: 100,
+                valueLabel: '',
+                showLabels: true,
+                showTicks: true,
+                pointerType: 'needle',
+                pointerColor: '#464A4F',
+                pointerLength: 0.7,
+                pointerWidth: 15,
+                pointerElastic: true,
+                pointerAnimationDelay: 0,
+                arcColors: [
+                    { limit: 33, color: '#5BE12C' },
+                    { limit: 66, color: '#F5CD19' },
+                    { limit: 100, color: '#EA4228' }
+                ],
+                arcPadding: 0.02,
+                arcWidth: 0.2,
+                cornerRadius: 5,
+                valueLabelColor: '#333',
+                tickLabelColor: '#666'
             },
             category: 'data',
         },
