@@ -17,8 +17,9 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using JunctionRelay_Server.Services;
+using JunctionRelayServer.Services;
 using JunctionRelayServer.Models;
+using JunctionRelayServer.Interfaces;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
@@ -30,6 +31,7 @@ namespace JunctionRelayServer.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly Service_Manager_Polling _pollingManager;
         private readonly Service_Events _eventService;
+        private readonly Service_BlitMode_ResourceMonitor _blitResourceMonitor;
         private Timer? _cleanupTimer;
 
         public int CacheSaveIntervalMs { get; set; } = 60_000;
@@ -45,11 +47,13 @@ namespace JunctionRelayServer.Services
         public Service_Manager_Connections(
             IServiceScopeFactory scopeFactory,
             Service_Manager_Polling pollingManager,
-            Service_Events eventService)
+            Service_Events eventService,
+            Service_BlitMode_ResourceMonitor blitResourceMonitor)
         {
             _scopeFactory = scopeFactory;
             _pollingManager = pollingManager;
             _eventService = eventService;
+            _blitResourceMonitor = blitResourceMonitor;
 
             StartCleanupTimer();
         }
@@ -411,22 +415,70 @@ namespace JunctionRelayServer.Services
 
         public async Task<Model_Operation_Result> StartJunctionAsync(int junctionId, CancellationToken cancellationToken)
         {
+            var operationId = Guid.NewGuid().ToString();
+            string junctionName = $"Junction {junctionId}";
+
             if (_startedJunctions.ContainsKey(junctionId))
                 return Model_Operation_Result.Fail($"Junction {junctionId} is already running.");
 
             using var scope = _scopeFactory.CreateScope();
-            var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
-            var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
-            var collectorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Collectors>();
-            var pollingManager = scope.ServiceProvider.GetRequiredService<Service_Manager_Polling>();
-            var sensorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Sensors>();
+            var progressBroadcaster = scope.ServiceProvider.GetRequiredService<Service_Unified_Notification_Broadcaster>();
 
-            var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+            try
+            {
+                var junctionDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Junctions>();
+                var deviceDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
+                var collectorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Collectors>();
+                var pollingManager = scope.ServiceProvider.GetRequiredService<Service_Manager_Polling>();
+                var sensorDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_Sensors>();
+
+                // STAGE 1: Validating
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junctionName,
+                    operationId,
+                    JunctionStartStage.Validating,
+                    "Checking if junction is already running...");
+
+                var junction = await junctionDb.GetJunctionByIdAsync(junctionId);
+                junctionName = junction?.Name ?? junctionName; // Update name if available
             if (junction == null)
+            {
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    $"Junction {junctionId}",
+                    operationId,
+                    JunctionStartStage.Validating,
+                    "Junction not found",
+                    isComplete: false,
+                    hasError: true,
+                    errorMessage: "Junction not found");
                 return Model_Operation_Result.Fail("Junction not found.");
+            }
 
             if (cancellationToken.IsCancellationRequested)
+            {
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junction.Name,
+                    operationId,
+                    JunctionStartStage.Validating,
+                    "Start operation was cancelled",
+                    isComplete: false,
+                    hasError: true,
+                    errorMessage: "Operation cancelled");
                 return Model_Operation_Result.Fail("Start operation was cancelled.");
+            }
+
+            await progressBroadcaster.EmitJunctionProgressAsync(
+                junctionId,
+                junction.Name,
+                operationId,
+                JunctionStartStage.Validating,
+                "Validation complete");
+
+            // Minimum display time for stage visibility
+            await Task.Delay(500, cancellationToken);
 
             junction.Status = "Starting";
 
@@ -440,7 +492,18 @@ namespace JunctionRelayServer.Services
             };
             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Starting Junction {junctionId} (Type: {junction.Type}, Mode: {modeInfo})");
 
+            // STAGE 2: Loading Configuration
+            await progressBroadcaster.EmitJunctionProgressAsync(
+                junctionId,
+                junction.Name,
+                operationId,
+                JunctionStartStage.LoadingConfiguration,
+                $"Loading junction configuration (Type: {junction.Type}, Mode: {modeInfo})...");
+
             await junctionDb.PopulateLinksAndSensors(junction);
+
+            // Minimum display time for stage visibility
+            await Task.Delay(500, cancellationToken);
 
             var selectedSensors = junction.ClonedSensors.Where(s => s.IsSelected).ToList();
             var selectedSensorsCopy = selectedSensors.Select(s => s.TrueClone()).ToList();
@@ -452,6 +515,146 @@ namespace JunctionRelayServer.Services
                 junctionSensorIds.Add(sensor.OriginalId);
             }
             _junctionSensorMappings[junctionId] = junctionSensorIds;
+
+            // STAGE 3: Testing Collectors
+            var collectorLinksToTest = junction.SourceCollectorLinks.ToList();
+            if (collectorLinksToTest.Any() && junction.EnableTests)
+            {
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junction.Name,
+                    operationId,
+                    JunctionStartStage.TestingCollectors,
+                    $"Testing {collectorLinksToTest.Count} collector(s)...");
+
+                var dataCollectorFactory = scope.ServiceProvider.GetRequiredService<Func<Model_Collector, IDataCollector>>();
+                int testsPassed = 0;
+                int testsFailed = 0;
+                var failedCollectorNames = new List<string>();
+
+                foreach (var link in collectorLinksToTest)
+                {
+                    var collector = await collectorDb.GetCollectorByIdAsync(link.CollectorId);
+                    if (collector != null)
+                    {
+                        await progressBroadcaster.EmitJunctionProgressAsync(
+                            junctionId,
+                            junction.Name,
+                            operationId,
+                            JunctionStartStage.TestingCollectors,
+                            $"Testing collector '{collector.Name}'...");
+
+                        try
+                        {
+                            var dataCollector = dataCollectorFactory(collector);
+                            dataCollector.ApplyConfiguration(collector);
+
+                            var skipConnectionTest = collector.CollectorType == "LibreHardwareMonitor" ||
+                                                    collector.CollectorType == "HWiNFO" ||
+                                                    collector.CollectorType == "Host" ||
+                                                    collector.CollectorType == "EventEngine" ||
+                                                    collector.CollectorType == "RateTester" ||
+                                                    collector.CollectorType == "SystemTime" ||
+                                                    collector.CollectorType == "InternetTime";
+
+                            bool testSuccessful;
+
+                            if (skipConnectionTest)
+                            {
+                                var sensors = await dataCollector.FetchSensorsAsync(collector);
+                                testSuccessful = sensors != null && sensors.Count() > 0;
+                            }
+                            else
+                            {
+                                var connectionOk = await dataCollector.TestConnectionAsync(collector);
+                                if (connectionOk)
+                                {
+                                    var sensors = await dataCollector.FetchSensorsAsync(collector);
+                                    testSuccessful = sensors != null && sensors.Count() > 0;
+                                }
+                                else
+                                {
+                                    testSuccessful = false;
+                                }
+                            }
+
+                            if (testSuccessful)
+                            {
+                                testsPassed++;
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Collector '{collector.Name}' test passed");
+                            }
+                            else
+                            {
+                                testsFailed++;
+                                failedCollectorNames.Add(collector.Name);
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Collector '{collector.Name}' test failed");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            testsFailed++;
+                            failedCollectorNames.Add(collector.Name);
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error testing collector '{collector.Name}': {ex.Message}");
+                        }
+                    }
+                }
+
+                // Report test results
+                var testSummary = $"Collector tests: {testsPassed} passed, {testsFailed} failed";
+                if (testsFailed > 0)
+                {
+                    if (!junction.AllowStartOnCollectorTestFailure)
+                    {
+                        // Fail the junction start
+                        var errorMsg = $"Junction start aborted: {testsFailed} collector(s) failed tests ({string.Join(", ", failedCollectorNames)})";
+                        await progressBroadcaster.EmitJunctionProgressAsync(
+                            junctionId,
+                            junction.Name,
+                            operationId,
+                            JunctionStartStage.TestingCollectors,
+                            errorMsg,
+                            isComplete: false,
+                            hasError: true,
+                            errorMessage: errorMsg);
+                        return Model_Operation_Result.Fail(errorMsg);
+                    }
+                    else
+                    {
+                        // Continue despite failures
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Continuing despite collector test failures (AllowStartOnCollectorTestFailure is enabled)");
+                        await progressBroadcaster.EmitJunctionProgressAsync(
+                            junctionId,
+                            junction.Name,
+                            operationId,
+                            JunctionStartStage.TestingCollectors,
+                            $"{testSummary} - continuing despite failures");
+                    }
+                }
+                else
+                {
+                    await progressBroadcaster.EmitJunctionProgressAsync(
+                        junctionId,
+                        junction.Name,
+                        operationId,
+                        JunctionStartStage.TestingCollectors,
+                        testSummary);
+                }
+
+                // Minimum display time for stage visibility
+                await Task.Delay(500, cancellationToken);
+            }
+            else if (!junction.EnableTests)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⏭️ Collector testing disabled for junction {junctionId}");
+            }
+
+            // STAGE 4: Registering Sources
+            await progressBroadcaster.EmitJunctionProgressAsync(
+                junctionId,
+                junction.Name,
+                operationId,
+                JunctionStartStage.RegisteringSources,
+                $"Registering {junction.SourceLinks.Count + junction.SourceCollectorLinks.Count} source(s) and {selectedSensors.Count} sensor(s) with polling manager...");
 
             foreach (var link in junction.SourceLinks)
             {
@@ -496,8 +699,21 @@ namespace JunctionRelayServer.Services
                 }
             }
 
+            // Minimum display time for stage visibility
+            await Task.Delay(500, cancellationToken);
+
+            bool isGatewayJunction = junction.Type.Contains("Gateway Junction", StringComparison.OrdinalIgnoreCase);
+
             if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
+                // STAGE 5: Configuring Gateway (only for Gateway junctions)
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junction.Name,
+                    operationId,
+                    JunctionStartStage.ConfiguringGateway,
+                    "Configuring HTTP gateway and adding peers...");
+
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Starting HTTP Gateway junction {junctionId}");
 
                 var targetDevices = new List<Model_Device>();
@@ -528,6 +744,14 @@ namespace JunctionRelayServer.Services
             }
             else if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
+                // STAGE 5: Configuring Gateway (only for Gateway junctions)
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junction.Name,
+                    operationId,
+                    JunctionStartStage.ConfiguringGateway,
+                    "Configuring COM gateway and adding peers...");
+
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Starting COM Gateway junction {junctionId}");
 
                 var targetDevices = new List<Model_Device>();
@@ -558,6 +782,14 @@ namespace JunctionRelayServer.Services
             }
             else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
+                // STAGE 5: Configuring Gateway (only for Gateway junctions)
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junction.Name,
+                    operationId,
+                    JunctionStartStage.ConfiguringGateway,
+                    "Configuring WebSocket gateway and adding peers...");
+
                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Starting WebSocket Gateway junction {junctionId}");
 
                 var targetDevices = new List<Model_Device>();
@@ -585,7 +817,18 @@ namespace JunctionRelayServer.Services
                 {
                     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] WebSocket Gateway junction has no valid gateway destination or target devices specified");
                 }
+
+                // Minimum display time for stage visibility
+                await Task.Delay(500, cancellationToken);
             }
+
+            // STAGE 6: Starting Streams
+            await progressBroadcaster.EmitJunctionProgressAsync(
+                junctionId,
+                junction.Name,
+                operationId,
+                JunctionStartStage.StartingStreams,
+                $"Initializing stream manager for {junction.TargetLinks.Count} target device(s)...");
 
             switch (junction.Type)
             {
@@ -630,12 +873,41 @@ namespace JunctionRelayServer.Services
                     break;
             }
 
+            // Minimum display time for stage visibility
+            await Task.Delay(500, cancellationToken);
+
             _startedJunctions[junctionId] = junction;
             junction.Status = "Running";
 
             Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Junction {junctionId} ({junction.Name}) started successfully");
 
-            return Model_Operation_Result.Ok("Junction started.");
+            // STAGE 7: Complete
+            await progressBroadcaster.EmitJunctionProgressAsync(
+                junctionId,
+                junction.Name,
+                operationId,
+                JunctionStartStage.Complete,
+                $"Junction '{junction.Name}' started successfully",
+                isComplete: true);
+
+                return Model_Operation_Result.Ok("Junction started.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Error starting junction {junctionId}: {ex.Message}");
+
+                await progressBroadcaster.EmitJunctionProgressAsync(
+                    junctionId,
+                    junctionName,
+                    operationId,
+                    JunctionStartStage.Complete,
+                    $"Failed to start junction: {ex.Message}",
+                    isComplete: true,
+                    hasError: true,
+                    errorMessage: ex.Message);
+
+                return Model_Operation_Result.Fail($"Failed to start junction: {ex.Message}");
+            }
         }
 
         private async Task HandleStreamingForJunctionType(
@@ -752,6 +1024,12 @@ namespace JunctionRelayServer.Services
                             if (virtualScreenInfo.HasValue)
                             {
                                 Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Created virtual screen for blit mode: {device.Name} -> {virtualScreenInfo.Value.virtualScreenUrl} (LinkId: {link.Id})");
+
+                                // Register blit session for resource monitoring
+                                var sessionId = $"J{junction.Id}_D{device.Id}_S{screen.Id}_L{link.Id}";
+                                var junctionId = $"J{junction.Id}";
+                                var protocolType = junction.Type; // COM, HTTP, WebSocket, etc.
+                                _blitResourceMonitor.RegisterBlitSession(sessionId, junctionId, device.Name, protocolType);
                             }
                             else
                             {
@@ -889,7 +1167,11 @@ namespace JunctionRelayServer.Services
                         var deviceScreens = junction.DeviceScreens.Where(screen => screen.DeviceId == device.Id);
                         foreach (var screen in deviceScreens)
                         {
-                            virtualMgr.StopBlitModeVirtualScreen(screen.Id);
+                            await virtualMgr.StopBlitModeVirtualScreen(screen.Id);
+
+                            // Unregister blit session from resource monitoring
+                            var sessionId = $"J{junction.Id}_D{device.Id}_S{screen.Id}_L{link.Id}";
+                            _blitResourceMonitor.UnregisterBlitSession(sessionId);
                         }
                     }
                 }

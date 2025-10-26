@@ -33,29 +33,6 @@ namespace JunctionRelayServer.Collectors
         private string _baseUrl = string.Empty;
         private string _secretKey = string.Empty;
 
-        // Helper method to detect decimal places in a value
-        private int GetDecimalPlaces(string value)
-        {
-            // Handle null or empty values
-            if (string.IsNullOrEmpty(value))
-                return 0;
-
-            // Try to parse as decimal to validate it's a numeric value
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0; // Non-numeric values (including "N/A") have 0 decimal places
-
-            // Convert to string to analyze decimal places
-            string valueStr = numericValue.ToString();
-
-            // Find the decimal point
-            int decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1)
-                return 0; // No decimal point found
-
-            // Count digits after decimal point
-            return valueStr.Length - decimalIndex - 1;
-        }
-
         public void ApplyConfiguration(Model_Collector collector)
         {
             _baseUrl = collector.URL?.TrimEnd('/')
@@ -278,7 +255,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Active Subscriptions",
                     Value = activeValue,
                     Unit = "subscriptions",
-                    DecimalPlaces = GetDecimalPlaces(activeValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(activeValue),
                     Category = "Stripe Subscriptions",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -298,7 +275,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Trialing Subscriptions",
                     Value = trialingValue,
                     Unit = "subscriptions",
-                    DecimalPlaces = GetDecimalPlaces(trialingValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(trialingValue),
                     Category = "Stripe Subscriptions",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -318,7 +295,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Past Due Subscriptions",
                     Value = pastDueValue,
                     Unit = "subscriptions",
-                    DecimalPlaces = GetDecimalPlaces(pastDueValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(pastDueValue),
                     Category = "Stripe Subscriptions",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -338,7 +315,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Canceled Subscriptions",
                     Value = canceledValue,
                     Unit = "subscriptions",
-                    DecimalPlaces = GetDecimalPlaces(canceledValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(canceledValue),
                     Category = "Stripe Subscriptions",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -378,14 +355,14 @@ namespace JunctionRelayServer.Collectors
                 }
 
                 // Monthly Recurring Revenue
-                string mrrValue = Math.Round(monthlyRevenue, 2).ToString();
+                var (mrrValue, mrrDecimals) = Helper_DataCollector.SanitizeSensorValue((double)monthlyRevenue, 2);
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = "stripe_monthly_recurring_revenue",
                     Name = "Monthly Recurring Revenue",
                     Value = mrrValue,
                     Unit = "USD",
-                    DecimalPlaces = GetDecimalPlaces(mrrValue),
+                    DecimalPlaces = mrrDecimals,
                     Category = "Stripe Revenue",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -398,14 +375,14 @@ namespace JunctionRelayServer.Collectors
                 });
 
                 // Annual Recurring Revenue
-                string arrValue = Math.Round(monthlyRevenue * 12, 2).ToString();
+                var (arrValue, arrDecimals) = Helper_DataCollector.SanitizeSensorValue((double)(monthlyRevenue * 12), 2);
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = "stripe_annual_recurring_revenue",
                     Name = "Annual Recurring Revenue",
                     Value = arrValue,
                     Unit = "USD",
-                    DecimalPlaces = GetDecimalPlaces(arrValue),
+                    DecimalPlaces = arrDecimals,
                     Category = "Stripe Revenue",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -440,7 +417,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Successful Payments (30d)",
                     Value = succeededValue,
                     Unit = "payments",
-                    DecimalPlaces = GetDecimalPlaces(succeededValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(succeededValue),
                     Category = "Stripe Payments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -460,7 +437,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Failed Payments (30d)",
                     Value = failedValue,
                     Unit = "payments",
-                    DecimalPlaces = GetDecimalPlaces(failedValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(failedValue),
                     Category = "Stripe Payments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -475,14 +452,14 @@ namespace JunctionRelayServer.Collectors
                 // Payment success rate
                 var totalPayments = succeededCount + failedCount;
                 var successRate = totalPayments > 0 ? (succeededCount / (double)totalPayments) * 100 : 0;
-                string successRateValue = Math.Round(successRate, 1).ToString();
+                var (successRateValue, successRateDecimals) = Helper_DataCollector.SanitizeSensorValue(successRate, 1);
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = "stripe_payment_success_rate_30d",
                     Name = "Payment Success Rate (30d)",
                     Value = successRateValue,
                     Unit = "%",
-                    DecimalPlaces = GetDecimalPlaces(successRateValue),
+                    DecimalPlaces = successRateDecimals,
                     Category = "Stripe Payments",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -519,14 +496,14 @@ namespace JunctionRelayServer.Collectors
                 }
 
                 // Total revenue (30 days)
-                string revenueValue = Math.Round(totalRevenue, 2).ToString();
+                var (revenueValue, revenueDecimals) = Helper_DataCollector.SanitizeSensorValue((double)totalRevenue, 2);
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = "stripe_total_revenue_30d",
                     Name = "Total Revenue (30d)",
                     Value = revenueValue,
                     Unit = "USD",
-                    DecimalPlaces = GetDecimalPlaces(revenueValue),
+                    DecimalPlaces = revenueDecimals,
                     Category = "Stripe Revenue",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -539,14 +516,14 @@ namespace JunctionRelayServer.Collectors
                 });
 
                 // Total refunds (30 days)
-                string refundValue = Math.Round(refundedAmount, 2).ToString();
+                var (refundValue, refundDecimals) = Helper_DataCollector.SanitizeSensorValue((double)refundedAmount, 2);
                 sensors.Add(new Model_Sensor
                 {
                     ExternalId = "stripe_total_refunds_30d",
                     Name = "Total Refunds (30d)",
                     Value = refundValue,
                     Unit = "USD",
-                    DecimalPlaces = GetDecimalPlaces(refundValue),
+                    DecimalPlaces = refundDecimals,
                     Category = "Stripe Revenue",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -577,7 +554,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "New Customers (30d)",
                     Value = customerValue,
                     Unit = "customers",
-                    DecimalPlaces = GetDecimalPlaces(customerValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(customerValue),
                     Category = "Stripe Customers",
                     DeviceName = collector.Name,
                     SensorType = "API",
@@ -608,7 +585,7 @@ namespace JunctionRelayServer.Collectors
                     Name = "Active Products",
                     Value = productValue,
                     Unit = "products",
-                    DecimalPlaces = GetDecimalPlaces(productValue),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(productValue),
                     Category = "Stripe Products",
                     DeviceName = collector.Name,
                     SensorType = "API",

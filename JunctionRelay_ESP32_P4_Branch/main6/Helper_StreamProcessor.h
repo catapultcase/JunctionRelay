@@ -80,6 +80,7 @@ private:
     void processBlitRgb565Payload();
     void processBlitCompressedPayload();
     void handleChunkedMessage(uint8_t* data, size_t length);
+    void handlePlainJsonBinary(uint8_t* data, size_t length);
 
     // Binary message parsing
     bool parseMessageHeader();
@@ -88,6 +89,7 @@ private:
     
     // Message type detection
     bool isChunkedMessage(uint8_t* payload, size_t length);
+    bool isPlainJsonBinary(uint8_t* payload, size_t length);
     
     // Chunk management
     ChunkBuffer* getOrCreateChunkBuffer(String messageId, int totalSize, int totalChunks);

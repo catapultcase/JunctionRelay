@@ -50,13 +50,18 @@ import DeselectIcon from '@mui/icons-material/Deselect';
 import StreamIcon from '@mui/icons-material/Stream';
 import AspectRatioIcon from '@mui/icons-material/AspectRatio';
 import GroupWorkIcon from '@mui/icons-material/GroupWork';
-import { useDashboardWebSocket } from '../../hooks/useDashboardWebSocket';
 import ECGStreamVisualizationHTTP from './Dashboard_ECGStreamVisualizationHTTP';
 import ECGStreamVisualizationMQTT from './Dashboard_ECGStreamVisualizationMQTT';
 
 interface ActiveStreamsCardProps {
     defaultExpanded?: boolean;
     storageKey?: string;
+    // WebSocket data passed from parent
+    streams?: any[];
+    connectionStatus?: 'connecting' | 'connected' | 'disconnected' | 'error' | 'disabled';
+    isConnected?: boolean;
+    connect?: () => void;
+    disconnect?: () => void;
 }
 
 // Streamlined interface with only the properties we actually need
@@ -115,7 +120,12 @@ interface StreamData {
 
 const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
     defaultExpanded = true,
-    storageKey = 'active_streams_expanded'
+    storageKey = 'active_streams_expanded',
+    streams: streamsFromProps = [],
+    connectionStatus: connectionStatusFromProps = 'disconnected',
+    isConnected: isConnectedFromProps = false,
+    connect: connectFromProps,
+    disconnect: disconnectFromProps
 }) => {
     const [expanded, setExpanded] = useState<boolean>(() => {
         try {
@@ -136,6 +146,16 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         }
     });
 
+    // Track which streams have been manually deselected by the user
+    const [manuallyDeselected, setManuallyDeselected] = useState<Set<string>>(() => {
+        try {
+            const saved = localStorage.getItem(`${storageKey}_manually_deselected`);
+            return saved ? new Set(JSON.parse(saved)) : new Set();
+        } catch {
+            return new Set();
+        }
+    });
+
     // ECG width control with localStorage persistence
     const [ecgWidth, setEcgWidth] = useState<number>(() => {
         const saved = localStorage.getItem(`${storageKey}_ecg_width`);
@@ -152,16 +172,12 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         }
     });
 
-    // WebSocket connection
-    const {
-        streams,
-        connectionStatus,
-        isConnected,
-        connect,
-        disconnect
-    } = useDashboardWebSocket({
-        enabled: expanded
-    });
+    // Use props passed from parent Dashboard (single WebSocket connection)
+    const streams = streamsFromProps;
+    const connectionStatus = connectionStatusFromProps;
+    const isConnected = isConnectedFromProps;
+    const connect = connectFromProps;
+    const disconnect = disconnectFromProps;
 
     // Process streams from WebSocket data
     const availableStreams = useMemo(() => {
@@ -210,7 +226,7 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
         });
     }, [streams]);
 
-    // Auto-select new streams
+    // Auto-select new streams (but respect manual deselections)
     useEffect(() => {
         if (availableStreams.length > 0) {
             setSelectedStreams(prev => {
@@ -218,14 +234,22 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
                 if (prev.length === 0) {
                     return currentKeys;
                 }
-                const newKeys = currentKeys.filter(key => !prev.includes(key));
+                // Add any new streams that aren't in our selection AND haven't been manually deselected
+                const newKeys = currentKeys.filter(key => !prev.includes(key) && !manuallyDeselected.has(key));
                 if (newKeys.length > 0) {
                     return [...prev, ...newKeys];
                 }
                 return prev.filter(key => currentKeys.includes(key));
             });
+
+            // Clean up manuallyDeselected set - remove keys that no longer exist
+            setManuallyDeselected(prev => {
+                const currentKeys = availableStreams.map(s => s.key);
+                const updated = new Set([...prev].filter(key => currentKeys.includes(key)));
+                return updated.size !== prev.size ? updated : prev;
+            });
         }
-    }, [availableStreams]);
+    }, [availableStreams, manuallyDeselected]);
 
     // Save states to localStorage
     useEffect(() => {
@@ -243,6 +267,15 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
             // Ignore localStorage errors
         }
     }, [selectedStreams, storageKey]);
+
+    // Save manually deselected streams
+    useEffect(() => {
+        try {
+            localStorage.setItem(`${storageKey}_manually_deselected`, JSON.stringify([...manuallyDeselected]));
+        } catch {
+            // Ignore localStorage errors
+        }
+    }, [manuallyDeselected, storageKey]);
 
     // Save ECG width to localStorage
     useEffect(() => {
@@ -292,15 +325,47 @@ const ActiveStreamsCard: React.FC<ActiveStreamsCardProps> = ({
 
     const handleStreamSelectionChange = (event: SelectChangeEvent<string[]>) => {
         const value = event.target.value;
-        setSelectedStreams(typeof value === 'string' ? value.split(',') : value);
+        const newSelection = typeof value === 'string' ? value.split(',') : value;
+
+        // Determine which streams were deselected
+        const deselected = selectedStreams.filter(key => !newSelection.includes(key));
+
+        // Add deselected items to manuallyDeselected set
+        if (deselected.length > 0) {
+            setManuallyDeselected(prev => {
+                const updated = new Set(prev);
+                deselected.forEach(key => updated.add(key));
+                return updated;
+            });
+        }
+
+        // Determine which streams were selected
+        const reselected = newSelection.filter(key => !selectedStreams.includes(key));
+
+        // Remove re-selected items from manuallyDeselected set
+        if (reselected.length > 0) {
+            setManuallyDeselected(prev => {
+                const updated = new Set(prev);
+                reselected.forEach(key => updated.delete(key));
+                return updated;
+            });
+        }
+
+        setSelectedStreams(newSelection);
     };
 
     const handleSelectAll = () => {
-        setSelectedStreams(availableStreams.map(s => s.key));
+        const allKeys = availableStreams.map(s => s.key);
+        setSelectedStreams(allKeys);
+        // Clear manuallyDeselected when selecting all
+        setManuallyDeselected(new Set());
     };
 
     const handleDeselectAll = () => {
+        const allKeys = availableStreams.map(s => s.key);
         setSelectedStreams([]);
+        // Mark all as manually deselected
+        setManuallyDeselected(new Set(allKeys));
     };
 
     // Handle ECG width change

@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,8 +34,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebSockets;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.FileProviders;
-using JunctionRelay_Server.Services.BackgroundServices;
-using JunctionRelay_Server.Services;
 using JunctionRelayServer.Services.BackgroundServices;
 using System.Diagnostics;
 
@@ -102,7 +100,7 @@ var framesPath = Path.Combine(dataDirectory, "frameengine", "frames");
 var firmwareDirectory = Path.Combine(dataDirectory, "firmware");
 var releaseCacheDirectory = Path.Combine(firmwareDirectory, "releases");
 var riveDirectory = Path.Combine(dataDirectory, "frameengine", "rive");
-var assetsDirectory = Path.Combine(dataDirectory, "frameengine", "assets");
+var imagesDirectory = Path.Combine(dataDirectory, "frameengine", "images");
 var videosDirectory = Path.Combine(dataDirectory, "frameengine", "videos");
 var thumbnailsDirectory = Path.Combine(dataDirectory, "frameengine", "thumbnails");
 
@@ -113,7 +111,7 @@ Directory.CreateDirectory(framesPath);
 Directory.CreateDirectory(firmwareDirectory);
 Directory.CreateDirectory(releaseCacheDirectory);
 Directory.CreateDirectory(riveDirectory);
-Directory.CreateDirectory(assetsDirectory);
+Directory.CreateDirectory(imagesDirectory);
 Directory.CreateDirectory(videosDirectory);
 Directory.CreateDirectory(thumbnailsDirectory);
 
@@ -124,7 +122,7 @@ Console.WriteLine($"[STARTUP] Frames directory:    {framesPath}");
 Console.WriteLine($"[STARTUP] Firmware directory:  {firmwareDirectory}");
 Console.WriteLine($"[STARTUP] Release cache:       {releaseCacheDirectory}");
 Console.WriteLine($"[STARTUP] Rive directory:      {riveDirectory}");
-Console.WriteLine($"[STARTUP] Assets directory:    {assetsDirectory}");
+Console.WriteLine($"[STARTUP] Images directory:    {imagesDirectory}");
 Console.WriteLine($"[STARTUP] Videos directory:    {videosDirectory}");
 Console.WriteLine($"[STARTUP] Thumbnails directory: {thumbnailsDirectory}");
 
@@ -332,6 +330,8 @@ builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 builder.Services.AddScoped<Service_Database_Manager_EventRules>();
 builder.Services.AddScoped<Service_FrameEngine_Filesystem>();
+builder.Services.AddScoped<Service_Database_Manager_LoggingSettings>();
+builder.Services.AddScoped<Service_Database_Manager_NotificationSettings>();
 
 // Core singleton services
 builder.Services.AddSingleton<IService_Settings, Service_Settings>();
@@ -356,10 +356,14 @@ builder.Services.AddSingleton<Service_CloudSync>();
 builder.Services.AddSingleton<Service_Image_Processor>();
 builder.Services.AddSingleton<Service_Events>();
 builder.Services.AddSingleton<Service_CloudBackup_Scheduler>();
+builder.Services.AddSingleton<Service_BlitMode_ResourceMonitor>();
+builder.Services.AddSingleton<Service_StreamHistory_ResourceMonitor>();
+builder.Services.AddSingleton<Service_LogRotation_Manager>();
 
 // Register WebSocket services
 builder.Services.AddSingleton<Service_Manager_WebSocket_Client>();
 builder.Services.AddSingleton<Service_Manager_WebSocket_Server>();
+builder.Services.AddSingleton<Service_Unified_Notification_Broadcaster>();
 
 // Register Token IPC Client for auto-updates
 builder.Services.AddSingleton<Service_TokenIpcClient>();
@@ -467,10 +471,16 @@ builder.Services.AddSingleton<Func<Model_Collector, IDataCollector>>(provider =>
 builder.Services.AddHostedService<Service_Startup>();
 builder.Services.AddHostedService<Service_Heartbeats>();
 builder.Services.AddHostedService<Service_Connection_Status>();
+builder.Services.AddHostedService<Service_CollectorTesting>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_WebSocket_Client>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<Service_Manager_SSH>());
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews()
+    .AddJsonOptions(options =>
+    {
+        // Use camelCase for JSON property names to match frontend TypeScript conventions
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 var app = builder.Build();
 
@@ -485,9 +495,53 @@ app.Lifetime.ApplicationStarted.Register(async () =>
         await dbInitializer.InitializeAsync();
         startupSignals.DatabaseInitialized.TrySetResult(true);
 
+        // Initialize logging settings defaults
+        var loggingSettingsDb = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_LoggingSettings>();
+        await loggingSettingsDb.InitializeDefaultsAsync();
+
+        // Run log rotation cleanup on startup
+        try
+        {
+            var logRotationManager = app.Services.GetRequiredService<Service_LogRotation_Manager>();
+            await logRotationManager.RunStartupCleanupAsync();
+            Console.WriteLine("[STARTUP] Log rotation cleanup completed");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STARTUP] Log rotation cleanup failed: {ex.Message}");
+        }
+
         var eventService = app.Services.GetRequiredService<Service_Events>();
         await eventService.InitializeAsync();
         startupSignals.EventEngineInitialized.TrySetResult(true);
+
+        // ===================================================================
+        // Blit Mode Resource Monitoring
+        // ===================================================================
+        try
+        {
+            var blitResourceMonitor = app.Services.GetRequiredService<Service_BlitMode_ResourceMonitor>();
+            blitResourceMonitor.StartMonitoring();
+            Console.WriteLine("[STARTUP] Blit Mode resource monitoring started");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STARTUP] Blit Mode resource monitoring failed to start: {ex.Message}");
+        }
+
+        // ===================================================================
+        // Stream History Resource Monitoring
+        // ===================================================================
+        try
+        {
+            var streamHistoryMonitor = app.Services.GetRequiredService<Service_StreamHistory_ResourceMonitor>();
+            streamHistoryMonitor.StartMonitoring();
+            Console.WriteLine("[STARTUP] Stream History resource monitoring started");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STARTUP] Stream History resource monitoring failed to start: {ex.Message}");
+        }
 
         // ===================================================================
         // FrameEngine Auto-Cleanup on Startup
@@ -555,6 +609,28 @@ app.Lifetime.ApplicationStarted.Register(async () =>
 app.Lifetime.ApplicationStopping.Register(() =>
 {
     Console.WriteLine("Application stopping - Services will shut down automatically...");
+
+    // Stop blit mode resource monitoring
+    try
+    {
+        var blitResourceMonitor = app.Services.GetRequiredService<Service_BlitMode_ResourceMonitor>();
+        blitResourceMonitor.StopMonitoring();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[SHUTDOWN] Error stopping blit resource monitor: {ex.Message}");
+    }
+
+    // Stop stream history resource monitoring
+    try
+    {
+        var streamHistoryMonitor = app.Services.GetRequiredService<Service_StreamHistory_ResourceMonitor>();
+        streamHistoryMonitor.StopMonitoring();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[SHUTDOWN] Error stopping stream history resource monitor: {ex.Message}");
+    }
 });
 
 builder.WebHost.UseUrls("http://0.0.0.0:7180");

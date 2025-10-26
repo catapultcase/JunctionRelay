@@ -47,6 +47,10 @@ import {
     DiscoveredStateMachine,
     DiscoveredDataBinding
 } from '../components/frameengine/FrameEngine_BackgroundRenderer';
+import {
+    convertValueForRiveBinding,
+    extractSensorTags,
+} from '../components/frameengine/FrameEngine_RiveUtils';
 
 interface CanvasConfig {
     width: number;
@@ -105,15 +109,26 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
     const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredStateMachine[]>([]);
     const [discoveredBindings, setDiscoveredBindings] = useState<DiscoveredDataBinding[]>([]);
 
+    // Element-level Rive discoveries (for asset-rive elements)
+    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Record<string, {
+        machines: DiscoveredStateMachine[];
+        bindings: DiscoveredDataBinding[];
+    }>>({});
+
     const [currentBrightness, setCurrentBrightness] = useState<number>(1.0);
 
     // Use refs for binding values to avoid triggering re-renders
     const backgroundInputs = useRef<Record<string, any>>({});
     const backgroundBindings = useRef<Record<string, string | number | boolean>>({});
+    // Track element-level rive inputs/bindings
+    const elementRiveInputs = useRef<Record<string, Record<string, any>>>({});
+    const elementRiveBindings = useRef<Record<string, Record<string, any>>>({});
     const isMountedRef = useRef(true);
 
     const extractDisplayElements = useCallback((config: RiveConfig) => {
         const elements = config.frameElements || [];
+        const discoveries: Record<string, { machines: DiscoveredStateMachine[]; bindings: DiscoveredDataBinding[] }> = {};
+
         const baseElements: BaseElement[] = elements.map(element => ({
             id: element.id,
             type: element.type as BaseElement['type'],
@@ -127,6 +142,25 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
             visible: (element as any).display?.visible ?? true,
         }));
 
+        // Extract rive discoveries from asset-rive elements
+        elements.forEach(element => {
+            if (element.type === 'asset-rive' && (element as any).riveDiscovery) {
+                const discovery = (element as any).riveDiscovery;
+                discoveries[element.id] = {
+                    machines: discovery.machines || [],
+                    bindings: discovery.bindings || []
+                };
+
+                // Initialize element rive inputs/bindings refs
+                const props = element.properties as any;
+                elementRiveInputs.current[element.id] = { ...(props.riveInputs || {}) };
+                elementRiveBindings.current[element.id] = { ...(props.riveBindings || {}) };
+
+                console.log(`📡 Extracted Rive discovery for element ${element.id}:`, discoveries[element.id]);
+            }
+        });
+
+        setElementRiveDiscoveries(discoveries);
         setDisplayElements(baseElements);
         return baseElements;
     }, []);
@@ -183,14 +217,12 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
     }, [currentBrightness]);
 
     const updateBackgroundInputs = useCallback((sensorPayload: SensorPayload) => {
-        if (!discoveredMachines.length) return;
+        if (!discoveredMachines.length) return false;
 
         let hasChanges = false;
 
         Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
-            const sensorTags = sensorKey.includes(',')
-                ? sensorKey.split(',').map(tag => tag.trim())
-                : [sensorKey];
+            const sensorTags = extractSensorTags(sensorKey);
 
             sensorTags.forEach(sensorTag => {
                 const inputExists = discoveredMachines.some(machine =>
@@ -214,51 +246,24 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
     }, [discoveredMachines]);
 
     const updateBackgroundBindings = useCallback((sensorPayload: SensorPayload) => {
-        if (!discoveredBindings.length) return;
+        if (!discoveredBindings.length) return false;
 
         let hasChanges = false;
 
         Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
-            const sensorTags = sensorKey.includes(',')
-                ? sensorKey.split(',').map(tag => tag.trim())
-                : [sensorKey];
+            const sensorTags = extractSensorTags(sensorKey);
 
             sensorTags.forEach(sensorTag => {
-                const bindingExists = discoveredBindings.some(binding => binding.name === sensorTag);
+                const binding = discoveredBindings.find(b => b.name === sensorTag);
 
-                if (bindingExists) {
-                    const binding = discoveredBindings.find(b => b.name === sensorTag);
-                    if (!binding) return;
-
+                if (binding) {
                     const oldValue = backgroundBindings.current[sensorTag];
-                    let newValue: string | number | boolean;
-
-                    if (binding.type === 'boolean') {
-                        newValue = Boolean(sensorData.value);
-                    } else if (binding.type === 'string') {
-                        newValue = String(sensorData.value);
-                    } else if (binding.type === 'number') {
-                        newValue = Number(sensorData.value);
-                    } else if (binding.type === 'color') {
-                        const colorValue: any = sensorData.value;
-                        if (typeof colorValue === 'string' && colorValue.startsWith('#')) {
-                            const hexValue = parseInt(colorValue.slice(1), 16);
-                            const r = (hexValue >> 16) & 0xFF;
-                            const g = (hexValue >> 8) & 0xFF;
-                            const b = hexValue & 0xFF;
-                            newValue = (0xFF << 24) | (r << 16) | (g << 8) | b;
-                            console.log(`Color sensor "${sensorTag}" converted from ${colorValue} to ARGB: ${newValue}`);
-                        } else {
-                            newValue = Number(colorValue) || 0;
-                        }
-                    } else {
-                        newValue = Number(sensorData.value) || 0;
-                    }
+                    const newValue = convertValueForRiveBinding(sensorData.value, binding.type as any);
 
                     if (oldValue !== newValue) {
                         backgroundBindings.current[sensorTag] = newValue;
                         hasChanges = true;
-                        console.log(`Background binding "${sensorTag}" (${binding.type}) updated: ${oldValue} -> ${newValue}`);
+                        // console.log(`Background binding "${sensorTag}" (${binding.type}) updated: ${oldValue} -> ${newValue}`);
                     }
                 }
             });
@@ -266,6 +271,78 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
 
         return hasChanges;
     }, [discoveredBindings]);
+
+    // Update element-level Rive inputs based on sensor data
+    const updateElementRiveInputs = useCallback((sensorPayload: SensorPayload) => {
+        let hasChanges = false;
+        const elementsToUpdate: string[] = [];
+
+        Object.entries(elementRiveDiscoveries).forEach(([elementId, discovery]) => {
+            if (!discovery.machines || discovery.machines.length === 0) return;
+
+            discovery.machines.forEach(machine => {
+                machine.inputs.forEach(input => {
+                    Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
+                        const sensorTags = extractSensorTags(sensorKey);
+
+                        sensorTags.forEach(sensorTag => {
+                            if (input.name === sensorTag) {
+                                const oldValue = elementRiveInputs.current[elementId]?.[sensorTag];
+                                const newValue = sensorData.value;
+
+                                if (oldValue !== newValue) {
+                                    if (!elementRiveInputs.current[elementId]) {
+                                        elementRiveInputs.current[elementId] = {};
+                                    }
+                                    elementRiveInputs.current[elementId][sensorTag] = newValue;
+                                    hasChanges = true;
+                                    elementsToUpdate.push(elementId);
+                                    console.log(`Element ${elementId} input "${sensorTag}" updated: ${oldValue} -> ${newValue}`);
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+        });
+
+        return { hasChanges, elementsToUpdate: [...new Set(elementsToUpdate)] };
+    }, [elementRiveDiscoveries]);
+
+    // Update element-level Rive bindings based on sensor data
+    const updateElementRiveBindings = useCallback((sensorPayload: SensorPayload) => {
+        let hasChanges = false;
+        const elementsToUpdate: string[] = [];
+
+        Object.entries(elementRiveDiscoveries).forEach(([elementId, discovery]) => {
+            if (!discovery.bindings || discovery.bindings.length === 0) return;
+
+            discovery.bindings.forEach(binding => {
+                Object.entries(sensorPayload.sensors).forEach(([sensorKey, sensorData]) => {
+                    const sensorTags = extractSensorTags(sensorKey);
+
+                    sensorTags.forEach(sensorTag => {
+                        if (binding.name === sensorTag) {
+                            const oldValue = elementRiveBindings.current[elementId]?.[sensorTag];
+                            const newValue = convertValueForRiveBinding(sensorData.value, binding.type as any);
+
+                            if (oldValue !== newValue) {
+                                if (!elementRiveBindings.current[elementId]) {
+                                    elementRiveBindings.current[elementId] = {};
+                                }
+                                elementRiveBindings.current[elementId][sensorTag] = newValue;
+                                hasChanges = true;
+                                elementsToUpdate.push(elementId);
+                                console.log(`Element ${elementId} binding "${sensorTag}" (${binding.type}) updated: ${oldValue} -> ${newValue}`);
+                            }
+                        }
+                    });
+                });
+            });
+        });
+
+        return { hasChanges, elementsToUpdate: [...new Set(elementsToUpdate)] };
+    }, [elementRiveDiscoveries]);
 
     const processSensorData = useCallback((sensorPayload: SensorPayload) => {
         if (!isMountedRef.current || !riveConfig || sensorPayload.screenId !== riveConfig.screenId) {
@@ -288,6 +365,30 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
                     riveBindings: { ...backgroundBindings.current }
                 };
             });
+        }
+
+        // Update element-level Rive inputs/bindings
+        const elementInputsResult = updateElementRiveInputs(sensorPayload);
+        const elementBindingsResult = updateElementRiveBindings(sensorPayload);
+
+        // Combine updated element IDs from both inputs and bindings
+        const updatedElementIds = [...new Set([...elementInputsResult.elementsToUpdate, ...elementBindingsResult.elementsToUpdate])];
+
+        // Update displayElements with new rive inputs/bindings for changed elements
+        if (updatedElementIds.length > 0) {
+            setDisplayElements(prev => prev.map(element => {
+                if (element.type === 'asset-rive' && updatedElementIds.includes(element.id)) {
+                    return {
+                        ...element,
+                        properties: {
+                            ...element.properties,
+                            riveInputs: { ...elementRiveInputs.current[element.id] },
+                            riveBindings: { ...elementRiveBindings.current[element.id] }
+                        }
+                    };
+                }
+                return element;
+            }));
         }
 
         const processedSensors = new Set<string>();
@@ -315,10 +416,10 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
             }
         });
 
-        console.log('New sensor data:');
-        Object.entries(sensorPayload.sensors).forEach(([tag, data]: [string, any], index) => {
-            console.log(`  ${index + 1}. "${tag}": ${data.displayValue || `${data.value} ${data.unit || ''}`}`);
-        });
+        // console.log('New sensor data:');
+        // Object.entries(sensorPayload.sensors).forEach(([tag, data]: [string, any], index) => {
+        //     console.log(`  ${index + 1}. "${tag}": ${data.displayValue || `${data.value} ${data.unit || ''}`}`);
+        // });
 
         const allSensorTags = new Set<string>();
 
@@ -340,7 +441,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
             }
         });
 
-    }, [riveConfig, hasOnscreenElement, hasMatchingSensorData, updateBackgroundInputs, updateBackgroundBindings, processBrightnessSensor]);
+    }, [riveConfig, hasOnscreenElement, hasMatchingSensorData, updateBackgroundInputs, updateBackgroundBindings, updateElementRiveInputs, updateElementRiveBindings, processBrightnessSensor]);
 
     const handleBackgroundDiscovery = useCallback((machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => {
         console.log('Background discovered state machines:', machines);
@@ -585,6 +686,9 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
     }
 
     if (isEmbedded) {
+        // Calculate scale to fit canvas within container height
+        const scale = containerHeight / canvasConfig.height;
+
         return (
             <Box sx={{
                 position: 'relative',
@@ -593,30 +697,22 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
                 backgroundColor: canvasConfig.backgroundColor,
                 borderRadius: 1,
                 overflow: 'hidden',
-                ...brightnessStyle
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
             }}>
-                <FrameEngine_BackgroundRenderer
-                    config={backgroundConfig}
-                    width={containerHeight ? Math.round((containerHeight / canvasConfig.height) * canvasConfig.width) : canvasConfig.width}
-                    height={containerHeight || canvasConfig.height}
-                    fit="contain"
-                    onRiveDiscovery={handleBackgroundDiscovery}
+                <iframe
+                    src={`/device/${deviceId}/virtual-screen`}
+                    style={{
+                        width: canvasConfig.width,
+                        height: canvasConfig.height,
+                        transform: `scale(${scale})`,
+                        transformOrigin: 'center center',
+                        border: 'none',
+                        backgroundColor: canvasConfig.backgroundColor,
+                    }}
+                    title="Virtual Screen Preview"
                 />
-
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    zIndex: 1,
-                }}>
-                    <FrameEngine_ElementRenderer
-                        elements={displayElements}
-                        config={rendererConfig}
-                        sensorData={currentSensorData}
-                    />
-                </div>
 
                 {shouldShowControls && (
                     <Box sx={{
@@ -717,6 +813,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
                     width: canvasConfig.width,
                     height: canvasConfig.height,
                     position: 'relative',
+                    zoom: 1 / (window.devicePixelRatio || 1),
                     ...brightnessStyle
                 }}
             >

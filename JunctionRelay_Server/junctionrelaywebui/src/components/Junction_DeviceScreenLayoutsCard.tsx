@@ -6,7 +6,8 @@ import {
     Select, MenuItem, FormControl, SelectChangeEvent,
     TextField, Switch, FormControlLabel, InputLabel,
     Card, CardContent, Button, Link, Tooltip,
-    IconButton, Collapse
+    IconButton, Collapse, Accordion, AccordionSummary, AccordionDetails,
+    useTheme, useMediaQuery, ToggleButtonGroup, ToggleButton
 } from "@mui/material";
 
 // Icon imports
@@ -21,8 +22,15 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import SensorsIcon from '@mui/icons-material/Sensors';
 import LabelIcon from '@mui/icons-material/Label';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import ViewAgendaIcon from '@mui/icons-material/ViewAgenda';
+import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 
-// Define sensor interface to match the one from EnhancedSensorsTable
+// Define sensor interface to match the one from Junction_EnhancedSensorSelector
 interface Sensor {
     Id: number;
     name: string;
@@ -71,6 +79,9 @@ interface DeviceScreenLayoutsCardProps {
     availableSensors: Sensor[];
     onRiveInputsUpdate?: (riveInputs: RiveInput[]) => void;
     onValidationUpdate?: (isValid: boolean, message: string) => void;
+    onPayloadMismatchUpdate?: (hasMismatches: boolean, mismatchCount: number) => void;
+    onMappedSensorTagsUpdate?: (mappedSensorTags: string[]) => void;
+    disableCollapse?: boolean;
 }
 
 const headerStyle = {
@@ -359,7 +370,7 @@ const RiveInputsForLayout: React.FC<{
                             <TableHead>
                                 <TableRow>
                                     <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Name</TableCell>
-                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
+                                    <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Binding</TableCell>
                                     <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Type</TableCell>
                                     <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Default Value</TableCell>
                                 </TableRow>
@@ -379,13 +390,18 @@ const RiveInputsForLayout: React.FC<{
                                             </Box>
                                         </TableCell>
                                         <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                            <Chip
-                                                size="small"
-                                                label={element.isConfigured ? "Mapped" : "Not Mapped"}
-                                                color={element.isConfigured ? "success" : "error"}
-                                                icon={element.isConfigured ? <CheckCircleIcon /> : <CancelIcon />}
-                                                variant="outlined"
-                                            />
+                                            {element.isConfigured && (
+                                                <Tooltip title="Mapped to sensor">
+                                                    <Chip
+                                                        icon={<LinkIcon />}
+                                                        label=""
+                                                        size="small"
+                                                        color="success"
+                                                        variant="outlined"
+                                                        sx={{ minWidth: '36px', '& .MuiChip-label': { px: 0.5 } }}
+                                                    />
+                                                </Tooltip>
+                                            )}
                                         </TableCell>
                                         <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
                                             <Chip
@@ -436,8 +452,15 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     onJunctionUpdate,
     availableSensors,
     onRiveInputsUpdate,
-    onValidationUpdate
+    onValidationUpdate,
+    onPayloadMismatchUpdate,
+    onMappedSensorTagsUpdate,
+    disableCollapse = false
 }) => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    const [expanded, setExpanded] = useState<boolean>(true);
     const [deviceScreens, setDeviceScreens] = useState<{ [deviceId: number]: any[] }>({});
     const [screenLayouts, setScreenLayouts] = useState<any[]>([]);
     const [frameLayouts, setFrameLayouts] = useState<any[]>([]);
@@ -445,6 +468,10 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     const [loadingState, setLoadingState] = useState<{ [key: string]: boolean }>({});
     const [savingRenderingMode, setSavingRenderingMode] = useState<boolean>(false);
     const [riveInputMappings, setRiveInputMappings] = useState<Record<string, string[]>>({});
+
+    // View mode state for single vs all devices
+    const [viewMode, setViewMode] = useState<'all' | 'single'>('all');
+    const [currentDeviceIndex, setCurrentDeviceIndex] = useState<number>(0);
 
     const renderingMode = junction?.renderingMode || 'Payload';
     const isPayloadMode = renderingMode === 'Payload';
@@ -472,6 +499,28 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     const targetDeviceLinks = useMemo(() =>
         deviceLinks.filter(link => link.type === "device" && link.role === "Target")
         , [deviceLinks]);
+
+    // Handlers for device navigation in single view mode
+    const handlePreviousDevice = () => {
+        if (currentDeviceIndex > 0) {
+            setCurrentDeviceIndex(currentDeviceIndex - 1);
+        }
+    };
+
+    const handleNextDevice = () => {
+        if (currentDeviceIndex < targetDeviceLinks.length - 1) {
+            setCurrentDeviceIndex(currentDeviceIndex + 1);
+        }
+    };
+
+    // Filter devices based on view mode
+    const displayedDeviceLinks = useMemo(() => {
+        if (viewMode === 'single' && targetDeviceLinks.length > 0) {
+            const index = Math.min(currentDeviceIndex, targetDeviceLinks.length - 1);
+            return [targetDeviceLinks[index]];
+        }
+        return targetDeviceLinks;
+    }, [viewMode, currentDeviceIndex, targetDeviceLinks]);
 
     const isSensorTagMapped = useCallback((sensorTag: string): boolean => {
         return availableSensors.some(sensor => {
@@ -626,6 +675,41 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         }
     }, [riveInputs, onRiveInputsUpdate]);
 
+    // MAPPED SENSOR TAGS EFFECT - Send all mapped sensor tags to parent
+    const previousMappedSensorTagsRef = useRef<string>('');
+
+    useEffect(() => {
+        if (onMappedSensorTagsUpdate) {
+            const allMappedTags = new Set<string>();
+
+            // 1. Add sensor tags from riveInputs (machine inputs and bindings)
+            riveInputs.forEach(input => {
+                if (input.isConfigured && input.mappedSensorTags) {
+                    input.mappedSensorTags.forEach(tag => allMappedTags.add(tag.trim()));
+                }
+            });
+
+            // 2. Add sensor tags from frame elements (sensor/ecg elements with sensorTag property)
+            const selectedLayoutIds = getSelectedLayoutIds();
+            selectedLayoutIds.forEach(layoutId => {
+                const sensorTags = extractSensorTagsFromTemplate(layoutId);
+                sensorTags.forEach(sensorTag => {
+                    if (sensorTag.isConnected) {
+                        allMappedTags.add(sensorTag.sensorTag.trim());
+                    }
+                });
+            });
+
+            const mappedTagsArray = Array.from(allMappedTags);
+            const currentHash = JSON.stringify(mappedTagsArray.sort());
+
+            if (currentHash !== previousMappedSensorTagsRef.current) {
+                previousMappedSensorTagsRef.current = currentHash;
+                onMappedSensorTagsUpdate(mappedTagsArray);
+            }
+        }
+    }, [riveInputs, onMappedSensorTagsUpdate, getSelectedLayoutIds, extractSensorTagsFromTemplate]);
+
     // VALIDATION EFFECT - NEW
     useEffect(() => {
         if (!onValidationUpdate) return;
@@ -675,6 +759,36 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         screenConfigs,
         isAnyFrameMode,
         onValidationUpdate
+    ]);
+
+    // Effect to detect payload mismatches
+    useEffect(() => {
+        if (!onPayloadMismatchUpdate || !junction) return;
+
+        let mismatchCount = 0;
+        const targetDevices = deviceLinks.filter(link => link.isTarget);
+
+        for (const link of targetDevices) {
+            const deviceId = link.id;
+            const screens = deviceScreens[deviceId] || [];
+
+            for (const screen of screens) {
+                const hasConfigMismatch = junction.sendConfigPayload && !screen.supportsConfigPayloads;
+                const hasSensorMismatch = junction.sendSensorPayloads && !screen.supportsSensorPayloads;
+                const hasStopMismatch = junction.sendStopPayload && !screen.supportsStopPayloads;
+
+                if (hasConfigMismatch || hasSensorMismatch || hasStopMismatch) {
+                    mismatchCount++;
+                }
+            }
+        }
+
+        onPayloadMismatchUpdate(mismatchCount > 0, mismatchCount);
+    }, [
+        deviceLinks,
+        deviceScreens,
+        junction,
+        onPayloadMismatchUpdate
     ]);
 
     const handleRiveInputMappingChange = useCallback(async (inputKey: string, sensorTags: string[]) => {
@@ -797,13 +911,58 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         const key = `${linkId}-${screenId}`;
         const existingConfig = screenConfigs[key];
 
-        if (!existingConfig?.id) {
-            showSnackbar("Screen layout configuration not found", "error");
-            return;
-        }
-
         try {
             setLoadingState(prev => ({ ...prev, [key]: true }));
+
+            // If no existing config, create a new one
+            if (!existingConfig?.id) {
+                const payload: any = {
+                    junctionId,
+                    deviceScreenId: screenId,
+                    targetPollRate: undefined,
+                    onlySendIfChanged: true,
+                    enableUrlAccess: false,
+                    urlPath: undefined
+                };
+
+                if (isAnyFrameMode) {
+                    payload.frameLayoutId = layoutId;
+                } else {
+                    payload.screenLayoutId = layoutId;
+                }
+
+                const response = await fetch(`/api/junctions/${junctionId}/links/device-links/${linkId}/screen-layouts`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to create layout configuration: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                setScreenConfigs(prev => ({
+                    ...prev,
+                    [key]: {
+                        id: data.id,
+                        junctionId: data.junctionId,
+                        deviceScreenId: screenId,
+                        screenLayoutId: data.screenLayoutId,
+                        frameLayoutId: data.frameLayoutId,
+                        targetPollRate: data.targetPollRate,
+                        onlySendIfChanged: data.onlySendIfChanged ?? true,
+                        enableUrlAccess: data.enableUrlAccess ?? false,
+                        urlPath: data.urlPath,
+                        lastRequested: data.lastRequested
+                    }
+                }));
+
+                const modeDescription = getRenderModeDisplayName(renderingMode);
+                showSnackbar(`${modeDescription} layout configuration created successfully`, "success");
+                return;
+            }
 
             const currentEffectiveLayoutId = isAnyFrameMode ? existingConfig.frameLayoutId : existingConfig.screenLayoutId;
 
@@ -874,7 +1033,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         try {
             const existingConfig = screenConfigs[key];
 
-            if (!existingConfig || !existingConfig.id) {
+            if (!existingConfig?.id) {
                 showSnackbar("Please assign a layout first before enabling URL access", "warning");
                 return;
             }
@@ -931,7 +1090,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         try {
             const existingConfig = screenConfigs[key];
 
-            if (!existingConfig || !existingConfig.id) {
+            if (!existingConfig?.id) {
                 showSnackbar("Please assign a layout first before setting poll rate", "warning");
                 return;
             }
@@ -977,7 +1136,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         try {
             const existingConfig = screenConfigs[key];
 
-            if (!existingConfig || !existingConfig.id) {
+            if (!existingConfig?.id) {
                 showSnackbar("Please assign a layout first before changing send options", "warning");
                 return;
             }
@@ -1091,7 +1250,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         return `${getBaseUrl()}/device/${virtualDeviceId}/virtual-screen`;
     }, [getBaseUrl]);
 
-    const renderSensorTagsTable = useCallback((sensorTags: SensorTag[], layoutName: string) => {
+    const renderSensorTagsTable = useCallback((sensorTags: SensorTag[], layoutName: string, isMobile: boolean) => {
         if (sensorTags.length === 0) {
             return (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
@@ -1102,77 +1261,156 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
 
         return (
             <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
                     SensorTags in "{layoutName}":
                 </Typography>
-                <Table size="small">
-                    <TableHead>
-                        <TableRow>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>SensorTag</TableCell>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Status</TableCell>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Label</TableCell>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Units</TableCell>
-                            <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Template Example</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
+
+                {/* Mobile: Card Layout */}
+                {isMobile ? (
+                    <Box display="flex" flexDirection="column" gap={1.5}>
                         {sensorTags.map((sensorTag, index) => (
-                            <TableRow key={`${sensorTag.sensorTag}-${index}`} hover>
-                                <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                    <Box display="flex" alignItems="center">
+                            <Card key={`${sensorTag.sensorTag}-${index}`} variant="outlined" sx={{ borderRadius: 1 }}>
+                                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                                    {/* Sensor Tag Name */}
+                                    <Box display="flex" alignItems="center" mb={1}>
                                         <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
-                                        <Typography variant="body2" fontWeight="medium">
+                                        <Typography variant="body2" fontWeight="bold">
                                             {sensorTag.sensorTag}
                                         </Typography>
                                     </Box>
-                                </TableCell>
-                                <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                    <Chip
-                                        size="small"
-                                        label={sensorTag.isConnected ? "Mapped" : "Not Mapped"}
-                                        color={sensorTag.isConnected ? "success" : "error"}
-                                        icon={sensorTag.isConnected ? <CheckCircleIcon /> : <CancelIcon />}
-                                        variant="outlined"
-                                    />
-                                </TableCell>
-                                <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                    <Chip
-                                        size="small"
-                                        label={sensorTag.showLabel ? "Yes" : "No"}
-                                        color={sensorTag.showLabel ? "primary" : "default"}
-                                        icon={<LabelIcon />}
-                                        variant="outlined"
-                                    />
-                                </TableCell>
-                                <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                    <Chip
-                                        size="small"
-                                        label={sensorTag.showUnit ? "Yes" : "No"}
-                                        color={sensorTag.showUnit ? "primary" : "default"}
-                                        variant="outlined"
-                                    />
-                                </TableCell>
-                                <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
-                                    <Typography variant="body2">
-                                        {sensorTag.showLabel && sensorTag.placeholderSensorLabel && (
-                                            <span style={{ marginRight: '4px' }}>
-                                                {sensorTag.placeholderSensorLabel}
+
+                                    {/* Status */}
+                                    <Box mb={1}>
+                                        <Chip
+                                            size="small"
+                                            label={sensorTag.isConnected ? "Mapped" : "Not Mapped"}
+                                            color={sensorTag.isConnected ? "success" : "error"}
+                                            icon={sensorTag.isConnected ? <CheckCircleIcon /> : <CancelIcon />}
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.7rem' }}
+                                        />
+                                    </Box>
+
+                                    {/* Template Example */}
+                                    <Box mb={1} p={1} bgcolor="background.default" borderRadius={1}>
+                                        <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                                            Template Example:
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            {sensorTag.showLabel && sensorTag.placeholderSensorLabel && (
+                                                <span style={{ marginRight: '4px', fontWeight: 500 }}>
+                                                    {sensorTag.placeholderSensorLabel}
+                                                </span>
+                                            )}
+                                            <span>
+                                                {sensorTag.placeholderValue}
                                             </span>
-                                        )}
-                                        <span>
-                                            {sensorTag.placeholderValue}
-                                        </span>
-                                        {sensorTag.showUnit && sensorTag.placeholderUnit && (
-                                            <span style={{ color: 'text.secondary', marginLeft: '2px' }}>
-                                                {sensorTag.placeholderUnit}
-                                            </span>
-                                        )}
-                                    </Typography>
-                                </TableCell>
-                            </TableRow>
+                                            {sensorTag.showUnit && sensorTag.placeholderUnit && (
+                                                <span style={{ marginLeft: '2px', opacity: 0.7 }}>
+                                                    {sensorTag.placeholderUnit}
+                                                </span>
+                                            )}
+                                        </Typography>
+                                    </Box>
+
+                                    {/* Flags */}
+                                    <Box display="flex" gap={0.5} flexWrap="wrap">
+                                        <Chip
+                                            size="small"
+                                            label={sensorTag.showLabel ? "Show Label" : "Hide Label"}
+                                            color={sensorTag.showLabel ? "primary" : "default"}
+                                            icon={<LabelIcon />}
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.65rem', height: '20px' }}
+                                        />
+                                        <Chip
+                                            size="small"
+                                            label={sensorTag.showUnit ? "Show Units" : "Hide Units"}
+                                            color={sensorTag.showUnit ? "primary" : "default"}
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.65rem', height: '20px' }}
+                                        />
+                                    </Box>
+                                </CardContent>
+                            </Card>
                         ))}
-                    </TableBody>
-                </Table>
+                    </Box>
+                ) : (
+                    /* Desktop: Table Layout */
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>SensorTag</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Binding</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Label</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Show Units</TableCell>
+                                <TableCell sx={{ ...headerStyle, fontSize: '0.75rem' }}>Template Example</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {sensorTags.map((sensorTag, index) => (
+                                <TableRow key={`${sensorTag.sensorTag}-${index}`} hover>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Box display="flex" alignItems="center">
+                                            <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {sensorTag.sensorTag}
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        {sensorTag.isConnected && (
+                                            <Tooltip title="Mapped to sensor">
+                                                <Chip
+                                                    icon={<LinkIcon />}
+                                                    label=""
+                                                    size="small"
+                                                    color="success"
+                                                    variant="outlined"
+                                                    sx={{ minWidth: '36px', '& .MuiChip-label': { px: 0.5 } }}
+                                                />
+                                            </Tooltip>
+                                        )}
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Chip
+                                            size="small"
+                                            label={sensorTag.showLabel ? "Yes" : "No"}
+                                            color={sensorTag.showLabel ? "primary" : "default"}
+                                            icon={<LabelIcon />}
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Chip
+                                            size="small"
+                                            label={sensorTag.showUnit ? "Yes" : "No"}
+                                            color={sensorTag.showUnit ? "primary" : "default"}
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ ...cellStyle, fontSize: '0.8rem' }}>
+                                        <Typography variant="body2">
+                                            {sensorTag.showLabel && sensorTag.placeholderSensorLabel && (
+                                                <span style={{ marginRight: '4px' }}>
+                                                    {sensorTag.placeholderSensorLabel}
+                                                </span>
+                                            )}
+                                            <span>
+                                                {sensorTag.placeholderValue}
+                                            </span>
+                                            {sensorTag.showUnit && sensorTag.placeholderUnit && (
+                                                <span style={{ color: 'text.secondary', marginLeft: '2px' }}>
+                                                    {sensorTag.placeholderUnit}
+                                                </span>
+                                            )}
+                                        </Typography>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
             </Box>
         );
     }, []);
@@ -1186,13 +1424,64 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     }
 
     return (
-        <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-            <Card sx={{ mb: 3 }}>
-                <CardContent>
-                    <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <SettingsIcon />
-                        Rendering Mode Configuration
-                    </Typography>
+        <Accordion
+            expanded={disableCollapse ? true : expanded}
+            onChange={disableCollapse ? undefined : () => setExpanded(!expanded)}
+            sx={{ mb: 3 }}
+        >
+            <AccordionSummary
+                expandIcon={disableCollapse ? null : <ExpandMoreIcon />}
+                sx={disableCollapse ? {
+                    cursor: 'default !important',
+                    '&:hover': { backgroundColor: 'transparent' },
+                    // Allow child elements to be clickable even when accordion is disabled
+                    pointerEvents: 'auto'
+                } : undefined}
+                onClick={disableCollapse ? (e) => e.preventDefault() : undefined}
+            >
+                <Box display="flex" alignItems="center" justifyContent="space-between" width="100%" sx={{ pointerEvents: 'auto' }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <ScreenshotIcon />
+                        <Typography variant="h6">Device Screens & Layout Configuration</Typography>
+                    </Box>
+
+                    {/* View Mode Toggle - Only show if there are multiple target devices */}
+                    {targetDeviceLinks.length > 1 && (
+                        <Box onClick={(e) => e.stopPropagation()}>
+                            <ToggleButtonGroup
+                                value={viewMode}
+                                exclusive
+                                onChange={(e, newMode) => {
+                                    e.stopPropagation();
+                                    if (newMode !== null) {
+                                        setViewMode(newMode);
+                                    }
+                                }}
+                                size="small"
+                            >
+                                <ToggleButton value="all" aria-label="all devices">
+                                    <Tooltip title="All Devices">
+                                        <ViewListIcon fontSize="small" />
+                                    </Tooltip>
+                                </ToggleButton>
+                                <ToggleButton value="single" aria-label="single device">
+                                    <Tooltip title="Single Device">
+                                        <ViewAgendaIcon fontSize="small" />
+                                    </Tooltip>
+                                </ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>
+                    )}
+                </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+                <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
+                    <Card sx={{ mb: 3 }}>
+                        <CardContent>
+                            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <SettingsIcon />
+                                Rendering Mode Configuration
+                            </Typography>
 
                     <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} gap={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
                         <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -1256,7 +1545,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </CardContent>
             </Card>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" sx={{
                     display: 'flex',
                     alignItems: 'center'
@@ -1268,13 +1557,56 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </Typography>
             </Box>
 
+            {/* Device Selector - Only show in single device mode with multiple devices */}
+            {viewMode === 'single' && targetDeviceLinks.length > 1 && (
+                <Box sx={{ mb: 3, p: 2, backgroundColor: 'action.hover', borderRadius: 1, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                        Viewing Device:
+                    </Typography>
+                    <FormControl sx={{ minWidth: 300, flex: 1, maxWidth: 500 }} size="small">
+                        <Select
+                            value={currentDeviceIndex}
+                            onChange={(e) => setCurrentDeviceIndex(Number(e.target.value))}
+                        >
+                            {targetDeviceLinks.map((device, index) => (
+                                <MenuItem key={`device-select-${device.linkId}`} value={index}>
+                                    <Box display="flex" alignItems="center" gap={1}>
+                                        <DevicesIcon fontSize="small" color="primary" />
+                                        <Typography variant="body2">{device.name}</Typography>
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                        <IconButton
+                            size="small"
+                            onClick={handlePreviousDevice}
+                            disabled={currentDeviceIndex === 0}
+                        >
+                            <NavigateBeforeIcon />
+                        </IconButton>
+                        <Typography variant="caption" sx={{ minWidth: '50px', textAlign: 'center' }}>
+                            {currentDeviceIndex + 1} / {targetDeviceLinks.length}
+                        </Typography>
+                        <IconButton
+                            size="small"
+                            onClick={handleNextDevice}
+                            disabled={currentDeviceIndex >= targetDeviceLinks.length - 1}
+                        >
+                            <NavigateNextIcon />
+                        </IconButton>
+                    </Box>
+                </Box>
+            )}
+
             {targetDeviceLinks.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                     No target devices available. Add devices as targets to configure their {isAnyFrameMode ? 'frame layouts' : 'screen layouts'}.
                 </Typography>
             ) : (
                 <Box>
-                    {targetDeviceLinks.map(link => {
+                    {displayedDeviceLinks.map(link => {
                         const deviceId = link.id;
                         const linkId = link.linkId;
                         const isLoadingDevice = loadingState[`configs-${linkId}`] || false;
@@ -1306,27 +1638,8 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                         No screens available for this device.
                                     </Typography>
                                 ) : (
-                                    <Box sx={{ overflowX: 'auto' }}>
-                                        <Table size="small" sx={{ minWidth: { xs: 600, sm: 'auto' } }}>
-                                            <TableHead>
-                                                <TableRow>
-                                                    <TableCell sx={{ ...headerStyle, minWidth: { xs: 120, sm: 'auto' } }}>Screen</TableCell>
-                                                    <TableCell sx={{ ...headerStyle, minWidth: { xs: 200, sm: 'auto' } }}>
-                                                        {isCompositeMode ? "Frame Layout" : (isBlitMode ? "Frame Layout" : "Screen Layout")}
-                                                    </TableCell>
-                                                    {!isCompositeMode && (
-                                                        <TableCell sx={{ ...headerStyle, minWidth: { xs: 100, sm: 'auto' } }}>Target Poll Rate (ms)</TableCell>
-                                                    )}
-                                                    {!isCompositeMode && (
-                                                        <TableCell sx={{ ...headerStyle, minWidth: { xs: 120, sm: 'auto' } }}>Only Send If Data Changed</TableCell>
-                                                    )}
-                                                    {isBlitMode && (
-                                                        <TableCell sx={{ ...headerStyle, minWidth: { xs: 150, sm: 'auto' } }}>External URL Access</TableCell>
-                                                    )}
-                                                </TableRow>
-                                            </TableHead>
-                                            <TableBody>
-                                                {screens.map((screen: any) => {
+                                    <Box>
+                                        {screens.map((screen: any) => {
                                                     const screenId = screen.id;
                                                     const key = `${linkId}-${screenId}`;
                                                     const defaultLayoutId = screen.screenLayoutId;
@@ -1344,16 +1657,41 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                         ? availableLayouts.find(l => String(l.id) === String(currentLayoutId))
                                                         : null;
 
+                                                    // Check for payload mismatches
+                                                    const hasConfigMismatch = junction.sendConfigPayload && !screen.supportsConfigPayloads;
+                                                    const hasSensorMismatch = junction.sendSensorPayloads && !screen.supportsSensorPayloads;
+                                                    const hasStopMismatch = junction.sendStopPayload && !screen.supportsStopPayloads;
+                                                    const hasAnyMismatch = hasConfigMismatch || hasSensorMismatch || hasStopMismatch;
+
                                                     return (
-                                                        <React.Fragment key={`screen-${screenId}`}>
-                                                            <TableRow hover>
-                                                                <TableCell sx={cellStyle}>
-                                                                    <Typography variant="body2" fontWeight="medium">
+                                                        <Paper
+                                                            key={`screen-${screenId}`}
+                                                            variant="outlined"
+                                                            sx={{
+                                                                mb: 2,
+                                                                p: 2,
+                                                                backgroundColor: hasAnyMismatch ? 'warning.light' : 'inherit',
+                                                                borderColor: hasAnyMismatch ? 'warning.main' : 'divider'
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                display="grid"
+                                                                gridTemplateColumns={{ xs: '1fr', lg: '400px 1fr' }}
+                                                                gap={3}
+                                                            >
+                                                                {/* Left Column: Controls */}
+                                                                <Box>
+                                                                    {/* Screen Name */}
+                                                                    <Typography variant="subtitle1" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                                        <ScreenshotIcon fontSize="small" color="primary" />
                                                                         {screen.displayName || screen.screenKey}
                                                                     </Typography>
-                                                                </TableCell>
-                                                                <TableCell sx={cellStyle}>
-                                                                    <Box display="flex" alignItems="center">
+
+                                                                    {/* Frame/Screen Layout */}
+                                                                    <Box mb={3}>
+                                                                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                                            {isCompositeMode ? "Frame Layout" : (isBlitMode ? "Frame Layout" : "Screen Layout")}
+                                                                        </Typography>
                                                                         <FormControl
                                                                             fullWidth
                                                                             size="small"
@@ -1411,51 +1749,103 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                 ))}
                                                                             </Select>
                                                                         </FormControl>
-                                                                        {isConfigured && (
-                                                                            <Chip
-                                                                                size="small"
-                                                                                label="Configured"
-                                                                                color="primary"
-                                                                                variant="outlined"
-                                                                                sx={{ ml: 2 }}
-                                                                            />
-                                                                        )}
-                                                                        {isLoading && (
-                                                                            <CircularProgress size={16} sx={{ ml: 2 }} />
+                                                                        <Box display="flex" alignItems="center" gap={1} mt={1}>
+                                                                            {isConfigured && (
+                                                                                <Chip
+                                                                                    size="small"
+                                                                                    label="Configured"
+                                                                                    color="primary"
+                                                                                    variant="outlined"
+                                                                                />
+                                                                            )}
+                                                                            {isLoading && (
+                                                                                <CircularProgress size={16} />
+                                                                            )}
+                                                                        </Box>
+                                                                    </Box>
+
+                                                                    {/* Payload Support */}
+                                                                    <Box mb={3}>
+                                                                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                                            Payload Support
+                                                                        </Typography>
+                                                                        <Box display="flex" gap={0.5} flexWrap="wrap">
+                                                                            <Tooltip title={screen.supportsConfigPayloads ? "Supports Config Payloads" : "Does NOT support Config Payloads"}>
+                                                                                <Chip
+                                                                                    size="small"
+                                                                                    icon={screen.supportsConfigPayloads ? <CheckCircleIcon /> : <CancelIcon />}
+                                                                                    label="Config"
+                                                                                    color={screen.supportsConfigPayloads ? "success" : "default"}
+                                                                                    variant={hasConfigMismatch ? "filled" : "outlined"}
+                                                                                />
+                                                                            </Tooltip>
+                                                                            <Tooltip title={screen.supportsSensorPayloads ? "Supports Sensor Payloads" : "Does NOT support Sensor Payloads"}>
+                                                                                <Chip
+                                                                                    size="small"
+                                                                                    icon={screen.supportsSensorPayloads ? <CheckCircleIcon /> : <CancelIcon />}
+                                                                                    label="Sensor"
+                                                                                    color={screen.supportsSensorPayloads ? "success" : "default"}
+                                                                                    variant={hasSensorMismatch ? "filled" : "outlined"}
+                                                                                />
+                                                                            </Tooltip>
+                                                                            <Tooltip title={screen.supportsStopPayloads ? "Supports Stop Payloads" : "Does NOT support Stop Payloads"}>
+                                                                                <Chip
+                                                                                    size="small"
+                                                                                    icon={screen.supportsStopPayloads ? <CheckCircleIcon /> : <CancelIcon />}
+                                                                                    label="Stop"
+                                                                                    color={screen.supportsStopPayloads ? "success" : "default"}
+                                                                                    variant={hasStopMismatch ? "filled" : "outlined"}
+                                                                                />
+                                                                            </Tooltip>
+                                                                        </Box>
+                                                                        {hasAnyMismatch && (
+                                                                            <Box display="flex" alignItems="center" gap={0.5} mt={1}>
+                                                                                <WarningAmberIcon fontSize="small" color="error" />
+                                                                                <Typography variant="caption" color="error" fontWeight="medium">
+                                                                                    Payload mismatch detected!
+                                                                                </Typography>
+                                                                            </Box>
                                                                         )}
                                                                     </Box>
-                                                                </TableCell>
-                                                                {!isCompositeMode && (
-                                                                    <TableCell sx={cellStyle}>
-                                                                        <TextField
-                                                                            type="number"
-                                                                            size="small"
-                                                                            value={config?.targetPollRate || ""}
-                                                                            onChange={(e) => handlePollRateChange(linkId, screenId, e.target.value)}
-                                                                            placeholder="Optional"
-                                                                            disabled={isLoading}
-                                                                            sx={{ minWidth: 100 }}
-                                                                        />
-                                                                    </TableCell>
-                                                                )}
-                                                                {!isCompositeMode && (
-                                                                    <TableCell sx={cellStyle}>
-                                                                        <FormControlLabel
-                                                                            control={
-                                                                                <Switch
-                                                                                    checked={config?.onlySendIfChanged ?? true}
-                                                                                    onChange={() => handleOnlySendIfChangedToggle(linkId, screenId)}
-                                                                                    disabled={isLoading}
-                                                                                    size="small"
-                                                                                />
-                                                                            }
-                                                                            label=""
-                                                                        />
-                                                                    </TableCell>
-                                                                )}
-                                                                {isBlitMode && (
-                                                                    <TableCell sx={cellStyle}>
-                                                                        <Box>
+
+                                                                    {/* Poll Rate */}
+                                                                    {!isCompositeMode && (
+                                                                        <Box mb={3}>
+                                                                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                                                Target Poll Rate (ms)
+                                                                            </Typography>
+                                                                            <TextField
+                                                                                type="number"
+                                                                                size="small"
+                                                                                fullWidth
+                                                                                value={config?.targetPollRate || ""}
+                                                                                onChange={(e) => handlePollRateChange(linkId, screenId, e.target.value)}
+                                                                                placeholder="Optional"
+                                                                                disabled={isLoading}
+                                                                            />
+                                                                        </Box>
+                                                                    )}
+
+                                                                    {/* Only Send If Changed */}
+                                                                    {!isCompositeMode && (
+                                                                        <Box mb={3}>
+                                                                            <FormControlLabel
+                                                                                control={
+                                                                                    <Switch
+                                                                                        checked={config?.onlySendIfChanged ?? true}
+                                                                                        onChange={() => handleOnlySendIfChangedToggle(linkId, screenId)}
+                                                                                        disabled={isLoading}
+                                                                                        size="small"
+                                                                                    />
+                                                                                }
+                                                                                label="Only Send If Data Changed"
+                                                                            />
+                                                                        </Box>
+                                                                    )}
+
+                                                                    {/* URL Access for Blit Mode */}
+                                                                    {isBlitMode && (
+                                                                        <Box mb={2}>
                                                                             <FormControlLabel
                                                                                 control={
                                                                                     <Switch
@@ -1468,13 +1858,13 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                 label="Enable URL Access"
                                                                             />
                                                                             {config?.enableUrlAccess && frameUrl && (
-                                                                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                                                                     <LinkIcon fontSize="small" color="primary" />
                                                                                     <Link
                                                                                         href={frameUrl}
                                                                                         target="_blank"
                                                                                         rel="noopener"
-                                                                                        sx={{ fontSize: '0.75rem', wordBreak: 'break-all' }}
+                                                                                        sx={{ fontSize: '0.75rem', wordBreak: 'break-all', flex: 1 }}
                                                                                     >
                                                                                         {frameUrl}
                                                                                     </Link>
@@ -1482,14 +1872,13 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                         <IconButton
                                                                                             size="small"
                                                                                             onClick={() => copyToClipboard(frameUrl)}
-                                                                                            sx={{ ml: 1 }}
                                                                                         >
                                                                                             <ContentCopyIcon fontSize="small" />
                                                                                         </IconButton>
                                                                                     </Tooltip>
                                                                                 </Box>
                                                                             )}
-                                                                            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                                                                 <DevicesIcon fontSize="small" color="secondary" />
                                                                                 <Typography variant="caption" sx={{ fontWeight: 600 }}>
                                                                                     Virtual Display:
@@ -1498,7 +1887,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                     href={generateVirtualDisplayUrl(linkId, screenId, link.id)}
                                                                                     target="_blank"
                                                                                     rel="noopener"
-                                                                                    sx={{ fontSize: '0.75rem', wordBreak: 'break-all' }}
+                                                                                    sx={{ fontSize: '0.75rem', wordBreak: 'break-all', flex: 1 }}
                                                                                 >
                                                                                     {generateVirtualDisplayUrl(linkId, screenId, link.id)}
                                                                                 </Link>
@@ -1506,52 +1895,33 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                     <IconButton
                                                                                         size="small"
                                                                                         onClick={() => copyToClipboard(generateVirtualDisplayUrl(linkId, screenId, link.id))}
-                                                                                        sx={{ ml: 1 }}
                                                                                     >
                                                                                         <ContentCopyIcon fontSize="small" />
                                                                                     </IconButton>
                                                                                 </Tooltip>
                                                                             </Box>
                                                                         </Box>
-                                                                    </TableCell>
-                                                                )}
-                                                            </TableRow>
+                                                                    )}
+                                                                </Box>
 
-                                                            {/* SensorTags Expansion Row */}
-                                                            {sensorTags.length > 0 && isAnyFrameMode && (
-                                                                <TableRow>
-                                                                    <TableCell
-                                                                        colSpan={
-                                                                            isCompositeMode ? 2 :
-                                                                                isBlitMode ? 5 :
-                                                                                    4
-                                                                        }
-                                                                        sx={{ p: 0, border: 'none' }}
-                                                                    >
+                                                                {/* Right Column: Mappings */}
+                                                                <Box>
+                                                                    {/* SensorTags Section */}
+                                                                    {sensorTags.length > 0 && isAnyFrameMode && (
                                                                         <Box sx={{
                                                                             p: 2,
                                                                             backgroundColor: 'action.hover',
                                                                             border: 1,
                                                                             borderColor: 'divider',
-                                                                            borderRadius: 1
+                                                                            borderRadius: 1,
+                                                                            mb: 2
                                                                         }}>
-                                                                            {renderSensorTagsTable(sensorTags, selectedLayout?.displayName || 'Unknown Layout')}
+                                                                            {renderSensorTagsTable(sensorTags, selectedLayout?.displayName || 'Unknown Layout', isMobile)}
                                                                         </Box>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            )}
+                                                                    )}
 
-                                                            {/* Rive Inputs Expansion Row */}
-                                                            {isAnyFrameMode && currentLayoutId && (
-                                                                <TableRow>
-                                                                    <TableCell
-                                                                        colSpan={
-                                                                            isCompositeMode ? 2 :
-                                                                                isBlitMode ? 5 :
-                                                                                    4
-                                                                        }
-                                                                        sx={{ p: 0, border: 'none' }}
-                                                                    >
+                                                                    {/* Rive Inputs Section */}
+                                                                    {isAnyFrameMode && currentLayoutId && (
                                                                         <Box sx={{
                                                                             p: 2,
                                                                             backgroundColor: 'action.hover',
@@ -1570,14 +1940,12 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                 onInputMappingChange={handleRiveInputMappingChange}
                                                                             />
                                                                         </Box>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            )}
-                                                        </React.Fragment>
+                                                                    )}
+                                                                </Box>
+                                                            </Box>
+                                                        </Paper>
                                                     );
                                                 })}
-                                            </TableBody>
-                                        </Table>
                                     </Box>
                                 )}
                             </Paper>
@@ -1586,6 +1954,8 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 </Box>
             )}
         </Paper>
+            </AccordionDetails>
+        </Accordion>
     );
 };
 

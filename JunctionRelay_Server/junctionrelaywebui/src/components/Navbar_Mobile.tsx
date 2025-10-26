@@ -159,6 +159,7 @@ const NavbarMobile: React.FC<NavbarMobileProps> = ({
                         onLinksMenuClose={onLinksMenuClose}
                         onLogout={onLogout}
                         onThemeChange={onThemeChange}
+                        isMobile={true}
                     />
                 </Toolbar>
             </AppBar>
@@ -459,7 +460,7 @@ const NavbarMobile: React.FC<NavbarMobileProps> = ({
                 <Box sx={{ mt: 'auto', p: 2 }}>
                     <Divider sx={{ borderColor: '#3a3f45', mb: 2 }} />
 
-                    {flags?.top_bar_show_current_version === 'true' && version && (
+                    {flags?.top_bar_show_current_version && version && (
                         <Typography variant="caption" sx={{ color: '#9e9e9e !important', display: 'block', mb: 1 }}>
                             Version: {version}
                         </Typography>

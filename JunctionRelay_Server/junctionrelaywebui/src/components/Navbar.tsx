@@ -56,7 +56,7 @@ const Navbar = () => {
             const flagsResponse = await fetch('/api/settings/flags');
             if (flagsResponse.ok) {
                 const flagsData = await flagsResponse.json();
-                setUseMobileNav(flagsData.mobile_navigation_on_desktop === 'true');
+                setUseMobileNav(!!flagsData.mobile_navigation_on_desktop);
             }
         } catch (error) {
             console.warn('Could not fetch mobile navigation flag:', error);

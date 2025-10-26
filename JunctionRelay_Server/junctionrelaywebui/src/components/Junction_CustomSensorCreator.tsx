@@ -33,6 +33,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import SensorsIcon from '@mui/icons-material/Sensors';
 import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
+import LinkIcon from '@mui/icons-material/Link';
 
 interface CustomSensor {
     Id: number;
@@ -63,13 +64,13 @@ interface Junction_CustomSensorCreatorProps {
     removeSensorTarget: (junctionId: number, sensorId: number, deviceId: number) => Promise<void>;
     assignSensorTarget: (junctionId: number, sensorId: number, deviceId: number, screenId: number | null) => Promise<void>;
     setCurrentSensor: React.Dispatch<React.SetStateAction<any>>;
-    setCurrentTargetDevice: React.Dispatch<React.SetStateAction<any>>;
     setScreenSelectionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     setSensorTargets: React.Dispatch<React.SetStateAction<{ [sensorId: number]: { deviceId: number, screenIds: number[] }[] }>>;
     allDataAllTargets?: boolean;
     allTargetsAllScreens?: boolean;
     deviceScreensMap?: { [deviceId: number]: any[] };
     onScreenAssignmentUpdate?: (sensorId: number, deviceId: number, screenIds: number[]) => Promise<void>;
+    mappedSensorTags?: string[];
 }
 
 const SENSOR_TYPES = [
@@ -89,13 +90,13 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
     removeSensorTarget,
     assignSensorTarget,
     setCurrentSensor,
-    setCurrentTargetDevice,
     setScreenSelectionModalOpen,
     setSensorTargets,
     allDataAllTargets = false,
     allTargetsAllScreens = false,
     deviceScreensMap,
-    onScreenAssignmentUpdate
+    onScreenAssignmentUpdate,
+    mappedSensorTags = []
 }) => {
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -104,7 +105,6 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
     const [deleting, setDeleting] = useState<number | null>(null);
     const [error, setError] = useState('');
 
-    const [sensorName, setSensorName] = useState('');
     const [sensorTag, setSensorTag] = useState('');
     const [sensorType, setSensorType] = useState('Text');
     const [defaultValue, setDefaultValue] = useState('');
@@ -122,7 +122,6 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
     const handleCreateOpen = () => {
         setCreateDialogOpen(true);
         setError('');
-        setSensorName('');
         setSensorTag('');
         setSensorType('Text');
         setDefaultValue('');
@@ -133,7 +132,6 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
     const handleCreateClose = () => {
         setCreateDialogOpen(false);
         setError('');
-        setSensorName('');
         setSensorTag('');
         setSensorType('Text');
         setDefaultValue('');
@@ -166,8 +164,8 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
     };
 
     const handleCreate = async () => {
-        if (!sensorName.trim() || !sensorTag.trim()) {
-            setError('Name and Sensor Tag are required');
+        if (!sensorTag.trim()) {
+            setError('Sensor Tag / ID is required');
             return;
         }
 
@@ -184,15 +182,17 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                 }
             }
 
+            const externalId = `custom_${sensorTag.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+
             const sensorData = {
-                Name: sensorName.trim(),
+                Name: externalId,
                 SensorType: sensorType,
                 DeviceName: 'Custom Junction Device',
                 Value: valueToSave,
                 Unit: unit.trim(),
                 DecimalPlaces: decimalPlaces,
                 Category: 'Custom',
-                ExternalId: `custom_${sensorTag.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+                ExternalId: externalId,
                 ComponentName: 'Custom Component',
                 SensorTag: sensorTag.trim(),
                 IsMissing: false,
@@ -217,8 +217,10 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
 
             const createdSensor = await response.json();
 
-            showSnackbar(`Custom sensor "${sensorName}" created successfully`, "success");
+            showSnackbar(`Custom sensor "${sensorTag}" created successfully`, "success");
             handleCreateClose();
+
+            // Refresh the sensors list - the parent component's useEffect will handle auto-assignment
             onSensorsRefresh();
         } catch (error) {
             console.error('Error creating custom sensor:', error);
@@ -363,14 +365,15 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                         <TableHead>
                             <TableRow sx={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Select</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Edit</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Order</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Sensor Tag</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Binding</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Value</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Unit</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Targets</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Delete</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>Decimal Places</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold', width: '200px' }}>Targets</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -402,6 +405,8 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                                     }
 
                                                     showSnackbar(`Sensor "${sensor.sensorTag || sensor.name}" ${newIsSelected ? 'selected' : 'deselected'}`, "success");
+
+                                                    // Refresh the sensors list - the parent component's useEffect will handle auto-assignment
                                                     onSensorsRefresh();
                                                 } catch (error) {
                                                     console.error('Error updating sensor selection:', error);
@@ -412,17 +417,135 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <Tooltip title="Edit Sensor">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => handleEditOpen(sensor)}
-                                            >
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
+                                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                            <Tooltip title="Edit Sensor">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleEditOpen(sensor)}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete Sensor">
+                                                <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => handleDelete(sensor)}
+                                                    disabled={deleting === sensor.Id}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
                                     </TableCell>
-                                    <TableCell>{sensor.sensorOrder || 0}</TableCell>
-                                    <TableCell>{sensor.sensorTag || '—'}</TableCell>
+                                    <TableCell>
+                                        <TextField
+                                            size="small"
+                                            value={sensor.sensorOrder || ''}
+                                            onChange={async (e) => {
+                                                const value = e.target.value;
+                                                let numValue = 0;
+                                                if (value !== '') {
+                                                    numValue = parseInt(value, 10);
+                                                    if (isNaN(numValue)) {
+                                                        return;
+                                                    }
+                                                }
+
+                                                try {
+                                                    const updatedSensor = {
+                                                        ...sensor,
+                                                        sensorOrder: numValue
+                                                    };
+
+                                                    const response = await fetch(`/api/sensors/junction-sensors/update`, {
+                                                        method: 'PUT',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify(updatedSensor),
+                                                    });
+
+                                                    if (!response.ok) {
+                                                        throw new Error(`Failed to update sensor order: ${response.status}`);
+                                                    }
+
+                                                    onSensorsRefresh();
+                                                } catch (error) {
+                                                    console.error('Error updating sensor order:', error);
+                                                    showSnackbar('Failed to update sensor order', 'error');
+                                                }
+                                            }}
+                                            type="number"
+                                            placeholder="Order"
+                                            sx={{ width: "80px" }}
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <TextField
+                                            size="small"
+                                            value={sensor.sensorTag || ''}
+                                            onChange={async (e) => {
+                                                const newTag = e.target.value;
+
+                                                try {
+                                                    const updatedSensor = {
+                                                        ...sensor,
+                                                        sensorTag: newTag
+                                                    };
+
+                                                    const response = await fetch(`/api/sensors/junction-sensors/update`, {
+                                                        method: 'PUT',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify(updatedSensor),
+                                                    });
+
+                                                    if (!response.ok) {
+                                                        throw new Error(`Failed to update sensor tag: ${response.status}`);
+                                                    }
+
+                                                    onSensorsRefresh();
+                                                } catch (error) {
+                                                    console.error('Error updating sensor tag:', error);
+                                                    showSnackbar('Failed to update sensor tag', 'error');
+                                                }
+                                            }}
+                                            placeholder="Sensor Tag"
+                                            sx={{ width: "150px" }}
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        {(() => {
+                                            const sensorTag = sensor.sensorTag || '';
+                                            if (!sensorTag) return null;
+
+                                            // Split sensor tags by comma and trim (sensors can have multiple tags)
+                                            const sensorTags = sensorTag.split(',').map((tag: string) => tag.trim()).filter(Boolean);
+
+                                            // Check if any of this sensor's tags are in the mapped sensor tags list
+                                            const hasBinding = mappedSensorTags && mappedSensorTags.length > 0 &&
+                                                sensorTags.some(tag => mappedSensorTags.includes(tag));
+
+                                            if (!hasBinding) return null;
+
+                                            return (
+                                                <Tooltip title="Mapped to FrameEngine input/binding">
+                                                    <Chip
+                                                        icon={<LinkIcon />}
+                                                        label=""
+                                                        size="small"
+                                                        color="success"
+                                                        variant="outlined"
+                                                        sx={{ minWidth: '36px', '& .MuiChip-label': { px: 0.5 } }}
+                                                    />
+                                                </Tooltip>
+                                            );
+                                        })()}
+                                    </TableCell>
                                     <TableCell>
                                         <Chip
                                             label={sensor.sensorType || 'Text'}
@@ -433,114 +556,91 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                     <TableCell>{formatValueDisplay(sensor.value, sensor.sensorType)}</TableCell>
                                     <TableCell>{sensor.unit || '—'}</TableCell>
                                     <TableCell>
-                                        <Box>
-                                            {targets
-                                                .filter(t => t.type === "device")
-                                                .map((device) => {
-                                                    const assignedTargets = sensorTargets[sensor.Id] || [];
-                                                    const isChecked = assignedTargets.some(t => t.deviceId === device.id);
-                                                    const targetData = assignedTargets.find(t => t.deviceId === device.id);
-                                                    const assignedScreenCount = targetData?.screenIds.length || 0;
+                                        <TextField
+                                            size="small"
+                                            value={sensor.decimalPlaces !== undefined ? sensor.decimalPlaces : ''}
+                                            onChange={async (e) => {
+                                                const value = e.target.value;
+                                                let numValue = 0;
+                                                if (value !== '') {
+                                                    numValue = parseInt(value, 10);
+                                                    if (isNaN(numValue) || numValue < 0) {
+                                                        return;
+                                                    }
+                                                }
 
-                                                    return (
-                                                        <Box key={`devchk-${sensor.Id}-${device.id}`} sx={{ mb: 1 }}>
-                                                            <FormControlLabel
-                                                                control={
-                                                                    <Checkbox
-                                                                        checked={isChecked}
-                                                                        disabled={allDataAllTargets}
-                                                                        onChange={async () => {
-                                                                            try {
-                                                                                if (isChecked) {
-                                                                                    await removeSensorTarget(junctionId, sensor.Id, device.id);
-                                                                                    const newList = assignedTargets.filter(t => t.deviceId !== device.id);
-                                                                                    setSensorTargets(prev => ({
-                                                                                        ...prev,
-                                                                                        [sensor.Id]: newList
-                                                                                    }));
-                                                                                } else {
-                                                                                    await assignSensorTarget(junctionId, sensor.Id, device.id, null);
-                                                                                    const newList = [...assignedTargets, { deviceId: device.id, screenIds: [] }];
-                                                                                    setSensorTargets(prev => ({
-                                                                                        ...prev,
-                                                                                        [sensor.Id]: newList
-                                                                                    }));
+                                                try {
+                                                    const updatedSensor = {
+                                                        ...sensor,
+                                                        decimalPlaces: value === '' ? 0 : numValue
+                                                    };
 
-                                                                                    if (allTargetsAllScreens && (sensor.IsSelected || sensor.isSelected) && deviceScreensMap && onScreenAssignmentUpdate) {
-                                                                                        const deviceScreens = deviceScreensMap[device.id] || [];
-                                                                                        const allScreenIds = deviceScreens.map(screen => screen.id);
+                                                    const response = await fetch(`/api/sensors/junction-sensors/update`, {
+                                                        method: 'PUT',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify(updatedSensor),
+                                                    });
 
-                                                                                        if (allScreenIds.length > 0) {
-                                                                                            try {
-                                                                                                await onScreenAssignmentUpdate(sensor.Id, device.id, allScreenIds);
-                                                                                            } catch (error) {
-                                                                                                console.error(`Error auto-assigning screens for sensor ${sensor.Id} to device ${device.id}:`, error);
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                            } catch (error) {
-                                                                                console.error("Error updating sensor target:", error);
-                                                                                showSnackbar("Failed to update sensor target", "error");
-                                                                            }
-                                                                        }}
-                                                                        size="small"
-                                                                    />
-                                                                }
-                                                                label={
-                                                                    <Typography variant="body2">
-                                                                        {device.name}
-                                                                    </Typography>
-                                                                }
-                                                            />
+                                                    if (!response.ok) {
+                                                        throw new Error(`Failed to update decimal places: ${response.status}`);
+                                                    }
 
-                                                            {isChecked && (
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', ml: 4 }}>
-                                                                    <Button
-                                                                        size="small"
-                                                                        variant="outlined"
-                                                                        disabled={allTargetsAllScreens}
-                                                                        onClick={() => {
-                                                                            setCurrentSensor(sensor);
-                                                                            setCurrentTargetDevice(device);
-                                                                            setScreenSelectionModalOpen(true);
-                                                                        }}
-                                                                        sx={{ ml: 1 }}
-                                                                    >
-                                                                        {assignedScreenCount > 0 ? (
-                                                                            <>
-                                                                                <Chip
-                                                                                    size="small"
-                                                                                    label={assignedScreenCount}
-                                                                                    color="primary"
-                                                                                    sx={{ mr: 1, height: 20 }}
-                                                                                />
-                                                                                {assignedScreenCount === 1
-                                                                                    ? "Screen Selected"
-                                                                                    : "Screens Selected"}
-                                                                            </>
-                                                                        ) : (
-                                                                            "Assign Screens"
-                                                                        )}
-                                                                    </Button>
-                                                                </Box>
-                                                            )}
-                                                        </Box>
-                                                    );
-                                                })}
-                                        </Box>
+                                                    onSensorsRefresh();
+                                                } catch (error) {
+                                                    console.error('Error updating decimal places:', error);
+                                                    showSnackbar('Failed to update decimal places', 'error');
+                                                }
+                                            }}
+                                            type="number"
+                                            placeholder="0"
+                                            sx={{ width: "80px" }}
+                                            variant="outlined"
+                                        />
                                     </TableCell>
                                     <TableCell>
-                                        <Tooltip title="Delete Sensor">
-                                            <IconButton
-                                                size="small"
-                                                color="error"
-                                                onClick={() => handleDelete(sensor)}
-                                                disabled={deleting === sensor.Id}
-                                            >
-                                                <DeleteIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
+                                        {(() => {
+                                            const assignedTargets = sensorTargets[sensor.Id] || [];
+                                            const totalDevices = assignedTargets.length;
+                                            const totalScreens = assignedTargets.reduce((sum, t) => sum + (t.screenIds?.length || 0), 0);
+
+                                            if (totalDevices === 0) {
+                                                return (
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        disabled={allDataAllTargets && allTargetsAllScreens}
+                                                        onClick={() => {
+                                                            setCurrentSensor(sensor);
+                                                            setScreenSelectionModalOpen(true);
+                                                        }}
+                                                    >
+                                                        Screen Assignment
+                                                    </Button>
+                                                );
+                                            }
+
+                                            return (
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                    <Typography variant="body2">
+                                                        {totalDevices} {totalDevices === 1 ? 'Device' : 'Devices'}
+                                                        {totalScreens > 0 && ` • ${totalScreens} ${totalScreens === 1 ? 'Screen' : 'Screens'}`}
+                                                    </Typography>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        disabled={allDataAllTargets && allTargetsAllScreens}
+                                                        onClick={() => {
+                                                            setCurrentSensor(sensor);
+                                                            setScreenSelectionModalOpen(true);
+                                                        }}
+                                                    >
+                                                        Edit Assignments
+                                                    </Button>
+                                                </Box>
+                                            );
+                                        })()}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -571,22 +671,13 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                         )}
 
                         <TextField
-                            label="Name"
-                            value={sensorName}
-                            onChange={(e) => setSensorName(e.target.value)}
-                            fullWidth
-                            required
-                            size="small"
-                        />
-
-                        <TextField
-                            label="Sensor Tag"
+                            label="Sensor Tag / ID"
                             value={sensorTag}
                             onChange={(e) => setSensorTag(e.target.value)}
                             fullWidth
                             required
                             size="small"
-                            helperText="Unique identifier for this sensor"
+                            helperText="Unique identifier for this sensor (will also be used as the sensor name)"
                         />
 
                         <FormControl size="small" fullWidth>
@@ -679,7 +770,14 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                 label="Decimal Places"
                                 type="number"
                                 value={decimalPlaces}
-                                onChange={(e) => setDecimalPlaces(parseInt(e.target.value) || 0)}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (isNaN(val) || val < 0) {
+                                        setDecimalPlaces(0);
+                                    } else {
+                                        setDecimalPlaces(val);
+                                    }
+                                }}
                                 size="small"
                                 sx={{ width: 120 }}
                                 inputProps={{ min: 0, max: 10 }}
@@ -700,7 +798,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                         onClick={handleCreate}
                         variant="contained"
                         startIcon={<SaveIcon />}
-                        disabled={creating || !sensorName.trim() || !sensorTag.trim()}
+                        disabled={creating || !sensorTag.trim()}
                     >
                         {creating ? 'Creating...' : 'Create'}
                     </Button>
@@ -832,7 +930,14 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                 label="Decimal Places"
                                 type="number"
                                 value={editDecimalPlaces}
-                                onChange={(e) => setEditDecimalPlaces(parseInt(e.target.value) || 0)}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (isNaN(val) || val < 0) {
+                                        setEditDecimalPlaces(0);
+                                    } else {
+                                        setEditDecimalPlaces(val);
+                                    }
+                                }}
                                 size="small"
                                 sx={{ width: 120 }}
                                 inputProps={{ min: 0, max: 10 }}

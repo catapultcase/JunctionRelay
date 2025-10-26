@@ -93,7 +93,7 @@ namespace JunctionRelayServer.Controllers
 
         // Trigger manual data refresh to all connected clients
         [HttpPost("refresh")]
-        public async Task<IActionResult> RefreshAllClients()
+        public Task<IActionResult> RefreshAllClients()
         {
             try
             {
@@ -103,28 +103,28 @@ namespace JunctionRelayServer.Controllers
 
                 if (clientCount == 0)
                 {
-                    return Ok(new
+                    return Task.FromResult<IActionResult>(Ok(new
                     {
                         success = true,
                         message = "No clients connected to refresh",
                         clientCount = 0,
                         timestamp = DateTime.UtcNow
-                    });
+                    }));
                 }
 
                 // The service will automatically send updates in the next polling cycle
-                return Ok(new
+                return Task.FromResult<IActionResult>(Ok(new
                 {
                     success = true,
                     message = $"Refresh triggered for {clientCount} connected clients",
                     clientCount = clientCount,
                     timestamp = DateTime.UtcNow
-                });
+                }));
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Dashboard WebSocket] Error refreshing clients: {ex.Message}");
-                return StatusCode(500, new { error = "Internal server error", message = ex.Message });
+                return Task.FromResult<IActionResult>(StatusCode(500, new { error = "Internal server error", message = ex.Message }));
             }
         }
 

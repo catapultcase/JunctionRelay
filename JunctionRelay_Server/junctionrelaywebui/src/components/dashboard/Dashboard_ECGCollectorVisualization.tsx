@@ -12,7 +12,7 @@ interface ECGCollectorVisualizationProps {
         rate: number;
         latency?: number;
         lastPollTime: string;
-        polledSensors?: { Name: string; Value: number | string; Unit?: string }[];
+        polledSensors?: { name: string; value: number | string; unit?: string }[];
         health?: {
             connectionState: string; // "good", "poor", "disconnected"
             successRate: number;
@@ -84,6 +84,7 @@ const ECGCollectorVisualization: React.FC<ECGCollectorVisualizationProps> = ({
     const lastScrollTime = useRef<number>(Date.now());
     const lastPollTimeRef = useRef<string>('');
     const isPageVisible = useRef<boolean>(true);
+    const isInitialMount = useRef<boolean>(true);
 
     const lastActivityRef = useRef<number>(Date.now());
     const [shouldHide, setShouldHide] = useState(false);
@@ -296,7 +297,16 @@ const ECGCollectorVisualization: React.FC<ECGCollectorVisualizationProps> = ({
     // Trigger pulse when actual data changes (lastPollTime)
     useEffect(() => {
         if (collector.lastPollTime !== lastPollTimeRef.current && collector.lastPollTime) {
+            const previousValue = lastPollTimeRef.current;
             lastPollTimeRef.current = collector.lastPollTime;
+
+            // Skip pulse on initial mount (when previous value was empty)
+            if (isInitialMount.current && previousValue === '') {
+                isInitialMount.current = false;
+                return;
+            }
+
+            isInitialMount.current = false;
             if (collector.status.toLowerCase() === 'active') {
                 triggerPulse();
             }
@@ -823,8 +833,8 @@ const ECGCollectorVisualization: React.FC<ECGCollectorVisualizationProps> = ({
                             color: theme.palette.text.primary,
                         }}
                     >
-                        {s.Name}: {s.Value}
-                        {s.Unit ?? ''}
+                        {s.name}: {s.value}
+                        {s.unit ?? ''}
                     </span>
                 ))}
                 {(collector.polledSensors ?? []).length > 3 && (

@@ -20,6 +20,7 @@ export type ElementType =
     | 'image'
     | 'container'
     | 'ecg'
+    | 'gauge'
     | 'clock'
     | 'oscilloscope'
     | 'tunnel'

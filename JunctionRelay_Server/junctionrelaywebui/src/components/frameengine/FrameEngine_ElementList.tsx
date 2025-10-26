@@ -31,6 +31,7 @@ import {
     Delete as DeleteIcon,
     ContentCopy as DuplicateIcon,
     ShowChart as EcgIcon,
+    Speed as GaugeIcon,
     Schedule as ClockIcon,
     Grain as OscilloscopeIcon,
     Explore as TunnelIcon,
@@ -75,6 +76,7 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
             case 'image': return <ImageIcon fontSize="small" />;
             case 'container': return <ContainerIcon fontSize="small" />;
             case 'ecg': return <EcgIcon fontSize="small" />;
+            case 'gauge': return <GaugeIcon fontSize="small" />;
             case 'clock': return <ClockIcon fontSize="small" />;
             case 'oscilloscope': return <OscilloscopeIcon fontSize="small" />;
             case 'tunnel': return <TunnelIcon fontSize="small" />;
@@ -101,6 +103,8 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 return element.properties.title || 'Container';
             case 'ecg':
                 return element.properties.sensorTag || 'ECG Waveform';
+            case 'gauge':
+                return element.properties.sensorTag || `Gauge (${element.properties.gaugeType || 'semicircle'})`;
             case 'clock':
                 return element.properties.timezone ? `Clock (${element.properties.timezone})` : 'Clock';
             case 'oscilloscope':

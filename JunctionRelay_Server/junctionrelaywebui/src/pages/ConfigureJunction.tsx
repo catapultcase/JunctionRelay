@@ -17,42 +17,52 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-    Typography, Box, Button, Card, CardContent, CircularProgress, Paper,
-    Alert, Snackbar, SelectChangeEvent,
-    TextField, Select, MenuItem, FormControl, InputLabel,
-    FormControlLabel, Switch, Accordion, AccordionSummary,
-    AccordionDetails, useTheme, useMediaQuery
+    Typography, Box, Button, CircularProgress, Paper,
+    Alert, Snackbar,
+    Accordion, AccordionSummary,
+    AccordionDetails, Tabs, Tab, ToggleButtonGroup, ToggleButton, Tooltip
 } from "@mui/material";
 import { useParams, useNavigate } from "react-router-dom";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { useAppVersion } from "../hooks/useAppVersion";
 
 // Import the useFeatureFlags hook
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
+
+// Import the useAutoSave hook
+import { useAutoSave } from "../hooks/useAutoSave";
 
 // Import API services
 import * as junctionService from '../services/junctionApiService';
 
 // Components
+// eslint-disable-next-line react/jsx-pascal-case
 import Junction_ConfigPanel from '../components/Junction_ConfigPanel';
-import EnhancedSensorsTable from '../components/EnhancedSensorsTable';
+// eslint-disable-next-line react/jsx-pascal-case
+import Junction_EnhancedSensorSelector from '../components/Junction_EnhancedSensorSelector';
 import ScreenSelectionModal from '../components/Junction_ScreenSelectionModal';
 import AvailableSourcesTargetsTable from '../components/Junction_AvailableSourcesTargetsTable';
 import DeviceScreenLayoutsCard from '../components/Junction_DeviceScreenLayoutsCard';
+// eslint-disable-next-line react/jsx-pascal-case
 import Junction_Setup_COM from '../components/Junction_Setup_COM';
+// eslint-disable-next-line react/jsx-pascal-case
 import Junction_CustomSensorCreator from '../components/Junction_CustomSensorCreator';
+import { CompactProgressIndicator } from '../components/Junction_CompactProgressIndicator';
+
+// Hooks
+import { JunctionProgress, JunctionStartStage } from '../types/notifications';
 
 // Icon imports
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
-import SettingsIcon from '@mui/icons-material/Settings';
-import SaveIcon from '@mui/icons-material/Save';
-import LinkIcon from '@mui/icons-material/Link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import WarningIcon from '@mui/icons-material/Warning';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import TabIcon from '@mui/icons-material/Tab';
 
 interface SourceOrTarget {
     linkId?: number;
@@ -83,17 +93,6 @@ const getDefaultJunctionColumns = () => {
     ];
 };
 
-// Junction types available
-const JUNCTION_TYPES = [
-    "COM Junction",
-    "HTTP Junction",
-    "MQTT Junction",
-    "WebSocket Junction",
-    "Gateway Junction (COM to ESP:NOW)",
-    "Gateway Junction (HTTP to ESP:NOW)",
-    "Gateway Junction (WebSocket to ESP:NOW)"
-];
-
 // Helper function to determine if COM setup should be shown
 const shouldShowCOMSetup = (junctionType: string) => {
     return junctionType === "COM Junction" ||
@@ -105,26 +104,56 @@ const ConfigureJunction: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const junctionId = parseInt(id || "0", 10);
     const navigate = useNavigate();
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     // Hooks
     const flags = useFeatureFlags();
     const junctionImportExportEnabled = flags?.junction_import_export !== false;
+    const { version } = useAppVersion();
 
-    // State for Show Selected Only
-    const [showSelectedOnly, setShowSelectedOnly] = useState(() => {
-        try {
-            const savedFilter = localStorage.getItem(`junction${junctionId}ShowSelectedOnly`);
-            return savedFilter === 'true';
-        } catch (error) {
-            console.error("Error accessing localStorage:", error);
-            return false;
+    // State for Show Selected Only (will load from localStorage when version is available)
+    const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+
+    // Application version for localStorage keys (from backend)
+    const getStorageKey = useCallback((key: string) => {
+        if (!version) {
+            throw new Error('Application version not loaded');
         }
-    });
+        return `${version}_${key}`;
+    }, [version]);
+
+    // State for Junction View Mode (list vs tabs)
+    const [junctionViewMode, setJunctionViewMode] = useState<'list' | 'tabs'>('tabs'); // Default to tabs
+
+    // Load saved view mode from localStorage when version is available
+    useEffect(() => {
+        if (version) {
+            try {
+                const savedViewMode = localStorage.getItem(getStorageKey('junctionViewMode'));
+                if (savedViewMode === 'list' || savedViewMode === 'tabs') {
+                    setJunctionViewMode(savedViewMode);
+                }
+            } catch (error) {
+                console.error("Error accessing localStorage:", error);
+            }
+        }
+    }, [version, getStorageKey]);
+
+    // Handler for view mode change
+    const handleViewModeChange = useCallback((newMode: 'list' | 'tabs') => {
+        setJunctionViewMode(newMode);
+        try {
+            localStorage.setItem(getStorageKey('junctionViewMode'), newMode);
+        } catch (error) {
+            console.error("Error saving view mode to localStorage:", error);
+        }
+    }, [getStorageKey]);
+
+    // State for current tab (when in tabs mode)
+    const [currentTab, setCurrentTab] = useState<number>(0);
 
     // State for junction data
     const [junctionData, setJunctionData] = useState<any>({ status: "Loading..." });
+    const [originalJunctionData, setOriginalJunctionData] = useState<any>({ status: "Loading..." });
     const [loading, setLoading] = useState<boolean>(true);
     const [mqttBrokers, setMqttBrokers] = useState<any[]>([]);
     const [selectedMqttBrokerId, setSelectedMqttBrokerId] = useState<string>("");
@@ -137,7 +166,41 @@ const ConfigureJunction: React.FC = () => {
 
     // State for sensors
     const [availableSensors, setAvailableSensors] = useState<any[]>([]);
-    const [filteredSensors, setFilteredSensors] = useState<any[]>([]);
+
+    // Track which sensors have been auto-assigned to prevent duplicate assignments
+    const autoAssignedSensorsRef = useRef<Set<number>>(new Set());
+
+    // State for junction start progress
+    const [junctionStartProgress, setJunctionStartProgress] = useState<JunctionProgress | null>(null);
+    const [showProgress, setShowProgress] = useState(false);
+
+    // Listen to junction progress events from UnifiedNotificationProvider
+    useEffect(() => {
+        const handleProgressUpdate = (event: Event) => {
+            const customEvent = event as CustomEvent<JunctionProgress>;
+            const progress = customEvent.detail;
+
+            // Only show progress for this specific junction
+            if (progress.junctionId === junctionId) {
+                setJunctionStartProgress(progress);
+                setShowProgress(true);
+
+                // Auto-hide progress after completion/error
+                if (progress.isComplete) {
+                    setTimeout(() => {
+                        setShowProgress(false);
+                        setJunctionStartProgress(null);
+                    }, progress.hasError ? 5000 : 3000);
+                }
+            }
+        };
+
+        window.addEventListener('junction-progress-update', handleProgressUpdate);
+
+        return () => {
+            window.removeEventListener('junction-progress-update', handleProgressUpdate);
+        };
+    }, [junctionId])
 
     // Memoized sensor filtering using the new boolean fields
     const customSensors = useMemo(() =>
@@ -151,7 +214,6 @@ const ConfigureJunction: React.FC = () => {
     // Screen Selection
     const [screenSelectionModalOpen, setScreenSelectionModalOpen] = useState<boolean>(false);
     const [currentSensor, setCurrentSensor] = useState<any>(null);
-    const [currentTargetDevice, setCurrentTargetDevice] = useState<any>(null);
 
     // State for rates
     const [devicePollRates, setDevicePollRates] = useState<{ [key: number]: number }>({});
@@ -176,9 +238,16 @@ const ConfigureJunction: React.FC = () => {
     // State for Rive inputs from DeviceScreenLayoutsCard
     const [riveInputs, setRiveInputs] = useState<any[]>([]);
 
+    // State for mapped sensor tags from DeviceScreenLayoutsCard
+    const [mappedSensorTags, setMappedSensorTags] = useState<string[]>([]);
+
     // State for screen layout validation
     const [screenLayoutsValid, setScreenLayoutsValid] = useState<boolean>(true);
     const [validationMessage, setValidationMessage] = useState<string>("");
+
+    // State for payload mismatch warnings
+    const [hasPayloadMismatches, setHasPayloadMismatches] = useState<boolean>(false);
+    const [payloadMismatchCount, setPayloadMismatchCount] = useState<number>(0);
 
     // State for sensor validation
     const [sensorValidations, setSensorValidations] = useState<{
@@ -187,26 +256,71 @@ const ConfigureJunction: React.FC = () => {
         someSensorsUnassigned: boolean;
     }>({ noSensorsSelected: false, allSensorsUnassigned: false, someSensorsUnassigned: false });
 
-    // Settings accordion state with localStorage
-    const [settingsExpanded, setSettingsExpanded] = useState(() => {
-        try {
-            const saved = localStorage.getItem('junctionSettingsExpanded');
-            return saved !== null ? saved === 'true' : false;
-        } catch (error) {
-            console.error("Error accessing localStorage for settings:", error);
-            return false;
+    // Settings accordion state (will load from localStorage when version is available)
+    const [settingsExpanded, setSettingsExpanded] = useState(false);
+
+    // Load showSelectedOnly and settingsExpanded from localStorage when version is available
+    useEffect(() => {
+        if (version) {
+            try {
+                const savedFilter = localStorage.getItem(getStorageKey(`junction${junctionId}ShowSelectedOnly`));
+                if (savedFilter !== null) {
+                    setShowSelectedOnly(savedFilter === 'true');
+                }
+
+                const savedSettings = localStorage.getItem(getStorageKey('junctionSettingsExpanded'));
+                if (savedSettings !== null) {
+                    setSettingsExpanded(savedSettings === 'true');
+                }
+            } catch (error) {
+                console.error("Error loading localStorage:", error);
+            }
         }
-    });
+    }, [version, junctionId, getStorageKey]);
 
     // Handle Show Selected Only
-    const handleShowSelectedOnlyChange = (checked: boolean) => {
+    const handleShowSelectedOnlyChange = useCallback((checked: boolean) => {
         setShowSelectedOnly(checked);
+        if (!version) return;
         try {
-            localStorage.setItem(`junction${junctionId}ShowSelectedOnly`, checked.toString());
+            localStorage.setItem(getStorageKey(`junction${junctionId}ShowSelectedOnly`), checked.toString());
         } catch (error) {
             console.error("Error saving filter state to localStorage:", error);
         }
-    };
+    }, [version, junctionId, getStorageKey]);
+
+    // Auto-save hook for junction data
+    const junctionAutoSave = useAutoSave(
+        `/api/junctions/${junctionId}`,
+        originalJunctionData,
+        {
+            onSuccess: (savedData) => {
+                setOriginalJunctionData(JSON.parse(JSON.stringify(savedData)));
+                console.log('[AUTO-SAVE] Junction settings auto-saved successfully');
+            },
+            onError: (error) => {
+                console.error('[AUTO-SAVE] Junction auto-save failed:', error);
+                showSnackbar('Auto-save failed', 'error');
+            },
+            debug: true
+        }
+    );
+
+    // Handler for auto-saving junction data changes
+    const handleJunctionDataChange = useCallback((updatedData: any, field: string, immediate: boolean = false) => {
+        console.log(`[ConfigureJunction] handleJunctionDataChange called:`, {
+            field,
+            immediate,
+            oldValue: junctionData?.[field],
+            newValue: updatedData[field]
+        });
+
+        // Update local state
+        setJunctionData(updatedData);
+
+        // Trigger auto-save
+        junctionAutoSave.save(updatedData, { immediate });
+    }, [junctionAutoSave, junctionData]);
 
     // Scroll to screen layouts section
     const scrollToScreenLayouts = () => {
@@ -255,6 +369,7 @@ const ConfigureJunction: React.FC = () => {
             window.removeEventListener('bottom-action-export', handleExport);
             window.removeEventListener('bottom-action-delete', handleDelete);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [navigate, junctionId, junctionData.name]);
 
     // Show snackbar notification
@@ -307,7 +422,7 @@ const ConfigureJunction: React.FC = () => {
     };
 
     // Fetch junction data
-    const fetchJunctionInfo = async () => {
+    const fetchJunctionInfo = useCallback(async () => {
         if (!id) return;
 
         try {
@@ -327,6 +442,7 @@ const ConfigureJunction: React.FC = () => {
             }
 
             setJunctionData(data);
+            setOriginalJunctionData(JSON.parse(JSON.stringify(data))); // Set original data for auto-save comparison
 
             let selectedId = "";
             if (data.mqttBrokerId != null && data.mqttBrokerId !== undefined) {
@@ -340,32 +456,36 @@ const ConfigureJunction: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, junctionId]);
 
     // Initial data loading
     useEffect(() => {
         fetchJunctionInfo();
-    }, [id]);
+    }, [fetchJunctionInfo]);
 
-    // Handle MQTT broker selection
-    const handleMqttBrokerChange = (event: SelectChangeEvent<string>) => {
-        setSelectedMqttBrokerId(event.target.value);
-    };
 
     // Handle settings accordion expansion
-    const handleSettingsExpandedChange = (isExpanded: boolean) => {
+    const handleSettingsExpandedChange = useCallback((isExpanded: boolean) => {
         setSettingsExpanded(isExpanded);
+        if (!version) return;
         try {
-            localStorage.setItem('junctionSettingsExpanded', isExpanded.toString());
+            localStorage.setItem(getStorageKey('junctionSettingsExpanded'), isExpanded.toString());
         } catch (error) {
             console.error("Error saving settings expansion state to localStorage:", error);
         }
-    };
+    }, [version, getStorageKey]);
 
     // Callback to receive validation status from DeviceScreenLayoutsCard
     const handleValidationUpdate = useCallback((isValid: boolean, message: string) => {
         setScreenLayoutsValid(isValid);
         setValidationMessage(message);
+    }, []);
+
+    // Callback to receive payload mismatch warnings from DeviceScreenLayoutsCard
+    const handlePayloadMismatchUpdate = useCallback((hasMismatches: boolean, mismatchCount: number) => {
+        setHasPayloadMismatches(hasMismatches);
+        setPayloadMismatchCount(mismatchCount);
     }, []);
 
     // Sensor validation effect
@@ -379,7 +499,7 @@ const ConfigureJunction: React.FC = () => {
         if (selectedSensors.length > 0) {
             const sensorsWithTargetsAndScreens = selectedSensors.filter(sensor => {
                 const targets = sensorTargets[sensor.Id] || [];
-                return targets.some(target => target.screenIds.length > 0);
+                return targets.some(target => target.screenIds && target.screenIds.length > 0);
             });
 
             // RED: ALL sensors have no targets/screens
@@ -518,6 +638,10 @@ const ConfigureJunction: React.FC = () => {
                 BaudRate: junctionData.baudRate,
                 AllTargetsAllData: junctionData.allTargetsAllData,
                 AllTargetsAllScreens: junctionData.allTargetsAllScreens,
+                AllowStartOnCollectorTestFailure: junctionData.allowStartOnCollectorTestFailure,
+                SendConfigPayload: junctionData.sendConfigPayload,
+                SendSensorPayloads: junctionData.sendSensorPayloads,
+                SendStopPayload: junctionData.sendStopPayload,
             };
 
             await junctionService.updateJunction(parseInt(id), updatePayload);
@@ -713,12 +837,6 @@ const ConfigureJunction: React.FC = () => {
             [sensor.Id]: newOrder,
         }));
 
-        setFilteredSensors((prev) =>
-            prev.map((s) =>
-                s.Id === sensor.Id ? { ...s, SensorOrder: newOrder } : s
-            )
-        );
-
         try {
             await junctionService.updateSensorProperty(sensor, "SensorOrder", newOrder);
             showSnackbar("Sensor order updated", "success");
@@ -736,12 +854,6 @@ const ConfigureJunction: React.FC = () => {
             ...prev,
             [sensor.Id]: newTag,
         }));
-
-        setFilteredSensors((prev) =>
-            prev.map((s) =>
-                s.Id === sensor.Id ? { ...s, SensorTag: newTag } : s
-            )
-        );
 
         setAvailableSensors((prev) =>
             prev.map((s) =>
@@ -764,27 +876,7 @@ const ConfigureJunction: React.FC = () => {
                 s.Id === updatedSensor.Id ? { ...s, ...updatedSensor } : s
             )
         );
-
-        setFilteredSensors((prev) =>
-            prev.map((s) =>
-                s.Id === updatedSensor.Id ? { ...s, ...updatedSensor } : s
-            )
-        );
     };
-
-    // Initialize sensors with updated values
-    useEffect(() => {
-        setFilteredSensors((prevSensors) =>
-            availableSensors.map((sensor) => {
-                const modifiedOrder = modifiedSensorOrders[sensor.Id];
-                return {
-                    ...sensor,
-                    SensorTag: modifiedSensors[sensor.Id] ?? sensor.sensorTag,
-                    SensorOrder: modifiedOrder ?? sensor.sensorOrder,
-                };
-            })
-        );
-    }, [availableSensors, modifiedSensors, modifiedSensorOrders]);
 
     // Populate MQTT broker dropdown with DB value on mount
     useEffect(() => {
@@ -798,6 +890,47 @@ const ConfigureJunction: React.FC = () => {
             }
         }
     }, [junctionData.mqttBrokerId, mqttBrokers]);
+
+    // Auto-assign newly created/selected sensors when toggles are enabled
+    useEffect(() => {
+        // Don't run during initial load - wait for data to be fully loaded
+        if (loading) {
+            return;
+        }
+
+        // Only run if we have sensors and at least one toggle is enabled
+        if (!junctionData.allTargetsAllData && !junctionData.allTargetsAllScreens) {
+            return;
+        }
+
+        // Don't run if we have selected sensors but sensorTargets hasn't loaded yet
+        // This prevents firing during initial page load when sensors load before targets
+        const selectedSensors = availableSensors.filter(sensor => sensor.IsSelected);
+        if (selectedSensors.length > 0 && Object.keys(sensorTargets).length === 0) {
+            // We have selected sensors but no target data loaded yet - skip this run
+            return;
+        }
+
+        selectedSensors.forEach(async (sensor) => {
+            // Skip if already processed
+            if (autoAssignedSensorsRef.current.has(sensor.Id)) {
+                return;
+            }
+
+            // Check if this sensor already has targets assigned
+            const hasTargets = sensorTargets[sensor.Id] && sensorTargets[sensor.Id].length > 0;
+
+            // If it already has targets, it's not a new sensor, mark it as processed and skip
+            if (hasTargets) {
+                autoAssignedSensorsRef.current.add(sensor.Id);
+                return;
+            }
+
+            // This is a newly selected sensor with no targets - auto-assign it
+            await autoAssignSensorToAll(sensor.Id);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [availableSensors, targets, junctionData.allTargetsAllData, junctionData.allTargetsAllScreens, sensorTargets, deviceScreensMap, loading]);
 
     // Get current sensor order and tag values
     const getSensorOrder = (sensor: any) => {
@@ -831,6 +964,8 @@ const ConfigureJunction: React.FC = () => {
                 type: "device",
                 pollRateOverride: d.pollRateOverride,
                 sendRateOverride: d.sendRateOverride,
+                defaultPollRate: d.devicePollRate,
+                defaultSendRate: d.deviceSendRate,
             }));
 
             const collectorLinks: SourceOrTarget[] = (links.collectorLinks || []).map((c: any) => ({
@@ -843,6 +978,8 @@ const ConfigureJunction: React.FC = () => {
                 type: "collector",
                 pollRateOverride: c.pollRateOverride,
                 sendRateOverride: c.sendRateOverride,
+                defaultPollRate: c.collectorPollRate,
+                defaultSendRate: c.collectorSendRate,
             }));
 
             const screenMap: { [deviceId: number]: any[] } = {};
@@ -950,45 +1087,15 @@ const ConfigureJunction: React.FC = () => {
 
     useEffect(() => {
         fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
         if (id) {
             fetchData();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
-
-    const autoAssignAllScreensForAllTargets = async () => {
-        if (!junctionData.allTargetsAllScreens) return;
-
-        const selectedSensors = availableSensors.filter(sensor => sensor.IsSelected);
-        const deviceTargets = targets.filter(target => target.type === "device");
-
-        if (selectedSensors.length === 0 || deviceTargets.length === 0) return;
-
-        try {
-            let assignmentCount = 0;
-
-            for (const sensor of selectedSensors) {
-                for (const target of deviceTargets) {
-                    const deviceScreens = deviceScreensMap[target.id] || [];
-                    const allScreenIds = deviceScreens.map(screen => screen.id);
-
-                    if (allScreenIds.length > 0) {
-                        await handleScreenAssignmentUpdate(sensor.Id, target.id, allScreenIds);
-                        assignmentCount++;
-                    }
-                }
-            }
-
-            if (assignmentCount > 0) {
-                showSnackbar(`Auto-assigned ${selectedSensors.length} sensors to all screens on ${deviceTargets.length} devices`, "success");
-            }
-        } catch (error) {
-            console.error("Error auto-assigning screens:", error);
-            showSnackbar("Failed to auto-assign screens", "error");
-        }
-    };
 
     const refreshSensors = async () => {
         try {
@@ -1046,6 +1153,8 @@ const ConfigureJunction: React.FC = () => {
                 type: "device" as const,
                 pollRateOverride: d.pollRateOverride,
                 sendRateOverride: d.sendRateOverride,
+                defaultPollRate: d.devicePollRate,
+                defaultSendRate: d.deviceSendRate,
             }));
 
             const collectorLinks: SourceOrTarget[] = (links.collectorLinks || []).map((c: any) => ({
@@ -1058,6 +1167,8 @@ const ConfigureJunction: React.FC = () => {
                 type: "collector" as const,
                 pollRateOverride: c.pollRateOverride,
                 sendRateOverride: c.sendRateOverride,
+                defaultPollRate: c.collectorPollRate,
+                defaultSendRate: c.collectorSendRate,
             }));
 
             const newLink = item.type === "device"
@@ -1225,6 +1336,92 @@ const ConfigureJunction: React.FC = () => {
         }
     };
 
+    // Shared auto-assignment logic for sensors when toggles are enabled
+    const autoAssignSensorToAll = async (sensorId: number) => {
+        const deviceTargets = targets.filter(target => target.type === "device");
+        let assignedDevicesCount = 0;
+        let assignedScreensCount = 0;
+
+        // Auto-assign to all device targets if "All Data All Targets" is enabled
+        if (junctionData.allTargetsAllData && deviceTargets.length > 0) {
+            for (const target of deviceTargets) {
+                try {
+                    const existingTargets = sensorTargets[sensorId] || [];
+                    const alreadyAssigned = existingTargets.some(t => t.deviceId === target.id);
+
+                    if (!alreadyAssigned) {
+                        await junctionService.assignSensorTarget(junctionId, sensorId, target.id, null);
+
+                        setSensorTargets(prev => {
+                            const existingTargets = prev[sensorId] || [];
+                            return {
+                                ...prev,
+                                [sensorId]: [...existingTargets, { deviceId: target.id, screenIds: [] }]
+                            };
+                        });
+
+                        assignedDevicesCount++;
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                } catch (error) {
+                    console.error(`Error auto-assigning sensor ${sensorId} to device ${target.id}:`, error);
+                }
+            }
+
+            // Only show snackbar if we actually assigned to new devices
+            if (assignedDevicesCount > 0) {
+                showSnackbar(`Auto-assigned sensor to ${assignedDevicesCount} target device${assignedDevicesCount > 1 ? 's' : ''}`, "success");
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        // Auto-assign to all screens if "All Targets All Screens" is enabled
+        if (junctionData.allTargetsAllScreens) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            let targetAssignments = sensorTargets[sensorId] || [];
+
+            // If we just auto-assigned targets above, construct the list manually
+            if (targetAssignments.length === 0 && junctionData.allTargetsAllData) {
+                targetAssignments = deviceTargets.map(target => ({
+                    deviceId: target.id,
+                    screenIds: []
+                }));
+            }
+
+            if (targetAssignments.length > 0) {
+                for (const targetAssignment of targetAssignments) {
+                    const deviceScreens = deviceScreensMap[targetAssignment.deviceId] || [];
+                    const allScreenIds = deviceScreens.map(screen => screen.id);
+
+                    // Check if screens are already assigned
+                    const currentScreenIds = targetAssignment.screenIds || [];
+                    const needsAssignment = allScreenIds.length > 0 &&
+                        (currentScreenIds.length !== allScreenIds.length ||
+                         !allScreenIds.every(id => currentScreenIds.includes(id)));
+
+                    if (needsAssignment) {
+                        try {
+                            await handleScreenAssignmentUpdate(sensorId, targetAssignment.deviceId, allScreenIds);
+                            assignedScreensCount++;
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        } catch (error) {
+                            console.error(`Error auto-assigning screens for sensor ${sensorId} to device ${targetAssignment.deviceId}:`, error);
+                        }
+                    }
+                }
+
+                // Only show snackbar if we actually assigned screens
+                if (assignedScreensCount > 0) {
+                    showSnackbar(`Auto-assigned sensor to all screens on ${assignedScreensCount} device${assignedScreensCount > 1 ? 's' : ''}`, "success");
+                }
+            }
+        }
+
+        // Mark this sensor as having been auto-assigned
+        autoAssignedSensorsRef.current.add(sensorId);
+    };
+
     const handleSensorSelect = async (sensorId: number) => {
         const currentSensor = availableSensors.find((s) => s.Id === sensorId);
         if (!currentSensor) return;
@@ -1240,71 +1437,9 @@ const ConfigureJunction: React.FC = () => {
                 )
             );
 
-            setFilteredSensors((prev) =>
-                prev.map((s) =>
-                    s.Id === sensorId ? { ...s, IsSelected: newIsSelected } : s
-                )
-            );
-
             if (newIsSelected) {
-                const deviceTargets = targets.filter(target => target.type === "device");
-
-                if (junctionData.allTargetsAllData && deviceTargets.length > 0) {
-                    for (const target of deviceTargets) {
-                        try {
-                            const existingTargets = sensorTargets[sensorId] || [];
-                            const alreadyAssigned = existingTargets.some(t => t.deviceId === target.id);
-
-                            if (!alreadyAssigned) {
-                                await junctionService.assignSensorTarget(junctionId, sensorId, target.id, null);
-
-                                setSensorTargets(prev => {
-                                    const existingTargets = prev[sensorId] || [];
-                                    return {
-                                        ...prev,
-                                        [sensorId]: [...existingTargets, { deviceId: target.id, screenIds: [] }]
-                                    };
-                                });
-                            }
-                        } catch (error) {
-                            console.error(`Error auto-assigning sensor ${sensorId} to device ${target.id}:`, error);
-                        }
-                    }
-
-                    showSnackbar(`Auto-assigned sensor to ${deviceTargets.length} target devices`, "success");
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                }
-
-                if (junctionData.allTargetsAllScreens) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-
-                    let targetAssignments = sensorTargets[sensorId] || [];
-
-                    if (targetAssignments.length === 0 && junctionData.allTargetsAllData) {
-                        targetAssignments = deviceTargets.map(target => ({
-                            deviceId: target.id,
-                            screenIds: []
-                        }));
-                    }
-
-                    if (targetAssignments.length > 0) {
-                        for (const targetAssignment of targetAssignments) {
-                            const deviceScreens = deviceScreensMap[targetAssignment.deviceId] || [];
-                            const allScreenIds = deviceScreens.map(screen => screen.id);
-
-                            if (allScreenIds.length > 0) {
-                                try {
-                                    await handleScreenAssignmentUpdate(sensorId, targetAssignment.deviceId, allScreenIds);
-                                    await new Promise(resolve => setTimeout(resolve, 100));
-                                } catch (error) {
-                                    console.error(`Error auto-assigning screens for sensor ${sensorId} to device ${targetAssignment.deviceId}:`, error);
-                                }
-                            }
-                        }
-
-                        showSnackbar(`Auto-assigned sensor to all screens on ${targetAssignments.length} devices`, "success");
-                    }
-                }
+                // Use the shared auto-assignment logic
+                await autoAssignSensorToAll(sensorId);
             } else {
                 const sensorTargetAssignments = sensorTargets[sensorId] || [];
 
@@ -1471,6 +1606,10 @@ const ConfigureJunction: React.FC = () => {
         setRiveInputs(inputs);
     }, []);
 
+    const handleMappedSensorTagsUpdate = useCallback((tags: string[]) => {
+        setMappedSensorTags(tags);
+    }, []);
+
     return (
         <Box sx={{ padding: { xs: 1, sm: 2 } }}>
             {/* Header */}
@@ -1528,23 +1667,28 @@ const ConfigureJunction: React.FC = () => {
                     justifyContent="space-between"
                     gap={2}
                 >
-                    <Box display="flex" alignItems="center">
-                        <Box
-                            component="span"
-                            sx={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: "50%",
-                                bgcolor: junctionData?.status === "Running" ? "green" :
-                                    junctionData?.status === "Idle" ? "#f0ad4e" :
-                                        junctionData?.status === "Error" ? "red" : "gray",
-                                mr: 1,
-                                display: "inline-block"
-                            }}
-                        />
-                        <Typography variant="subtitle1" fontWeight="medium" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>
-                            Status: {junctionData?.status || "Unknown"}
+                    <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                        <Typography variant="h6" fontWeight="medium" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                            {junctionData?.name || "Junction"}
                         </Typography>
+                        <Box display="flex" alignItems="center">
+                            <Box
+                                component="span"
+                                sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "50%",
+                                    bgcolor: junctionData?.status === "Running" ? "green" :
+                                        junctionData?.status === "Idle" ? "#f0ad4e" :
+                                            junctionData?.status === "Error" ? "red" : "gray",
+                                    mr: 1,
+                                    display: "inline-block"
+                                }}
+                            />
+                            <Typography variant="subtitle1" fontWeight="medium" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>
+                                Status: {junctionData?.status || "Unknown"}
+                            </Typography>
+                        </Box>
                     </Box>
 
                     <Box display="flex" gap={1} flexWrap="wrap">
@@ -1587,17 +1731,22 @@ const ConfigureJunction: React.FC = () => {
                     </Box>
                 </Box>
 
-                {/* Validation Row*/}
-                {(!screenLayoutsValid || sensorValidations.noSensorsSelected || sensorValidations.allSensorsUnassigned || sensorValidations.someSensorsUnassigned) && (
+                {/* View Mode Toggle and Validation Row */}
+                <Box
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 2,
+                        flexWrap: 'wrap'
+                    }}
+                >
+                    {/* Validation Warnings - Right Side, before toggle */}
                     <Box
                         sx={{
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'flex-end',
                             gap: 1,
-                            pt: 1,
-                            borderTop: '1px solid',
-                            borderColor: 'divider',
                             flexWrap: 'wrap'
                         }}
                     >
@@ -1657,7 +1806,57 @@ const ConfigureJunction: React.FC = () => {
                                 Some selected sensors do not have a target or screen selected
                             </Button>
                         )}
+
+                        {hasPayloadMismatches && (
+                            <Button
+                                variant="contained"
+                                color="warning"
+                                startIcon={<WarningIcon />}
+                                onClick={scrollToScreenLayouts}
+                                sx={{
+                                    fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                                    textTransform: 'none'
+                                }}
+                            >
+                                {payloadMismatchCount} device screen{payloadMismatchCount !== 1 ? 's' : ''} {payloadMismatchCount !== 1 ? 'have' : 'has'} payload compatibility issues
+                            </Button>
+                        )}
                     </Box>
+
+                    {/* View Mode Toggle - Right Side */}
+                    <ToggleButtonGroup
+                        value={junctionViewMode}
+                        exclusive
+                        onChange={(_, newMode) => {
+                            if (newMode !== null) {
+                                handleViewModeChange(newMode);
+                            }
+                        }}
+                        size="small"
+                    >
+                        <ToggleButton value="list" aria-label="list view">
+                            <Tooltip title="List View">
+                                <ViewListIcon fontSize="small" />
+                            </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="tabs" aria-label="tabs view">
+                            <Tooltip title="Tabs View">
+                                <TabIcon fontSize="small" />
+                            </Tooltip>
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                </Box>
+
+                {/* Progress Indicator (when starting from this page) */}
+                {showProgress && junctionStartProgress && (
+                    <CompactProgressIndicator
+                        junctionName={junctionStartProgress.junctionName}
+                        currentStage={junctionStartProgress.stage}
+                        detailMessage={junctionStartProgress.detailMessage}
+                        isGatewayJunction={junctionData.type?.includes('Gateway')}
+                        hasError={junctionStartProgress.hasError}
+                        isComplete={junctionStartProgress.isComplete}
+                    />
                 )}
 
                 {/* Statistics Row */}
@@ -1688,19 +1887,6 @@ const ConfigureJunction: React.FC = () => {
                 </Box>
             </Paper>
 
-            <Junction_ConfigPanel
-                junctionData={junctionData}
-                setJunctionData={setJunctionData}
-                selectedMqttBrokerId={selectedMqttBrokerId}
-                setSelectedMqttBrokerId={setSelectedMqttBrokerId}
-                mqttBrokers={mqttBrokers}
-                loading={loading}
-                settingsExpanded={settingsExpanded}
-                onSettingsExpandedChange={handleSettingsExpandedChange}
-                onSaveJunction={saveJunction}
-                onConnectToMQTTBroker={connectToMQTTBroker}
-            />
-
             {/* COM Setup Advice */}
             {shouldShowCOMSetup(junctionData.type) && (
                 <Accordion sx={{ mb: 3 }}>
@@ -1712,6 +1898,7 @@ const ConfigureJunction: React.FC = () => {
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails>
+                        {/* eslint-disable-next-line react/jsx-pascal-case */}
                         <Junction_Setup_COM />
                     </AccordionDetails>
                 </Accordion>
@@ -1722,8 +1909,186 @@ const ConfigureJunction: React.FC = () => {
                 <Box display="flex" justifyContent="center" my={4}>
                     <CircularProgress />
                 </Box>
+            ) : junctionViewMode === 'tabs' ? (
+                /* Tabs View */
+                <Paper sx={{ mt: 2 }}>
+                    <Tabs
+                        value={currentTab}
+                        onChange={(e, newValue) => setCurrentTab(newValue)}
+                        variant="scrollable"
+                        scrollButtons="auto"
+                    >
+                        <Tab label="Junction Configuration" />
+                        <Tab label="Sources & Targets" />
+                        <Tab label="Device Screens & Layouts" />
+                        <Tab label="Sensors" />
+                    </Tabs>
+
+                    <Box
+                        sx={{
+                            p: 3,
+                            // Force all accordions to be expanded and non-interactive
+                            '& .MuiAccordion-root': {
+                                '&:before': { display: 'none' }, // Remove default divider
+                            },
+                            '& .MuiAccordionSummary-root': {
+                                cursor: 'default !important',
+                                '&:hover': {
+                                    backgroundColor: 'transparent !important'
+                                }
+                            },
+                            '& .MuiAccordionSummary-expandIconWrapper': {
+                                display: 'none !important'
+                            },
+                            // Force expanded state visually
+                            '& .MuiCollapse-root': {
+                                visibility: 'visible !important',
+                                height: 'auto !important'
+                            },
+                            '& .MuiAccordionDetails-root': {
+                                display: 'block !important'
+                            }
+                        }}
+                    >
+                        {/* Tab 0: Junction Configuration */}
+                        <Box sx={{ display: currentTab === 0 ? 'block' : 'none' }}>
+                            {/* eslint-disable-next-line react/jsx-pascal-case */}
+                            <Junction_ConfigPanel
+                                junctionData={junctionData}
+                                setJunctionData={setJunctionData}
+                                onJunctionDataChange={handleJunctionDataChange}
+                                loading={loading}
+                                mqttBrokers={mqttBrokers}
+                                selectedMqttBrokerId={selectedMqttBrokerId}
+                                setSelectedMqttBrokerId={setSelectedMqttBrokerId}
+                                settingsExpanded={settingsExpanded}
+                                onSettingsExpandedChange={handleSettingsExpandedChange}
+                                onConnectToMQTTBroker={connectToMQTTBroker}
+                            />
+                        </Box>
+
+                        {/* Tab 1: Sources & Targets */}
+                        <Box sx={{ display: currentTab === 1 ? 'block' : 'none' }}>
+                            <AvailableSourcesTargetsTable
+                                loading={loading}
+                                allDevices={allDevices}
+                                allCollectors={allCollectors}
+                                sources={sources}
+                                targets={targets}
+                                devicePollRates={devicePollRates}
+                                deviceSendRates={deviceSendRates}
+                                collectorPollRates={collectorPollRates}
+                                collectorSendRates={collectorSendRates}
+                                handleAdd={handleAdd}
+                                handleRemove={handleRemove}
+                                handlePollRateOverrideChange={handlePollRateOverrideChange}
+                                handleSendRateOverrideChange={handleSendRateOverrideChange}
+                                appVersion={version || undefined}
+                            />
+                        </Box>
+
+                        {/* Tab 2: Device Screens & Layouts */}
+                        <Box sx={{ display: currentTab === 2 ? 'block' : 'none' }}>
+                            <DeviceScreenLayoutsCard
+                                junctionId={junctionId}
+                                junction={junctionData}
+                                deviceLinks={[...sources, ...targets].filter(link => link.type === "device")}
+                                loading={loading}
+                                showSnackbar={showSnackbar}
+                                onJunctionUpdate={(updatedJunction) => setJunctionData(updatedJunction)}
+                                availableSensors={availableSensors}
+                                onRiveInputsUpdate={handleRiveInputsUpdate}
+                                onValidationUpdate={handleValidationUpdate}
+                                onPayloadMismatchUpdate={handlePayloadMismatchUpdate}
+                                onMappedSensorTagsUpdate={handleMappedSensorTagsUpdate}
+                                disableCollapse={true}
+                            />
+                        </Box>
+
+                        {/* Tab 3: Sensors (includes Custom Sensors) */}
+                        <Box sx={{ display: currentTab === 3 ? 'block' : 'none' }}>
+                            <Junction_EnhancedSensorSelector
+                                availableSensors={regularSensors}
+                                handleSensorSelect={handleSensorSelect}
+                                handleSensorOrderChange={handleSensorOrderChange}
+                                handleSensorTagChange={handleSensorTagChange}
+                                handleSensorUpdate={handleSensorUpdate}
+                                getSensorOrder={getSensorOrder}
+                                getSensorTag={getSensorTag}
+                                sensorTargets={sensorTargets}
+                                targets={targets}
+                                removeSensorTarget={(junctionId, sensorId, deviceId) =>
+                                    junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
+                                assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
+                                    junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
+                                setCurrentSensor={setCurrentSensor}
+                                setScreenSelectionModalOpen={setScreenSelectionModalOpen}
+                                showSnackbar={showSnackbar}
+                                setSensorTargets={setSensorTargets}
+                                showSelectedOnly={showSelectedOnly}
+                                setShowSelectedOnly={handleShowSelectedOnlyChange}
+                                defaultVisibleColumns={getDefaultJunctionColumns()}
+                                localStorageKey="junction_sensors_columns"
+                                junctionId={junctionId}
+                                allDataAllTargets={junctionData.allTargetsAllData}
+                                allTargetsAllScreens={junctionData.allTargetsAllScreens}
+                                onAllDataAllTargetsChange={handleAllDataAllTargetsToggle}
+                                onAllTargetsAllScreensChange={handleAllTargetsAllScreensChange}
+                                hideEditColumn={false}
+                                hideJunctionSettings={false}
+                                appVersion={version || undefined}
+                                deviceScreensMap={deviceScreensMap}
+                                onScreenAssignmentUpdate={handleScreenAssignmentUpdate}
+                                sources={sources}
+                                riveInputs={riveInputs}
+                                mappedSensorTags={mappedSensorTags}
+                            />
+
+                            {/* Custom Sensors - now part of Sensors tab */}
+                            <Box sx={{ mt: 3 }}>
+                                {/* eslint-disable-next-line react/jsx-pascal-case */}
+                                <Junction_CustomSensorCreator
+                                    junctionId={junctionId}
+                                    availableSensors={customSensors}
+                                    onSensorsRefresh={refreshSensors}
+                                    showSnackbar={showSnackbar}
+                                    sensorTargets={sensorTargets}
+                                    targets={targets}
+                                    removeSensorTarget={(junctionId, sensorId, deviceId) =>
+                                        junctionService.removeSensorTarget(junctionId, sensorId, deviceId)}
+                                    assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
+                                        junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
+                                    setCurrentSensor={setCurrentSensor}
+                                    setScreenSelectionModalOpen={setScreenSelectionModalOpen}
+                                    setSensorTargets={setSensorTargets}
+                                    allDataAllTargets={junctionData.allTargetsAllData}
+                                    allTargetsAllScreens={junctionData.allTargetsAllScreens}
+                                    deviceScreensMap={deviceScreensMap}
+                                    onScreenAssignmentUpdate={handleScreenAssignmentUpdate}
+                                    mappedSensorTags={mappedSensorTags}
+                                />
+                            </Box>
+                        </Box>
+                    </Box>
+                </Paper>
             ) : (
+                /* List View (Original Accordion Layout) */
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {/* Junction Configuration in List View */}
+                    {/* eslint-disable-next-line react/jsx-pascal-case */}
+                    <Junction_ConfigPanel
+                        junctionData={junctionData}
+                        setJunctionData={setJunctionData}
+                        onJunctionDataChange={handleJunctionDataChange}
+                        loading={loading}
+                        mqttBrokers={mqttBrokers}
+                        selectedMqttBrokerId={selectedMqttBrokerId}
+                        setSelectedMqttBrokerId={setSelectedMqttBrokerId}
+                        settingsExpanded={settingsExpanded}
+                        onSettingsExpandedChange={handleSettingsExpandedChange}
+                        onConnectToMQTTBroker={connectToMQTTBroker}
+                    />
+
                     <AvailableSourcesTargetsTable
                         loading={loading}
                         allDevices={allDevices}
@@ -1738,6 +2103,7 @@ const ConfigureJunction: React.FC = () => {
                         handleRemove={handleRemove}
                         handlePollRateOverrideChange={handlePollRateOverrideChange}
                         handleSendRateOverrideChange={handleSendRateOverrideChange}
+                        appVersion={version || undefined}
                     />
 
                     <div id="screen-layouts-section">
@@ -1751,10 +2117,12 @@ const ConfigureJunction: React.FC = () => {
                             availableSensors={availableSensors}
                             onRiveInputsUpdate={handleRiveInputsUpdate}
                             onValidationUpdate={handleValidationUpdate}
+                            onPayloadMismatchUpdate={handlePayloadMismatchUpdate}
+                            onMappedSensorTagsUpdate={handleMappedSensorTagsUpdate}
                         />
                     </div>
 
-                    <EnhancedSensorsTable
+                    <Junction_EnhancedSensorSelector
                         availableSensors={regularSensors}
                         handleSensorSelect={handleSensorSelect}
                         handleSensorOrderChange={handleSensorOrderChange}
@@ -1769,7 +2137,6 @@ const ConfigureJunction: React.FC = () => {
                         assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
                             junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
                         setCurrentSensor={setCurrentSensor}
-                        setCurrentTargetDevice={setCurrentTargetDevice}
                         setScreenSelectionModalOpen={setScreenSelectionModalOpen}
                         showSnackbar={showSnackbar}
                         setSensorTargets={setSensorTargets}
@@ -1784,10 +2151,15 @@ const ConfigureJunction: React.FC = () => {
                         onAllTargetsAllScreensChange={handleAllTargetsAllScreensChange}
                         hideEditColumn={false}
                         hideJunctionSettings={false}
+                        appVersion={version || undefined}
                         deviceScreensMap={deviceScreensMap}
                         onScreenAssignmentUpdate={handleScreenAssignmentUpdate}
+                        sources={sources}
+                        riveInputs={riveInputs}
+                        mappedSensorTags={mappedSensorTags}
                     />
 
+                    {/* eslint-disable-next-line react/jsx-pascal-case */}
                     <Junction_CustomSensorCreator
                         junctionId={junctionId}
                         availableSensors={customSensors}
@@ -1800,13 +2172,13 @@ const ConfigureJunction: React.FC = () => {
                         assignSensorTarget={(junctionId, sensorId, deviceId, screenId) =>
                             junctionService.assignSensorTarget(junctionId, sensorId, deviceId, screenId)}
                         setCurrentSensor={setCurrentSensor}
-                        setCurrentTargetDevice={setCurrentTargetDevice}
                         setScreenSelectionModalOpen={setScreenSelectionModalOpen}
                         setSensorTargets={setSensorTargets}
                         allDataAllTargets={junctionData.allTargetsAllData}
                         allTargetsAllScreens={junctionData.allTargetsAllScreens}
                         deviceScreensMap={deviceScreensMap}
                         onScreenAssignmentUpdate={handleScreenAssignmentUpdate}
+                        mappedSensorTags={mappedSensorTags}
                     />
                 </Box>
             )}
@@ -1832,20 +2204,48 @@ const ConfigureJunction: React.FC = () => {
                 open={screenSelectionModalOpen}
                 onClose={() => setScreenSelectionModalOpen(false)}
                 sensor={currentSensor}
-                device={currentTargetDevice}
-                screens={currentTargetDevice ? deviceScreensMap[currentTargetDevice.id] || [] : []}
-                selectedScreenIds={
-                    currentSensor && currentTargetDevice
-                        ? sensorTargets[currentSensor.Id]?.find(t => t.deviceId === currentTargetDevice.id)?.screenIds || []
-                        : []
-                }
-                onScreensSelected={(screenIds) => {
-                    if (currentSensor && currentTargetDevice) {
-                        return handleScreenAssignmentUpdate(currentSensor.Id, currentTargetDevice.id, screenIds);
+                showSnackbar={showSnackbar}
+                allTargets={targets}
+                sensorTargets={currentSensor ? sensorTargets[currentSensor.Id] || [] : []}
+                deviceScreensMap={deviceScreensMap}
+                onDeviceAssign={async (deviceId) => {
+                    if (currentSensor) {
+                        await junctionService.assignSensorTarget(junctionId, currentSensor.Id, deviceId, null);
+                        // Refresh sensor targets
+                        const res = await fetch(`/api/sensors/junction-sensors/by-junction/${junctionId}/targets-grouped`);
+                        if (res.ok) {
+                            const groupedTargets = await res.json();
+                            const allTargets: { [sensorId: number]: { deviceId: number; screenIds: number[] }[] } = {};
+                            Object.entries(groupedTargets).forEach(([sensorIdStr, targetsArray]) => {
+                                const sensorId = parseInt(sensorIdStr, 10);
+                                allTargets[sensorId] = targetsArray as { deviceId: number; screenIds: number[] }[];
+                            });
+                            setSensorTargets(allTargets);
+                        }
+                    }
+                }}
+                onDeviceRemove={async (deviceId) => {
+                    if (currentSensor) {
+                        await junctionService.removeSensorTarget(junctionId, currentSensor.Id, deviceId);
+                        // Refresh sensor targets
+                        const res = await fetch(`/api/sensors/junction-sensors/by-junction/${junctionId}/targets-grouped`);
+                        if (res.ok) {
+                            const groupedTargets = await res.json();
+                            const allTargets: { [sensorId: number]: { deviceId: number; screenIds: number[] }[] } = {};
+                            Object.entries(groupedTargets).forEach(([sensorIdStr, targetsArray]) => {
+                                const sensorId = parseInt(sensorIdStr, 10);
+                                allTargets[sensorId] = targetsArray as { deviceId: number; screenIds: number[] }[];
+                            });
+                            setSensorTargets(allTargets);
+                        }
+                    }
+                }}
+                onScreenAssignmentUpdate={(deviceId, screenIds) => {
+                    if (currentSensor) {
+                        return handleScreenAssignmentUpdate(currentSensor.Id, deviceId, screenIds);
                     }
                     return Promise.resolve();
                 }}
-                showSnackbar={showSnackbar}
             />
         </Box>
     );

@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ import DashboardSettings from '../components/dashboard/Dashboard_Settings';
 import ActiveCollectorsCard from '../components/dashboard/Dashboard_ActiveCollectorsCard';
 import ActiveStreamsCard from '../components/dashboard/Dashboard_ActiveStreamsCard';
 import DashboardStats from '../components/dashboard/Dashboard_Stats';
+import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 
 // Main Dashboard Component
 const Dashboard = () => {
@@ -410,6 +411,20 @@ const Dashboard = () => {
         return saved !== null ? saved === 'true' : true;
     });
 
+    // Single WebSocket connection for both collectors and streams
+    const {
+        collectors,
+        streams,
+        connectionStatus,
+        isConnected,
+        connect: wsConnect,
+        disconnect: wsDisconnect,
+        setPollRate,
+        currentPollRate
+    } = useDashboardWebSocket({
+        enabled: collectorsExpanded || streamsExpanded
+    });
+
     // Persist junctions expansion state
     useEffect(() => {
         localStorage.setItem('dashboard_junctions_expanded', junctionsExpanded.toString());
@@ -417,7 +432,7 @@ const Dashboard = () => {
 
     return (
         <Box sx={{ padding: 2 }}>
-            {/* System Overview Stats Card - now a subcomponent */}
+            {/* System Overview Stats Card - now includes warnings */}
             <DashboardStats junctions={junctions} />
 
             {/* Junction Management Card - matches ActiveCollectors/Streams pattern */}
@@ -508,12 +523,22 @@ const Dashboard = () => {
             <ActiveCollectorsCard
                 defaultExpanded={collectorsExpanded}
                 storageKey="dashboard_collectors_expanded"
+                collectors={collectors}
+                connectionStatus={connectionStatus}
+                isConnected={isConnected}
+                connect={wsConnect}
+                disconnect={wsDisconnect}
             />
 
             {/* Active Streams Card */}
             <ActiveStreamsCard
                 defaultExpanded={streamsExpanded}
                 storageKey="dashboard_streams_expanded"
+                streams={streams}
+                connectionStatus={connectionStatus}
+                isConnected={isConnected}
+                connect={wsConnect}
+                disconnect={wsDisconnect}
             />
 
             {/* Add Junction Modal */}

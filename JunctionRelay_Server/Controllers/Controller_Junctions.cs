@@ -107,9 +107,9 @@ namespace JunctionRelayServer.Controllers
         public class JunctionSummaryDto
         {
             public int Id { get; set; }
-            public string Name { get; set; }
-            public string Type { get; set; }
-            public string Status { get; set; }
+            public required string Name { get; set; }
+            public required string Type { get; set; }
+            public required string Status { get; set; }
             public bool ShowOnDashboard { get; set; }
         }
 

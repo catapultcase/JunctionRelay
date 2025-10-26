@@ -33,18 +33,21 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Database_Manager_Sensors _sensorDb;  // Injected service for accessing sensors
         private readonly Func<Model_Collector, IDataCollector> _dataCollectorFactory; // Injected factory for flexibility
         private readonly Service_Manager_Polling _pollingManager;
+        private readonly Service_Notifications _notificationService;
 
         // Constructor - Inject Service_Database_Manager_Collectors, Service_Database_Manager_Sensors, and the factory
         public Controller_Collectors(
                 Service_Database_Manager_Collectors collectorDb,
                 Service_Database_Manager_Sensors sensorDb,
                 Func<Model_Collector, IDataCollector> dataCollectorFactory,
-                Service_Manager_Polling pollingManager)
+                Service_Manager_Polling pollingManager,
+                Service_Notifications notificationService)
         {
             _collectorDb = collectorDb;
             _sensorDb = sensorDb;
             _dataCollectorFactory = dataCollectorFactory;
             _pollingManager = pollingManager;
+            _notificationService = notificationService;
         }
 
 
@@ -155,38 +158,60 @@ namespace JunctionRelayServer.Controllers
                 int issueId = 1;
                 int sensorIssueId = 1;
 
-                // Add failed fetch issues
-                foreach (var collector in collectors.Where(c => c.LastFetchSuccessful == false && !string.IsNullOrEmpty(c.LastFetchErrorMessage)))
-                {
-                    details.Add(new
-                    {
-                        id = issueId++,
-                        type = "error",
-                        title = $"{collector.Name} fetch failed",
-                        description = collector.LastFetchErrorMessage ?? "Fetch operation failed",
-                        timestamp = collector.LastFetchTime ?? DateTime.UtcNow,
-                        area = "collectors",
-                        collectorId = collector.Id
-                    });
-                }
+                // Get locked collector IDs to suppress their errors
+                var lockedCollectorIds = collectors
+                    .Where(c => c.SecurityStatus == "Locked")
+                    .Select(c => c.Id)
+                    .ToHashSet();
 
-                // Add locked collector warnings
-                foreach (var collector in collectors.Where(c => c.ExternalAccessToken && !_collectorDb.IsCollectorUnlocked(c.Id)))
+                // Add locked collector warnings (exclude EventEngine) - check this FIRST before errors
+                foreach (var collector in collectors.Where(c =>
+                    c.CollectorType != "EventEngine" &&
+                    c.SecurityStatus == "Locked"))
                 {
+                    // Locked collectors always show as warning, even if they have errors
+                    var description = "Collector requires password to unlock";
+                    if (!string.IsNullOrEmpty(collector.LastFetchErrorMessage))
+                    {
+                        description = $"Locked - {collector.LastFetchErrorMessage}";
+                    }
+
                     details.Add(new
                     {
                         id = issueId++,
                         type = "warning",
                         title = $"{collector.Name} is locked",
-                        description = "Collector requires password to unlock",
+                        description = description,
                         timestamp = DateTime.UtcNow,
                         area = "collectors",
                         collectorId = collector.Id
                     });
                 }
 
-                // Add never fetched warnings
-                foreach (var collector in collectors.Where(c => c.LastFetchTime == null))
+                // Add failed fetch issues (only if currently in error state and not locked, exclude EventEngine)
+                foreach (var collector in collectors.Where(c =>
+                    c.CollectorType != "EventEngine" &&
+                    c.Status == "Error" &&
+                    !string.IsNullOrEmpty(c.LastFetchErrorMessage) &&
+                    !lockedCollectorIds.Contains(c.Id)))
+                {
+                    details.Add(new
+                    {
+                        id = issueId++,
+                        type = "error",
+                        title = $"{collector.Name} {(collector.CollectorType != null ? $"({collector.CollectorType}) " : "")}has errors",
+                        description = collector.LastFetchErrorMessage ?? "Fetch operation failed",
+                        timestamp = collector.LastTested ?? collector.LastFetchTime ?? DateTime.UtcNow,
+                        area = "collectors",
+                        collectorId = collector.Id
+                    });
+                }
+
+                // Add never fetched warnings (exclude EventEngine and locked collectors)
+                foreach (var collector in collectors.Where(c =>
+                    c.CollectorType != "EventEngine" &&
+                    c.LastFetchTime == null &&
+                    !lockedCollectorIds.Contains(c.Id)))
                 {
                     details.Add(new
                     {
@@ -380,6 +405,114 @@ namespace JunctionRelayServer.Controllers
 
                 if (success)
                 {
+                    // Automatically test the collector after unlocking
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(500); // Brief delay to ensure unlock is fully committed
+
+                            var collector = await _collectorDb.GetCollectorByIdAsync(id);
+                            if (collector == null) return;
+
+                            var dataCollector = _dataCollectorFactory(collector);
+                            dataCollector.ApplyConfiguration(collector);
+
+                            // Special handling for collectors that don't have a traditional API
+                            var skipConnectionTest = collector.CollectorType == "LibreHardwareMonitor" ||
+                                                    collector.CollectorType == "HWiNFO" ||
+                                                    collector.CollectorType == "Host" ||
+                                                    collector.CollectorType == "EventEngine" ||
+                                                    collector.CollectorType == "RateTester" ||
+                                                    collector.CollectorType == "SystemTime" ||
+                                                    collector.CollectorType == "InternetTime";
+
+                            // Start notification
+                            var startContent = new
+                            {
+                                collectorId = collector.Id,
+                                collectorName = collector.Name,
+                                stage = "testing"
+                            };
+
+                            await _notificationService.CreateNotificationAsync(
+                                message: $"Testing unlocked collector {collector.Name}...",
+                                title: $"Testing: {collector.Name}",
+                                type: NotificationType.Info,
+                                category: NotificationCategory.System,
+                                duration: 0,
+                                structuredContent: startContent
+                            );
+
+                            bool testSuccessful;
+                            List<Model_Sensor>? sensors = null;
+                            string errorMessage;
+
+                            if (skipConnectionTest)
+                            {
+                                sensors = await dataCollector.FetchSensorsAsync(collector);
+                                testSuccessful = sensors != null && sensors.Count > 0;
+                                errorMessage = testSuccessful ? "" : (sensors == null ? "Failed to fetch sensors" : "No sensors found");
+                            }
+                            else
+                            {
+                                var connectionOk = await dataCollector.TestConnectionAsync(collector);
+
+                                if (!connectionOk)
+                                {
+                                    testSuccessful = false;
+                                    errorMessage = "Connection test failed";
+                                }
+                                else
+                                {
+                                    sensors = await dataCollector.FetchSensorsAsync(collector);
+                                    testSuccessful = sensors != null && sensors.Count > 0;
+                                    errorMessage = testSuccessful ? "" : (sensors == null ? "Connected but failed to fetch sensors" : "Connected but no sensors found");
+                                }
+                            }
+
+                            var newStatus = testSuccessful ? "Tested" : "Error";
+
+                            // Update database
+                            await _collectorDb.UpdateLastTestedAsync(collector.Id, DateTime.UtcNow);
+                            await _collectorDb.UpdateCollectorStatusAsync(collector.Id, newStatus);
+                            await _collectorDb.UpdateLastFetchInfoAsync(
+                                collector.Id,
+                                DateTime.UtcNow,
+                                0, 0,
+                                testSuccessful,
+                                errorMessage,
+                                0
+                            );
+
+                            // Completion notification
+                            var completeContent = new
+                            {
+                                collectorId = collector.Id,
+                                collectorName = collector.Name,
+                                stage = "complete",
+                                success = testSuccessful,
+                                sensorCount = sensors?.Count ?? 0,
+                                errorMessage = errorMessage
+                            };
+
+                            await _notificationService.CreateNotificationAsync(
+                                message: testSuccessful ? $"Test passed - {sensors?.Count ?? 0} sensor{(sensors?.Count != 1 ? "s" : "")} found" : errorMessage,
+                                title: testSuccessful ? $"Passed: {collector.Name}" : $"Failed: {collector.Name}",
+                                type: testSuccessful ? NotificationType.Success : NotificationType.Error,
+                                category: NotificationCategory.System,
+                                duration: 3000,
+                                structuredContent: completeContent
+                            );
+
+                            Console.WriteLine($"[COLLECTOR_UNLOCK] Test completed for collector {id}: {(testSuccessful ? "Success" : "Failed")}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[COLLECTOR_UNLOCK] Error testing collector {id} after unlock: {ex.Message}");
+                        }
+                    });
+
                     return Ok(new { status = "Collector unlocked successfully" });
                 }
                 else
@@ -430,45 +563,6 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { status = $"Error checking unlock status: {ex.Message}" });
-            }
-        }
-
-        // GET: /api/collectors/{id}/testConnection
-        [HttpGet("{id}/testConnection")]
-        public async Task<IActionResult> TestConnection(int id)
-        {
-            var collector = await _collectorDb.GetCollectorByIdAsync(id);
-            if (collector == null) return NotFound();
-
-            bool testSuccessful = false;
-            string errorMessage = null;
-
-            try
-            {
-                // Use the factory to get the correct IDataCollector based on the collector type
-                var dataCollector = _dataCollectorFactory(collector);
-
-                // Apply configuration using collector's URL and AccessToken (specific to the collector)
-                dataCollector.ApplyConfiguration(collector);
-
-                // Test connection
-                testSuccessful = await dataCollector.TestConnectionAsync(collector);
-
-                // Update the LastTested timestamp
-                await _collectorDb.UpdateLastTestedAsync(id, DateTime.UtcNow);
-
-                return testSuccessful ?
-                    Ok(new { status = "Connection successful" }) :
-                    StatusCode(500, new { status = "Connection failed" });
-            }
-            catch (Exception ex)
-            {
-                errorMessage = ex.Message;
-
-                // Still update LastTested even if test failed
-                await _collectorDb.UpdateLastTestedAsync(id, DateTime.UtcNow);
-
-                return StatusCode(500, $"Error testing connection: {ex.Message}");
             }
         }
 
@@ -630,6 +724,353 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Error deleting collector: {ex.Message}");
+            }
+        }
+
+        // POST: /api/collectors/test-all
+        [HttpPost("test-all")]
+        public async Task<IActionResult> TestAllCollectors()
+        {
+            try
+            {
+                var allCollectors = await _collectorDb.GetAllCollectorsAsync();
+
+                // Exclude EventEngine from testing
+                var collectors = allCollectors.Where(c => c.CollectorType != "EventEngine").ToList();
+
+                var results = new List<object>();
+
+                // Start notification
+                await _notificationService.CreateNotificationAsync(
+                    message: $"Testing {collectors.Count} collector{(collectors.Count != 1 ? "s" : "")}...",
+                    title: "Collector Testing Started",
+                    type: NotificationType.Info,
+                    category: NotificationCategory.System,
+                    duration: 3000
+                );
+
+                int currentIndex = 0;
+                foreach (var collector in collectors)
+                {
+                    currentIndex++;
+
+                    // Start notification for this specific collector
+                    var startContent = new
+                    {
+                        collectorId = collector.Id,
+                        collectorName = collector.Name,
+                        stage = "testing"
+                    };
+
+                    await _notificationService.CreateNotificationAsync(
+                        message: $"Fetching sensors from {collector.Name}...",
+                        title: $"Testing: {collector.Name}",
+                        type: NotificationType.Info,
+                        category: NotificationCategory.System,
+                        duration: 0, // Will be updated on completion
+                        structuredContent: startContent
+                    );
+
+                    try
+                    {
+                        var dataCollector = _dataCollectorFactory(collector);
+                        dataCollector.ApplyConfiguration(collector);
+
+                        // Special handling for collectors that don't have a traditional API
+                        var skipConnectionTest = collector.CollectorType == "LibreHardwareMonitor" ||
+                                                collector.CollectorType == "HWiNFO" ||
+                                                collector.CollectorType == "Host" ||
+                                                collector.CollectorType == "EventEngine" ||
+                                                collector.CollectorType == "RateTester" ||
+                                                collector.CollectorType == "SystemTime" ||
+                                                collector.CollectorType == "InternetTime";
+
+                        bool testSuccessful;
+                        List<Model_Sensor>? sensors = null;
+                        string errorMessage;
+
+                        if (skipConnectionTest)
+                        {
+                            // For non-API collectors, just try to fetch sensors directly
+                            sensors = await dataCollector.FetchSensorsAsync(collector);
+                            testSuccessful = sensors != null && sensors.Count > 0;
+                            errorMessage = testSuccessful ? "" : (sensors == null ? "Failed to fetch sensors" : "No sensors found");
+                        }
+                        else
+                        {
+                            // For API-based collectors, test connection first
+                            var connectionOk = await dataCollector.TestConnectionAsync(collector);
+
+                            if (!connectionOk)
+                            {
+                                testSuccessful = false;
+                                errorMessage = "Connection test failed";
+                            }
+                            else
+                            {
+                                // Connection OK, now try to fetch sensors
+                                sensors = await dataCollector.FetchSensorsAsync(collector);
+                                testSuccessful = sensors != null && sensors.Count > 0;
+                                errorMessage = testSuccessful ? "" : (sensors == null ? "Connected but failed to fetch sensors" : "Connected but no sensors found");
+                            }
+                        }
+
+                        var newStatus = testSuccessful ? "Tested" : "Error";
+
+                        // Update database
+                        await _collectorDb.UpdateLastTestedAsync(collector.Id, DateTime.UtcNow);
+                        await _collectorDb.UpdateCollectorStatusAsync(collector.Id, newStatus);
+                        await _collectorDb.UpdateLastFetchInfoAsync(
+                            collector.Id,
+                            DateTime.UtcNow,
+                            0, 0,
+                            testSuccessful,
+                            errorMessage,
+                            0
+                        );
+
+                        // Completion notification for this specific collector
+                        var completeContent = new
+                        {
+                            collectorId = collector.Id,
+                            collectorName = collector.Name,
+                            stage = "complete",
+                            success = testSuccessful,
+                            sensorCount = sensors?.Count ?? 0,
+                            errorMessage = errorMessage
+                        };
+
+                        await _notificationService.CreateNotificationAsync(
+                            message: testSuccessful ? $"Found {sensors?.Count ?? 0} sensor{(sensors?.Count != 1 ? "s" : "")}" : errorMessage,
+                            title: testSuccessful ? $"Passed: {collector.Name}" : $"Failed: {collector.Name}",
+                            type: testSuccessful ? NotificationType.Success : NotificationType.Error,
+                            category: NotificationCategory.System,
+                            duration: 3000,
+                            structuredContent: completeContent
+                        );
+
+                        results.Add(new
+                        {
+                            id = collector.Id,
+                            name = collector.Name,
+                            success = testSuccessful,
+                            status = newStatus,
+                            error = errorMessage
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        // Update with error
+                        await _collectorDb.UpdateLastTestedAsync(collector.Id, DateTime.UtcNow);
+                        await _collectorDb.UpdateCollectorStatusAsync(collector.Id, "Error");
+                        await _collectorDb.UpdateLastFetchInfoAsync(
+                            collector.Id,
+                            DateTime.UtcNow,
+                            0, 0,
+                            false,
+                            ex.Message,
+                            0
+                        );
+
+                        // Error completion notification
+                        var errorContent = new
+                        {
+                            collectorId = collector.Id,
+                            collectorName = collector.Name,
+                            stage = "complete",
+                            success = false,
+                            sensorCount = 0,
+                            errorMessage = ex.Message
+                        };
+
+                        await _notificationService.CreateNotificationAsync(
+                            message: ex.Message,
+                            title: $"Failed: {collector.Name}",
+                            type: NotificationType.Error,
+                            category: NotificationCategory.System,
+                            duration: 5000,
+                            structuredContent: errorContent
+                        );
+
+                        results.Add(new
+                        {
+                            id = collector.Id,
+                            name = collector.Name,
+                            success = false,
+                            status = "Error",
+                            error = ex.Message
+                        });
+                    }
+                }
+
+                var successCount = results.Count(r => ((dynamic)r).success);
+                var failCount = results.Count - successCount;
+
+                // Completion notification
+                await _notificationService.CreateNotificationAsync(
+                    message: failCount > 0 ? $"{successCount} passed, {failCount} failed" : $"All {successCount} collector{(successCount != 1 ? "s" : "")} passed",
+                    title: "Collector Testing Complete",
+                    type: failCount > 0 ? NotificationType.Warning : NotificationType.Success,
+                    category: NotificationCategory.System,
+                    duration: 5000
+                );
+
+                return Ok(new
+                {
+                    message = $"Tested {collectors.Count} collectors: {successCount} passed, {failCount} failed",
+                    totalTested = collectors.Count,
+                    passed = successCount,
+                    failed = failCount,
+                    results = results
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COLLECTOR TEST] Error testing all collectors: {ex.Message}");
+                return StatusCode(500, new { message = "Error testing collectors", error = ex.Message });
+            }
+        }
+
+        // POST: /api/collectors/{id}/test
+        [HttpPost("{id}/test")]
+        public async Task<IActionResult> TestCollector(int id)
+        {
+            try
+            {
+                var collector = await _collectorDb.GetCollectorByIdAsync(id);
+                if (collector == null)
+                {
+                    return NotFound(new { message = $"Collector with ID {id} not found" });
+                }
+
+                var dataCollector = _dataCollectorFactory(collector);
+                dataCollector.ApplyConfiguration(collector);
+
+                // Special handling for collectors that don't have a traditional API
+                var skipConnectionTest = collector.CollectorType == "LibreHardwareMonitor" ||
+                                        collector.CollectorType == "HWiNFO" ||
+                                        collector.CollectorType == "Host" ||
+                                        collector.CollectorType == "EventEngine" ||
+                                        collector.CollectorType == "RateTester" ||
+                                        collector.CollectorType == "SystemTime" ||
+                                        collector.CollectorType == "InternetTime";
+
+                // Start notification with structured content for modern progress card
+                var startContent = new
+                {
+                    collectorId = collector.Id,
+                    collectorName = collector.Name,
+                    stage = "testing"
+                };
+
+                await _notificationService.CreateNotificationAsync(
+                    message: $"Fetching sensors from {collector.Name}...",
+                    title: $"Testing: {collector.Name}",
+                    type: NotificationType.Info,
+                    category: NotificationCategory.System,
+                    duration: 0,
+                    structuredContent: startContent
+                );
+
+                bool testSuccessful;
+                List<Model_Sensor>? sensors = null;
+                string errorMessage;
+
+                if (skipConnectionTest)
+                {
+                    // For non-API collectors, just try to fetch sensors directly
+                    sensors = await dataCollector.FetchSensorsAsync(collector);
+                    testSuccessful = sensors != null && sensors.Count > 0;
+                    errorMessage = testSuccessful ? "" : (sensors == null ? "Failed to fetch sensors" : "No sensors found");
+                }
+                else
+                {
+                    // For API-based collectors, test connection first
+                    var connectionOk = await dataCollector.TestConnectionAsync(collector);
+
+                    if (!connectionOk)
+                    {
+                        testSuccessful = false;
+                        errorMessage = "Connection test failed";
+                    }
+                    else
+                    {
+                        // Connection OK, now try to fetch sensors
+                        sensors = await dataCollector.FetchSensorsAsync(collector);
+                        testSuccessful = sensors != null && sensors.Count > 0;
+                        errorMessage = testSuccessful ? "" : (sensors == null ? "Connected but failed to fetch sensors" : "Connected but no sensors found");
+                    }
+                }
+
+                var newStatus = testSuccessful ? "Tested" : "Error";
+
+                // Update database
+                await _collectorDb.UpdateLastTestedAsync(collector.Id, DateTime.UtcNow);
+                await _collectorDb.UpdateCollectorStatusAsync(collector.Id, newStatus);
+                await _collectorDb.UpdateLastFetchInfoAsync(
+                    collector.Id,
+                    DateTime.UtcNow,
+                    0, 0,
+                    testSuccessful,
+                    errorMessage,
+                    0
+                );
+
+                // Completion notification with structured content
+                var completeContent = new
+                {
+                    collectorId = collector.Id,
+                    collectorName = collector.Name,
+                    stage = "complete",
+                    success = testSuccessful,
+                    sensorCount = sensors?.Count ?? 0,
+                    errorMessage = errorMessage
+                };
+
+                await _notificationService.CreateNotificationAsync(
+                    message: testSuccessful ? $"Test passed - {sensors?.Count ?? 0} sensor{(sensors?.Count != 1 ? "s" : "")} found" : errorMessage,
+                    title: testSuccessful ? $"Passed: {collector.Name}" : $"Failed: {collector.Name}",
+                    type: testSuccessful ? NotificationType.Success : NotificationType.Error,
+                    category: NotificationCategory.System,
+                    duration: 3000,
+                    structuredContent: completeContent
+                );
+
+                return Ok(new
+                {
+                    message = testSuccessful ? $"Collector '{collector.Name}' tested successfully" : $"Collector '{collector.Name}' test failed",
+                    success = testSuccessful,
+                    status = newStatus,
+                    error = errorMessage
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COLLECTOR TEST] Error testing collector {id}: {ex.Message}");
+
+                // Update with error
+                try
+                {
+                    await _collectorDb.UpdateLastTestedAsync(id, DateTime.UtcNow);
+                    await _collectorDb.UpdateCollectorStatusAsync(id, "Error");
+                    await _collectorDb.UpdateLastFetchInfoAsync(
+                        id,
+                        DateTime.UtcNow,
+                        0, 0,
+                        false,
+                        ex.Message,
+                        0
+                    );
+                }
+                catch { /* Ignore errors updating status */ }
+
+                return StatusCode(500, new
+                {
+                    message = $"Error testing collector: {ex.Message}",
+                    success = false,
+                    status = "Error",
+                    error = ex.Message
+                });
             }
         }
     }

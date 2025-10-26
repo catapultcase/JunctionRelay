@@ -48,9 +48,11 @@ import {
     FormLabel,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAppVersion } from "../hooks/useAppVersion";
 
-// Import the EnhancedSensorsTable component
-import EnhancedSensorsTable from "../components/EnhancedSensorsTable";
+// Import components
+// eslint-disable-next-line react/jsx-pascal-case
+import Collectors_SensorTable from "../components/Collectors_SensorTable";
 import SetupInstructions_Collectors from "../components/SetupInstructions_Collectors";
 
 // Import icons
@@ -87,6 +89,7 @@ import MissingLocationIcon from '@mui/icons-material/LocationOff';
 const ConfigureCollector = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { version } = useAppVersion();
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -134,20 +137,6 @@ const ConfigureCollector = () => {
         fetchSuccessful: false,
         lastFetchTime: null
     });
-
-    const getDefaultVisibleColumns = (viewType: "stored" | "delta" | "lost") => { // UPDATED: Add "lost"
-        return [
-            "id",
-            "externalId",
-            "name",
-            "componentName",
-            "value",
-            "unit",
-            "decimalPlaces",
-            "lastUpdated",
-            "actions"
-        ];
-    };
 
     const showSnackbar = (message: string, severity: "success" | "error" | "info" | "warning" = "success") => {
         setSnackbarMessage(message);
@@ -229,7 +218,7 @@ const ConfigureCollector = () => {
                 setIsLocked(false);
                 setShowUnlockDialog(false);
                 setUnlockPassword("");
-                showSnackbar("Collector unlocked successfully", "success");
+                showSnackbar("Collector unlocked - running test...", "success");
                 await fetchStoredSensors();
             } else {
                 const errorMessage = responseData?.status || "Invalid password or error occurred";
@@ -872,9 +861,6 @@ const ConfigureCollector = () => {
         };
     }, [editMode, hasChanges, isLocked, handleSaveCollector, handleDeleteCollector, handleBack]);
 
-    const noopAsync = async () => { };
-    const noop = () => { };
-
     const renderStoredSensorActions = (sensor: any) => (
         <Button
             size="small"
@@ -1229,7 +1215,7 @@ const ConfigureCollector = () => {
                     <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
                         <InfoIcon sx={{ mr: 1, color: 'info.main', fontSize: 16 }} />
                         <Typography variant="caption" color="info.main">
-                            Last tested: {new Date(collector.lastTested).toLocaleString()}
+                            Last tested: {new Date(collector.lastTested + 'Z').toLocaleString()}
                         </Typography>
                     </Box>
                 )}
@@ -1626,7 +1612,7 @@ const ConfigureCollector = () => {
                         disabled={fetchedSensors.length === 0}
                         color={fetchedSensors.length > 0 ? "primary" : "inherit"}
                     >
-                        New Sensors {fetchedSensors.length > 0 && `(${fetchedSensors.length})`}
+                        New Sensors
                         {fetchedSensors.length > 0 && (
                             <Chip
                                 label={fetchedSensors.length}
@@ -1645,7 +1631,7 @@ const ConfigureCollector = () => {
                         disabled={lostSensors.length === 0}
                         color={lostSensors.length > 0 ? "error" : "inherit"}
                     >
-                        Lost Sensors {lostSensors.length > 0 && `(${lostSensors.length})`}
+                        Lost Sensors
                         {lostSensors.length > 0 && (
                             <Chip
                                 label={lostSensors.length}
@@ -1675,54 +1661,26 @@ const ConfigureCollector = () => {
             {/* Sensors Table */}
             {displaySensors.length > 0 ? (
                 <Box sx={{ mb: 3 }}>
-                    <EnhancedSensorsTable
-                        availableSensors={displaySensors}
-                        handleSensorSelect={noopAsync}
-                        handleSensorOrderChange={noopAsync}
-                        handleSensorTagChange={noopAsync}
-                        getSensorOrder={(sensor) => sensor.sensorOrder || 0}
-                        getSensorTag={(sensor) => sensor.sensorTag || ''}
-                        sensorTargets={{}}
-                        targets={[]}
-                        removeSensorTarget={(junctionId, sensorId, deviceId) => noopAsync()}
-                        assignSensorTarget={(junctionId, sensorId, deviceId, screenId) => noopAsync()}
-                        setCurrentSensor={noop}
-                        setCurrentTargetDevice={noop}
-                        setScreenSelectionModalOpen={noop}
-                        showSnackbar={showSnackbar}
-                        setSensorTargets={noop}
-                        junctionId={0}
-
-                        // Custom props for this specific usage
-                        hideEditColumn={true}
-                        hideJunctionSettings={true}
-                        hideTargetsColumn={true}
-                        hideSelectionColumn={true}
-                        hideSourceColumn={true}
-                        customTitle={
+                    <Collectors_SensorTable
+                        key={`${activeTab}_${storedSensors.length}_${fetchedSensors.length}_${lostSensors.length}`}
+                        sensors={displaySensors}
+                        title={
                             activeTab === "stored" ? "Stored Sensors" :
                                 activeTab === "delta" ? "New Sensors Available" :
-                                    "Lost Sensors" // NEW: Title for lost sensors
+                                    "Lost Sensors"
                         }
-                        customIcon={
+                        icon={
                             activeTab === "stored" ? <StorageIcon sx={{ mr: 1 }} /> :
                                 activeTab === "delta" ? <NewReleasesIcon sx={{ mr: 1 }} /> :
-                                    <MissingLocationIcon sx={{ mr: 1 }} /> // NEW: Icon for lost sensors
+                                    <MissingLocationIcon sx={{ mr: 1 }} />
                         }
                         customActions={
                             activeTab === "stored" ? renderStoredSensorActions :
                                 activeTab === "delta" ? renderDeltaSensorActions :
-                                    renderLostSensorActions // NEW: Actions for lost sensors
+                                    renderLostSensorActions
                         }
-                        readOnly={true}
-                        showLastUpdated={true}
-                        hideFilters={false}
-
-                        // Use different local storage keys for each view to maintain separate column preferences
-                        localStorageKey={`collector_${id}_${activeTab}_sensors_columns`}
-
-                        // Pass in default visible columns for this view
-                        defaultVisibleColumns={getDefaultVisibleColumns(activeTab)}
+                        appVersion={version || undefined}
+                        localStorageKey={`collector_${id}_${activeTab}_sensors`}
                     />
                 </Box>
             ) : (

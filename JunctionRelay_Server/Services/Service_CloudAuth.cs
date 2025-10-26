@@ -33,6 +33,9 @@ namespace JunctionRelayServer.Services
         private readonly HttpClient _httpClient;
         private readonly Service_CloudSessionStore _cloudSessionStore;
         private readonly IMemoryCache _cache;
+        private readonly IService_Auth _authService;
+        private readonly IService_Settings _settingsService;
+        private readonly IService_Jwt _jwtService;
 
         // Cache configuration
         private static readonly TimeSpan ValidResponseCacheDuration = TimeSpan.FromSeconds(60);
@@ -42,16 +45,25 @@ namespace JunctionRelayServer.Services
         // Singleflight implementation - one semaphore per cache key
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> _singleflightGates = new();
 
+        // Fallback authentication setting key
+        private const string FALLBACK_ENABLED_KEY = "cloud_auth_fallback_enabled";
+
         public Service_CloudAuth(
             IConfiguration configuration,
             IHttpClientFactory httpClientFactory,
             Service_CloudSessionStore cloudSessionStore,
-            IMemoryCache cache)
+            IMemoryCache cache,
+            IService_Auth authService,
+            IService_Settings settingsService,
+            IService_Jwt jwtService)
         {
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _httpClient = httpClientFactory.CreateClient();
             _cloudSessionStore = cloudSessionStore ?? throw new ArgumentNullException(nameof(cloudSessionStore));
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+            _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+            _jwtService = jwtService ?? throw new ArgumentNullException(nameof(jwtService));
         }
 
         public async Task<IActionResult> InitiateLoginAsync(JsonElement request)
@@ -249,6 +261,10 @@ namespace JunctionRelayServer.Services
         public async Task<IActionResult> GetUserInfoAsync(string? authHeader)
             => await ProxyCloudRequest("auth/user-info", HttpMethod.Get, authHeader, cacheDuration: ReadOnlyOperationCacheDuration);
 
+        // Non-cached version for backend token validation (avoids stale cache after token refresh)
+        private async Task<IActionResult> ValidateBackendTokenAsync(string backendToken)
+            => await ProxyCloudRequest("auth/user-info", HttpMethod.Get, $"Bearer {backendToken}", cacheDuration: null);
+
         public async Task<IActionResult> ValidateTokenAsync(string? authHeader)
             => await ProxyCloudRequest("auth/validate-token", HttpMethod.Post, authHeader, cacheDuration: ValidResponseCacheDuration);
 
@@ -289,8 +305,8 @@ namespace JunctionRelayServer.Services
                     });
                 }
 
-                // Reuse the cached user info instead of making a separate request
-                var userInfoResult = await GetUserInfoAsync($"Bearer {backendToken}");
+                // Validate backend token without caching (to avoid stale cache after token refresh)
+                var userInfoResult = await ValidateBackendTokenAsync(backendToken);
 
                 if (userInfoResult is OkObjectResult okResult && okResult.Value is JsonElement userInfo)
                 {
@@ -455,9 +471,6 @@ namespace JunctionRelayServer.Services
             }
             return result;
         }
-
-        public async Task<IActionResult> ChangePasswordAsync(JsonElement request, string? authHeader)
-            => await ProxyCloudRequest("auth/change-password", HttpMethod.Post, authHeader, request);
 
         public async Task<IActionResult> CreateCheckoutAsync(JsonElement request, string? authHeader)
             => await ProxyCloudRequest("stripe/create-checkout", HttpMethod.Post, authHeader, request);
@@ -725,6 +738,191 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine($"[CLOUD_AUTH] Failed to extract userId from token: {ex.Message}");
                 return null;
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // FALLBACK AUTHENTICATION METHODS
+        // --------------------------------------------------------------------
+
+        public async Task<IActionResult> GetFallbackStatusAsync()
+        {
+            try
+            {
+                var isEnabled = await _settingsService.GetBoolSettingAsync(FALLBACK_ENABLED_KEY, false);
+                var hasUser = await _authService.HasAnyUsersAsync();
+
+                return new OkObjectResult(new
+                {
+                    enabled = isEnabled,
+                    userConfigured = hasUser,
+                    message = isEnabled ? "Fallback authentication is enabled" : "Fallback authentication is disabled"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Error getting fallback status: {ex.Message}");
+                return new ObjectResult(new { message = "Error getting fallback status" }) { StatusCode = 500 };
+            }
+        }
+
+        public async Task<IActionResult> EnableFallbackAsync(JsonElement request)
+        {
+            try
+            {
+                if (!request.TryGetProperty("username", out var usernameElement) ||
+                    !request.TryGetProperty("password", out var passwordElement))
+                {
+                    return new BadRequestObjectResult(new { message = "Username and password are required" });
+                }
+
+                var username = usernameElement.GetString();
+                var password = passwordElement.GetString();
+
+                if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
+                {
+                    return new BadRequestObjectResult(new { message = "Username must be at least 3 characters long" });
+                }
+
+                if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+                {
+                    return new BadRequestObjectResult(new { message = "Password must be at least 6 characters long" });
+                }
+
+                // Check if fallback is already enabled
+                var isAlreadyEnabled = await _settingsService.GetBoolSettingAsync(FALLBACK_ENABLED_KEY, false);
+                if (isAlreadyEnabled && await _authService.HasAnyUsersAsync())
+                {
+                    return new BadRequestObjectResult(new { message = "Fallback authentication is already enabled" });
+                }
+
+                // Create or update the local user
+                var hasUser = await _authService.HasAnyUsersAsync();
+                if (hasUser)
+                {
+                    // If user exists, we might want to update the password or skip
+                    // For now, we'll just enable fallback without creating a duplicate user
+                    Console.WriteLine("[CLOUD_AUTH][FALLBACK] User already exists, enabling fallback");
+                }
+                else
+                {
+                    var success = await _authService.CreateUserAsync(username, password);
+                    if (!success)
+                    {
+                        return new BadRequestObjectResult(new { message = "Failed to create fallback user" });
+                    }
+                    Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Created fallback user: {username}");
+                }
+
+                // Enable fallback in settings
+                await _settingsService.SetSettingAsync(FALLBACK_ENABLED_KEY, "true", "Enable local authentication fallback for cloud mode");
+
+                Console.WriteLine("[CLOUD_AUTH][FALLBACK] Fallback authentication enabled");
+                return new OkObjectResult(new
+                {
+                    success = true,
+                    message = "Fallback authentication enabled successfully",
+                    username = username
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Error enabling fallback: {ex.Message}");
+                return new ObjectResult(new { message = "Error enabling fallback authentication" }) { StatusCode = 500 };
+            }
+        }
+
+        public async Task<IActionResult> DisableFallbackAsync(bool removeUser)
+        {
+            try
+            {
+                // Disable fallback in settings
+                await _settingsService.SetSettingAsync(FALLBACK_ENABLED_KEY, "false", "Enable local authentication fallback for cloud mode");
+
+                if (removeUser)
+                {
+                    // Get all users and remove them
+                    var users = await _authService.GetAllUsersAsync();
+                    foreach (var user in users)
+                    {
+                        await _authService.RemoveUserAsync(user.Username);
+                        Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Removed fallback user: {user.Username}");
+                    }
+                }
+
+                Console.WriteLine("[CLOUD_AUTH][FALLBACK] Fallback authentication disabled");
+                return new OkObjectResult(new
+                {
+                    success = true,
+                    message = removeUser ? "Fallback authentication disabled and user removed" : "Fallback authentication disabled"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Error disabling fallback: {ex.Message}");
+                return new ObjectResult(new { message = "Error disabling fallback authentication" }) { StatusCode = 500 };
+            }
+        }
+
+        public async Task<IActionResult> LoginWithFallbackAsync(JsonElement request)
+        {
+            try
+            {
+                // Check if fallback is enabled
+                var isEnabled = await _settingsService.GetBoolSettingAsync(FALLBACK_ENABLED_KEY, false);
+                if (!isEnabled)
+                {
+                    return new BadRequestObjectResult(new { message = "Fallback authentication is not enabled" });
+                }
+
+                if (!request.TryGetProperty("username", out var usernameElement) ||
+                    !request.TryGetProperty("password", out var passwordElement))
+                {
+                    return new BadRequestObjectResult(new { message = "Username and password are required" });
+                }
+
+                var username = usernameElement.GetString();
+                var password = passwordElement.GetString();
+
+                if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+                {
+                    return new BadRequestObjectResult(new { message = "Username and password cannot be empty" });
+                }
+
+                // Validate credentials using local auth
+                if (!await _authService.ValidateCredentialsAsync(username, password))
+                {
+                    Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Failed login attempt for username: {username}");
+                    return new UnauthorizedObjectResult(new { message = "Invalid username or password" });
+                }
+
+                var user = await _authService.GetUserAsync(username);
+                if (user == null)
+                {
+                    return new UnauthorizedObjectResult(new { message = "User not found" });
+                }
+
+                // Generate JWT token for local auth
+                var token = _jwtService.GenerateToken(user.Username, user.Id);
+                var expiresAt = DateTime.UtcNow.AddMinutes(480);
+
+                await _authService.UpdateLastLoginAsync(user.Username, "127.0.0.1");
+                Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Successful fallback login for username: {username}");
+
+                return new OkObjectResult(new
+                {
+                    token = token,
+                    username = user.Username,
+                    expiresAt = expiresAt,
+                    authMode = "local",
+                    usedFallback = true,
+                    message = "Logged in using fallback authentication. System will switch to local mode."
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH][FALLBACK] Error during fallback login: {ex.Message}");
+                return new ObjectResult(new { message = "Error during fallback login" }) { StatusCode = 500 };
             }
         }
     }

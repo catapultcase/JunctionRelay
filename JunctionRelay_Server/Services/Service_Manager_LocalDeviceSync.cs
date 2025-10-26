@@ -64,14 +64,14 @@ namespace JunctionRelayServer.Services
                 switch (syncMode?.ToLower())
                 {
                     case "local_health":
-                        registerUrl = $"{cloudApiUrl}/cloud/local-devices/register-health";
+                        registerUrl = $"{cloudApiUrl}/local-devices/register-health";
                         break;
                     case "local_sync":
-                        registerUrl = $"{cloudApiUrl}/cloud/local-devices/register-sync";
+                        registerUrl = $"{cloudApiUrl}/local-devices/register-sync";
                         break;
                     default:
                         Console.WriteLine($"[LOCAL_DEVICE_SYNC] ⚠️ Invalid sync mode '{syncMode}' for device {deviceName}. Defaulting to health mode.");
-                        registerUrl = $"{cloudApiUrl}/cloud/local-devices/register-health";
+                        registerUrl = $"{cloudApiUrl}/local-devices/register-health";
                         break;
                 }
 
@@ -145,7 +145,7 @@ namespace JunctionRelayServer.Services
                     throw new InvalidOperationException("Cloud API URL not configured.");
                 }
 
-                var updateUrl = $"{cloudApiUrl}/cloud/local-devices/{deviceId}/sync-mode";
+                var updateUrl = $"{cloudApiUrl}/local-devices/{deviceId}/sync-mode";
 
                 var updateRequest = new
                 {
@@ -212,7 +212,7 @@ namespace JunctionRelayServer.Services
                     throw new InvalidOperationException("Cloud API URL not configured.");
                 }
 
-                var unregisterUrl = $"{cloudApiUrl}/cloud/local-devices/unregister";
+                var unregisterUrl = $"{cloudApiUrl}/local-devices/unregister";
 
                 var unregisterRequest = new { deviceId = deviceId };
                 var jsonContent = JsonSerializer.Serialize(unregisterRequest);

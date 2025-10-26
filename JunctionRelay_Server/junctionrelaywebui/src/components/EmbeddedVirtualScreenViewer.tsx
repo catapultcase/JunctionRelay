@@ -17,7 +17,8 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { Box } from '@mui/material';
 import { VirtualScreenViewerComponent } from '../pages/VirtualScreenViewer';
 import { WebSocketDataProvider } from '../providers/WebSocketDataProvider';
 

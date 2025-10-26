@@ -32,6 +32,7 @@ import { useNavigate } from "react-router-dom";
 // Icon imports
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import BiotechIcon from '@mui/icons-material/Biotech';
 import CloudIcon from '@mui/icons-material/Cloud';
 import DnsIcon from '@mui/icons-material/Dns';
 import HomeIcon from '@mui/icons-material/Home';
@@ -83,6 +84,7 @@ const CollectorCard = memo(({
     viewMode,
     onDelete,
     onEdit,
+    onTest,
     isFrameEngine = false,
     onCardClick,
 }: {
@@ -90,6 +92,7 @@ const CollectorCard = memo(({
     viewMode: 'standard' | 'mini',
     onDelete: (e: React.MouseEvent, id: number) => void,
     onEdit: (e: React.MouseEvent, collector: any) => void,
+    onTest?: (e: React.MouseEvent, id: number) => void,
     isFrameEngine?: boolean,
     onCardClick?: () => void,
 }) => {
@@ -108,8 +111,17 @@ const CollectorCard = memo(({
         return viewMode === 'mini' ? 120 : 220;
     };
 
-    const statusColor = collector.status === 'Active' ? 'success' :
-        collector.status === 'Inactive' ? 'error' : 'default';
+    // Determine status color
+    let statusColor: "default" | "success" | "error" | "warning" = 'default';
+    const status = collector.status || 'Unknown';
+
+    if (status === 'Active' || status === 'Tested') {
+        statusColor = 'success';
+    } else if (status === 'Inactive' || status === 'Error') {
+        statusColor = 'error';
+    } else if (status === 'Warning') {
+        statusColor = 'warning';
+    }
 
     // Get display URL based on collector type
     const getDisplayUrl = () => {
@@ -162,7 +174,7 @@ const CollectorCard = memo(({
             >
                 {viewMode === 'mini'
                     ? (statusColor === 'success' ? '●' : '○')
-                    : (collector.status || 'Unknown')
+                    : status
                 }
             </Box>
 
@@ -207,7 +219,7 @@ const CollectorCard = memo(({
                                 </Typography>
                             )}
                             <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                                <strong>Token:</strong> {collector.accessToken ? "Configured" : "Not set"}
+                                <strong>Token:</strong> {collector.accessTokenStatus || (collector.accessToken ? "Configured" : "Not set")}
                             </Typography>
                         </Box>
                     </>
@@ -251,6 +263,20 @@ const CollectorCard = memo(({
                         mt: 1,
                         gap: 1
                     }}>
+                        {onTest && (
+                            <Tooltip title="Test Connection">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onTest(e, collector.id);
+                                    }}
+                                    color="secondary"
+                                >
+                                    <BiotechIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         <Tooltip title="Edit">
                             <IconButton
                                 size="small"
@@ -258,6 +284,8 @@ const CollectorCard = memo(({
                                     e.stopPropagation();
                                     onEdit(e, collector);
                                 }}
+                                data-collector-id={collector.id}
+                                data-action="edit"
                             >
                                 <EditIcon fontSize="small" />
                             </IconButton>

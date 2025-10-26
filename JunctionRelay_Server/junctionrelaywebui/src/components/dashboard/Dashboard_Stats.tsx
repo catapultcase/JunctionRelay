@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from 'react-router-dom';
 import {
     Typography,
     Box,
@@ -94,6 +95,7 @@ interface DashboardStatsProps {
 }
 
 const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
+    const navigate = useNavigate();
     const [overviewExpanded, setOverviewExpanded] = useState<boolean>(() => {
         const saved = localStorage.getItem('dashboard_overview_expanded');
         return saved !== null ? saved === 'true' : false;
@@ -102,6 +104,8 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
     const [loading, setLoading] = useState<boolean>(true);
     const [collectorStats, setCollectorStats] = useState<any>(null);
     const [streamStats, setStreamStats] = useState<any>(null);
+    const [globalSensorCount, setGlobalSensorCount] = useState<number>(0);
+    const [globalSensors, setGlobalSensors] = useState<any[]>([]);
 
     // Persist overview expansion state
     useEffect(() => {
@@ -112,9 +116,10 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const [collectorsResponse, streamsResponse] = await Promise.all([
+                const [collectorsResponse, streamsResponse, sensorsResponse] = await Promise.all([
                     fetch('/api/collectors/stats'),
-                    fetch('/api/connections/streams/stats')
+                    fetch('/api/connections/streams/stats'),
+                    fetch('/api/connections/sensors')
                 ]);
 
                 if (collectorsResponse.ok) {
@@ -129,6 +134,14 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                     setStreamStats(data);
                 } else {
                     console.error('Failed to fetch stream stats');
+                }
+
+                if (sensorsResponse.ok) {
+                    const sensors = await sensorsResponse.json();
+                    setGlobalSensorCount(Array.isArray(sensors) ? sensors.length : 0);
+                } else {
+                    console.error('Failed to fetch global sensor cache');
+                    setGlobalSensorCount(0);
                 }
             } catch (error) {
                 console.error('Error fetching stats:', error);
@@ -187,21 +200,13 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
             details: []
         };
 
-        // Use real sensor data from collectors API
-        const sensorsData = collectorStats?.sensors ? {
-            active: collectorStats.sensors.active || 0,
+        // Use global sensor cache count from /api/connections/sensors
+        const sensorsData = {
+            active: globalSensorCount,
             health: {
-                status: collectorStats.sensors.health?.status || 'Unknown',
-                severity: collectorStats.sensors.health?.severity || 'success'
+                status: globalSensorCount > 0 ? 'Cached' : 'No Sensors',
+                severity: 'success' as const
             },
-            hasIssues: collectorStats.sensors.hasIssues || false,
-            details: (collectorStats.sensors.details || []).map((d: any) => ({
-                ...d,
-                area: 'Sensors'
-            }))
-        } : {
-            active: 0,
-            health: { status: 'Loading...', severity: 'success' as const },
             hasIssues: false,
             details: []
         };
@@ -217,7 +222,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
             streams: streamsData,
             sensors: sensorsData
         };
-    }, [junctions, collectorStats, streamStats]);
+    }, [junctions, collectorStats, streamStats, globalSensorCount]);
 
     // Get all warnings grouped by area
     const getAllWarnings = (): WarningDetail[] => {
@@ -238,6 +243,21 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
         return allWarnings.sort((a, b) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
         );
+    };
+
+    // Handle clicking on a warning row
+    const handleWarningClick = (warning: WarningDetail) => {
+        if (warning.area === 'Collectors' && warning.collectorId) {
+            // Navigate to collectors page
+            navigate('/collectors');
+            // Wait for page to load, then trigger edit
+            setTimeout(() => {
+                const editButton = document.querySelector(`[data-collector-id="${warning.collectorId}"][data-action="edit"]`) as HTMLElement;
+                if (editButton) {
+                    editButton.click();
+                }
+            }, 100);
+        }
     };
 
     return (
@@ -303,20 +323,46 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                                 {dashboardStats.collectors.active === 1 ? 'Active Collector' : 'Active Collectors'}
                             </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                                {dashboardStats.collectors.health.severity === 'error' ? (
-                                    <ErrorIcon sx={{ color: 'error.main', fontSize: 20 }} />
-                                ) : dashboardStats.collectors.health.severity === 'warning' ? (
-                                    <WarningIcon sx={{ color: 'warning.main', fontSize: 20 }} />
-                                ) : (
-                                    <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
-                                )}
-                                <Chip
-                                    label={dashboardStats.collectors.health.status}
-                                    color={dashboardStats.collectors.health.severity}
-                                    size="small"
-                                    variant="outlined"
-                                />
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                {(() => {
+                                    const collectorWarnings = dashboardStats.collectors.details.filter(d => d.type === 'warning').length;
+                                    const collectorErrors = dashboardStats.collectors.details.filter(d => d.type === 'error').length;
+
+                                    if (collectorWarnings === 0 && collectorErrors === 0) {
+                                        return (
+                                            <>
+                                                <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
+                                                <Chip
+                                                    label={dashboardStats.collectors.health.status}
+                                                    color="success"
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                            </>
+                                        );
+                                    }
+
+                                    return (
+                                        <>
+                                            {collectorWarnings > 0 && (
+                                                <Chip
+                                                    label={`${collectorWarnings} Warning${collectorWarnings !== 1 ? 's' : ''}`}
+                                                    color="warning"
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                            )}
+                                            {collectorErrors > 0 && (
+                                                <Chip
+                                                    label={`${collectorErrors} Error${collectorErrors !== 1 ? 's' : ''}`}
+                                                    color="error"
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </Box>
                         </Box>
 
@@ -348,7 +394,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                             </Box>
                         </Box>
 
-                        {/* Active Sensors */}
+                        {/* Global Sensor Cache */}
                         <Box sx={{ textAlign: 'center' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                 <SensorsIcon sx={{ mr: 1, color: 'info.main' }} />
@@ -357,7 +403,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                                 </Typography>
                             </Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                                {dashboardStats.sensors.active === 1 ? 'Active Sensor' : 'Active Sensors'}
+                                {dashboardStats.sensors.active === 1 ? 'Cached Sensor' : 'Cached Sensors'}
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                                 {dashboardStats.sensors.health.severity === 'error' ? (
@@ -378,7 +424,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                     </Box>
                 )}
 
-                {/* Collapsible Current Warnings Section */}
+                {/* Collapsible Current Issues Section */}
                 <Divider sx={{ mb: 2 }} />
 
                 <Box sx={{
@@ -401,7 +447,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                             return (
                                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <CheckCircleIcon color="success" />
-                                    No Warnings
+                                    No Issues
                                 </Typography>
                             );
                         }
@@ -409,20 +455,20 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                         return (
                             <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <WarningIcon color="warning" />
-                                Current Warnings
+                                Current Issues
                                 <Box component="span" sx={{ ml: 1, display: 'flex', gap: 1 }}>
-                                    {errorCount > 0 && (
-                                        <Chip
-                                            label={`${errorCount} Error${errorCount !== 1 ? 's' : ''}`}
-                                            color="error"
-                                            size="small"
-                                            variant="outlined"
-                                        />
-                                    )}
                                     {warningCount > 0 && (
                                         <Chip
                                             label={`${warningCount} Warning${warningCount !== 1 ? 's' : ''}`}
                                             color="warning"
+                                            size="small"
+                                            variant="outlined"
+                                        />
+                                    )}
+                                    {errorCount > 0 && (
+                                        <Chip
+                                            label={`${errorCount} Error${errorCount !== 1 ? 's' : ''}`}
+                                            color="error"
                                             size="small"
                                             variant="outlined"
                                         />
@@ -452,7 +498,12 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                                     </TableHead>
                                     <TableBody>
                                         {getAllWarnings().map((warning) => (
-                                            <TableRow key={warning.id}>
+                                            <TableRow
+                                                key={warning.id}
+                                                hover
+                                                sx={{ cursor: 'pointer' }}
+                                                onClick={() => handleWarningClick(warning)}
+                                            >
                                                 <TableCell>
                                                     <Chip
                                                         label={warning.area}
@@ -493,7 +544,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ junctions }) => {
                                 </Table>
                             </TableContainer>
                         ) : (
-                            <Box sx={{ textAlign: 'center', py: 4, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                            <Box sx={{ textAlign: 'center', py: 4, backgroundColor: 'action.hover', borderRadius: 1 }}>
                                 <CheckCircleIcon color="success" sx={{ fontSize: 48, mb: 2 }} />
                                 <Typography variant="h6" color="success.main" gutterBottom>
                                     All Systems Healthy

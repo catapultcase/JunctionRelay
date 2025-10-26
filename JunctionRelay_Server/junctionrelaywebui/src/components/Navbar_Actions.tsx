@@ -65,6 +65,7 @@ interface NavbarActionsProps {
     onLinksMenuClose: () => void;
     onLogout: () => void;
     onThemeChange: () => void;
+    isMobile?: boolean;
 }
 
 const NavbarActions: React.FC<NavbarActionsProps> = ({
@@ -81,12 +82,13 @@ const NavbarActions: React.FC<NavbarActionsProps> = ({
     onLinksMenuOpen,
     onLinksMenuClose,
     onLogout,
-    onThemeChange
+    onThemeChange,
+    isMobile = false
 }) => {
     return (
         <Box sx={{ display: "flex", alignItems: "center", gap: "10px" }}>
             {/* Version Display */}
-            {flags?.top_bar_show_current_version === 'true' && version && (
+            {flags?.top_bar_show_current_version && version && (
                 <Tooltip title={`Current Version: ${version}`}>
                     <Box
                         sx={{
@@ -166,124 +168,128 @@ const NavbarActions: React.FC<NavbarActionsProps> = ({
                 </Tooltip>
             )}
 
-            {/* External Links */}
-            <Tooltip title="External Links">
-                <IconButton
-                    onClick={onLinksMenuOpen}
-                    data-navbar-link
-                    sx={{
-                        color: "#ffffff",
-                        padding: "4px",
-                        minWidth: "auto"
-                    }}
-                >
-                    <LaunchIcon sx={{ color: "#4caf50" }} fontSize="small" />
-                </IconButton>
-            </Tooltip>
+            {/* External Links - Hidden in mobile */}
+            {!isMobile && (
+                <>
+                    <Tooltip title="External Links">
+                        <IconButton
+                            onClick={onLinksMenuOpen}
+                            data-navbar-link
+                            sx={{
+                                color: "#ffffff",
+                                padding: "4px",
+                                minWidth: "auto"
+                            }}
+                        >
+                            <LaunchIcon sx={{ color: "#4caf50" }} fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
 
-            {/* Links Menu */}
-            <Menu
-                anchorEl={linksMenuAnchor}
-                open={Boolean(linksMenuAnchor)}
-                onClose={onLinksMenuClose}
-                slotProps={{
-                    paper: {
-                        sx: {
-                            backgroundColor: '#2a2f35',
-                            color: '#ffffff',
-                            minWidth: 180,
-                            '& .MuiMenuItem-root': {
-                                color: '#ffffff',
-                                '&:hover': {
-                                    backgroundColor: '#3a3f45'
+                    {/* Links Menu */}
+                    <Menu
+                        anchorEl={linksMenuAnchor}
+                        open={Boolean(linksMenuAnchor)}
+                        onClose={onLinksMenuClose}
+                        slotProps={{
+                            paper: {
+                                sx: {
+                                    backgroundColor: '#2a2f35',
+                                    color: '#ffffff',
+                                    minWidth: 180,
+                                    '& .MuiMenuItem-root': {
+                                        color: '#ffffff',
+                                        '&:hover': {
+                                            backgroundColor: '#3a3f45'
+                                        }
+                                    },
+                                    '& .MuiListItemText-primary': {
+                                        color: '#ffffff !important'
+                                    }
                                 }
-                            },
-                            '& .MuiListItemText-primary': {
-                                color: '#ffffff !important'
-                            }
-                        }
-                    }
-                }}
-                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-            >
-                <MenuItem
-                    component={MuiLink}
-                    href="https://junctionrelay-docs.onrender.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ color: '#ffffff', textDecoration: 'none' }}
-                >
-                    <ListItemIcon>
-                        <DescriptionIcon sx={{ color: '#ff9800' }} fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                        primary="Documentation"
-                        sx={{
-                            '& .MuiListItemText-primary': {
-                                color: '#ffffff !important'
                             }
                         }}
-                    />
-                </MenuItem>
-                <MenuItem
-                    component={MuiLink}
-                    href="https://github.com/catapultcase/JunctionRelay"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ color: '#ffffff', textDecoration: 'none' }}
-                >
-                    <ListItemIcon>
-                        <GitHubIcon sx={{ color: '#9e9e9e' }} fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                        primary="GitHub"
-                        sx={{
-                            '& .MuiListItemText-primary': {
-                                color: '#ffffff !important'
-                            }
-                        }}
-                    />
-                </MenuItem>
-                <MenuItem
-                    component={MuiLink}
-                    href="https://catapultcase.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ color: '#ffffff', textDecoration: 'none' }}
-                >
-                    <ListItemIcon>
-                        <LanguageIcon sx={{ color: '#1976d2' }} fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                        primary="catapultcase.com"
-                        sx={{
-                            '& .MuiListItemText-primary': {
-                                color: '#ffffff !important'
-                            }
-                        }}
-                    />
-                </MenuItem>
-                <MenuItem
-                    component={MuiLink}
-                    href="https://junctionrelay.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ color: '#ffffff', textDecoration: 'none' }}
-                >
-                    <ListItemIcon>
-                        <LanguageIcon sx={{ color: '#388e3c' }} fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                        primary="junctionrelay.com"
-                        sx={{
-                            '& .MuiListItemText-primary': {
-                                color: '#ffffff !important'
-                            }
-                        }}
-                    />
-                </MenuItem>
-            </Menu>
+                        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+                    >
+                        <MenuItem
+                            component={MuiLink}
+                            href="https://junctionrelay-docs.onrender.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: '#ffffff', textDecoration: 'none' }}
+                        >
+                            <ListItemIcon>
+                                <DescriptionIcon sx={{ color: '#ff9800' }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="Documentation"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        color: '#ffffff !important'
+                                    }
+                                }}
+                            />
+                        </MenuItem>
+                        <MenuItem
+                            component={MuiLink}
+                            href="https://github.com/catapultcase/JunctionRelay"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: '#ffffff', textDecoration: 'none' }}
+                        >
+                            <ListItemIcon>
+                                <GitHubIcon sx={{ color: '#9e9e9e' }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="GitHub"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        color: '#ffffff !important'
+                                    }
+                                }}
+                            />
+                        </MenuItem>
+                        <MenuItem
+                            component={MuiLink}
+                            href="https://catapultcase.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: '#ffffff', textDecoration: 'none' }}
+                        >
+                            <ListItemIcon>
+                                <LanguageIcon sx={{ color: '#1976d2' }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="catapultcase.com"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        color: '#ffffff !important'
+                                    }
+                                }}
+                            />
+                        </MenuItem>
+                        <MenuItem
+                            component={MuiLink}
+                            href="https://junctionrelay.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: '#ffffff', textDecoration: 'none' }}
+                        >
+                            <ListItemIcon>
+                                <LanguageIcon sx={{ color: '#388e3c' }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="junctionrelay.com"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        color: '#ffffff !important'
+                                    }
+                                }}
+                            />
+                        </MenuItem>
+                    </Menu>
+                </>
+            )}
 
             {/* Theme Button */}
             <Tooltip title="Change Theme">

@@ -33,6 +33,7 @@ import CompressIcon from '@mui/icons-material/Compress';
 import ImageIcon from '@mui/icons-material/Image';
 import DownloadIcon from '@mui/icons-material/Download';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CodeIcon from '@mui/icons-material/Code';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 
 // Import the StreamHistory component
@@ -75,6 +76,7 @@ interface StreamData {
     streamKey: string | number;
     protocol?: string;
     deviceName?: string;
+    deviceMac?: string;
     screenName?: string;
     status?: string;
     sensorsCount?: number;
@@ -195,38 +197,7 @@ const Streams: React.FC = () => {
         // });
     }, [connectionStatus, isConnected, activeStreams, lastUpdate]);
 
-    useEffect(() => {
-        if (activeStreams && Array.isArray(activeStreams)) {
-            // console.log(`[STREAMS DEBUG] Received ${activeStreams.length} streams from WebSocket`);
-
-            if (activeStreams.length > 0) {
-                console.log('[STREAMS DEBUG] First stream sample:', {
-                    streamKey: activeStreams[0].streamKey,
-                    deviceName: activeStreams[0].deviceName,
-                    screenName: activeStreams[0].screenName,
-                    protocol: activeStreams[0].protocol,
-                    status: activeStreams[0].status,
-                    hasLastFrame: activeStreams[0].hasLastFrame,
-                    lastFrameSize: activeStreams[0].lastFrameSize,
-                    isFrameMode: activeStreams[0].health?.isFrameMode,
-                    allKeys: Object.keys(activeStreams[0])
-                });
-
-                // Log frame streams specifically
-                const frameStreams = activeStreams.filter(s => s.hasLastFrame);
-                if (frameStreams.length > 0) {
-                    console.log(`[STREAMS DEBUG] Found ${frameStreams.length} frame streams:`, frameStreams.map(s => ({
-                        key: s.streamKey,
-                        device: s.deviceName,
-                        hasFrame: s.hasLastFrame,
-                        frameSize: s.lastFrameSize
-                    })));
-                }
-            }
-        } else {
-            console.warn('[STREAMS DEBUG] activeStreams is not an array:', typeof activeStreams, activeStreams);
-        }
-    }, [activeStreams]);
+    // Removed debug logging - use browser console when needed
 
     // Save preferences to localStorage
     useEffect(() => {
@@ -259,15 +230,9 @@ const Streams: React.FC = () => {
     useEffect(() => {
         if (selectedStreamKey && activeStreams.length > 0) {
             const updated = activeStreams.find(s => s.streamKey === selectedStreamKey);
-            console.log('[STREAMS DEBUG] Looking for selected stream:', {
-                looking_for: selectedStreamKey,
-                found: !!updated,
-                available_keys: activeStreams.map(s => s.streamKey)
-            });
 
             if (updated) {
                 setSelectedStream(updated);
-                console.log('[STREAMS DEBUG] Updated selected stream:', updated);
             } else {
                 // Selected stream no longer exists, pick the first available
                 const firstStream = activeStreams[0];
@@ -373,9 +338,21 @@ const Streams: React.FC = () => {
     const getProtocolColor = (protocol?: string) => {
         const safeProtocol = protocol?.toLowerCase() || '';
         if (safeProtocol.includes('http')) return '#2196f3'; // Blue
-        if (safeProtocol.includes('mqtt')) return '#9c27b0'; // Purple  
+        if (safeProtocol.includes('mqtt')) return '#9c27b0'; // Purple
         if (safeProtocol.includes('com')) return '#4caf50'; // Green
+        if (safeProtocol.includes('websocket')) return '#ff9800'; // Orange
+        if (safeProtocol.includes('virtual')) return '#00bcd4'; // Cyan
         return '#607d8b'; // Gray
+    };
+
+    const getStreamTypeColor = (streamType: string) => {
+        switch (streamType) {
+            case 'Blit': return '#e91e63'; // Pink
+            case 'Reconstruction': return '#3f51b5'; // Indigo
+            case 'Puppet': return '#9c27b0'; // Purple
+            case 'Payload': return '#607d8b'; // Blue Gray
+            default: return '#757575'; // Gray
+        }
     };
 
     const getHealthColor = (health?: StreamData['health']) => {
@@ -391,10 +368,18 @@ const Streams: React.FC = () => {
 
     const formatPayload = (prefix = '', json = '', format = 'pretty', compressedHex = '', compressedPrefix = '') => {
         if (format === 'hex') {
-            if (!compressedHex || compressedHex === '[Compression disabled]') {
-                return 'Compression not available';
+            // If compressed hex is available, show that
+            if (compressedHex && compressedHex !== '[Compression disabled]') {
+                return compressedPrefix + compressedHex;
             }
-            return compressedPrefix + compressedHex;
+            // Otherwise, convert the JSON payload to hex
+            if (!json) return 'No payload available';
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(json);
+            const hexString = Array.from(bytes)
+                .map(byte => byte.toString(16).padStart(2, '0'))
+                .join(' ');
+            return prefix + hexString;
         }
 
         if (!json) return 'No payload available';
@@ -414,6 +399,7 @@ const Streams: React.FC = () => {
         showCompressionStats: boolean = false
     ) => {
         const compressionStats = showCompressionStats ? getCompressionStats(json, compressedHex) : null;
+        const uncompressedSize = json ? json.length : 0;
 
         return (
             <Box mb={2}>
@@ -431,6 +417,11 @@ const Streams: React.FC = () => {
                         <Typography variant="caption" color="primary.main" sx={{ fontWeight: 'bold' }}>
                             Binary rendered as HEX for UI only. Compressed: {compressionStats.uncompressedBytes} to {compressionStats.compressedBytes} bytes
                             ({compressionStats.savings.toFixed(1)}% reduction)
+                        </Typography>
+                    )}
+                    {!compressionStats && uncompressedSize > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                            Size: {uncompressedSize} bytes
                         </Typography>
                     )}
                 </Box>
@@ -475,7 +466,32 @@ const Streams: React.FC = () => {
         const device = stream.deviceName || 'Unknown Device';
         const screen = stream.screenName || 'Unknown Screen';
         const protocol = stream.protocol || 'Unknown';
-        return `${device} - ${screen} (${protocol})`;
+
+        // Determine stream type based on 3 fundamental architectures:
+        // 1. Blit: Server renders frames, sends binary RGB565 data
+        // 2. Reconstruction: Device renders from JSON config (reconstruction/composite mode)
+        // 3. Payload: Standard JSON-only payloads
+        // Special: Virtual streams are internal rendering engines (show different UI)
+        let streamType = 'Payload';
+
+        // Virtual streams are special - they're internal Puppeteer rendering engines
+        if (protocol === 'Virtual' || stream.deviceMac === 'Virtual') {
+            streamType = 'Puppet';
+        }
+        // Check if this is a blit mode stream (server renders, sends binary frames)
+        else if (stream.lastFrameLayoutType === 'BLIT_MODE' ||
+            stream.configPayloadPrefix === 'BLIT_CONFIG') {
+            streamType = 'Blit';
+        }
+        // Check if this is reconstruction mode (device renders from JSON config)
+        else if (stream.health?.isFrameMode ||
+                 stream.lastFrameLayoutType === 'COMPOSITE_MODE' ||
+                 stream.configPayloadJson?.includes('"type":"rive_config"')) {
+            streamType = 'Reconstruction';
+        }
+        // Otherwise it's a standard JSON payload stream (default)
+
+        return { protocol, streamType, device, screen };
     };
 
     // Responsive metric item component
@@ -526,13 +542,6 @@ const Streams: React.FC = () => {
         const compressionEnabled = isCompressionEnabled(selectedStream);
         const screenId = getScreenIdFromStream(selectedStream);
 
-        console.log('[STREAMS DEBUG] Rendering stream details:', {
-            hasLastFrame: selectedStream.hasLastFrame,
-            screenId,
-            compressionEnabled,
-            isFrameMode: selectedStream.health?.isFrameMode
-        });
-
         return (
             <Box display="flex" flexDirection="column" gap={3}>
                 {/* Stream Overview */}
@@ -570,16 +579,6 @@ const Streams: React.FC = () => {
                                             }}
                                         />
                                         <Typography variant="body2">{selectedStream.protocol || 'Unknown'}</Typography>
-                                        {selectedStream.health?.isFrameMode && (
-                                            <Chip
-                                                icon={<ImageIcon sx={{ fontSize: '12px !important' }} />}
-                                                label="Frame Mode"
-                                                size="small"
-                                                color="primary"
-                                                variant="outlined"
-                                                sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
-                                            />
-                                        )}
                                     </Box>
                                 </MetricItem>
 
@@ -630,8 +629,65 @@ const Streams: React.FC = () => {
                             </MetricItem>
                         </Box>
 
-                        {/* Frame-specific metrics */}
-                        {selectedStream.health?.isFrameMode && selectedStream.health && (
+                        {/* Virtual Rendering Engine Metrics - Special UI for Virtual streams */}
+                        {(selectedStream.protocol === 'Virtual' || selectedStream.deviceMac === 'Virtual') && selectedStream.health && (
+                            <Box sx={{ mt: 2 }}>
+                                <Divider sx={{ my: 2 }} />
+                                <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <CodeIcon fontSize="small" />
+                                    Virtual Rendering Engine
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                                    Internal frame renderer for Blit mode streams. Captures screenshots of composite layouts.
+                                </Typography>
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: isMobile ? 'column' : 'row',
+                                    gap: 2,
+                                    flexWrap: 'wrap'
+                                }}>
+                                    {selectedStream.health.framesSent != null && (
+                                        <MetricItem label="Frames Captured">
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {selectedStream.health.framesSent}
+                                            </Typography>
+                                        </MetricItem>
+                                    )}
+                                    {selectedStream.health.averageFrameSize != null && selectedStream.health.averageFrameSize > 0 && (
+                                        <MetricItem label="Avg Frame Size">
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {(selectedStream.health.averageFrameSize / 1024).toFixed(1)} KB
+                                            </Typography>
+                                        </MetricItem>
+                                    )}
+                                    {selectedStream.health.averageFrameRenderTime != null && selectedStream.health.averageFrameRenderTime > 0 && (
+                                        <MetricItem label="Avg Render Time">
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {selectedStream.health.averageFrameRenderTime.toFixed(1)}ms
+                                            </Typography>
+                                        </MetricItem>
+                                    )}
+                                    {selectedStream.lastFrameLayoutType && (
+                                        <MetricItem label="Layout Type">
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {selectedStream.lastFrameLayoutType}
+                                            </Typography>
+                                        </MetricItem>
+                                    )}
+                                    {selectedStream.health.payloadsSent != null && (
+                                        <MetricItem label="Payloads Sent">
+                                            <Typography variant="body2" fontWeight="medium">
+                                                {selectedStream.health.payloadsSent}
+                                            </Typography>
+                                        </MetricItem>
+                                    )}
+                                </Box>
+                            </Box>
+                        )}
+
+                        {/* Frame-specific metrics - For non-Virtual frame mode streams */}
+                        {selectedStream.health?.isFrameMode && selectedStream.health &&
+                         selectedStream.protocol !== 'Virtual' && selectedStream.deviceMac !== 'Virtual' && (
                             <Box sx={{ mt: 2 }}>
                                 <Divider sx={{ my: 2 }} />
                                 <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
@@ -793,8 +849,10 @@ const Streams: React.FC = () => {
                     </CardContent>
                 </Card>
 
-                {/* Last Frame Sent Card */}
-                {selectedStream.hasLastFrame && screenId && (
+                {/* Last Frame Sent Card - Only show for Blit mode (server-rendered frames) */}
+                {selectedStream.hasLastFrame && screenId &&
+                 (selectedStream.lastFrameLayoutType === 'BLIT_MODE' ||
+                  selectedStream.configPayloadPrefix === 'BLIT_CONFIG') && (
                     <Card>
                         <CardContent>
                             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} sx={{ flexWrap: 'wrap', gap: 1 }}>
@@ -1012,16 +1070,14 @@ const Streams: React.FC = () => {
                                 >
                                     Pretty
                                 </Button>
-                                {compressionEnabled && (
-                                    <Button
-                                        variant={payloadFormat === 'hex' ? 'contained' : 'outlined'}
-                                        size="small"
-                                        onClick={() => setPayloadFormat('hex')}
-                                        color="primary"
-                                    >
-                                        HEX
-                                    </Button>
-                                )}
+                                <Button
+                                    variant={payloadFormat === 'hex' ? 'contained' : 'outlined'}
+                                    size="small"
+                                    onClick={() => setPayloadFormat('hex')}
+                                    color="primary"
+                                >
+                                    HEX
+                                </Button>
                             </Box>
                         </Box>
 
@@ -1237,29 +1293,84 @@ const Streams: React.FC = () => {
                                 value={selectedStreamKey}
                                 label="Select Stream"
                                 onChange={handleStreamSelect}
-                            >
-                                {activeStreams.map((stream) => (
-                                    <MenuItem key={stream.streamKey} value={stream.streamKey}>
-                                        <Box display="flex" alignItems="center" gap={1} width="100%" sx={{ minWidth: 0 }}>
-                                            <Box
+                                renderValue={(value) => {
+                                    const stream = activeStreams.find(s => s.streamKey === value);
+                                    if (!stream) return 'Select Stream';
+                                    const displayInfo = getStreamDisplayName(stream);
+                                    return (
+                                        <Box display="flex" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+                                            <Chip
+                                                label={displayInfo.protocol}
+                                                size="small"
                                                 sx={{
-                                                    width: 12,
-                                                    height: 12,
-                                                    borderRadius: '50%',
+                                                    height: 20,
+                                                    fontSize: '0.7rem',
                                                     backgroundColor: getProtocolColor(stream.protocol),
+                                                    color: 'white',
+                                                    fontWeight: 600,
                                                     flexShrink: 0
                                                 }}
                                             />
-                                            <Typography sx={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {getStreamDisplayName(stream)}
+                                            <Chip
+                                                label={displayInfo.streamType}
+                                                size="small"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '0.7rem',
+                                                    backgroundColor: getStreamTypeColor(displayInfo.streamType),
+                                                    color: 'white',
+                                                    fontWeight: 600,
+                                                    flexShrink: 0
+                                                }}
+                                            />
+                                            <Typography sx={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.875rem' }}>
+                                                {displayInfo.device} - {displayInfo.screen}
                                             </Typography>
-                                            {stream.hasLastFrame && (
-                                                <ImageIcon sx={{ fontSize: 16, color: 'primary.main', mr: 0.5 }} />
-                                            )}
-                                            {renderStatusChip(stream.status)}
                                         </Box>
-                                    </MenuItem>
-                                ))}
+                                    );
+                                }}
+                            >
+                                {activeStreams.map((stream) => {
+                                    const displayInfo = getStreamDisplayName(stream);
+                                    return (
+                                        <MenuItem key={stream.streamKey} value={stream.streamKey}>
+                                            <Box display="flex" alignItems="center" gap={0.75} width="100%" sx={{ minWidth: 0 }}>
+                                                {/* Protocol Chip */}
+                                                <Chip
+                                                    label={displayInfo.protocol}
+                                                    size="small"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: '0.7rem',
+                                                        backgroundColor: getProtocolColor(stream.protocol),
+                                                        color: 'white',
+                                                        fontWeight: 600,
+                                                        flexShrink: 0
+                                                    }}
+                                                />
+                                                {/* Type Chip */}
+                                                <Chip
+                                                    label={displayInfo.streamType}
+                                                    size="small"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: '0.7rem',
+                                                        backgroundColor: getStreamTypeColor(displayInfo.streamType),
+                                                        color: 'white',
+                                                        fontWeight: 600,
+                                                        flexShrink: 0
+                                                    }}
+                                                />
+                                                {/* Stream Name */}
+                                                <Typography sx={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.875rem' }}>
+                                                    {displayInfo.device} - {displayInfo.screen}
+                                                </Typography>
+                                                {/* Status Chip */}
+                                                {renderStatusChip(stream.status)}
+                                            </Box>
+                                        </MenuItem>
+                                    );
+                                })}
                             </Select>
                         </FormControl>
                     )}
@@ -1287,9 +1398,6 @@ const Streams: React.FC = () => {
                                     <Box display="flex" alignItems="center" gap={1}>
                                         <DataObjectIcon fontSize="small" />
                                         {isMobile ? 'Details' : 'Details'}
-                                        {selectedStream.hasLastFrame && (
-                                            <ImageIcon sx={{ fontSize: 14, color: 'primary.main' }} />
-                                        )}
                                     </Box>
                                 }
                                 {...a11yProps(0)}

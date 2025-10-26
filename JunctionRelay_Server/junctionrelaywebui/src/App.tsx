@@ -44,6 +44,7 @@ import VirtualScreenViewer from "pages/VirtualScreenViewer";
 import LoginOnly from "components/LoginOnly";
 import { AuthProvider } from "auth/AuthContext";
 import { NotificationProvider } from "context/NotificationContext";
+import { UnifiedNotificationProvider } from "components/Notification_UnifiedProvider";
 import Streams from "pages/Streams";
 import { useFeatureFlags } from "hooks/useFeatureFlags";
 
@@ -1077,9 +1078,11 @@ const AppWithProviders: React.FC = () => {
         <AuthProvider>
             <Router>
                 <NotificationProvider>
-                    <AuthBoundary>
-                        <AppRoutes />
-                    </AuthBoundary>
+                    <UnifiedNotificationProvider>
+                        <AuthBoundary>
+                            <AppRoutes />
+                        </AuthBoundary>
+                    </UnifiedNotificationProvider>
                 </NotificationProvider>
             </Router>
         </AuthProvider>

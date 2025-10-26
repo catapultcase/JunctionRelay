@@ -90,6 +90,29 @@ class UnifiedAuthService {
 
         return response.json();
     }
+
+    async getFallbackStatus(): Promise<{ enabled: boolean; userConfigured: boolean }> {
+        const response = await fetch('/api/unified-auth/fallback/status');
+        if (!response.ok) {
+            throw new Error('Failed to get fallback status');
+        }
+        return response.json();
+    }
+
+    async fallbackLogin(username: string, password: string): Promise<any> {
+        const response = await fetch('/api/unified-auth/fallback/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || 'Fallback login failed');
+        }
+
+        return response.json();
+    }
 }
 
 const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
@@ -111,6 +134,14 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
 
     // Cloud login state
     const [cloudLoginLoading, setCloudLoginLoading] = useState<boolean>(false);
+
+    // Fallback authentication state
+    const [fallbackEnabled, setFallbackEnabled] = useState<boolean>(false);
+    const [fallbackUserConfigured, setFallbackUserConfigured] = useState<boolean>(false);
+    const [showFallbackForm, setShowFallbackForm] = useState<boolean>(false);
+    const [fallbackUsername, setFallbackUsername] = useState<string>('');
+    const [fallbackPassword, setFallbackPassword] = useState<string>('');
+    const [fallbackLoading, setFallbackLoading] = useState<boolean>(false);
 
     const unifiedAuth = new UnifiedAuthService();
 
@@ -143,6 +174,19 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
             setAuthMode(config.authMode as AuthMode);
             setIsConfigured(config.isConfigured);
             setRequiresSetup(config.requiresSetup);
+
+            // If in cloud mode, check fallback status
+            if (config.authMode === 'cloud') {
+                try {
+                    const fallbackStatus = await unifiedAuth.getFallbackStatus();
+                    setFallbackEnabled(fallbackStatus.enabled);
+                    setFallbackUserConfigured(fallbackStatus.userConfigured);
+                } catch (err) {
+                    console.error("Error checking fallback status:", err);
+                    setFallbackEnabled(false);
+                    setFallbackUserConfigured(false);
+                }
+            }
         } catch (err) {
             console.error("Error checking auth status:", err);
             setAuthMode('none');
@@ -241,6 +285,38 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
             showSnackbar(`Cloud login error: ${error.message}`, 'error');
         } finally {
             setCloudLoginLoading(false);
+        }
+    };
+
+    // Fallback login
+    const handleFallbackLogin = async () => {
+        setFallbackLoading(true);
+
+        try {
+            const response = await unifiedAuth.fallbackLogin(fallbackUsername, fallbackPassword);
+
+            if (response.token) {
+                // Store the token in localStorage
+                localStorage.setItem('junctionrelay_token', response.token);
+                localStorage.setItem('junctionrelay_username', response.username);
+                if (response.expiresAt) {
+                    localStorage.setItem('junctionrelay_expiry', response.expiresAt);
+                }
+
+                setFallbackUsername('');
+                setFallbackPassword('');
+                setShowFallbackForm(false);
+
+                triggerAuthChange();
+                showSnackbar('Successfully logged in using fallback authentication. System switched to local mode.', 'success');
+            } else {
+                throw new Error('No token received from fallback login');
+            }
+        } catch (error: any) {
+            console.error('Fallback login error:', error);
+            showSnackbar(error.message || 'Fallback login failed', 'error');
+        } finally {
+            setFallbackLoading(false);
         }
     };
 
@@ -368,19 +444,96 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
                             <Typography variant="h5">JunctionRelay Cloud</Typography>
                         </Box>
 
-                        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                            Sign in with your JunctionRelay Cloud account to access the application.
-                        </Typography>
+                        {!showFallbackForm ? (
+                            <>
+                                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                                    Sign in with your JunctionRelay Cloud account to access the application.
+                                </Typography>
 
-                        <Button
-                            fullWidth
-                            variant="contained"
-                            onClick={handleCloudLogin}
-                            disabled={cloudLoginLoading}
-                            startIcon={cloudLoginLoading ? <CircularProgress size={20} /> : <CloudIcon />}
-                        >
-                            {cloudLoginLoading ? 'Connecting...' : 'Login with JunctionRelay Cloud'}
-                        </Button>
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    onClick={handleCloudLogin}
+                                    disabled={cloudLoginLoading}
+                                    startIcon={cloudLoginLoading ? <CircularProgress size={20} /> : <CloudIcon />}
+                                >
+                                    {cloudLoginLoading ? 'Connecting...' : 'Login with JunctionRelay Cloud'}
+                                </Button>
+
+                                {fallbackEnabled && fallbackUserConfigured && (
+                                    <Box sx={{ mt: 2, textAlign: 'center' }}>
+                                        <Button
+                                            variant="text"
+                                            size="small"
+                                            onClick={() => setShowFallbackForm(true)}
+                                            startIcon={<PersonIcon />}
+                                        >
+                                            Use Local Fallback
+                                        </Button>
+                                    </Box>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                                    Fallback Authentication
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Login with your local fallback credentials.
+                                </Typography>
+
+                                <TextField
+                                    fullWidth
+                                    label="Username"
+                                    value={fallbackUsername}
+                                    onChange={(e) => setFallbackUsername(e.target.value)}
+                                    disabled={fallbackLoading}
+                                    sx={{ mb: 2 }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && fallbackUsername && fallbackPassword) {
+                                            handleFallbackLogin();
+                                        }
+                                    }}
+                                />
+                                <TextField
+                                    fullWidth
+                                    type="password"
+                                    label="Password"
+                                    value={fallbackPassword}
+                                    onChange={(e) => setFallbackPassword(e.target.value)}
+                                    disabled={fallbackLoading}
+                                    sx={{ mb: 3 }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && fallbackUsername && fallbackPassword) {
+                                            handleFallbackLogin();
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    onClick={handleFallbackLogin}
+                                    disabled={fallbackLoading || !fallbackUsername || !fallbackPassword}
+                                    startIcon={fallbackLoading ? <CircularProgress size={20} /> : <LoginIcon />}
+                                    sx={{ mb: 1 }}
+                                >
+                                    {fallbackLoading ? 'Logging in...' : 'Login with Fallback'}
+                                </Button>
+                                <Button
+                                    fullWidth
+                                    variant="text"
+                                    size="small"
+                                    onClick={() => {
+                                        setShowFallbackForm(false);
+                                        setFallbackUsername('');
+                                        setFallbackPassword('');
+                                    }}
+                                    disabled={fallbackLoading}
+                                >
+                                    Back to Cloud Login
+                                </Button>
+                            </>
+                        )}
                     </CardContent>
                 </Card>
             </Box>
@@ -393,10 +546,10 @@ const LoginOnly: React.FC<LoginOnlyProps> = ({ showSnackbar }) => {
             <Card sx={{ maxWidth: 400, width: '100%' }}>
                 <CardContent sx={{ p: 3, textAlign: 'center' }}>
                     <Typography variant="h6" gutterBottom>
-                        Authentication Not Configured
+                        Server Unreachable
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Please contact your administrator to configure authentication.
+                        Please ensure the JunctionRelay Server is running or contact your administrator
                     </Typography>
                 </CardContent>
             </Card>

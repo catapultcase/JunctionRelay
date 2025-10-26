@@ -96,7 +96,11 @@ namespace JunctionRelayServer.Services
             EnableHealthCheck,
             HealthCheckIntervalMs,
             EnableNotifications,
-            CompressPayload
+            CompressPayload,
+            AllowStartOnCollectorTestFailure,
+            SendConfigPayload,
+            SendSensorPayloads,
+            SendStopPayload
         )
         VALUES (
             @Name,
@@ -124,7 +128,11 @@ namespace JunctionRelayServer.Services
             @EnableHealthCheck,
             @HealthCheckIntervalMs,
             @EnableNotifications,
-            @CompressPayload
+            @CompressPayload,
+            @AllowStartOnCollectorTestFailure,
+            @SendConfigPayload,
+            @SendSensorPayloads,
+            @SendStopPayload
         );
         SELECT last_insert_rowid();";
 
@@ -147,7 +155,7 @@ namespace JunctionRelayServer.Services
                 CronExpression           = @CronExpression,
                 AllTargetsAllData        = @AllTargetsAllData,
                 AllTargetsAllScreens     = @AllTargetsAllScreens,
-                GatewayDeviceId          = @GatewayDeviceId,    
+                GatewayDeviceId          = @GatewayDeviceId,
                 GatewayDestination       = @GatewayDestination,
                 RenderingMode            = @RenderingMode,
                 DestinationOverride      = @DestinationOverride,
@@ -162,7 +170,11 @@ namespace JunctionRelayServer.Services
                 EnableHealthCheck        = @EnableHealthCheck,
                 HealthCheckIntervalMs    = @HealthCheckIntervalMs,
                 EnableNotifications      = @EnableNotifications,
-                CompressPayload          = @CompressPayload
+                CompressPayload          = @CompressPayload,
+                AllowStartOnCollectorTestFailure = @AllowStartOnCollectorTestFailure,
+                SendConfigPayload        = @SendConfigPayload,
+                SendSensorPayloads       = @SendSensorPayloads,
+                SendStopPayload          = @SendStopPayload
             WHERE Id = @Id;";
 
             updated.Id = id;
@@ -323,14 +335,16 @@ CronExpression, AllTargetsAllData, AllTargetsAllScreens,
 GatewayDeviceId, GatewayDestination, RenderingMode, DestinationOverride, BaudRate,
 MQTTBrokerId, SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
 RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
-HealthCheckIntervalMs, EnableNotifications, CompressPayload
+HealthCheckIntervalMs, EnableNotifications, CompressPayload, AllowStartOnCollectorTestFailure,
+SendConfigPayload, SendSensorPayloads, SendStopPayload
 ) VALUES (
 @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
 @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens,
 @GatewayDeviceId, @GatewayDestination, @RenderingMode, @DestinationOverride, @BaudRate,
 @MQTTBrokerId, @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
 @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
-@HealthCheckIntervalMs, @EnableNotifications, @CompressPayload
+@HealthCheckIntervalMs, @EnableNotifications, @CompressPayload, @AllowStartOnCollectorTestFailure,
+@SendConfigPayload, @SendSensorPayloads, @SendStopPayload
 );
 SELECT last_insert_rowid();
 ";
@@ -584,13 +598,15 @@ INSERT INTO Junctions (
     CronExpression, AllTargetsAllData, AllTargetsAllScreens, GatewayDestination, RenderingMode, MQTTBrokerId,
     SelectedPayloadAttributes, StreamAutoTimeout, StreamAutoTimeoutMs,
     RetryCount, RetryIntervalMs, EnableTests, EnableHealthCheck,
-    HealthCheckIntervalMs, EnableNotifications
+    HealthCheckIntervalMs, EnableNotifications, AllowStartOnCollectorTestFailure,
+    SendConfigPayload, SendSensorPayloads, SendStopPayload
 ) VALUES (
     @Name, @Description, @Type, @Status, @SortOrder, @ShowOnDashboard, @AutoStartOnLaunch,
     @CronExpression, @AllTargetsAllData, @AllTargetsAllScreens, @GatewayDestination, @RenderingMode, @MQTTBrokerId,
     @SelectedPayloadAttributes, @StreamAutoTimeout, @StreamAutoTimeoutMs,
     @RetryCount, @RetryIntervalMs, @EnableTests, @EnableHealthCheck,
-    @HealthCheckIntervalMs, @EnableNotifications
+    @HealthCheckIntervalMs, @EnableNotifications, @AllowStartOnCollectorTestFailure,
+    @SendConfigPayload, @SendSensorPayloads, @SendStopPayload
 );
 SELECT last_insert_rowid();";
 

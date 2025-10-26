@@ -31,7 +31,9 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                var result = await CallCloudBackupApiAsync("GET", "/cloud-backups/status");
+                // Get backend ID to fetch settings for this specific backend
+                var backendId = _backendIdentityService.GetBackendId();
+                var result = await CallCloudBackupApiAsync("GET", $"/cloud-backups/status?backendId={backendId}");
 
                 if (result.Success)
                 {
@@ -55,7 +57,20 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                var result = await CallCloudBackupApiAsync("POST", "/cloud-backups/settings", request);
+                // Add backend ID to the request
+                var backendId = _backendIdentityService.GetBackendId();
+
+                var requestWithBackendId = new
+                {
+                    backendId = backendId,
+                    enabled = request.Enabled,
+                    frequency = request.Frequency,
+                    retentionDays = request.RetentionDays,
+                    includeKeys = request.IncludeKeys ?? true,
+                    includeIdentity = request.IncludeIdentity ?? true,
+                };
+
+                var result = await CallCloudBackupApiAsync("POST", "/cloud-backups/settings", requestWithBackendId);
 
                 if (result.Success)
                 {
@@ -86,7 +101,6 @@ namespace JunctionRelayServer.Controllers
                 {
                     IncludeKeys = request.IncludeKeys,
                     IncludeIdentity = request.IncludeIdentity,
-                    IncludeFrameEngine = request.IncludeFrameEngine
                 };
 
                 var backupResult = await _backupService.CreateBackupAsync(options);
@@ -309,7 +323,11 @@ namespace JunctionRelayServer.Controllers
                 }
                 else
                 {
-                    var json = body != null ? JsonSerializer.Serialize(body) : "{}";
+                    var json = body != null ? JsonSerializer.Serialize(body, new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    }) : "{}";
+
                     var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                     if (method.ToUpper() == "POST")
@@ -391,7 +409,6 @@ namespace JunctionRelayServer.Controllers
         {
             public bool IncludeKeys { get; set; } = true;
             public bool IncludeIdentity { get; set; } = true;
-            public bool IncludeFrameEngine { get; set; } = false;
         }
 
         public class BackupSettingsRequest
@@ -401,7 +418,6 @@ namespace JunctionRelayServer.Controllers
             public int RetentionDays { get; set; } = 30;
             public bool? IncludeKeys { get; set; }
             public bool? IncludeIdentity { get; set; }
-            public bool? IncludeFrameEngine { get; set; }
         }
 
         private class CloudApiResult

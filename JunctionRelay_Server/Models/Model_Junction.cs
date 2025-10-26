@@ -80,6 +80,12 @@ namespace JunctionRelayServer.Models
         public bool EnableTests { get; set; } = true;
         public bool EnableHealthCheck { get; set; } = true;
         public int HealthCheckIntervalMs { get; set; } = 60_000;
+        public bool AllowStartOnCollectorTestFailure { get; set; } = false;
+
+        // Payload control
+        public bool SendConfigPayload { get; set; } = true;
+        public bool SendSensorPayloads { get; set; } = true;
+        public bool SendStopPayload { get; set; } = true;
 
         // Notifications
         public bool EnableNotifications { get; set; } = false;

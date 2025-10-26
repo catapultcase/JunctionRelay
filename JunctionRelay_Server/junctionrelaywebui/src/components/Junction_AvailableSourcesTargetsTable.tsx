@@ -74,14 +74,10 @@ interface AvailableSourcesTargetsTableProps {
         linkId: number,
         type: "device" | "collector"
     ) => Promise<void>;
+    appVersion?: string; // Application version for localStorage keys
 }
 
 type ViewMode = 'table' | 'standard' | 'mini';
-
-// Version the localStorage keys
-const STORAGE_VERSION = "v1";
-const STORAGE_KEY_EXPANDED = `availableSourcesTargetsExpanded_${STORAGE_VERSION}`;
-const STORAGE_KEY_VIEW_MODE = `availableSourcesTargetsViewMode_${STORAGE_VERSION}`;
 
 const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> = ({
     loading,
@@ -96,15 +92,18 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
     handleAdd,
     handleRemove,
     handlePollRateOverrideChange,
-    handleSendRateOverrideChange
+    handleSendRateOverrideChange,
+    appVersion
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
     // Manage accordion expanded state with localStorage
     const [expanded, setExpanded] = useState(() => {
+        if (!appVersion) return true;
         try {
-            const saved = localStorage.getItem(STORAGE_KEY_EXPANDED);
+            const key = `${appVersion}_availableSourcesTargetsExpanded`;
+            const saved = localStorage.getItem(key);
             return saved !== null ? saved === 'true' : true;
         } catch (error) {
             console.error("Error accessing localStorage for AvailableSourcesTargetsTable:", error);
@@ -114,31 +113,37 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
 
     // Manage view mode with localStorage
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        if (!appVersion) return 'table';
         try {
-            const saved = localStorage.getItem(STORAGE_KEY_VIEW_MODE);
-            return (saved as ViewMode) || 'table';  
+            const key = `${appVersion}_availableSourcesTargetsViewMode`;
+            const saved = localStorage.getItem(key);
+            return (saved as ViewMode) || 'table';
         } catch (error) {
             console.error("Error accessing localStorage for view mode:", error);
-            return 'table'; 
+            return 'table';
         }
     });
 
-    // Save states to localStorage
+    // Save states to localStorage with version prefix
     useEffect(() => {
+        if (!appVersion) return;
         try {
-            localStorage.setItem(STORAGE_KEY_EXPANDED, expanded.toString());
+            const key = `${appVersion}_availableSourcesTargetsExpanded`;
+            localStorage.setItem(key, expanded.toString());
         } catch (error) {
             console.error("Error saving to localStorage:", error);
         }
-    }, [expanded]);
+    }, [expanded, appVersion]);
 
     useEffect(() => {
+        if (!appVersion) return;
         try {
-            localStorage.setItem(STORAGE_KEY_VIEW_MODE, viewMode);
+            const key = `${appVersion}_availableSourcesTargetsViewMode`;
+            localStorage.setItem(key, viewMode);
         } catch (error) {
             console.error("Error saving view mode to localStorage:", error);
         }
-    }, [viewMode]);
+    }, [viewMode, appVersion]);
 
     const handleAccordionChange = (_event: React.SyntheticEvent, isExpanded: boolean) => {
         setExpanded(isExpanded);
@@ -187,23 +192,24 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
             sx={{ mb: 3 }}
         >
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box display="flex" alignItems="center" gap={1} width="100%">
-                    <HubIcon />
-                    <Typography variant="h6">
-                        Available Devices & Collectors
-                    </Typography>
-                    <Chip
-                        size="small"
-                        label={`${allDevices.length + allCollectors.length} available`}
-                        color="default"
-                    />
-                    <Box sx={{ ml: 'auto', mr: 2 }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <HubIcon />
+                        <Typography variant="h6">
+                            Available Devices & Collectors
+                        </Typography>
+                        <Chip
+                            size="small"
+                            label={`${allDevices.length + allCollectors.length} available`}
+                            color="default"
+                        />
+                    </Box>
+                    <Box onClick={(e) => e.stopPropagation()}>
                         <ToggleButtonGroup
                             value={viewMode}
                             exclusive
                             onChange={handleViewModeChange}
                             size="small"
-                            onClick={(e) => e.stopPropagation()}
                         >
                             <ToggleButton value="table" aria-label="table view">
                                 <TableViewIcon fontSize="small" />
@@ -665,8 +671,6 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
 
                             <Box
                                 sx={{
-                                    maxHeight: 400,
-                                    overflowY: "auto",
                                     pr: 1
                                 }}
                             >
@@ -723,10 +727,23 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                     variant="outlined"
                                                     required
                                                     label="Override Poll Rate (ms)"
+                                                    error={
+                                                        source.type === "device"
+                                                            ? (devicePollRates[source.linkId || source.id] > 0 && devicePollRates[source.linkId || source.id] > (source.defaultPollRate || 5000))
+                                                            : (collectorPollRates[source.linkId || source.id] > 0 && collectorPollRates[source.linkId || source.id] > (source.defaultPollRate || 5000))
+                                                    }
                                                     helperText={
                                                         source.type === "device"
-                                                            ? (devicePollRates[source.linkId || source.id] === 0 ? "Using global default" : "")
-                                                            : (collectorPollRates[source.linkId || source.id] === 0 ? "Using global default" : "")
+                                                            ? (devicePollRates[source.linkId || source.id] === 0
+                                                                ? "Using global default"
+                                                                : (devicePollRates[source.linkId || source.id] > (source.defaultPollRate || 5000)
+                                                                    ? `⚠️ Slower than default (${source.defaultPollRate || 5000}ms) - faster rate will be used`
+                                                                    : ""))
+                                                            : (collectorPollRates[source.linkId || source.id] === 0
+                                                                ? "Using global default"
+                                                                : (collectorPollRates[source.linkId || source.id] > (source.defaultPollRate || 5000)
+                                                                    ? `⚠️ Slower than default (${source.defaultPollRate || 5000}ms) - faster rate will be used`
+                                                                    : ""))
                                                     }
                                                 />
                                             </Paper>
@@ -737,10 +754,10 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                         <Table size="small">
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell>Name</TableCell>
-                                                    <TableCell>Type</TableCell>
-                                                    <TableCell>Override Poll Rate (ms)</TableCell>
-                                                    <TableCell align="right">Actions</TableCell>
+                                                    <TableCell sx={{ width: '30%' }}>Name</TableCell>
+                                                    <TableCell sx={{ width: '15%' }}>Type</TableCell>
+                                                    <TableCell sx={{ width: '40%' }}>Override Poll Rate (ms)</TableCell>
+                                                    <TableCell align="right" sx={{ width: '15%' }}>Actions</TableCell>
                                                 </TableRow>
                                             </TableHead>
                                             <TableBody>
@@ -776,14 +793,27 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                                 slotProps={{
                                                                     htmlInput: { min: 0 }
                                                                 }}
-                                                                sx={{ width: "120px" }}
+                                                                fullWidth
                                                                 variant="outlined"
                                                                 required
                                                                 label="Poll Rate"
+                                                                error={
+                                                                    source.type === "device"
+                                                                        ? (devicePollRates[source.linkId || source.id] > 0 && devicePollRates[source.linkId || source.id] > (source.defaultPollRate || 5000))
+                                                                        : (collectorPollRates[source.linkId || source.id] > 0 && collectorPollRates[source.linkId || source.id] > (source.defaultPollRate || 5000))
+                                                                }
                                                                 helperText={
                                                                     source.type === "device"
-                                                                        ? (devicePollRates[source.linkId || source.id] === 0 ? "Using global default" : "")
-                                                                        : (collectorPollRates[source.linkId || source.id] === 0 ? "Using global default" : "")
+                                                                        ? (devicePollRates[source.linkId || source.id] === 0
+                                                                            ? "Using global default"
+                                                                            : (devicePollRates[source.linkId || source.id] > (source.defaultPollRate || 5000)
+                                                                                ? `⚠️ Slower than default (${source.defaultPollRate || 5000}ms) - faster rate will be used`
+                                                                                : ""))
+                                                                        : (collectorPollRates[source.linkId || source.id] === 0
+                                                                            ? "Using global default"
+                                                                            : (collectorPollRates[source.linkId || source.id] > (source.defaultPollRate || 5000)
+                                                                                ? `⚠️ Slower than default (${source.defaultPollRate || 5000}ms) - faster rate will be used`
+                                                                                : ""))
                                                                 }
                                                             />
                                                         </TableCell>
@@ -828,8 +858,6 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
 
                             <Box
                                 sx={{
-                                    maxHeight: 400,
-                                    overflowY: "auto",
                                     pr: 1
                                 }}
                             >
@@ -886,10 +914,23 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                     variant="outlined"
                                                     required
                                                     label="Override Send Rate (ms)"
+                                                    error={
+                                                        target.type === "device"
+                                                            ? (deviceSendRates[target.linkId || target.id] > 0 && deviceSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000))
+                                                            : (collectorSendRates[target.linkId || target.id] > 0 && collectorSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000))
+                                                    }
                                                     helperText={
                                                         target.type === "device"
-                                                            ? (deviceSendRates[target.linkId || target.id] === 0 ? "Using global default" : "")
-                                                            : (collectorSendRates[target.linkId || target.id] === 0 ? "Using global default" : "")
+                                                            ? (deviceSendRates[target.linkId || target.id] === 0
+                                                                ? "Using global default"
+                                                                : (deviceSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000)
+                                                                    ? `⚠️ Slower than or equal to default (${target.defaultSendRate || 5000}ms) - default will be used`
+                                                                    : ""))
+                                                            : (collectorSendRates[target.linkId || target.id] === 0
+                                                                ? "Using global default"
+                                                                : (collectorSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000)
+                                                                    ? `⚠️ Slower than or equal to default (${target.defaultSendRate || 5000}ms) - default will be used`
+                                                                    : ""))
                                                     }
                                                 />
                                             </Paper>
@@ -900,10 +941,10 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                         <Table size="small">
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell>Name</TableCell>
-                                                    <TableCell>Type</TableCell>
-                                                    <TableCell>Override Send Rate (ms)</TableCell>
-                                                    <TableCell align="right">Actions</TableCell>
+                                                    <TableCell sx={{ width: '30%' }}>Name</TableCell>
+                                                    <TableCell sx={{ width: '15%' }}>Type</TableCell>
+                                                    <TableCell sx={{ width: '40%' }}>Override Send Rate (ms)</TableCell>
+                                                    <TableCell align="right" sx={{ width: '15%' }}>Actions</TableCell>
                                                 </TableRow>
                                             </TableHead>
                                             <TableBody>
@@ -939,14 +980,27 @@ const AvailableSourcesTargetsTable: React.FC<AvailableSourcesTargetsTableProps> 
                                                                 slotProps={{
                                                                     htmlInput: { min: 0 }
                                                                 }}
-                                                                sx={{ width: "120px" }}
+                                                                fullWidth
                                                                 variant="outlined"
                                                                 required
                                                                 label="Send Rate"
+                                                                error={
+                                                                    target.type === "device"
+                                                                        ? (deviceSendRates[target.linkId || target.id] > 0 && deviceSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000))
+                                                                        : (collectorSendRates[target.linkId || target.id] > 0 && collectorSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000))
+                                                                }
                                                                 helperText={
                                                                     target.type === "device"
-                                                                        ? (deviceSendRates[target.linkId || target.id] === 0 ? "Using global default" : "")
-                                                                        : (collectorSendRates[target.linkId || target.id] === 0 ? "Using global default" : "")
+                                                                        ? (deviceSendRates[target.linkId || target.id] === 0
+                                                                            ? "Using global default"
+                                                                            : (deviceSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000)
+                                                                                ? `⚠️ Slower than or equal to default (${target.defaultSendRate || 5000}ms) - default will be used`
+                                                                                : ""))
+                                                                        : (collectorSendRates[target.linkId || target.id] === 0
+                                                                            ? "Using global default"
+                                                                            : (collectorSendRates[target.linkId || target.id] >= (target.defaultSendRate || 5000)
+                                                                                ? `⚠️ Slower than or equal to default (${target.defaultSendRate || 5000}ms) - default will be used`
+                                                                                : ""))
                                                                 }
                                                             />
                                                         </TableCell>

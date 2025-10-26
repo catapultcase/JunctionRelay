@@ -25,6 +25,7 @@ import { SectionHeader, VisibilityControl, useElementTransformUpdate } from '../
 import { SensorProperties } from '../properties/FrameEngine_ElementProperties_Sensor';
 import { TextProperties } from '../properties/FrameEngine_ElementProperties_Text';
 import { ECGProperties } from '../properties/FrameEngine_ElementProperties_ECG';
+import { GaugeProperties } from '../properties/FrameEngine_ElementProperties_Gauge';
 import { ClockProperties } from '../properties/FrameEngine_ElementProperties_Clock';
 import { OscilloscopeProperties } from '../properties/FrameEngine_ElementProperties_Oscilloscope';
 import { TunnelProperties } from '../properties/FrameEngine_ElementProperties_Tunnel';
@@ -101,6 +102,8 @@ export const FrameEngine_ElementProperties: React.FC<BaseElementPropertiesProps>
                 return <TextProperties {...props} />;
             case 'ecg':
                 return <ECGProperties {...props} />;
+            case 'gauge':
+                return <GaugeProperties {...props} />;
             case 'clock':
                 return <ClockProperties {...props} />;
             case 'oscilloscope':

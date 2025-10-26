@@ -123,6 +123,7 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
             src: riveFileUrl,
             autoplay: true,
             autoBind: true,
+            useDevicePixelRatio: true,
             layout: new Layout({
                 fit: layoutFit,
                 alignment: Alignment.Center
@@ -142,8 +143,23 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
     const { rive, RiveComponent } = useRive(riveOptions || { src: '', autoplay: false });
 
     // Discovery logic - STREAMLINED VERSION
+    // Use a ref to track if we've already discovered for this file
+    const discoveredFileRef = useRef<string | null>(null);
+    const hasRunDiscoveryRef = useRef<boolean>(false);
+
     useEffect(() => {
-        if (!rive || config.type !== 'rive') return;
+        if (!rive || config.type !== 'rive' || !config.riveFile) return;
+
+        // Only discover once per file to prevent infinite loops
+        if (discoveredFileRef.current === config.riveFile && hasRunDiscoveryRef.current) {
+            return;
+        }
+
+        // Reset if file changed
+        if (discoveredFileRef.current !== config.riveFile) {
+            discoveredFileRef.current = config.riveFile;
+            hasRunDiscoveryRef.current = false;
+        }
 
         let attempts = 0;
         let stopped = false;
@@ -277,6 +293,9 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
                 console.log('🔍 BackgroundRenderer discovered state machines:', machines);
                 console.log('🔍 BackgroundRenderer discovered data bindings:', dataBindings);
 
+                // Mark that we've run discovery for this file
+                hasRunDiscoveryRef.current = true;
+
                 if (onRiveDiscovery) {
                     onRiveDiscovery(machines, dataBindings);
                 }
@@ -284,10 +303,13 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
                 const totalInputs = machines.reduce((sum, m) => sum + m.inputs.length, 0);
                 const totalBindings = dataBindings.length;
 
-                if ((totalInputs === 0 && smNames.length > 0) || (totalBindings === 0 && attempts < 10)) {
-                    if (attempts < maxAttempts) {
-                        setTimeout(discoverAll, 120 * attempts);
-                    }
+                // Only retry if we found NOTHING (no machines AND no inputs AND no bindings)
+                // Don't retry just because there are no bindings - many Rive files don't use data bindings
+                const foundNothing = machines.length === 0 && totalInputs === 0 && totalBindings === 0;
+
+                if (foundNothing && attempts < maxAttempts) {
+                    console.log(`[BG DISCOVERY] Found nothing, will retry (attempt ${attempts}/${maxAttempts})`);
+                    setTimeout(discoverAll, 120 * attempts);
                 }
 
             } catch (error) {

@@ -1,7 +1,7 @@
-﻿/*
+/*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024�present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 using System.ComponentModel.DataAnnotations;
 
-namespace JunctionRelay_Server.Models.Requests
+namespace JunctionRelayServer.Models.Requests
 {
     public class Model_Register_Cloud_Device_Request
     {

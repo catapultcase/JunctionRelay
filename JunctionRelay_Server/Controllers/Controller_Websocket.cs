@@ -39,6 +39,7 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Manager_Events _eventsManager;
         private readonly Service_Database_Manager_EventRules _eventRuleDb;
         private readonly Service_Database_Manager_Sensors _sensorDb;
+        private readonly Service_Unified_Notification_Broadcaster _unifiedNotificationBroadcaster;
 
         public Controller_WebSocket(
             Service_Manager_WebSocket_Client webSocketService,
@@ -48,7 +49,8 @@ namespace JunctionRelayServer.Controllers
             Service_Stream_Manager_MQTT mqttManager,
             Service_Manager_Events eventsManager,
             Service_Database_Manager_EventRules eventRuleDb,
-            Service_Database_Manager_Sensors sensorDb)
+            Service_Database_Manager_Sensors sensorDb,
+            Service_Unified_Notification_Broadcaster unifiedNotificationBroadcaster)
         {
             _webSocketService = webSocketService;
             _deviceDb = deviceDb;
@@ -58,6 +60,7 @@ namespace JunctionRelayServer.Controllers
             _eventsManager = eventsManager;
             _eventRuleDb = eventRuleDb;
             _sensorDb = sensorDb;
+            _unifiedNotificationBroadcaster = unifiedNotificationBroadcaster;
         }
 
         // GET/POST: api/websocket/sensor-cache/connect
@@ -171,6 +174,59 @@ namespace JunctionRelayServer.Controllers
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[WebSocket Controller] Error handling Event rules cache WebSocket: {ex.Message}");
+                    return StatusCode(500, new { error = "WebSocket connection failed", message = ex.Message });
+                }
+            }
+            else
+            {
+                return BadRequest(new { error = "This endpoint only accepts WebSocket connections" });
+            }
+        }
+
+        // GET/POST: api/websocket/notifications/connect - Unified notification endpoint
+        [HttpGet("notifications/connect")]
+        [HttpPost("notifications/connect")]
+        public async Task<IActionResult> ConnectNotificationsWebSocket()
+        {
+            if (HttpContext.WebSockets.IsWebSocketRequest)
+            {
+                try
+                {
+                    var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+                    var clientId = Guid.NewGuid().ToString();
+
+                    Console.WriteLine($"[UNIFIED_NOTIFICATIONS] WebSocket connection accepted: {clientId}");
+
+                    await _unifiedNotificationBroadcaster.AddClientAsync(clientId, webSocket);
+
+                    // Keep connection open - listen for close messages
+                    var buffer = new byte[1024 * 4];
+                    try
+                    {
+                        while (webSocket.State == WebSocketState.Open)
+                        {
+                            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                            if (result.MessageType == WebSocketMessageType.Close)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        await _unifiedNotificationBroadcaster.RemoveClientAsync(clientId);
+                        if (webSocket.State == WebSocketState.Open)
+                        {
+                            await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Connection closed", CancellationToken.None);
+                        }
+                    }
+
+                    return new EmptyResult();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[UNIFIED_NOTIFICATIONS] Error handling WebSocket: {ex.Message}");
                     return StatusCode(500, new { error = "WebSocket connection failed", message = ex.Message });
                 }
             }

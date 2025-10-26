@@ -28,7 +28,7 @@ using JunctionRelayServer.Services.BackgroundServices;
 using JunctionRelayServer.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace JunctionRelay_Server.Services
+namespace JunctionRelayServer.Services
 {
     public class Service_Events : IDisposable
     {

@@ -48,47 +48,22 @@ bool Helper_Decompression::isGzip(const uint8_t* data, size_t len) {
 }
 
 size_t Helper_Decompression::calculateOptimalBufferSize(size_t compressedSize) {
-    // Common RGB565 frame sizes
-    const size_t MIN_BUFFER = 16 * 1024;          // 16KB minimum
-    const size_t SMALL_FRAME = 12800;             // 80x80x2
-    const size_t MEDIUM_FRAME = 20000;            // 100x100x2
-    const size_t LARGE_FRAME = 768000;            // 800x480x2
-    const size_t HEAP_RESERVE = 50000;            // Keep 50KB free
-    
-    size_t optimalSize;
-    size_t freeHeap = ESP.getFreeHeap();
     size_t freePsram = psramFound() ? ESP.getFreePsram() : 0;
     
-    // Estimate decompressed size based on compressed input size and typical compression ratios
-    if (compressedSize >= 2500) {
-        // Very large compressed size suggests full resolution frame
-        optimalSize = LARGE_FRAME + (32 * 1024);  // 800KB total
-    } else if (compressedSize >= 1000) {
-        // Medium-large compressed size might be large frame or very detailed smaller frame
-        optimalSize = min(LARGE_FRAME, freeHeap + freePsram - HEAP_RESERVE);
-    } else if (compressedSize >= 500) {
-        // Medium compressed size suggests medium frame
-        optimalSize = max(MEDIUM_FRAME * 2, (size_t)(64 * 1024));  // 64KB buffer
-    } else {
-        // Small compressed size suggests small frame
-        optimalSize = max(MEDIUM_FRAME, MIN_BUFFER);
+    if (!psramFound()) {
+        Serial.println("[ERROR] No PSRAM available for decompression");
+        return 0;
     }
     
-    // Check total available memory (heap + PSRAM)
-    size_t totalAvailable = freeHeap + freePsram;
+    // Use up to 2MB from PSRAM, leave the rest free
+    const size_t MAX_DECOMPRESS_BUFFER = 2 * 1024 * 1024;  // 2MB
     
-    if (optimalSize > (totalAvailable - HEAP_RESERVE)) {
-        // Try to use maximum available memory minus reserve
-        size_t maxAvailable = totalAvailable - HEAP_RESERVE;
-        if (maxAvailable >= MIN_BUFFER) {
-            optimalSize = maxAvailable;
-        } else {
-            Serial.printf("[ERROR] Insufficient memory for decompression buffer\n");
-            return 0;  // Signal insufficient memory
-        }
+    if (freePsram < MAX_DECOMPRESS_BUFFER) {
+        Serial.printf("[WARN] Low PSRAM: %u bytes\n", freePsram);
+        return freePsram - 100000;  // Leave 100KB free
     }
     
-    return optimalSize;
+    return MAX_DECOMPRESS_BUFFER;
 }
 
 bool Helper_Decompression::decompressGzip(const uint8_t* in, size_t inSize,

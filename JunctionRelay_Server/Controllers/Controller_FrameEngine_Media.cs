@@ -552,9 +552,9 @@ namespace JunctionRelayServer.Controllers
 
         private void AddCorsHeaders()
         {
-            Response.Headers.Add("Access-Control-Allow-Origin", "*");
-            Response.Headers.Add("Access-Control-Allow-Methods", "GET");
-            Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+            Response.Headers["Access-Control-Allow-Origin"] = "*";
+            Response.Headers["Access-Control-Allow-Methods"] = "GET";
+            Response.Headers["Access-Control-Allow-Headers"] = "Content-Type";
         }
 
         private string GenerateUniqueFilename(string directory, string baseName, string extension)
@@ -588,7 +588,7 @@ namespace JunctionRelayServer.Controllers
         // Image paths
         private string GetBackgroundImageTemplatesPath()
         {
-            return Path.Combine(_webHostEnvironment.ContentRootPath, "frameengine", "assets", "templates");
+            return Path.Combine(_webHostEnvironment.ContentRootPath, "frameengine", "images", "templates");
         }
 
         private string GetBackgroundImageUserPath()
@@ -596,7 +596,7 @@ namespace JunctionRelayServer.Controllers
             var dbPath = _dbPathProvider.DbPath;
             var dataDir = Path.GetDirectoryName(dbPath)
                           ?? Path.Combine(_webHostEnvironment.ContentRootPath, "data");
-            return Path.Combine(dataDir, "frameengine", "assets");
+            return Path.Combine(dataDir, "frameengine", "images");
         }
 
         // Video paths

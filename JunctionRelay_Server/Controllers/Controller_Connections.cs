@@ -365,7 +365,7 @@ namespace JunctionRelayServer.Controllers
                     .Concat(activeWebSocketStreams)
                     .ToList();
 
-                object targetStream = null;
+                object? targetStream = null;
                 int actualScreenId = 0;
 
                 if (parsedDeviceId < 0)
@@ -471,8 +471,8 @@ namespace JunctionRelayServer.Controllers
                 var lastSentTime = lastSentTimeProp?.GetValue(targetStream);
 
                 // Parse JSON payloads
-                object configPayload = null;
-                object sensorPayload = null;
+                object? configPayload = null;
+                object? sensorPayload = null;
 
                 try
                 {
@@ -481,7 +481,7 @@ namespace JunctionRelayServer.Controllers
                         configPayload = System.Text.Json.JsonSerializer.Deserialize<object>(configJson);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     configPayload = configJson;
                 }
@@ -493,7 +493,7 @@ namespace JunctionRelayServer.Controllers
                         sensorPayload = System.Text.Json.JsonSerializer.Deserialize<object>(sensorJson);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     sensorPayload = sensorJson;
                 }

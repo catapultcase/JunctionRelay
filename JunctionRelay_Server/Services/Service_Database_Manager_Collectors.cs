@@ -65,6 +65,9 @@ namespace JunctionRelayServer.Services
                 // Also store that this collector is unlocked (for UI state)
                 _userPasswordCache[collectorId] = "unlocked"; // We don't store the actual password
 
+                // Update SecurityStatus in database
+                await _db.ExecuteAsync("UPDATE Collectors SET SecurityStatus = 'Unlocked' WHERE Id = @Id", new { Id = collectorId });
+
                 Console.WriteLine($"[COLLECTOR_UNLOCK] ✅ Collector {collectorId} unlocked successfully");
                 return true;
             }
@@ -81,8 +84,11 @@ namespace JunctionRelayServer.Services
             _userPasswordCache.TryRemove(collectorId, out _);
 
             // Also remove the decrypted token from cache if we can identify it
-            // Note: This is a limitation - we can't easily remove from _decryptedTokenCache 
+            // Note: This is a limitation - we can't easily remove from _decryptedTokenCache
             // without the original encrypted token, but that's okay for security
+
+            // Update SecurityStatus in database
+            _db.Execute("UPDATE Collectors SET SecurityStatus = 'Locked' WHERE Id = @Id", new { Id = collectorId });
 
             Console.WriteLine($"[COLLECTOR_UNLOCK] 🔒 Collector {collectorId} locked");
         }
@@ -158,6 +164,41 @@ namespace JunctionRelayServer.Services
             }
         }
 
+        // NEW: Method to update collector status
+        public async Task<bool> UpdateCollectorStatusAsync(int collectorId, string status)
+        {
+            try
+            {
+                // EventEngine status is always "Active" and should never be changed
+                var collector = await GetCollectorByIdAsync(collectorId);
+                if (collector?.CollectorType == "EventEngine")
+                {
+                    Console.WriteLine($"[COLLECTOR_STATUS] Skipping status update for EventEngine - always Active");
+                    return true;
+                }
+
+                var sql = @"
+                    UPDATE Collectors SET
+                        Status = @Status
+                    WHERE Id = @Id;
+                ";
+
+                var rowsAffected = await _db.ExecuteAsync(sql, new
+                {
+                    Id = collectorId,
+                    Status = status
+                });
+
+                Console.WriteLine($"[COLLECTOR_STATUS] Updated status for collector {collectorId}: {status}");
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[COLLECTOR_STATUS] ❌ Error updating status for collector {collectorId}: {ex.Message}");
+                return false;
+            }
+        }
+
         // Fetch all collectors
         public async Task<List<Model_Collector>> GetAllCollectorsAsync()
         {
@@ -228,11 +269,21 @@ namespace JunctionRelayServer.Services
                 EncryptCollectorSecrets(collectorForDb);
             }
 
+            // Set default status for new collectors
+            if (string.IsNullOrEmpty(collectorForDb.Status))
+            {
+                // EventEngine is always Active
+                collectorForDb.Status = collectorForDb.CollectorType == "EventEngine" ? "Active" : "Pending";
+            }
+
+            // Set SecurityStatus based on ExternalAccessToken
+            collectorForDb.SecurityStatus = collectorForDb.ExternalAccessToken ? "Locked" : "Unlocked";
+
             var sql = @"
         INSERT INTO Collectors (
-            Name, CollectorType, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId, DecimalPlaces, TestFrequency
+            Name, CollectorType, Status, SecurityStatus, Description, URL, AccessToken, ExternalAccessToken, PollRate, SendRate, ServiceId, DecimalPlaces, TestFrequency
         ) VALUES (
-            @Name, @CollectorType, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId, @DecimalPlaces, @TestFrequency
+            @Name, @CollectorType, @Status, @SecurityStatus, @Description, @URL, @AccessToken, @ExternalAccessToken, @PollRate, @SendRate, @ServiceId, @DecimalPlaces, @TestFrequency
         );
         SELECT last_insert_rowid();
     ";

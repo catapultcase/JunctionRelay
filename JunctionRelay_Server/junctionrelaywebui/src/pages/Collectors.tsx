@@ -59,12 +59,14 @@ import TableViewIcon from '@mui/icons-material/TableView';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsIcon from '@mui/icons-material/Settings';
+import BiotechIcon from '@mui/icons-material/Biotech';
 import { useTheme, useMediaQuery } from "@mui/material";
 
 // Import sub-components
 import CollectorCard from '../components/Collectors_CollectorCard';
 import CollectorTableRow from '../components/Collectors_CollectorTableRow';
 import AddCollectorModal from '../components/Collectors_AddCollectorModal';
+import CollectorsWarningsCard from '../components/Collectors_WarningsCard';
 
 // Types
 type ViewMode = 'table' | 'standard' | 'mini';
@@ -89,11 +91,13 @@ const defaultCollectorColumns: CollectorColumn[] = [
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "url", label: "URL", align: "left", sortable: true },
     { field: "accessToken", label: "Access Token", align: "left", sortable: false },
+    { field: "securityStatus", label: "Security", align: "left", sortable: true },
     { field: "status", label: "Status", align: "left", sortable: true },
+    { field: "lastTested", label: "Last Tested", align: "left", sortable: true },
 ];
 
 // Default visible columns
-const defaultVisibleColumns = ["name", "type", "url", "accessToken", "status", "actions"];
+const defaultVisibleColumns = ["name", "type", "url", "accessToken", "securityStatus", "status", "lastTested", "actions"];
 
 // Frequency options for auto-testing (1 hour, then 6 hour increments up to 24hrs, then days)
 const frequencyOptions = [
@@ -383,6 +387,28 @@ const Collectors = () => {
         setAddCollectorModalOpen(true);
     };
 
+    const handleTestAllCollectors = async () => {
+        try {
+            // Don't use setLoading - it hides the collectors table
+            // Backend sends progress notifications for each collector
+
+            const response = await fetch('/api/collectors/test-all', {
+                method: 'POST',
+            });
+
+            if (response.ok) {
+                // Refresh collectors to show updated statuses
+                await fetchCollectors();
+            } else {
+                const error = await response.json();
+                showSnackbar(`Failed to test collectors: ${error.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error testing collectors:', error);
+            showSnackbar('Error testing collectors', 'error');
+        }
+    };
+
     const handleCollectorAdded = () => {
         fetchCollectors();
         showSnackbar("Collector added successfully", "success");
@@ -391,6 +417,28 @@ const Collectors = () => {
     const handleCollectorAddedAndConfigure = (collectorId: number) => {
         showSnackbar("Collector added successfully. Redirecting to configuration...", "success");
         navigate(`/configure-collector/${collectorId}`);
+    };
+
+    // Test collector handler
+    const handleTestCollector = async (e: React.MouseEvent, id: number) => {
+        e.stopPropagation();
+        try {
+            // Backend sends progress notifications, so no need for frontend snackbar
+            const response = await fetch(`/api/collectors/${id}/test`, {
+                method: 'POST',
+            });
+
+            if (response.ok) {
+                // Refresh collectors to show updated status
+                await fetchCollectors();
+            } else {
+                const error = await response.json();
+                showSnackbar(`Test failed: ${error.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error testing collector:', error);
+            showSnackbar('Error testing collector', 'error');
+        }
     };
 
     // Modified delete handler - prevent deletion of FrameEngine collectors
@@ -513,6 +561,16 @@ const Collectors = () => {
                     >
                         Add Collector
                     </Button>
+                    <Button
+                        variant="outlined"
+                        color="secondary"
+                        onClick={handleTestAllCollectors}
+                        size="small"
+                        startIcon={<BiotechIcon />}
+                        disabled={loading || collectors.length === 0}
+                    >
+                        Test All
+                    </Button>
                 </Box>
             )}
 
@@ -567,6 +625,9 @@ const Collectors = () => {
                     </Box>
                 </Paper>
             )}
+
+            {/* Warnings Card - shows collectors with errors */}
+            <CollectorsWarningsCard collectors={collectors} />
 
             {/* Table header with view mode toggle and column selector */}
             <Box display="flex" alignItems="center" mb={1} flexWrap="wrap" gap={2}>
@@ -694,6 +755,8 @@ const Collectors = () => {
                                                 return { minWidth: 200, width: 'auto' };
                                             case "accessToken":
                                                 return { minWidth: 120, width: 120 };
+                                            case "securityStatus":
+                                                return { minWidth: 100, width: 100 };
                                             case "status":
                                                 return { minWidth: 100, width: 100 };
                                             case "actions":
@@ -744,9 +807,12 @@ const Collectors = () => {
                                         allColumns={defaultCollectorColumns}
                                         onDelete={handleDelete}
                                         onEdit={handleEdit}
+                                        onTest={handleTestCollector}
                                         // Pass additional props to handle FrameEngine special behavior
                                         isFrameEngine={isFrameEngine(collector)}
                                         onCardClick={() => handleCardClick(collector)}
+                                        // Add id for scroll-to functionality
+                                        id={`collector-${collector.id}`}
                                     />
                                 ))
                             ) : (
@@ -769,16 +835,18 @@ const Collectors = () => {
                 }}>
                     {sortedCollectors.length > 0 ? (
                         sortedCollectors.map((collector) => (
-                            <CollectorCard
-                                key={collector.id}
-                                collector={collector}
-                                viewMode={viewMode as 'standard' | 'mini'}
-                                onDelete={handleDelete}
-                                onEdit={handleEdit}
-                                // Pass additional props to handle FrameEngine special behavior
-                                isFrameEngine={isFrameEngine(collector)}
-                                onCardClick={() => handleCardClick(collector)}
-                            />
+                            <Box key={collector.id} id={`collector-${collector.id}`}>
+                                <CollectorCard
+                                    collector={collector}
+                                    viewMode={viewMode as 'standard' | 'mini'}
+                                    onDelete={handleDelete}
+                                    onEdit={handleEdit}
+                                    onTest={handleTestCollector}
+                                    // Pass additional props to handle FrameEngine special behavior
+                                    isFrameEngine={isFrameEngine(collector)}
+                                    onCardClick={() => handleCardClick(collector)}
+                                />
+                            </Box>
                         ))
                     ) : (
                         <Paper sx={{ p: 3, textAlign: 'center', gridColumn: '1 / -1' }}>

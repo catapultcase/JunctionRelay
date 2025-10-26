@@ -213,9 +213,9 @@ namespace JunctionRelayServer.Collectors
                     var handle = GCHandle.Alloc(byteBuffer, GCHandleType.Pinned);
                     try
                     {
-                        var sensorElement = (_HWiNFO_SENSORS_SENSOR_ELEMENT)Marshal.PtrToStructure(
+                        var sensorElement = (_HWiNFO_SENSORS_SENSOR_ELEMENT)(Marshal.PtrToStructure(
                             handle.AddrOfPinnedObject(),
-                            typeof(_HWiNFO_SENSORS_SENSOR_ELEMENT));
+                            typeof(_HWiNFO_SENSORS_SENSOR_ELEMENT)) ?? new _HWiNFO_SENSORS_SENSOR_ELEMENT());
 
                         sensorNames.Add(string.IsNullOrEmpty(sensorElement.szSensorNameUser)
                             ? sensorElement.szSensorNameOrig
@@ -241,9 +241,9 @@ namespace JunctionRelayServer.Collectors
                     var handle = GCHandle.Alloc(byteBuffer, GCHandleType.Pinned);
                     try
                     {
-                        var readingElement = (_HWiNFO_SENSORS_READING_ELEMENT)Marshal.PtrToStructure(
+                        var readingElement = (_HWiNFO_SENSORS_READING_ELEMENT)(Marshal.PtrToStructure(
                             handle.AddrOfPinnedObject(),
-                            typeof(_HWiNFO_SENSORS_READING_ELEMENT));
+                            typeof(_HWiNFO_SENSORS_READING_ELEMENT)) ?? new _HWiNFO_SENSORS_READING_ELEMENT());
 
                         if (readingElement.dwSensorIndex < sensorNames.Count)
                         {
@@ -254,14 +254,17 @@ namespace JunctionRelayServer.Collectors
 
                             if (!string.IsNullOrEmpty(sensorName))
                             {
+                                var detectedDecimalPlaces = Helper_DataCollector.GetDecimalPlaces(readingElement.Value);
+                                var (sanitizedValue, safeDecimalPlaces) = Helper_DataCollector.SanitizeSensorValue(readingElement.Value, detectedDecimalPlaces);
+
                                 var sensor = new Model_Sensor
                                 {
                                     Name = sensorName,
                                     ComponentName = componentName,
                                     Category = GetCategoryFromSensorType(readingElement.tReading),
                                     Unit = CleanUnit(readingElement.szUnit),
-                                    Value = readingElement.Value.ToString("F" + GetDecimalPlaces(readingElement.Value)),
-                                    DecimalPlaces = GetDecimalPlaces(readingElement.Value),
+                                    Value = sanitizedValue,
+                                    DecimalPlaces = safeDecimalPlaces,
                                     ExternalId = $"{readingElement.dwSensorIndex}:{readingElement.dwReadingID}",
                                     SensorType = "SharedMemory",
                                     DeviceName = collector.Name,
@@ -319,17 +322,5 @@ namespace JunctionRelayServer.Collectors
             return unit.Replace("\0", "").Trim();
         }
 
-        private int GetDecimalPlaces(double value)
-        {
-            var valueStr = value.ToString("G17");
-            var decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1) return 0;
-
-            var afterDecimal = valueStr.Substring(decimalIndex + 1);
-            // Remove trailing zeros
-            afterDecimal = afterDecimal.TrimEnd('0');
-
-            return afterDecimal.Length;
-        }
     }
 }

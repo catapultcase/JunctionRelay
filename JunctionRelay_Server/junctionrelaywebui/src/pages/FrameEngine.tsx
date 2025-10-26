@@ -37,6 +37,7 @@ import { useNavigate } from "react-router-dom";
 import AddIcon from '@mui/icons-material/Add';
 import UploadIcon from '@mui/icons-material/Upload';
 import { useTheme, useMediaQuery } from "@mui/material";
+import { useAuth } from "../auth/AuthContext";
 
 // Import sub-components
 import FrameEngineManagementSection from '../components/FrameEngine_ManagementSection';
@@ -44,7 +45,7 @@ import FrameEngineListingSection from '../components/FrameEngine_ListingSection'
 import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
 
 // Types
-type ViewMode = 'gallery' | 'table' | 'standard' | 'mini';
+type ViewMode = 'gallery' | 'table';
 type SortDirection = 'asc' | 'desc';
 
 interface FrameLayoutListItem {
@@ -392,6 +393,7 @@ const AddFrameLayoutModal: React.FC<{
 
 // Main FrameEngine Component
 const FrameEngine = () => {
+    const { hasValidLicense } = useAuth();
     const [frameLayouts, setFrameLayouts] = useState<FrameLayoutListItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [addFrameLayoutModalOpen, setAddFrameLayoutModalOpen] = useState<boolean>(false);
@@ -657,7 +659,9 @@ const FrameEngine = () => {
                 onDelete={handleDelete}
                 onEdit={handleEdit}
                 onClone={handleClone}
+                onShowSnackbar={showSnackbar}
                 isMobile={isMobile}
+                hasProLicense={hasValidLicense}
             />
 
             {/* Snackbar for notifications */}

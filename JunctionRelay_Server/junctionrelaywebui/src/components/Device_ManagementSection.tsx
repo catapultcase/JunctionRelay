@@ -302,7 +302,7 @@ const DeviceManagementSection: React.FC<DeviceManagementSectionProps> = ({
                                     <MonitorHeartIcon sx={{ mr: 1, fontSize: 20 }} />
                                     <Box>
                                         <Typography variant="body1">
-                                            Heartbeat Monitoring
+                                            Heartbeat Monitoring & Cloud Sync
                                             {updating === 'service_heartbeats_enabled' && (
                                                 <CircularProgress size={16} sx={{ ml: 1 }} />
                                             )}

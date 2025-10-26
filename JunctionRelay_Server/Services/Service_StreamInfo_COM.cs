@@ -79,7 +79,11 @@ namespace JunctionRelayServer.Services
         {
             lock (_frameLock)
             {
-                LastSentFrameBytes = new byte[frameBytes.Length];
+                // Only allocate new array if size changed (reduces GC pressure)
+                if (LastSentFrameBytes == null || LastSentFrameBytes.Length != frameBytes.Length)
+                {
+                    LastSentFrameBytes = new byte[frameBytes.Length];
+                }
                 Array.Copy(frameBytes, LastSentFrameBytes, frameBytes.Length);
                 LastFrameGeneratedTime = DateTime.UtcNow;
                 LastFrameLayoutType = layoutType;

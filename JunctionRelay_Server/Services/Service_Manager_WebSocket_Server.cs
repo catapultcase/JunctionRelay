@@ -48,7 +48,7 @@ namespace JunctionRelayServer.Services
             _pollingManager = pollingManager;
             _connectionManager = connectionManager;
 
-            Console.WriteLine("[WebSocket Server] Service initialized with sensor cache support");
+            Console.WriteLine("[WebSocket Server] Service initialized with sensor cache support - USING LastFrameGeneratedTime FIX");
 
             // Set up polling for dashboard and sensor data updates
             _ = Task.Run(StartDataPolling);
@@ -345,392 +345,25 @@ namespace JunctionRelayServer.Services
                 var mqttStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_MQTT>();
                 var comStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_COM>();
                 var webSocketStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_WebSocket>();
-                var virtualStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_Virtual>(); // <-- NEW
+                var virtualStreamManager = scope.ServiceProvider.GetService<Service_Stream_Manager_Virtual>();
 
-                var allStreams = new List<object>();
+                var allStreams = new List<Model_StreamInfo_DTO>();
 
-                // ---------------- HTTP ----------------
+                // Collect streams from all managers - clean, type-safe code!
                 if (httpStreamManager != null)
-                {
-                    var httpStreams = httpStreamManager.GetActiveStreams();
-                    foreach (var stream in httpStreams)
-                    {
-                        var streamType = stream.GetType();
-                        var healthProperty = streamType.GetProperty("Health");
-                        object? healthData = null;
+                    allStreams.AddRange(httpStreamManager.GetActiveStreams());
 
-                        if (healthProperty != null)
-                        {
-                            var hv = healthProperty.GetValue(stream);
-                            if (hv != null)
-                            {
-                                var ht = hv.GetType();
-                                healthData = new
-                                {
-                                    connectionState = ht.GetProperty("ConnectionState")?.GetValue(hv)?.ToString() ?? "unknown",
-                                    successRate = (double)(ht.GetProperty("SuccessRate")?.GetValue(hv) ?? 0.0),
-                                    lastErrorMessage = ht.GetProperty("LastErrorMessage")?.GetValue(hv)?.ToString() ?? "",
-                                    errorType = ht.GetProperty("ErrorType")?.GetValue(hv)?.ToString() ?? "",
-                                    consecutiveFailures = (int)(ht.GetProperty("ConsecutiveFailures")?.GetValue(hv) ?? 0),
-                                    consecutiveSuccesses = (int)(ht.GetProperty("ConsecutiveSuccesses")?.GetValue(hv) ?? 0),
-                                    keepAlivePoolRecreated = (bool)(ht.GetProperty("KeepAlivePoolRecreated")?.GetValue(hv) ?? false),
-                                    httpStatusCode = (int)(ht.GetProperty("HttpStatusCode")?.GetValue(hv) ?? 200),
-                                    averageLatency = (double)(ht.GetProperty("AverageLatency")?.GetValue(hv) ?? 0.0),
-                                    maxLatency = (long)(ht.GetProperty("MaxLatency")?.GetValue(hv) ?? 0),
-                                    minLatency = (long)(ht.GetProperty("MinLatency")?.GetValue(hv) ?? 0),
-                                    lastSuccessTime = (DateTime)(ht.GetProperty("LastSuccessTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    lastFailureTime = (DateTime)(ht.GetProperty("LastFailureTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    poolRecreationCount = (int)(ht.GetProperty("PoolRecreationCount")?.GetValue(hv) ?? 0),
-
-                                    // shape parity
-                                    isFrameMode = false,
-                                    payloadType = "JSON"
-                                };
-                            }
-                        }
-
-                        allStreams.Add(new
-                        {
-                            streamKey = streamType.GetProperty("StreamKey")?.GetValue(stream)?.ToString() ?? "unknown",
-                            protocol = streamType.GetProperty("Protocol")?.GetValue(stream)?.ToString() ?? "HTTP",
-                            deviceName = streamType.GetProperty("DeviceName")?.GetValue(stream)?.ToString() ?? "Unknown Device",
-                            screenName = streamType.GetProperty("ScreenName")?.GetValue(stream)?.ToString() ?? "Unknown Screen",
-                            status = streamType.GetProperty("Status")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            sensorsCount = (int)(streamType.GetProperty("SensorsCount")?.GetValue(stream) ?? 0),
-                            rate = (int)(streamType.GetProperty("Rate")?.GetValue(stream) ?? 0),
-                            latency = (long)(streamType.GetProperty("Latency")?.GetValue(stream) ?? 0),
-                            lastSentTime = (DateTime)(streamType.GetProperty("LastSentTime")?.GetValue(stream) ?? DateTime.MinValue),
-                            configPayloadJson = streamType.GetProperty("ConfigPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            lastSentPayloadJson = streamType.GetProperty("LastSentPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            compressedConfigPayloadPrefix = streamType.GetProperty("CompressedConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
-                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
-                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
-                            health = healthData
-                        });
-                    }
-                }
-
-                // ---------------- MQTT ----------------
                 if (mqttStreamManager != null)
-                {
-                    var mqttStreams = mqttStreamManager.GetActiveStreams();
-                    foreach (var stream in mqttStreams)
-                    {
-                        var streamType = stream.GetType();
-                        var healthProperty = streamType.GetProperty("Health");
-                        object? healthData = null;
+                    allStreams.AddRange(mqttStreamManager.GetActiveStreams());
 
-                        if (healthProperty != null)
-                        {
-                            var hv = healthProperty.GetValue(stream);
-                            if (hv != null)
-                            {
-                                var ht = hv.GetType();
-                                healthData = new
-                                {
-                                    connectionState = ht.GetProperty("ConnectionState")?.GetValue(hv)?.ToString() ?? "unknown",
-                                    successRate = (double)(ht.GetProperty("SuccessRate")?.GetValue(hv) ?? 0.0),
-                                    lastErrorMessage = ht.GetProperty("LastErrorMessage")?.GetValue(hv)?.ToString() ?? "",
-                                    errorType = ht.GetProperty("ErrorType")?.GetValue(hv)?.ToString() ?? "",
-                                    consecutiveFailures = (int)(ht.GetProperty("ConsecutiveFailures")?.GetValue(hv) ?? 0),
-                                    consecutiveSuccesses = (int)(ht.GetProperty("ConsecutiveSuccesses")?.GetValue(hv) ?? 0),
-                                    connectionRecreated = (bool)(ht.GetProperty("ConnectionRecreated")?.GetValue(hv) ?? false),
-                                    averageLatency = (double)(ht.GetProperty("AverageLatency")?.GetValue(hv) ?? 0.0),
-                                    maxLatency = (long)(ht.GetProperty("MaxLatency")?.GetValue(hv) ?? 0),
-                                    minLatency = (long)(ht.GetProperty("MinLatency")?.GetValue(hv) ?? 0),
-                                    lastSuccessTime = (DateTime)(ht.GetProperty("LastSuccessTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    lastFailureTime = (DateTime)(ht.GetProperty("LastFailureTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    connectionRecreationCount = (int)(ht.GetProperty("ConnectionRecreationCount")?.GetValue(hv) ?? 0),
-                                    acknowledgmentTimeouts = (int)(ht.GetProperty("AcknowledgmentTimeouts")?.GetValue(hv) ?? 0),
-                                    publishFailures = (int)(ht.GetProperty("PublishFailures")?.GetValue(hv) ?? 0),
-                                    topicLatencies = ht.GetProperty("TopicLatencies")?.GetValue(hv) ?? new Dictionary<string, object>(),
-
-                                    // shape parity
-                                    isFrameMode = false,
-                                    payloadType = "JSON"
-                                };
-                            }
-                        }
-
-                        allStreams.Add(new
-                        {
-                            streamKey = streamType.GetProperty("StreamKey")?.GetValue(stream)?.ToString() ?? "unknown",
-                            protocol = streamType.GetProperty("Protocol")?.GetValue(stream)?.ToString() ?? "MQTT",
-                            deviceName = streamType.GetProperty("DeviceName")?.GetValue(stream)?.ToString() ?? "Unknown Device",
-                            screenName = streamType.GetProperty("ScreenName")?.GetValue(stream)?.ToString() ?? "Unknown Screen",
-                            status = streamType.GetProperty("Status")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            sensorsCount = (int)(streamType.GetProperty("SensorsCount")?.GetValue(stream) ?? 0),
-                            rate = (int)(streamType.GetProperty("Rate")?.GetValue(stream) ?? 0),
-                            latency = (long)(streamType.GetProperty("Latency")?.GetValue(stream) ?? 0),
-                            lastSentTime = (DateTime)(streamType.GetProperty("LastSentTime")?.GetValue(stream) ?? DateTime.MinValue),
-                            configPayloadPrefixes = streamType.GetProperty("ConfigPayloadPrefixes")?.GetValue(stream) ?? new string[] { "", "" },
-                            configPayloadsJson = streamType.GetProperty("ConfigPayloadsJson")?.GetValue(stream) ?? new string[] { "{}", "{}" },
-                            lastSentPayloadPrefix = streamType.GetProperty("LastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadJson = streamType.GetProperty("LastSentPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            compressedConfigPayloadPrefix = streamType.GetProperty("CompressedConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
-                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
-                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
-                            health = healthData
-                        });
-                    }
-                }
-
-                // ---------------- COM ----------------
                 if (comStreamManager != null)
-                {
-                    var comStreams = comStreamManager.GetActiveStreams();
-                    foreach (var stream in comStreams)
-                    {
-                        var streamType = stream.GetType();
-                        var healthProperty = streamType.GetProperty("Health");
-                        object? healthData = null;
+                    allStreams.AddRange(comStreamManager.GetActiveStreams());
 
-                        if (healthProperty != null)
-                        {
-                            var hv = healthProperty.GetValue(stream);
-                            if (hv != null)
-                            {
-                                var ht = hv.GetType();
-                                healthData = new
-                                {
-                                    connectionState = ht.GetProperty("ConnectionState")?.GetValue(hv)?.ToString() ?? "unknown",
-                                    successRate = (double)(ht.GetProperty("SuccessRate")?.GetValue(hv) ?? 0.0),
-                                    lastErrorMessage = ht.GetProperty("LastErrorMessage")?.GetValue(hv)?.ToString() ?? "",
-                                    errorType = ht.GetProperty("ErrorType")?.GetValue(hv)?.ToString() ?? "",
-                                    consecutiveFailures = (int)(ht.GetProperty("ConsecutiveFailures")?.GetValue(hv) ?? 0),
-                                    consecutiveSuccesses = (int)(ht.GetProperty("ConsecutiveSuccesses")?.GetValue(hv) ?? 0),
-                                    averageLatency = (double)(ht.GetProperty("AverageLatency")?.GetValue(hv) ?? 0.0),
-                                    maxLatency = (long)(ht.GetProperty("MaxLatency")?.GetValue(hv) ?? 0),
-                                    minLatency = (long)(ht.GetProperty("MinLatency")?.GetValue(hv) ?? 0),
-                                    lastSuccessTime = (DateTime)(ht.GetProperty("LastSuccessTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    lastFailureTime = (DateTime)(ht.GetProperty("LastFailureTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    poolRecreationCount = (int)(ht.GetProperty("PoolRecreationCount")?.GetValue(hv) ?? 0),
-
-                                    // shape parity
-                                    isFrameMode = false,
-                                    payloadType = "JSON"
-                                };
-                            }
-                        }
-
-                        allStreams.Add(new
-                        {
-                            streamKey = streamType.GetProperty("StreamKey")?.GetValue(stream)?.ToString() ?? "unknown",
-                            protocol = streamType.GetProperty("Protocol")?.GetValue(stream)?.ToString() ?? "COM",
-                            deviceName = streamType.GetProperty("DeviceName")?.GetValue(stream)?.ToString() ?? "Unknown Device",
-                            screenName = streamType.GetProperty("ScreenName")?.GetValue(stream)?.ToString() ?? "Unknown Screen",
-                            status = streamType.GetProperty("Status")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            sensorsCount = (int)(streamType.GetProperty("SensorsCount")?.GetValue(stream) ?? 0),
-                            rate = (int)(streamType.GetProperty("Rate")?.GetValue(stream) ?? 0),
-                            latency = (long)(streamType.GetProperty("Latency")?.GetValue(stream) ?? 0),
-                            lastSentTime = (DateTime)(streamType.GetProperty("LastSentTime")?.GetValue(stream) ?? DateTime.MinValue),
-                            configPayloadPrefix = streamType.GetProperty("ConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadJson = streamType.GetProperty("ConfigPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            lastSentPayloadPrefix = streamType.GetProperty("LastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadJson = streamType.GetProperty("LastSentPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            compressedConfigPayloadPrefix = streamType.GetProperty("CompressedConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            hasLastFrame = streamType.GetProperty("LastFrameTime")?.GetValue(stream) != null,
-                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
-                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameTime")?.GetValue(stream)),
-                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
-                            health = healthData
-                        });
-                    }
-                }
-
-                // ---------------- WebSocket ----------------
                 if (webSocketStreamManager != null)
-                {
-                    var wsStreams = webSocketStreamManager.GetActiveStreams();
-                    foreach (var stream in wsStreams)
-                    {
-                        var streamType = stream.GetType();
-                        var healthProperty = streamType.GetProperty("Health");
-                        object? healthData = null;
+                    allStreams.AddRange(webSocketStreamManager.GetActiveStreams());
 
-                        if (healthProperty != null)
-                        {
-                            var hv = healthProperty.GetValue(stream);
-                            if (hv != null)
-                            {
-                                var ht = hv.GetType();
-                                healthData = new
-                                {
-                                    connectionState = ht.GetProperty("ConnectionState")?.GetValue(hv)?.ToString() ?? "unknown",
-                                    successRate = (double)(ht.GetProperty("SuccessRate")?.GetValue(hv) ?? 0.0),
-                                    lastErrorMessage = ht.GetProperty("LastErrorMessage")?.GetValue(hv)?.ToString() ?? "",
-                                    errorType = ht.GetProperty("ErrorType")?.GetValue(hv)?.ToString() ?? "",
-                                    consecutiveFailures = (int)(ht.GetProperty("ConsecutiveFailures")?.GetValue(hv) ?? 0),
-                                    consecutiveSuccesses = (int)(ht.GetProperty("ConsecutiveSuccesses")?.GetValue(hv) ?? 0),
-                                    connectionRecreated = (bool)(ht.GetProperty("ConnectionRecreated")?.GetValue(hv) ?? false),
-                                    lastWebSocketState = ht.GetProperty("LastWebSocketState")?.GetValue(hv)?.ToString() ?? "",
-                                    connectionRecreationCount = (int)(ht.GetProperty("ConnectionRecreationCount")?.GetValue(hv) ?? 0),
-                                    averageLatency = (double)(ht.GetProperty("AverageLatency")?.GetValue(hv) ?? 0.0),
-                                    maxLatency = (long)(ht.GetProperty("MaxLatency")?.GetValue(hv) ?? 0),
-                                    minLatency = (long)(ht.GetProperty("MinLatency")?.GetValue(hv) ?? 0),
-                                    lastSuccessTime = (DateTime)(ht.GetProperty("LastSuccessTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    lastFailureTime = (DateTime)(ht.GetProperty("LastFailureTime")?.GetValue(hv) ?? DateTime.MinValue),
-
-                                    // frame / gateway
-                                    isFrameMode = (bool)(ht.GetProperty("IsFrameMode")?.GetValue(hv) ?? false),
-                                    payloadType = ht.GetProperty("PayloadType")?.GetValue(hv)?.ToString() ?? "JSON",
-                                    framesSent = (int)(ht.GetProperty("FramesSent")?.GetValue(hv) ?? 0),
-                                    payloadsSent = (int)(ht.GetProperty("PayloadsSent")?.GetValue(hv) ?? 0),
-                                    currentFrameLayoutType = ht.GetProperty("CurrentFrameLayoutType")?.GetValue(hv)?.ToString() ?? "",
-                                    averageFrameSize = (double)(ht.GetProperty("AverageFrameSize")?.GetValue(hv) ?? 0.0),
-                                    maxFrameSize = (long)(ht.GetProperty("MaxFrameSize")?.GetValue(hv) ?? 0),
-                                    minFrameSize = (long)(ht.GetProperty("MinFrameSize")?.GetValue(hv) ?? 0),
-                                    averageFrameRenderTime = (double)(ht.GetProperty("AverageFrameRenderTime")?.GetValue(hv) ?? 0.0),
-                                    maxFrameRenderTime = (long)(ht.GetProperty("MaxFrameRenderTime")?.GetValue(hv) ?? 0),
-                                    minFrameRenderTime = (long)(ht.GetProperty("MinFrameRenderTime")?.GetValue(hv) ?? 0),
-                                    isGatewayMode = (bool)(ht.GetProperty("IsGatewayMode")?.GetValue(hv) ?? false),
-                                    gatewayTarget = ht.GetProperty("GatewayTarget")?.GetValue(hv)?.ToString() ?? "",
-                                    gatewayMessagesSent = (int)(ht.GetProperty("GatewayMessagesSent")?.GetValue(hv) ?? 0)
-                                };
-                            }
-                        }
-
-                        allStreams.Add(new
-                        {
-                            streamKey = streamType.GetProperty("StreamKey")?.GetValue(stream)?.ToString() ?? "unknown",
-                            protocol = streamType.GetProperty("Protocol")?.GetValue(stream)?.ToString() ?? "WebSocket",
-                            deviceName = streamType.GetProperty("DeviceName")?.GetValue(stream)?.ToString() ?? "Unknown Device",
-                            deviceMac = streamType.GetProperty("DeviceMac")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            screenName = streamType.GetProperty("ScreenName")?.GetValue(stream)?.ToString() ?? "Unknown Screen",
-                            status = streamType.GetProperty("Status")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            sensorsCount = (int)(streamType.GetProperty("SensorsCount")?.GetValue(stream) ?? 0),
-                            rate = (int)(streamType.GetProperty("Rate")?.GetValue(stream) ?? 0),
-                            latency = (long)(streamType.GetProperty("Latency")?.GetValue(stream) ?? 0),
-                            lastSentTime = (DateTime)(streamType.GetProperty("LastSentTime")?.GetValue(stream) ?? DateTime.MinValue),
-                            configPayloadPrefix = streamType.GetProperty("ConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadJson = streamType.GetProperty("ConfigPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            lastSentPayloadPrefix = streamType.GetProperty("LastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadJson = streamType.GetProperty("LastSentPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            compressedConfigPayloadPrefix = streamType.GetProperty("CompressedConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            hasLastFrame = streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream) != null,
-                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
-                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream)),
-                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
-                            isGatewayMode = (bool)(streamType.GetProperty("IsGatewayMode")?.GetValue(stream) ?? false),
-                            gatewayTarget = streamType.GetProperty("GatewayTarget")?.GetValue(stream)?.ToString() ?? "",
-                            compressionEnabled = (bool)(streamType.GetProperty("CompressionEnabled")?.GetValue(stream) ?? false),
-                            health = healthData
-                        });
-                    }
-                }
-
-                // ---------------- VIRTUAL (NEW) ----------------
                 if (virtualStreamManager != null)
-                {
-                    var virtualStreams = virtualStreamManager.GetActiveStreams();
-                    foreach (var stream in virtualStreams)
-                    {
-                        var streamType = stream.GetType();
-                        var healthProperty = streamType.GetProperty("Health");
-                        object? healthData = null;
-
-                        if (healthProperty != null)
-                        {
-                            var hv = healthProperty.GetValue(stream);
-                            if (hv != null)
-                            {
-                                var ht = hv.GetType();
-                                healthData = new
-                                {
-                                    connectionState = ht.GetProperty("ConnectionState")?.GetValue(hv)?.ToString() ?? "unknown",
-                                    successRate = (double)(ht.GetProperty("SuccessRate")?.GetValue(hv) ?? 0.0),
-                                    lastErrorMessage = ht.GetProperty("LastErrorMessage")?.GetValue(hv)?.ToString() ?? "",
-                                    errorType = ht.GetProperty("ErrorType")?.GetValue(hv)?.ToString() ?? "",
-                                    consecutiveFailures = (int)(ht.GetProperty("ConsecutiveFailures")?.GetValue(hv) ?? 0),
-                                    consecutiveSuccesses = (int)(ht.GetProperty("ConsecutiveSuccesses")?.GetValue(hv) ?? 0),
-                                    averageLatency = (double)(ht.GetProperty("AverageLatency")?.GetValue(hv) ?? 0.0),
-                                    maxLatency = (long)(ht.GetProperty("MaxLatency")?.GetValue(hv) ?? 0),
-                                    minLatency = (long)(ht.GetProperty("MinLatency")?.GetValue(hv) ?? 0),
-                                    lastSuccessTime = (DateTime)(ht.GetProperty("LastSuccessTime")?.GetValue(hv) ?? DateTime.MinValue),
-                                    lastFailureTime = (DateTime)(ht.GetProperty("LastFailureTime")?.GetValue(hv) ?? DateTime.MinValue),
-
-                                    // keep parity with WS health shape
-                                    connectionRecreated = false,
-                                    lastWebSocketState = (string?)null,
-                                    connectionRecreationCount = 0,
-
-                                    // frame/payload counters if your StreamHealth has them;
-                                    // default sensibly when absent
-                                    isFrameMode = (bool)(ht.GetProperty("IsFrameMode")?.GetValue(hv) ?? false),
-                                    payloadType = ht.GetProperty("PayloadType")?.GetValue(hv)?.ToString() ?? "JSON",
-                                    framesSent = (int)(ht.GetProperty("FramesSent")?.GetValue(hv) ?? 0),
-                                    payloadsSent = (int)(ht.GetProperty("PayloadsSent")?.GetValue(hv) ?? 0),
-                                    currentFrameLayoutType = ht.GetProperty("CurrentFrameLayoutType")?.GetValue(hv)?.ToString() ?? "",
-                                    averageFrameSize = (double)(ht.GetProperty("AverageFrameSize")?.GetValue(hv) ?? 0.0),
-                                    maxFrameSize = (long)(ht.GetProperty("MaxFrameSize")?.GetValue(hv) ?? 0),
-                                    minFrameSize = (long)(ht.GetProperty("MinFrameSize")?.GetValue(hv) ?? 0),
-                                    averageFrameRenderTime = (double)(ht.GetProperty("AverageFrameRenderTime")?.GetValue(hv) ?? 0.0),
-                                    maxFrameRenderTime = (long)(ht.GetProperty("MaxFrameRenderTime")?.GetValue(hv) ?? 0),
-                                    minFrameRenderTime = (long)(ht.GetProperty("MinFrameRenderTime")?.GetValue(hv) ?? 0),
-
-                                    isGatewayMode = false,
-                                    gatewayTarget = "Unknown",
-                                    gatewayMessagesSent = 0
-                                };
-                            }
-                        }
-
-                        allStreams.Add(new
-                        {
-                            streamKey = streamType.GetProperty("StreamKey")?.GetValue(stream)?.ToString()
-                                        ?? streamType.GetProperty("ScreenId")?.GetValue(stream)?.ToString()
-                                        ?? "virtual",
-                            protocol = streamType.GetProperty("Protocol")?.GetValue(stream)?.ToString() ?? "Virtual",
-                            deviceName = streamType.GetProperty("DeviceName")?.GetValue(stream)?.ToString() ?? "Virtual Device",
-                            deviceMac = "Unknown",
-                            screenName = streamType.GetProperty("ScreenName")?.GetValue(stream)?.ToString() ?? "Unknown Screen",
-                            status = streamType.GetProperty("Status")?.GetValue(stream)?.ToString() ?? "Unknown",
-                            sensorsCount = (int)(streamType.GetProperty("SensorsCount")?.GetValue(stream) ?? 0),
-                            rate = (int)(streamType.GetProperty("Rate")?.GetValue(stream) ?? 0),
-                            latency = (long)(streamType.GetProperty("Latency")?.GetValue(stream) ?? 0),
-                            lastSentTime = (DateTime)(streamType.GetProperty("LastGeneratedTime")?.GetValue(stream) ?? DateTime.MinValue),
-
-                            // payloads (Virtual keeps the same names but "LastGeneratedPayloadJson")
-                            configPayloadPrefix = streamType.GetProperty("ConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadJson = streamType.GetProperty("ConfigPayloadJson")?.GetValue(stream)?.ToString() ?? "{}",
-                            lastSentPayloadPrefix = streamType.GetProperty("LastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadJson =
-                                streamType.GetProperty("LastGeneratedPayloadJson")?.GetValue(stream)?.ToString()
-                                ?? streamType.GetProperty("LastSentPayloadJson")?.GetValue(stream)?.ToString()
-                                ?? "{}",
-
-                            // compression (may be empty for virtual)
-                            compressedConfigPayloadPrefix = streamType.GetProperty("CompressedConfigPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            compressedLastSentPayloadPrefix = streamType.GetProperty("CompressedLastSentPayloadPrefix")?.GetValue(stream)?.ToString() ?? "",
-                            configPayloadCompressed = streamType.GetProperty("ConfigPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-                            lastSentPayloadCompressed = streamType.GetProperty("LastSentPayloadCompressed")?.GetValue(stream)?.ToString() ?? "",
-
-                            // frame parity
-                            hasLastFrame = streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream) != null,
-                            lastFrameSize = ConvertToNullableInt(streamType.GetProperty("LastFrameSize")?.GetValue(stream)),
-                            lastFrameTime = (DateTime?)(streamType.GetProperty("LastFrameGeneratedTime")?.GetValue(stream)),
-                            lastFrameLayoutType = streamType.GetProperty("LastFrameLayoutType")?.GetValue(stream)?.ToString() ?? "",
-
-                            health = healthData
-                        });
-                    }
-                }
+                    allStreams.AddRange(virtualStreamManager.GetActiveStreams());
 
                 var streamData = new
                 {
@@ -804,7 +437,11 @@ namespace JunctionRelayServer.Services
 
             try
             {
-                var messageJson = JsonSerializer.Serialize(message);
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+                var messageJson = JsonSerializer.Serialize(message, jsonOptions);
                 var messageBytes = Encoding.UTF8.GetBytes(messageJson);
 
                 await connection.WebSocket.SendAsync(

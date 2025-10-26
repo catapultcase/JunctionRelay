@@ -86,6 +86,7 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
     const lastScrollTime = useRef<number>(Date.now());
     const lastSentTimeRef = useRef<string>('');
     const isPageVisible = useRef<boolean>(true);
+    const isInitialMount = useRef<boolean>(true);
 
     const lastActivityRef = useRef<number>(Date.now());
     const [shouldHide, setShouldHide] = useState(false);
@@ -300,7 +301,16 @@ const ECGStreamVisualizationHTTP: React.FC<ECGStreamVisualizationProps> = ({
     // Trigger pulse when actual data changes (lastSentTime)
     useEffect(() => {
         if (stream.lastSentTime !== lastSentTimeRef.current && stream.lastSentTime) {
+            const previousValue = lastSentTimeRef.current;
             lastSentTimeRef.current = stream.lastSentTime;
+
+            // Skip pulse on initial mount (when previous value was empty)
+            if (isInitialMount.current && previousValue === '') {
+                isInitialMount.current = false;
+                return;
+            }
+
+            isInitialMount.current = false;
             // Safe check for status
             if (stream.status?.toLowerCase() === 'active') {
                 triggerPulse();

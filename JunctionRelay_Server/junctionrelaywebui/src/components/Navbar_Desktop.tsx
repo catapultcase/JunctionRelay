@@ -234,6 +234,7 @@ const NavbarDesktop: React.FC<NavbarDesktopProps> = ({
                     onLinksMenuClose={onLinksMenuClose}
                     onLogout={onLogout}
                     onThemeChange={onThemeChange}
+                    isMobile={false}
                 />
             </Toolbar>
         </AppBar>

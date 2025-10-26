@@ -113,12 +113,12 @@ namespace JunctionRelayServer.Services.FactoryServices
         }
 
         // Get junction data formatted for Grafana consumption
-        public async Task<object> GetJunctionDataForGrafanaAsync<T>(List<T> junctions, Func<T, object> formatJunctionData)
+        public Task<object> GetJunctionDataForGrafanaAsync<T>(List<T> junctions, Func<T, object> formatJunctionData)
         {
             if (!IsGrafanaAccessEnabled())
             {
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Grafana access not enabled - returning empty data");
-                return new { data = new List<object>(), error = "Grafana service not active" };
+                return Task.FromResult<object>(new { data = new List<object>(), error = "Grafana service not active" });
             }
 
             try
@@ -127,28 +127,28 @@ namespace JunctionRelayServer.Services.FactoryServices
 
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Formatted {junctions.Count} junctions for Grafana");
 
-                return new
+                return Task.FromResult<object>(new
                 {
                     data = formattedData,
                     timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     source = "JunctionRelay",
                     serviceId = _service?.Id
-                };
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Error formatting junction data: {ex.Message}");
-                return new { data = new List<object>(), error = ex.Message };
+                return Task.FromResult<object>(new { data = new List<object>(), error = ex.Message });
             }
         }
 
         // Get sensor data formatted for Grafana time series
-        public async Task<object> GetSensorDataForGrafanaAsync<T>(List<T> sensors, Func<T, object> formatSensorData)
+        public Task<object> GetSensorDataForGrafanaAsync<T>(List<T> sensors, Func<T, object> formatSensorData)
         {
             if (!IsGrafanaAccessEnabled())
             {
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Grafana access not enabled - returning empty data");
-                return new { data = new List<object>(), error = "Grafana service not active" };
+                return Task.FromResult<object>(new { data = new List<object>(), error = "Grafana service not active" });
             }
 
             try
@@ -157,19 +157,19 @@ namespace JunctionRelayServer.Services.FactoryServices
 
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Formatted {sensors.Count} sensors for Grafana");
 
-                return new
+                return Task.FromResult<object>(new
                 {
                     data = formattedData,
                     timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     source = "JunctionRelay",
                     serviceId = _service?.Id,
                     type = "timeseries"
-                };
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[SERVICE_GRAFANA][{_service?.Id}] Error formatting sensor data: {ex.Message}");
-                return new { data = new List<object>(), error = ex.Message };
+                return Task.FromResult<object>(new { data = new List<object>(), error = ex.Message });
             }
         }
 

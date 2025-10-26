@@ -48,6 +48,7 @@ interface CanvasProps {
     onCanvasClick: () => void;
     onStartElementOperation?: (action: string) => void;
     onRiveDiscovery?: (machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => void;
+    onElementRiveDiscovery?: (elementId: string, machines: DiscoveredStateMachine[], bindings: DiscoveredDataBinding[]) => void;
     onCanvasSettingsChange?: (settings: {
         grid: { snapToGrid: boolean; showGrid: boolean; gridSize: number; gridColor: string; };
         elementPadding: number;
@@ -87,6 +88,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
     onCanvasClick,
     onStartElementOperation,
     onRiveDiscovery,
+    onElementRiveDiscovery,
     onCanvasSettingsChange,
 }) => {
     const theme = useTheme();
@@ -682,8 +684,9 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         switch (elementType) {
             case 'sensor':
                 return {
-                    sensorTag: 'New Sensor',
-                    placeholderSensorLabel: 'New Sensor Label',
+                    sensorTag: '',
+                    sensorName: 'New Sensor',
+                    placeholderSensorLabel: 'Sensor (element)',
                     placeholderValue: '',
                     placeholderUnit: '',
                     fontSize: 12,
@@ -719,6 +722,29 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                 return {
                     imageUrl: '',
                     alt: 'Image'
+                };
+            case 'gauge':
+                return {
+                    sensorTag: '',
+                    placeholderSensorLabel: 'Gauge (element)',
+                    gaugeType: 'semicircle',
+                    minValue: 0,
+                    maxValue: 100,
+                    valueLabel: '',
+                    showLabels: true,
+                    showTicks: true
+                };
+            case 'ecg':
+                return {
+                    sensorTag: '',
+                    placeholderSensorLabel: 'ECG (element)',
+                    showLabel: true
+                };
+            case 'oscilloscope':
+                return {
+                    sensorTag: '',
+                    placeholderSensorLabel: 'Oscilloscope (element)',
+                    showLabel: true
                 };
             default:
                 return {};
@@ -1046,6 +1072,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             onElementMouseDown={handleElementMouseDown}
                             onElementMouseEnter={handleElementMouseEnter}
                             onElementMouseLeave={handleElementMouseLeave}
+                            onElementRiveDiscovery={onElementRiveDiscovery}
                         >
                             {/* Resize handles as children */}
                             {renderResizeHandles()}

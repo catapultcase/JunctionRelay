@@ -220,6 +220,7 @@ SELECT last_insert_rowid();";
                     ScreenType = "virtual",
                     SupportsConfigPayloads = true,
                     SupportsSensorPayloads = true,
+                    SupportsStopPayloads = true,
                     UseKeepAlive = false
                 };
                 await CreateDeviceScreenAsync(virtualScreen);
@@ -236,6 +237,7 @@ SELECT last_insert_rowid();";
                     ScreenType = "virtual_device",
                     SupportsConfigPayloads = true,
                     SupportsSensorPayloads = true,
+                    SupportsStopPayloads = true,
                     UseKeepAlive = false
                 };
                 await CreateDeviceScreenAsync(virtualDeviceScreen);
@@ -249,10 +251,10 @@ SELECT last_insert_rowid();";
             const string sql = @"
         INSERT INTO DeviceScreens (
             DeviceId, ScreenKey, DisplayName, ScreenType, ScreenLayoutId,
-            SupportsConfigPayloads, SupportsSensorPayloads
+            SupportsConfigPayloads, SupportsSensorPayloads, SupportsStopPayloads
         ) VALUES (
             @DeviceId, @ScreenKey, @DisplayName, @ScreenType, @ScreenLayoutId,
-            @SupportsConfigPayloads, @SupportsSensorPayloads
+            @SupportsConfigPayloads, @SupportsSensorPayloads, @SupportsStopPayloads
         );";
 
             await _db.ExecuteAsync(sql, screen);
@@ -280,7 +282,8 @@ SELECT last_insert_rowid();";
                     ScreenLayoutId = @ScreenLayoutId,
                     FrameLayoutId = @FrameLayoutId,
                     SupportsConfigPayloads = @SupportsConfigPayloads,
-                    SupportsSensorPayloads = @SupportsSensorPayloads
+                    SupportsSensorPayloads = @SupportsSensorPayloads,
+                    SupportsStopPayloads = @SupportsStopPayloads
                 WHERE Id = @Id";
 
             var rows = await _db.ExecuteAsync(sql, new
@@ -288,9 +291,10 @@ SELECT last_insert_rowid();";
                 Id = screenId,
                 DisplayName = updated.DisplayName,
                 ScreenLayoutId = updated.ScreenLayoutId,
-                FrameLayoutId = updated.FrameLayoutId,  // <- ADD THIS LINE
+                FrameLayoutId = updated.FrameLayoutId,
                 SupportsConfigPayloads = updated.SupportsConfigPayloads,
-                SupportsSensorPayloads = updated.SupportsSensorPayloads
+                SupportsSensorPayloads = updated.SupportsSensorPayloads,
+                SupportsStopPayloads = updated.SupportsStopPayloads
             });
 
             return rows > 0;
@@ -573,7 +577,8 @@ WHERE DeviceId = @DeviceId AND Id = @Id;";
             ScreenType,
             ScreenLayoutId,
             SupportsConfigPayloads,
-            SupportsSensorPayloads
+            SupportsSensorPayloads,
+            SupportsStopPayloads
         ) VALUES (
             @DeviceId,
             @ScreenKey,
@@ -581,7 +586,8 @@ WHERE DeviceId = @DeviceId AND Id = @Id;";
             @ScreenType,
             @ScreenLayoutId,
             @SupportsConfigPayloads,
-            @SupportsSensorPayloads
+            @SupportsSensorPayloads,
+            @SupportsStopPayloads
         );
         SELECT last_insert_rowid();
     ";

@@ -20,7 +20,6 @@
 using Microsoft.AspNetCore.Mvc;
 using JunctionRelayServer.Services;
 using JunctionRelayServer.Services.BackgroundServices;
-using JunctionRelay_Server.Services;
 
 namespace JunctionRelayServer.Controllers
 {

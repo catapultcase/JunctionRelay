@@ -51,7 +51,6 @@ interface BackupSettings {
     lastBackup?: Date;
     includeKeys?: boolean;
     includeIdentity?: boolean;
-    includeFrameEngine?: boolean;
 }
 
 interface BackupUsage {
@@ -239,6 +238,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
             const cloudToken = localStorage.getItem('cloud_proxy_token');
             if (!cloudToken) return;
 
+            // Get status for this specific backend
             const response = await fetch('/api/cloud-backups/status', {
                 headers: {
                     'Authorization': `Bearer ${cloudToken}`,
@@ -248,14 +248,14 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
 
             if (response.ok) {
                 const data = await response.json();
-                // Parse the settings from the cloud response
+                // Local backend proxy returns settings as a single object (not array)
+                // because it includes backendId in the request automatically
                 setBackupSettings({
                     enabled: data.settings?.enabled ?? false,
                     frequency: data.settings?.frequency ?? 'daily',
                     retentionDays: data.settings?.retentionDays ?? 30,
                     includeKeys: data.settings?.includeKeys ?? true,
                     includeIdentity: data.settings?.includeIdentity ?? true,
-                    includeFrameEngine: data.settings?.includeFrameEngine ?? false,
                     lastBackup: data.settings?.lastBackup ? new Date(data.settings.lastBackup) : undefined
                 });
                 setBackupUsage(data.usage);
@@ -315,7 +315,6 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     retentionDays: newSettings.retentionDays ?? backupSettings?.retentionDays ?? 30,
                     includeKeys: newSettings.includeKeys ?? backupSettings?.includeKeys ?? true,
                     includeIdentity: newSettings.includeIdentity ?? backupSettings?.includeIdentity ?? true,
-                    includeFrameEngine: newSettings.includeFrameEngine ?? backupSettings?.includeFrameEngine ?? false
                 })
             });
 
@@ -351,7 +350,6 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                 body: JSON.stringify({
                     includeKeys: backupSettings?.includeKeys ?? true,
                     includeIdentity: backupSettings?.includeIdentity ?? true,
-                    includeFrameEngine: backupSettings?.includeFrameEngine ?? false
                 })
             });
 
@@ -556,7 +554,6 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                     const components = [];
                                     if (backupSettings?.includeKeys !== false) components.push('Keys');
                                     if (backupSettings?.includeIdentity !== false) components.push('Identity');
-                                    if (backupSettings?.includeFrameEngine) components.push('Frame Engine');
                                     return components.length > 0 ? components.join(', ') : 'Database only';
                                 })()}
                             </Typography>
@@ -730,17 +727,6 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                         sx={{ display: 'block', mb: 0.5 }}
                                     />
 
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={backupSettings?.includeFrameEngine ?? false}
-                                                onChange={(e) => updateBackupSettings({ includeFrameEngine: e.target.checked })}
-                                                disabled={savingSettings}
-                                            />
-                                        }
-                                        label="Include FrameEngine files"
-                                        sx={{ display: 'block', mb: 0.5 }}
-                                    />
                                 </Box>
 
                                 <Box sx={{ mt: 2 }}>
@@ -983,7 +969,6 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                     • Backups include your complete database, encryption keys, and backend identity<br />
-                    • Optionally include Frame Engine configuration and data files<br />
                     • All data is encrypted in transit and at rest using industry-standard encryption<br />
                     • Automatic backups run according to your selected schedule<br />
                     • Storage usage and limits are shared across all your backends<br />

@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>a19cb7a2-588a-4eda-9675-028393e94ec7</UserSecretsId>
-    <Version>0.8.6.9</Version>
+    <Version>0.8.7.0</Version>
     <!-- Hide console window in Release builds -->
     <OutputType Condition="'$(Configuration)' == 'Debug'">Exe</OutputType>
     <OutputType Condition="'$(Configuration)' == 'Release'">WinExe</OutputType>
@@ -56,6 +56,17 @@
   <ItemGroup>
     <None Include="junctionrelaywebui\**\*" Exclude="junctionrelaywebui\node_modules\**" />
   </ItemGroup>
+
+  <!-- Exclude junctionrelaywebui folder from publish output -->
+  <ItemGroup>
+    <Content Remove="junctionrelaywebui\**" />
+    <None Remove="junctionrelaywebui\**" />
+  </ItemGroup>
+  <Target Name="ExcludeFrontendFromPublish" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Identity)').StartsWith('junctionrelaywebui'))" />
+    </ItemGroup>
+  </Target>
 
 <ItemGroup>
   <!-- FrameEngine template-packages directory (ZIP files only) -->

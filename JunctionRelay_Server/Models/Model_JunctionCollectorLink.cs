@@ -42,6 +42,8 @@ namespace JunctionRelayServer.Models
         public string? CollectorName { get; set; }
         public string? CollectorDescription { get; set; }
         public string? CollectorStatus { get; set; }
+        public int? CollectorPollRate { get; set; }
+        public int? CollectorSendRate { get; set; }
 
     }
 

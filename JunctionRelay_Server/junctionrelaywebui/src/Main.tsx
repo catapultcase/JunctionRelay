@@ -21,23 +21,12 @@ import { CssBaseline, GlobalStyles } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { ThemeContextProvider } from "context/ThemeContext";
 import { NotificationProvider } from "context/NotificationContext";
-import { useNotificationPolling } from "hooks/useNotificationPolling";
 import App from "./App";
-
-// Component to initialize notification polling
-const NotificationPollingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // Initialize the notification polling (automatically controlled by feature flags)
-    useNotificationPolling();
-
-    return <>{children}</>;
-};
 
 const Main = () => {
     return (
         <ThemeContextProvider>
-            <NotificationPollingProvider>
-                <InnerApp />
-            </NotificationPollingProvider>
+            <InnerApp />
         </ThemeContextProvider>
     );
 };

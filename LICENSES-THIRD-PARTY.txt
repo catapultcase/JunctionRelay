@@ -1,0 +1,143 @@
+================================================================================
+JunctionRelay - Third-Party Software Licenses
+================================================================================
+
+This file contains the licenses for third-party software used in JunctionRelay,
+specifically for components used in the Frame Engine visual effects system.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. @rive-app/react-canvas (MIT License)
+2. react-gauge-component (MIT License)
+3. three.js (MIT License)
+
+================================================================================
+
+
+================================================================================
+1. @rive-app/react-canvas
+================================================================================
+
+MIT License
+
+Copyright (c) 2021 Rive
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/rive-app/rive-react
+Used in: FrameEngine_Asset_Rive.tsx (Rive Animation Element)
+
+
+================================================================================
+2. react-gauge-component
+================================================================================
+
+MIT License
+
+Copyright (c) 2023 antoniolago
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/antoniolago/react-gauge-component
+Used in: FrameEngine_GaugeElement.tsx (Gauge Element)
+
+
+================================================================================
+3. three.js
+================================================================================
+
+The MIT License
+
+Copyright © 2010-2025 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/mrdoob/three.js
+Used in: FrameEngine_TunnelElementWebGL.tsx (3D Tunnel Effects)
+
+
+================================================================================
+ADDITIONAL DEPENDENCIES
+================================================================================
+
+JunctionRelay also uses the following libraries throughout the application
+(not limited to Frame Engine):
+
+- React (MIT License) - https://github.com/facebook/react
+- Material-UI Core (MIT License) - https://github.com/mui/material-ui
+- Recharts (MIT License) - https://github.com/recharts/recharts
+- html2canvas (MIT License) - https://github.com/niklasvh/html2canvas
+- qrcode (MIT License) - https://github.com/soldair/node-qrcode
+- Axios (MIT License) - https://github.com/axios/axios
+- React Router (MIT License) - https://github.com/remix-run/react-router
+
+For a complete list of dependencies and their licenses, please refer to the
+package.json file and run `npm list` or `yarn list`.
+
+================================================================================
+NOTES
+================================================================================
+
+All third-party software used in JunctionRelay is licensed under permissive
+open-source licenses (primarily MIT) that allow for commercial use,
+modification, and distribution, provided that the original copyright notices
+and license terms are retained.
+
+This notice serves to fulfill the attribution requirements of these licenses.
+
+For questions or concerns about licensing, please contact:
+Jonathan Mills - CatapultCase
+https://github.com/CatapultCase/JunctionRelay
+
+Last Updated: January 2025
+================================================================================

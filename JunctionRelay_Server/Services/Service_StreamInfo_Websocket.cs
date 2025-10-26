@@ -146,6 +146,7 @@ namespace JunctionRelayServer.Services
                 LastSentFrameBytes = frameBytes;
                 LastFrameGeneratedTime = DateTime.UtcNow;
                 LastFrameLayoutType = layoutType;
+                // Console.WriteLine($"[StreamInfo WS] Set LastFrameGeneratedTime={LastFrameGeneratedTime} for {DeviceName} - {ScreenName}");
             }
         }
 

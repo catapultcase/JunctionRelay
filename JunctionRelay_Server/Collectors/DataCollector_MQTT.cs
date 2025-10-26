@@ -33,32 +33,7 @@ namespace JunctionRelayServer.Collectors
         private string _deviceName = "MQTT";
 
         public string CollectorName => "MQTT";
-        public int CollectorId => _collectorId;
-
-        // Helper method to detect decimal places in a value
-        private int GetDecimalPlaces(string value)
-        {
-            // Handle null or empty values
-            if (string.IsNullOrEmpty(value))
-                return 0;
-
-            // Try to parse as decimal to validate it's a numeric value
-            if (!decimal.TryParse(value, out decimal numericValue))
-                return 0; // Non-numeric values (including "N/A") have 0 decimal places
-
-            // Convert to string to analyze decimal places
-            string valueStr = numericValue.ToString();
-
-            // Find the decimal point
-            int decimalIndex = valueStr.IndexOf('.');
-            if (decimalIndex == -1)
-                return 0; // No decimal point found
-
-            // Count digits after decimal point
-            return valueStr.Length - decimalIndex - 1;
-        }
-
-        public DataCollector_MQTT(IServiceScopeFactory scopeFactory, Service_Stream_Manager_MQTT streamManager)
+        public int CollectorId => _collectorId;public DataCollector_MQTT(IServiceScopeFactory scopeFactory, Service_Stream_Manager_MQTT streamManager)
         {
             _scopeFactory = scopeFactory;
             _streamManager = streamManager;
@@ -109,7 +84,7 @@ namespace JunctionRelayServer.Collectors
                     SensorType = "MQTT",
                     Unit = string.Empty,
                     Value = valueAsString,
-                    DecimalPlaces = GetDecimalPlaces(valueAsString),
+                    DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(valueAsString),
                     SensorTag = kvp.Key,
                     LastUpdated = DateTime.UtcNow,
                     MQTTTopic = kvp.Key,
@@ -151,7 +126,7 @@ namespace JunctionRelayServer.Collectors
                         SensorType = "MQTT",
                         Unit = string.Empty,
                         Value = valueAsString,
-                        DecimalPlaces = GetDecimalPlaces(valueAsString),
+                        DecimalPlaces = Helper_DataCollector.GetDecimalPlaces(valueAsString),
                         SensorTag = topic,
                         LastUpdated = DateTime.UtcNow,
                         MQTTTopic = topic,

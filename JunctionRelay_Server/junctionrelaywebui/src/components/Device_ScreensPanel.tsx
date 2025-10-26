@@ -30,6 +30,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SubscriptionsIcon from '@mui/icons-material/Subscriptions';
 import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 interface I2CEndpoint {
     id: number;
@@ -107,6 +108,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
     const [newScreenFrameLayoutId, setNewScreenFrameLayoutId] = useState<number | "">("");
     const [newScreenSupportsConfigPayloads, setNewScreenSupportsConfigPayloads] = useState(true);
     const [newScreenSupportsSensorPayloads, setNewScreenSupportsSensorPayloads] = useState(true);
+    const [newScreenSupportsStopPayloads, setNewScreenSupportsStopPayloads] = useState(true);
 
     // Modal state for I2C bus
     const [openBusModal, setOpenBusModal] = useState(false);
@@ -154,7 +156,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         screenLayoutId: screen.screenLayoutId,
                         frameLayoutId: screen.frameLayoutId,
                         supportsConfigPayloads: screen.supportsConfigPayloads,
-                        supportsSensorPayloads: screen.supportsSensorPayloads
+                        supportsSensorPayloads: screen.supportsSensorPayloads,
+                        supportsStopPayloads: screen.supportsStopPayloads
                     })
                 });
                 if (!res.ok) throw new Error("Failed to update screen.");
@@ -240,6 +243,29 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             }
         }, [deviceScreens, setDeviceScreens, onScreenChange, autoSaveScreen]);
 
+    // Delete screen
+    const handleDeleteScreen = useCallback(async (screenId: number) => {
+        try {
+            const screen = deviceScreens.find(s => s.id === screenId);
+            if (!screen) return;
+
+            const res = await fetch(`/api/devices/${screen.deviceId}/screens/${screenId}`, {
+                method: "DELETE"
+            });
+            if (!res.ok) throw new Error("Failed to delete screen.");
+
+            const updatedScreens = deviceScreens.filter(s => s.id !== screenId);
+            setDeviceScreens(updatedScreens);
+            if (onScreenChange) {
+                onScreenChange(updatedScreens);
+            }
+            showSnackbar("Screen deleted successfully", "success");
+        } catch (err: any) {
+            console.error(err);
+            showSnackbar("Failed to delete screen", "error");
+        }
+    }, [deviceScreens, setDeviceScreens, onScreenChange, showSnackbar]);
+
     // Cleanup timers on unmount
     useEffect(() => {
         return () => {
@@ -259,7 +285,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                 screenLayoutId: newScreenScreenLayoutId || null,
                 frameLayoutId: newScreenFrameLayoutId || null,
                 supportsConfigPayloads: newScreenSupportsConfigPayloads,
-                supportsSensorPayloads: newScreenSupportsSensorPayloads
+                supportsSensorPayloads: newScreenSupportsSensorPayloads,
+                supportsStopPayloads: newScreenSupportsStopPayloads
             };
             const res = await fetch(`/api/devices/${deviceId}/screens`, {
                 method: "POST",
@@ -280,6 +307,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
             setNewScreenFrameLayoutId("");
             setNewScreenSupportsConfigPayloads(true);
             setNewScreenSupportsSensorPayloads(true);
+            setNewScreenSupportsStopPayloads(true);
             showSnackbar("Screen added successfully", "success");
         } catch (err: any) {
             console.error(err);
@@ -444,8 +472,13 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                         Screen Key
                                     </Typography>
                                 </Box>
-                                <IconButton size="small" color="primary">
-                                    <EditIcon fontSize="small" />
+                                <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleDeleteScreen(screen.id)}
+                                    title="Delete Screen"
+                                >
+                                    <DeleteIcon fontSize="small" />
                                 </IconButton>
                             </Box>
 
@@ -537,6 +570,20 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                     label={
                                         <Typography sx={{ fontSize: '0.8rem' }}>
                                             Sensor Payloads
+                                        </Typography>
+                                    }
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={screen.supportsStopPayloads !== false}
+                                            onChange={handleScreenBooleanChange(screen.id, 'supportsStopPayloads')}
+                                            size="small"
+                                        />
+                                    }
+                                    label={
+                                        <Typography sx={{ fontSize: '0.8rem' }}>
+                                            Stop Payloads
                                         </Typography>
                                     }
                                 />
@@ -667,6 +714,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Default FrameEngine Layout</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Config Payloads</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Sensor Payloads</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Supports Stop Payloads</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Actions</TableCell>
                     </TableRow>
                 </TableHead>
                 <TableBody>
@@ -719,11 +768,28 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                         size="small"
                                     />
                                 </TableCell>
+                                <TableCell>
+                                    <Switch
+                                        checked={screen.supportsStopPayloads !== false}
+                                        onChange={handleScreenBooleanChange(screen.id, 'supportsStopPayloads')}
+                                        size="small"
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() => handleDeleteScreen(screen.id)}
+                                        title="Delete Screen"
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </TableCell>
                             </TableRow>
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={5} align="center">
+                            <TableCell colSpan={8} align="center">
                                 <Typography variant="body2" color="text.secondary">
                                     No device screens configured
                                 </Typography>
@@ -989,6 +1055,20 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                         label={
                             <Typography sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
                                 Supports Sensor Payloads
+                            </Typography>
+                        }
+                    />
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={newScreenSupportsStopPayloads}
+                                onChange={() => setNewScreenSupportsStopPayloads(!newScreenSupportsStopPayloads)}
+                                size="small"
+                            />
+                        }
+                        label={
+                            <Typography sx={{ fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
+                                Supports Stop Payloads
                             </Typography>
                         }
                     />

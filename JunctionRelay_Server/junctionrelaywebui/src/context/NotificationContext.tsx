@@ -27,10 +27,14 @@ import {
     Box,
     IconButton,
     Typography,
-    Chip
+    Chip,
+    LinearProgress
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
 import { useFeatureFlags } from '../hooks/useFeatureFlags';
+import { JunctionProgress, JunctionStartStage, getStageDisplayName, TemplateVersionProgress, TemplateVersionUploadStage } from '../types/notifications';
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
 export type NotificationCategory = 'api' | 'auth' | 'cloud' | 'system';
@@ -48,6 +52,33 @@ export interface StructuredContent {
     additionalInfo?: string;
 }
 
+export interface JunctionProgressData {
+    junctionId: number;
+    junctionName: string;
+    operationId: string;
+    currentStage: JunctionStartStage;
+    detailMessage: string;
+    isGatewayJunction?: boolean;
+}
+
+export interface CollectorTestProgressData {
+    collectorId: number;
+    collectorName: string;
+    stage: 'testing' | 'complete';
+    success?: boolean;
+    sensorCount?: number;
+    errorMessage?: string;
+}
+
+export interface TemplateVersionProgressData {
+    templateId: number;
+    templateName: string;
+    operationId: string;
+    currentStage: TemplateVersionUploadStage;
+    detailMessage: string;
+    progressPercentage: number;
+}
+
 export interface Notification {
     id: string;
     type: NotificationType;
@@ -59,6 +90,9 @@ export interface Notification {
     timestamp: number;
     isExiting?: boolean;
     structuredContent?: StructuredContent;
+    junctionProgress?: JunctionProgressData;
+    collectorTestProgress?: CollectorTestProgressData;
+    templateVersionProgress?: TemplateVersionProgressData;
 }
 
 interface NotificationContextType {
@@ -68,6 +102,10 @@ interface NotificationContextType {
     showWarning: (message: string, title?: string, category?: NotificationCategory, duration?: number) => void;
     showInfo: (message: string, title?: string, category?: NotificationCategory, duration?: number) => void;
     showStructuredNotification: (type: NotificationType, title: string, structuredContent: StructuredContent, category?: NotificationCategory, duration?: number) => void;
+    showJunctionProgress: (junctionId: number, junctionName: string, operationId: string) => void;
+    updateJunctionProgress: (progress: JunctionProgress) => void;
+    showTemplateVersionProgress: (templateId: number, templateName: string, operationId: string) => void;
+    updateTemplateVersionProgress: (progress: TemplateVersionProgress) => void;
     dismissNotification: (id: string) => void;
     clearAllNotifications: () => void;
     isEnabled: (category?: NotificationCategory) => boolean;
@@ -101,7 +139,7 @@ function SlideTransition(props: any) {
 }
 
 // Component to render structured notification content
-const StructuredNotificationContent: React.FC<{ content: StructuredContent }> = ({ content }) => {
+const StructuredNotificationContent: React.FC<{ content: StructuredContent | any }> = ({ content }) => {
     const getChipColor = (color?: string) => {
         switch (color) {
             case 'success': return '#2e7d32';
@@ -120,6 +158,7 @@ const StructuredNotificationContent: React.FC<{ content: StructuredContent }> = 
         }
     };
 
+    // Regular structured content
     return (
         <Box>
             <Typography
@@ -135,7 +174,7 @@ const StructuredNotificationContent: React.FC<{ content: StructuredContent }> = 
 
             {content.details && content.details.length > 0 && (
                 <Box sx={{ marginLeft: 1 }}>
-                    {content.details.map((detail, index) => (
+                    {content.details.map((detail: NotificationDetail, index: number) => (
                         <Box
                             key={index}
                             sx={{
@@ -196,6 +235,219 @@ const StructuredNotificationContent: React.FC<{ content: StructuredContent }> = 
     );
 };
 
+// Component to render template version progress with linear progress bar
+const TemplateVersionProgressContent: React.FC<{ progressData: TemplateVersionProgressData; hasError?: boolean; isComplete?: boolean }> = ({ progressData, hasError, isComplete }) => {
+    const getStageDisplayName = (stage: TemplateVersionUploadStage): string => {
+        switch (stage) {
+            case TemplateVersionUploadStage.Preparing: return 'Preparing';
+            case TemplateVersionUploadStage.HashingAssets: return 'Hashing Assets';
+            case TemplateVersionUploadStage.CheckingCloud: return 'Checking Cloud';
+            case TemplateVersionUploadStage.UploadingAssets: return 'Uploading Assets';
+            case TemplateVersionUploadStage.SavingMetadata: return 'Saving Metadata';
+            case TemplateVersionUploadStage.Complete: return 'Complete';
+            default: return 'Processing';
+        }
+    };
+
+    const getBarColor = () => {
+        if (hasError) return '#d32f2f'; // Red
+        if (isComplete) return '#2e7d32'; // Green
+        return (theme: any) => theme.palette.text.secondary; // Gray
+    };
+
+    return (
+        <Box sx={{ width: '100%' }}>
+            <Box sx={{ position: 'relative', marginBottom: 2 }}>
+                <LinearProgress
+                    variant="determinate"
+                    value={progressData.progressPercentage}
+                    sx={{
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: (theme) => theme.palette.action.hover,
+                        '& .MuiLinearProgress-bar': {
+                            borderRadius: 3,
+                            backgroundColor: getBarColor(),
+                        }
+                    }}
+                />
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                {isComplete && !hasError && (
+                    <CheckCircleIcon sx={{ fontSize: 18, color: '#2e7d32' }} />
+                )}
+                {hasError && (
+                    <ErrorIcon sx={{ fontSize: 18, color: '#d32f2f' }} />
+                )}
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {getStageDisplayName(progressData.currentStage)}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', marginLeft: 'auto' }}>
+                    {progressData.progressPercentage}%
+                </Typography>
+            </Box>
+
+            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontStyle: 'italic' }}>
+                {progressData.detailMessage}
+            </Typography>
+        </Box>
+    );
+};
+
+// Component to render junction progress with linear progress bar
+const JunctionProgressContent: React.FC<{ progressData: JunctionProgressData; hasError?: boolean; isComplete?: boolean }> = ({ progressData, hasError, isComplete }) => {
+    const steps = [
+        'Validating',
+        'Loading Configuration',
+        'Registering Sources',
+        ...(progressData.isGatewayJunction ? ['Configuring Gateway'] : []),
+        'Starting Streams',
+        'Complete'
+    ];
+
+    const getProgressPercentage = (stage: JunctionStartStage, isGateway: boolean): number => {
+        const totalSteps = isGateway ? 6 : 5;
+        let currentStep = stage;
+
+        // Adjust for non-gateway junctions (skip ConfiguringGateway)
+        if (!isGateway && stage >= JunctionStartStage.ConfiguringGateway) {
+            currentStep = stage - 1;
+        }
+
+        return (currentStep / totalSteps) * 100;
+    };
+
+    const progress = getProgressPercentage(progressData.currentStage, !!progressData.isGatewayJunction);
+
+    return (
+        <Box sx={{ width: '100%' }}>
+            {/* Progress bar */}
+            <Box sx={{ position: 'relative', marginBottom: 2 }}>
+                <LinearProgress
+                    variant="determinate"
+                    value={progress}
+                    sx={{
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: (theme) => theme.palette.action.hover,
+                        '& .MuiLinearProgress-bar': {
+                            borderRadius: 3,
+                            backgroundColor: (theme) => {
+                                if (hasError) return theme.palette.error.main;
+                                if (isComplete) return theme.palette.success.main;
+                                return theme.palette.text.secondary; // Neutral gray for in-progress
+                            }
+                        }
+                    }}
+                />
+            </Box>
+
+            {/* Current stage and detail message */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                {isComplete && !hasError && (
+                    <CheckCircleIcon sx={{ color: 'success.main', fontSize: '1.2rem' }} />
+                )}
+                {hasError && (
+                    <ErrorIcon sx={{ color: 'error.main', fontSize: '1.2rem' }} />
+                )}
+                <Typography
+                    variant="body2"
+                    sx={{
+                        fontWeight: 600,
+                        color: (theme) => {
+                            if (hasError) return theme.palette.error.main;
+                            if (isComplete) return theme.palette.success.main;
+                            return theme.palette.text.primary;
+                        }
+                    }}
+                >
+                    {getStageDisplayName(progressData.currentStage)}
+                </Typography>
+            </Box>
+
+            {/* Detail message */}
+            <Typography
+                variant="caption"
+                sx={{
+                    display: 'block',
+                    color: 'text.secondary',
+                    fontStyle: 'italic'
+                }}
+            >
+                {progressData.detailMessage}
+            </Typography>
+        </Box>
+    );
+};
+
+// Collector Test Progress Content (similar to Junction Progress)
+const CollectorTestProgressContent: React.FC<{ progressData: CollectorTestProgressData; hasError?: boolean; isComplete?: boolean }> = ({ progressData, hasError, isComplete }) => {
+    const progress = progressData.stage === 'testing' ? 50 : 100;
+
+    return (
+        <Box sx={{ width: '100%' }}>
+            {/* Progress bar */}
+            <Box sx={{ position: 'relative', marginBottom: 2 }}>
+                <LinearProgress
+                    variant="determinate"
+                    value={progress}
+                    sx={{
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: (theme) => theme.palette.action.hover,
+                        '& .MuiLinearProgress-bar': {
+                            borderRadius: 3,
+                            backgroundColor: (theme) => {
+                                if (hasError) return theme.palette.error.main;
+                                if (isComplete) return theme.palette.success.main;
+                                return theme.palette.text.secondary; // Neutral gray for in-progress
+                            }
+                        }
+                    }}
+                />
+            </Box>
+
+            {/* Current stage and detail message */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                {isComplete && !hasError && (
+                    <CheckCircleIcon sx={{ color: 'success.main', fontSize: '1.2rem' }} />
+                )}
+                {hasError && (
+                    <ErrorIcon sx={{ color: 'error.main', fontSize: '1.2rem' }} />
+                )}
+                <Typography
+                    variant="body2"
+                    sx={{
+                        fontWeight: 600,
+                        color: (theme) => {
+                            if (hasError) return theme.palette.error.main;
+                            if (isComplete) return theme.palette.success.main;
+                            return theme.palette.text.primary;
+                        }
+                    }}
+                >
+                    {progressData.stage === 'testing' ? 'Fetching sensors...' : (progressData.success ? 'Test passed' : 'Test failed')}
+                </Typography>
+            </Box>
+
+            {/* Detail message */}
+            <Typography
+                variant="caption"
+                sx={{
+                    display: 'block',
+                    color: 'text.secondary',
+                    fontStyle: 'italic'
+                }}
+            >
+                {progressData.stage === 'complete' && progressData.success
+                    ? `Found ${progressData.sensorCount} sensor${progressData.sensorCount !== 1 ? 's' : ''}`
+                    : progressData.errorMessage || 'Testing connection...'}
+            </Typography>
+        </Box>
+    );
+};
+
 interface NotificationProviderProps {
     children: React.ReactNode;
 }
@@ -204,6 +456,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const location = useLocation();
     const flags = useFeatureFlags();
+
+    // WebSocket connection is now handled by UnifiedNotificationProvider
 
     const generateId = () => `notification_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -229,12 +483,11 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     const isEnabled = useCallback((category?: NotificationCategory) => {
         // First check if we're on an allowed page
         if (!isPageAllowed()) {
-            console.log(`[Notification] Blocked on page: ${location.pathname} (not in whitelist)`);
             return false;
         }
 
         // Master toggle
-        if (flags?.notifications_enabled !== 'true') {
+        if (!flags?.notifications_enabled) {
             return false;
         }
 
@@ -242,13 +495,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         if (category) {
             switch (category) {
                 case 'api':
-                    return flags?.notifications_api_calls === 'true';
+                    return !!flags?.notifications_api_calls;
                 case 'auth':
-                    return flags?.notifications_auth_events === 'true';
+                    return !!flags?.notifications_auth_events;
                 case 'cloud':
-                    return flags?.notifications_cloud_sync === 'true';
+                    return !!flags?.notifications_cloud_sync;
                 case 'system':
-                    return flags?.notifications_system === 'true';
+                    return !!flags?.notifications_system;
                 default:
                     return true;
             }
@@ -303,27 +556,18 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
             }
         }
 
-        // Extend duration for structured notifications
-        if (notification.structuredContent && duration && duration > 0) {
-            duration = Math.max(duration, 8000); // Minimum 8 seconds for structured content
-        }
+        // Note: Duration is now controlled by backend - no minimum extension applied
+
+        // Extract id from notification to avoid overwriting our generated ID
+        const { id: _ignoredBackendId, ...notificationWithoutId } = notification as any;
 
         const newNotification: Notification = {
             id,
             timestamp,
             duration,
-            ...notification,
+            ...notificationWithoutId,
         };
 
-        console.log(`[Notification] Creating notification on allowed page:`, {
-            id,
-            page: location.pathname,
-            type: newNotification.type,
-            duration: newNotification.duration,
-            persistent: newNotification.persistent,
-            category: newNotification.category,
-            hasStructuredContent: !!newNotification.structuredContent
-        });
 
         setNotifications(prev => {
             const updated = [newNotification, ...prev];
@@ -380,15 +624,222 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         });
     }, [showNotification]);
 
+    // New method for junction progress notifications
+    const showJunctionProgress = useCallback((
+        junctionId: number,
+        junctionName: string,
+        operationId: string
+    ) => {
+        const notificationId = `junction_progress_${operationId}`;
+
+        const progressData: JunctionProgressData = {
+            junctionId,
+            junctionName,
+            operationId,
+            currentStage: JunctionStartStage.Validating,
+            detailMessage: 'Starting junction...',
+            isGatewayJunction: false
+        };
+
+        const newNotification: Notification = {
+            id: notificationId,
+            type: 'info',
+            category: 'system',
+            title: `Starting: ${junctionName}`,
+            message: 'Junction startup in progress...',
+            timestamp: Date.now(),
+            persistent: true, // Don't auto-dismiss during progress
+            junctionProgress: progressData
+        };
+
+        setNotifications(prev => {
+            // Remove any existing progress notification for this operation
+            const filtered = prev.filter(n => n.id !== notificationId);
+            return [newNotification, ...filtered].slice(0, getMaxConcurrent());
+        });
+    }, [getMaxConcurrent]);
+
+    // Update junction progress
+    const updateJunctionProgress = useCallback((progress: JunctionProgress) => {
+        const notificationId = `junction_progress_${progress.operationId}`;
+
+        setNotifications(prev => {
+            const existing = prev.find(n => n.id === notificationId);
+            if (!existing) {
+                return prev;
+            }
+
+            // Determine if this is a gateway junction based on the detail message or stage
+            const isGatewayJunction = progress.detailMessage.toLowerCase().includes('gateway') ||
+                                     progress.stage === JunctionStartStage.ConfiguringGateway;
+
+            const updatedProgress: JunctionProgressData = {
+                junctionId: progress.junctionId,
+                junctionName: progress.junctionName,
+                operationId: progress.operationId,
+                currentStage: progress.stage,
+                detailMessage: progress.detailMessage,
+                isGatewayJunction: existing.junctionProgress?.isGatewayJunction || isGatewayJunction
+            };
+
+            let updatedNotification: Notification;
+
+            if (progress.isComplete) {
+                if (progress.hasError) {
+                    // Turn red on error, auto-dismiss after 5 seconds
+                    updatedNotification = {
+                        ...existing,
+                        type: 'error',
+                        title: `Failed: ${progress.junctionName}`,
+                        message: progress.errorMessage || 'Junction failed to start',
+                        junctionProgress: updatedProgress,
+                        persistent: false,
+                        duration: 5000
+                    };
+
+                    // Auto-dismiss after 5 seconds
+                    setTimeout(() => {
+                        dismissNotification(notificationId);
+                    }, 5000);
+                } else {
+                    // Success! Auto-dismiss after 3 seconds
+                    updatedNotification = {
+                        ...existing,
+                        type: 'success',
+                        title: `Started: ${progress.junctionName}`,
+                        message: 'Junction started successfully',
+                        junctionProgress: updatedProgress,
+                        persistent: false,
+                        duration: 3000
+                    };
+
+                    // Auto-dismiss after 3 seconds
+                    setTimeout(() => {
+                        dismissNotification(notificationId);
+                    }, 3000);
+                }
+            } else {
+                // Still in progress
+                updatedNotification = {
+                    ...existing,
+                    junctionProgress: updatedProgress
+                };
+            }
+
+            return prev.map(n => n.id === notificationId ? updatedNotification : n);
+        });
+    }, []);
+
+    // Template version progress methods
+    const showTemplateVersionProgress = useCallback((
+        templateId: number,
+        templateName: string,
+        operationId: string
+    ) => {
+        const notificationId = `template_version_progress_${operationId}`;
+
+        const progressData: TemplateVersionProgressData = {
+            templateId,
+            templateName,
+            operationId,
+            currentStage: TemplateVersionUploadStage.Preparing,
+            detailMessage: 'Preparing template for upload...',
+            progressPercentage: 0
+        };
+
+        const newNotification: Notification = {
+            id: notificationId,
+            type: 'info',
+            category: 'cloud',
+            title: `Saving: ${templateName}`,
+            message: 'Uploading template version...',
+            timestamp: Date.now(),
+            persistent: true,
+            templateVersionProgress: progressData
+        };
+
+        setNotifications(prev => {
+            const filtered = prev.filter(n => n.id !== notificationId);
+            return [newNotification, ...filtered].slice(0, getMaxConcurrent());
+        });
+    }, [getMaxConcurrent]);
+
+    const updateTemplateVersionProgress = useCallback((progress: TemplateVersionProgress) => {
+        const notificationId = `template_version_progress_${progress.operationId}`;
+
+        setNotifications(prev => {
+            const existing = prev.find(n => n.id === notificationId);
+            if (!existing) {
+                return prev;
+            }
+
+            const updatedProgress: TemplateVersionProgressData = {
+                templateId: progress.templateId,
+                templateName: progress.templateName,
+                operationId: progress.operationId,
+                currentStage: progress.stage,
+                detailMessage: progress.detailMessage,
+                progressPercentage: progress.progressPercentage
+            };
+
+            let updatedNotification: Notification;
+
+            if (progress.isComplete) {
+                if (progress.hasError) {
+                    updatedNotification = {
+                        ...existing,
+                        type: 'error',
+                        title: `Failed: ${progress.templateName}`,
+                        message: progress.errorMessage || 'Template version upload failed',
+                        templateVersionProgress: updatedProgress,
+                        persistent: false,
+                        duration: 5000
+                    };
+
+                    setTimeout(() => {
+                        dismissNotification(notificationId);
+                    }, 5000);
+                } else {
+                    updatedNotification = {
+                        ...existing,
+                        type: 'success',
+                        title: `Saved: ${progress.templateName}`,
+                        message: progress.detailMessage,
+                        templateVersionProgress: updatedProgress,
+                        persistent: false,
+                        duration: 3000
+                    };
+
+                    setTimeout(() => {
+                        dismissNotification(notificationId);
+                    }, 3000);
+                }
+            } else {
+                updatedNotification = {
+                    ...existing,
+                    templateVersionProgress: updatedProgress
+                };
+            }
+
+            return prev.map(n => n.id === notificationId ? updatedNotification : n);
+        });
+    }, []);
+
     const dismissNotification = useCallback((id: string) => {
         // Start fade-out animation
-        setNotifications(prev => prev.map(n =>
-            n.id === id ? { ...n, isExiting: true } : n
-        ));
+        setNotifications(prev => {
+            const updated = prev.map(n =>
+                n.id === id ? { ...n, isExiting: true } : n
+            );
+            return updated;
+        });
 
         // Remove after animation completes
         setTimeout(() => {
-            setNotifications(prev => prev.filter(n => n.id !== id));
+            setNotifications(prev => {
+                const filtered = prev.filter(n => n.id !== id);
+                return filtered;
+            });
         }, 300); // Match the animation duration
     }, []);
 
@@ -399,7 +850,6 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     // Clear notifications when navigating to a blocked page
     useEffect(() => {
         if (!isPageAllowed()) {
-            console.log(`[Notification] Clearing all notifications - navigated to blocked page: ${location.pathname}`);
             clearAllNotifications();
         }
     }, [location.pathname, isPageAllowed, clearAllNotifications]);
@@ -408,7 +858,6 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     useEffect(() => {
         const handleNotificationEvent = (event: CustomEvent) => {
             const { type, message, title, category, duration, persistent, structuredContent } = event.detail;
-            console.log('[Notification] Received event with data:', event.detail);
 
             const notificationData: any = {
                 type: type || 'info',
@@ -426,7 +875,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                         : structuredContent;
                     notificationData.structuredContent = parsedContent;
                 } catch (error) {
-                    console.warn('[Notification] Failed to parse structured content:', error);
+                    // Silently ignore parse errors
                 }
             }
 
@@ -445,6 +894,114 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         };
     }, [showNotification]);
 
+    // WebSocket event listener for real-time notifications
+    useEffect(() => {
+        const handleNotificationReceived = (event: CustomEvent) => {
+            const notification = event.detail;
+
+            // Parse structured content first to check if this is a collector test
+            let parsedContent: any = null;
+            if (notification.structuredContent) {
+                try {
+                    parsedContent = typeof notification.structuredContent === 'string'
+                        ? JSON.parse(notification.structuredContent)
+                        : notification.structuredContent;
+                } catch (error) {
+                    // Silently ignore parse errors
+                }
+            }
+
+            // Check if this is a collector test notification
+            if (parsedContent?.collectorId !== undefined) {
+                const collectorId = parsedContent.collectorId;
+                const notificationId = `collector_test_${collectorId}`;
+                const stage = parsedContent.stage || 'testing';
+
+                const collectorTestProgress: CollectorTestProgressData = {
+                    collectorId: parsedContent.collectorId,
+                    collectorName: parsedContent.collectorName,
+                    stage: parsedContent.stage,
+                    success: parsedContent.success,
+                    sensorCount: parsedContent.sensorCount,
+                    errorMessage: parsedContent.errorMessage
+                };
+
+                if (stage === 'testing') {
+                    // Create new notification for this collector test
+                    const newNotification: Notification = {
+                        id: notificationId,
+                        type: 'info',
+                        category: notification.category || 'system',
+                        title: notification.title,
+                        message: notification.message,
+                        timestamp: Date.now(),
+                        persistent: true, // Don't auto-dismiss while testing
+                        collectorTestProgress: collectorTestProgress
+                    };
+
+                    setNotifications(prev => {
+                        // Remove any existing notification for this collector
+                        const filtered = prev.filter(n => n.id !== notificationId);
+                        return [newNotification, ...filtered].slice(0, getMaxConcurrent());
+                    });
+                } else if (stage === 'complete') {
+                    // Update existing notification with completion status
+                    setNotifications(prev => {
+                        const existing = prev.find(n => n.id === notificationId);
+                        if (!existing) {
+                            return prev;
+                        }
+
+                        const success = parsedContent.success === true;
+                        const updatedNotification: Notification = {
+                            ...existing,
+                            type: success ? 'success' : 'error',
+                            title: notification.title,
+                            message: notification.message,
+                            persistent: false,
+                            duration: 3000,
+                            collectorTestProgress: collectorTestProgress
+                        };
+
+                        // Auto-dismiss after duration
+                        setTimeout(() => {
+                            dismissNotification(notificationId);
+                        }, 3000);
+
+                        return prev.map(n => n.id === notificationId ? updatedNotification : n);
+                    });
+                }
+                return; // Don't process as regular notification
+            }
+
+            // Regular notification handling
+            const notificationData: any = {
+                type: notification.type || 'info',
+                message: notification.message,
+                title: notification.title,
+                category: notification.category || 'system',
+                persistent: notification.persistent
+            };
+
+            if (parsedContent) {
+                notificationData.structuredContent = parsedContent;
+            }
+
+            // Only include duration if it's a valid number
+            if (notification.duration !== null && notification.duration !== undefined && typeof notification.duration === 'number') {
+                notificationData.duration = notification.duration;
+            }
+
+            showNotification(notificationData);
+        };
+
+        window.addEventListener('notification-received', handleNotificationReceived as EventListener);
+
+        return () => {
+            window.removeEventListener('notification-received', handleNotificationReceived as EventListener);
+        };
+    }, [showNotification, getMaxConcurrent]);
+
     const contextValue: NotificationContextType = {
         showNotification,
         showSuccess,
@@ -452,6 +1009,10 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         showWarning,
         showInfo,
         showStructuredNotification,
+        showJunctionProgress,
+        updateJunctionProgress,
+        showTemplateVersionProgress,
+        updateTemplateVersionProgress,
         dismissNotification,
         clearAllNotifications,
         isEnabled,
@@ -500,8 +1061,9 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                             }}
                         >
                             <Alert
-                                severity={notification.type}
-                                variant="filled"
+                                severity="info"
+                                variant="outlined"
+                                icon={false}
                                 action={
                                     <IconButton
                                         size="small"
@@ -509,10 +1071,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                                         color="inherit"
                                         onClick={() => dismissNotification(notification.id)}
                                         sx={{
-                                            padding: '4px',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(255, 255, 255, 0.25)'
-                                            }
+                                            padding: '4px'
                                         }}
                                     >
                                         <CloseIcon fontSize="small" />
@@ -520,78 +1079,22 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                                 }
                                 sx={{
                                     width: '100%',
-                                    boxShadow: (theme) => theme.shadows[6],
-                                    minHeight: notification.structuredContent ? '80px' : '48px',
+                                    boxShadow: (theme) => theme.shadows[4],
+                                    minHeight: notification.junctionProgress || notification.collectorTestProgress || notification.templateVersionProgress ? '120px' : notification.structuredContent ? '80px' : '48px',
 
-                                    // GLASS EFFECT WITH TRANSPARENCY
-                                    backgroundColor: (theme) => {
-                                        const alpha = 0.6; // 80% opacity for glass effect
-                                        switch (notification.type) {
-                                            case 'error':
-                                                return `rgba(211, 47, 47, ${alpha})`; // Red with transparency
-                                            case 'warning':
-                                                return `rgba(237, 108, 2, ${alpha})`; // Orange with transparency
-                                            case 'success':
-                                                return `rgba(46, 125, 50, ${alpha})`; // Green with transparency
-                                            case 'info':
-                                                return `rgba(2, 136, 209, ${alpha})`; // Blue with transparency
-                                            default:
-                                                return `rgba(2, 136, 209, ${alpha})`;
-                                        }
-                                    },
-
-                                    // Glass effect with blur and saturation
-                                    backdropFilter: 'blur(12px) saturate(180%)',
-                                    WebkitBackdropFilter: 'blur(12px) saturate(180%)', // Safari support
-
-                                    // Subtle border for better definition
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-
-                                    // Enhanced glass appearance
-                                    position: 'relative',
-                                    overflow: 'hidden',
-
-                                    // Subtle inner highlight for glass effect
-                                    '&::before': {
-                                        content: '""',
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        height: '1px',
-                                        background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent)',
-                                        zIndex: 1
-                                    },
+                                    // Use theme background colors
+                                    backgroundColor: (theme) => theme.palette.background.paper,
+                                    color: (theme) => theme.palette.text.primary,
+                                    borderColor: (theme) => theme.palette.divider,
 
                                     '& .MuiAlert-message': {
                                         width: '100%',
                                         overflow: 'hidden',
-                                        position: 'relative',
-                                        zIndex: 2,
-                                    },
-
-                                    // Ensure text remains readable with transparency
-                                    '& .MuiAlert-icon': {
-                                        opacity: 1, // Keep icons fully opaque
-                                        filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))', // Subtle text shadow for readability
-                                        position: 'relative',
-                                        zIndex: 2,
                                     },
 
                                     '& .MuiAlertTitle-root': {
-                                        opacity: 1, // Keep titles fully opaque
                                         fontWeight: 'bold',
                                         marginBottom: 0.5,
-                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)', // Subtle text shadow for readability
-                                        position: 'relative',
-                                        zIndex: 2,
-                                    },
-
-                                    // Add text shadow to main message for better readability
-                                    '& .MuiAlert-message > *': {
-                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
-                                        position: 'relative',
-                                        zIndex: 2,
                                     }
                                 }}
                             >
@@ -601,8 +1104,26 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                                     </AlertTitle>
                                 )}
 
-                                {/* Render structured content if available, otherwise show simple message */}
-                                {notification.structuredContent ? (
+                                {/* Render junction progress, template version progress, collector test progress, structured content, or simple message */}
+                                {notification.junctionProgress ? (
+                                    <JunctionProgressContent
+                                        progressData={notification.junctionProgress}
+                                        hasError={notification.type === 'error'}
+                                        isComplete={notification.junctionProgress.currentStage === JunctionStartStage.Complete}
+                                    />
+                                ) : notification.templateVersionProgress ? (
+                                    <TemplateVersionProgressContent
+                                        progressData={notification.templateVersionProgress}
+                                        hasError={notification.type === 'error'}
+                                        isComplete={notification.templateVersionProgress.currentStage === TemplateVersionUploadStage.Complete}
+                                    />
+                                ) : notification.collectorTestProgress ? (
+                                    <CollectorTestProgressContent
+                                        progressData={notification.collectorTestProgress}
+                                        hasError={notification.type === 'error'}
+                                        isComplete={notification.collectorTestProgress.stage === 'complete'}
+                                    />
+                                ) : notification.structuredContent ? (
                                     <StructuredNotificationContent content={notification.structuredContent} />
                                 ) : (
                                     notification.message

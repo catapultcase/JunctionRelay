@@ -24,7 +24,7 @@ using JunctionRelayServer.Services;
 using JunctionRelayServer.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace JunctionRelay_Server.Services.BackgroundServices
+namespace JunctionRelayServer.Services.BackgroundServices
 {
     public class Service_Connection_Status : BackgroundService
     {
