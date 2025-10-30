@@ -74,7 +74,20 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<'library' | 'properties'>('library');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'ecg', 'gauge', 'gauge-data', 'gauge-style', 'gauge-pointer', 'gauge-colors', 'clock', 'oscilloscope', 'tunnel', 'weather', 'assetImage', 'assetVideo', 'assetRive'])
+        new Set([
+            // Basic element properties
+            'position',
+            // Element-specific sections
+            'sensor', 'sensorTypography',
+            'text', 'textTypography',
+            'clock', 'clockTypography',
+            'ecg',
+            'gauge-data', 'gauge-shape', 'gauge-display', 'gauge-colors',
+            'oscilloscope',
+            'tunnel',
+            'weather'
+            // Note: 'visibility' is intentionally excluded - it starts collapsed
+        ])
     );
 
     useEffect(() => {
@@ -193,11 +206,31 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             defaultWidth: 200,
             defaultHeight: 200,
             defaultProperties: {
+                gaugeLibrary: 'mui',
                 sensorTag: '',
                 gaugeType: 'semicircle',
                 minValue: 0,
                 maxValue: 100,
+                // MUI Gauge angles - MUST be explicitly set per documentation
+                gaugeAngleType: 'arc',  // arc | circle | custom
+                startAngle: -90,  // Default arc starting at left
+                endAngle: 90,     // Default arc ending at right (180° span)
+                innerRadius: '70%',
+                outerRadius: '100%',
+                cornerRadius: '50%',
                 valueLabel: '',
+                showValue: true,
+                // Arc colors
+                gaugeColor: '#2196f3',
+                referenceArcColor: '#e0e0e0',
+                // Text styling
+                textColor: '#333333',
+                textFontSize: 0,
+                textFontFamily: 'Roboto, sans-serif',
+                textFontWeight: 600,
+                // Container
+                backgroundColor: 'transparent',
+                // Legacy properties (kept for backward compatibility)
                 showLabels: true,
                 showTicks: true,
                 pointerType: 'needle',
@@ -213,7 +246,6 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
                 ],
                 arcPadding: 0.02,
                 arcWidth: 0.2,
-                cornerRadius: 5,
                 valueLabelColor: '#333',
                 tickLabelColor: '#666'
             },
@@ -319,10 +351,10 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             category: 'effects',
         },
         {
-            id: 'asset-image',
+            id: 'media-image',
             name: 'Asset Image',
             description: 'Display an uploaded image asset',
-            type: 'asset-image',
+            type: 'media-image',
             icon: <ImageIcon />,
             defaultWidth: 200,
             defaultHeight: 150,
@@ -334,10 +366,10 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             category: 'assets',
         },
         {
-            id: 'asset-video',
+            id: 'media-video',
             name: 'Asset Video',
             description: 'Display an uploaded video asset',
-            type: 'asset-video',
+            type: 'media-video',
             icon: <VideoIcon />,
             defaultWidth: 320,
             defaultHeight: 180,
@@ -352,10 +384,10 @@ const FrameEngine_ElementLibrary: React.FC<ElementLibraryProps> = ({
             category: 'assets',
         },
         {
-            id: 'asset-rive',
+            id: 'media-rive',
             name: 'Asset Rive',
             description: 'Display an uploaded Rive animation',
-            type: 'asset-rive',
+            type: 'media-rive',
             icon: <RiveIcon />,
             defaultWidth: 200,
             defaultHeight: 200,

@@ -86,7 +86,14 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
     const [discoveredInputs, setDiscoveredInputs] = useState<Record<string, any>>({});
     const [discoveredBindings, setDiscoveredBindings] = useState<Record<string, any>>({});
     const [riveKey, setRiveKey] = useState(0);
+    const [videoRetryCount, setVideoRetryCount] = useState(0);
+    const [videoKey, setVideoKey] = useState(0);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const videoRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Retry configuration for video
+    const MAX_VIDEO_RETRIES = 3;
+    const VIDEO_RETRY_DELAYS = [0, 500, 1500]; // Progressive backoff
 
     // Detect Rive file changes and force remount
     useEffect(() => {
@@ -95,6 +102,29 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
             setRiveKey(prev => prev + 1);
         }
     }, [config.riveFile, config.type]);
+
+    // Reset video retry when video URL changes
+    useEffect(() => {
+        if (config.type === 'video' && config.videoUrl) {
+            setVideoRetryCount(0);
+            setVideoKey(prev => prev + 1);
+
+            // Clear any pending retry
+            if (videoRetryTimeoutRef.current) {
+                clearTimeout(videoRetryTimeoutRef.current);
+                videoRetryTimeoutRef.current = null;
+            }
+        }
+    }, [config.videoUrl, config.type]);
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (videoRetryTimeoutRef.current) {
+                clearTimeout(videoRetryTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Determine Rive options
     const riveOptions = React.useMemo(() => {
@@ -562,6 +592,7 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
     useEffect(() => {
         if (config.type !== 'rive' || !config.riveInputs || Object.keys(discoveredInputs).length === 0) return;
 
+        console.log('🎯 BackgroundRenderer - Applying riveInputs:', config.riveInputs);
         Object.entries(config.riveInputs || {}).forEach(([inputKey, inputValue]) => {
             const discovered = discoveredInputs[inputKey];
             if (!discovered || !discovered.ref) return;
@@ -708,7 +739,8 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
     const renderContent = () => {
         switch (config.type) {
             case 'video':
-                if (!config.videoUrl) {
+                if (!config.videoUrl || config.videoUrl.trim() === '') {
+                    console.warn('⚠️ Video background: videoUrl is empty or undefined');
                     return null;
                 }
 
@@ -718,12 +750,14 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
 
                 return (
                     <video
+                        key={videoKey}  // Force remount on retry
                         ref={videoRef}
                         src={videoUrl}
                         loop={config.videoLoop ?? true}
                         muted={config.videoMuted ?? true}
                         autoPlay={config.videoAutoplay ?? true}
                         playsInline
+                        preload="auto"  // Preload the video to reduce race conditions
                         style={{
                             width: '100%',
                             height: '100%',
@@ -731,7 +765,42 @@ export const FrameEngine_BackgroundRenderer: React.FC<FrameEngine_BackgroundRend
                             display: 'block',
                         }}
                         onError={(e) => {
-                            console.error('❌ Video background load error:', e);
+                            const video = e.currentTarget as HTMLVideoElement;
+                            const error = video.error;
+
+                            console.error('❌ Video background load error:', {
+                                url: videoUrl,
+                                errorCode: error?.code,
+                                errorMessage: error?.message,
+                                networkState: video.networkState,
+                                readyState: video.readyState,
+                                retryCount: videoRetryCount,
+                                maxRetries: MAX_VIDEO_RETRIES,
+                                willRetry: videoRetryCount < MAX_VIDEO_RETRIES,
+                                MEDIA_ERR_CODES: {
+                                    1: 'MEDIA_ERR_ABORTED',
+                                    2: 'MEDIA_ERR_NETWORK',
+                                    3: 'MEDIA_ERR_DECODE',
+                                    4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+                                }
+                            });
+
+                            // Retry logic for video loading failures
+                            if (videoRetryCount < MAX_VIDEO_RETRIES) {
+                                const delay = VIDEO_RETRY_DELAYS[videoRetryCount] || 1500;
+                                console.log(`⏳ Retrying video load in ${delay}ms... (attempt ${videoRetryCount + 1}/${MAX_VIDEO_RETRIES})`);
+
+                                videoRetryTimeoutRef.current = setTimeout(() => {
+                                    setVideoRetryCount(prev => prev + 1);
+                                    setVideoKey(prev => prev + 1); // Force video element remount
+                                }, delay);
+                            } else {
+                                console.error('❌ Video load failed after', MAX_VIDEO_RETRIES, 'retries:', videoUrl);
+                            }
+                        }}
+                        onCanPlayThrough={() => {
+                            console.log('✅ Video background ready:', videoUrl);
+                            setVideoRetryCount(0); // Reset retry count on successful load
                         }}
                     />
                 );

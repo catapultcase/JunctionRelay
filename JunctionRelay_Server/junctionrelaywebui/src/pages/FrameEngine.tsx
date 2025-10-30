@@ -43,6 +43,7 @@ import { useAuth } from "../auth/AuthContext";
 import FrameEngineManagementSection from '../components/FrameEngine_ManagementSection';
 import FrameEngineListingSection from '../components/FrameEngine_ListingSection';
 import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
+import { preloadCommonFonts } from '../components/frameengine2/FrameEngine2_FontLoader';
 
 // Types
 type ViewMode = 'gallery' | 'table';
@@ -424,6 +425,11 @@ const FrameEngine = () => {
     const navigate = useNavigate();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+    // Preload common Google Fonts for FrameEngine2 on mount
+    useEffect(() => {
+        preloadCommonFonts();
+    }, []);
 
     // Persist states
     useEffect(() => {

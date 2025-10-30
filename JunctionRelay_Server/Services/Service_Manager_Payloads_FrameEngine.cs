@@ -150,6 +150,27 @@ namespace JunctionRelayServer.Services
                                             Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added background videoUrl for {screenKey}: {videoFilename}");
                                         }
                                     }
+
+                                    // Check if background type is rive and inject riveFile from database
+                                    if (bgDict.TryGetValue("type", out var bgTypeObj) && bgTypeObj is string bgType && bgType == "rive")
+                                    {
+                                        // Inject riveFile from database column if it exists
+                                        if (!string.IsNullOrEmpty(frameLayout.RiveFile))
+                                        {
+                                            bgDict["riveFile"] = $"{baseUrl}/api/frameengine/rive/{frameLayout.RiveFile}/content";
+                                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added background riveFile URL for {screenKey}: {frameLayout.RiveFile}");
+                                        }
+                                    }
+                                    // Also handle if riveFile already exists in JSON and needs URL conversion
+                                    else if (bgDict.TryGetValue("riveFile", out var riveFileObj) && riveFileObj is string riveFilename)
+                                    {
+                                        if (!string.IsNullOrEmpty(riveFilename) && !riveFilename.StartsWith("http"))
+                                        {
+                                            // Convert filename to full URL
+                                            bgDict["riveFile"] = $"{baseUrl}/api/frameengine/rive/{riveFilename}/content";
+                                            Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Converted background riveFile to URL for {screenKey}: {riveFilename}");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -167,7 +188,7 @@ namespace JunctionRelayServer.Services
                         using var elementsDoc = JsonDocument.Parse(frameLayout.JsonFrameElements);
                         frameElements = CloneJsonValue(elementsDoc.RootElement);
 
-                        // Convert asset element filenames to full URLs
+                        // Convert media element filenames to full URLs (FrameEngine2)
                         if (frameElements is List<object> elementsList)
                         {
                             foreach (var element in elementsList)
@@ -178,33 +199,31 @@ namespace JunctionRelayServer.Services
                                     {
                                         if (elementDict.TryGetValue("properties", out var propsObj) && propsObj is Dictionary<string, object> props)
                                         {
-                                            // Handle asset-image elements
-                                            if (elementType == "asset-image" && props.TryGetValue("assetImageUrl", out var imageUrlObj) && imageUrlObj is string imageFilename)
+                                            // Handle media-image elements
+                                            if (elementType == "media-image" && props.TryGetValue("filename", out var imageFilenameObj) && imageFilenameObj is string imageFilename)
                                             {
                                                 if (!string.IsNullOrEmpty(imageFilename) && !imageFilename.StartsWith("http"))
                                                 {
-                                                    props["assetImageUrl"] = $"{baseUrl}/api/frameengine/images/{imageFilename}/content";
-                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset imageUrl for element: {imageFilename}");
+                                                    props["filename"] = $"{baseUrl}/api/frameengine/images/{imageFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added media-image URL for element: {imageFilename}");
                                                 }
                                             }
-
-                                            // Handle asset-video elements
-                                            if (elementType == "asset-video" && props.TryGetValue("assetVideoUrl", out var videoUrlObj) && videoUrlObj is string videoFilename)
+                                            // Handle media-video elements
+                                            else if (elementType == "media-video" && props.TryGetValue("filename", out var videoFilenameObj) && videoFilenameObj is string videoFilename)
                                             {
                                                 if (!string.IsNullOrEmpty(videoFilename) && !videoFilename.StartsWith("http"))
                                                 {
-                                                    props["assetVideoUrl"] = $"{baseUrl}/api/frameengine/videos/{videoFilename}/content";
-                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset videoUrl for element: {videoFilename}");
+                                                    props["filename"] = $"{baseUrl}/api/frameengine/videos/{videoFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added media-video URL for element: {videoFilename}");
                                                 }
                                             }
-
-                                            // Handle asset-rive elements
-                                            if (elementType == "asset-rive" && props.TryGetValue("assetRiveFile", out var riveFileObj) && riveFileObj is string riveFilename)
+                                            // Handle media-rive elements
+                                            else if (elementType == "media-rive" && props.TryGetValue("filename", out var riveFilenameObj) && riveFilenameObj is string riveFilename)
                                             {
                                                 if (!string.IsNullOrEmpty(riveFilename) && !riveFilename.StartsWith("http"))
                                                 {
-                                                    props["assetRiveFile"] = $"{baseUrl}/api/frameengine/rive/{riveFilename}/content";
-                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added asset Rive fileUrl for element: {riveFilename}");
+                                                    props["filename"] = $"{baseUrl}/api/frameengine/rive/{riveFilename}/content";
+                                                    Console.WriteLine($"[SERVICE_MANAGER_PAYLOADS_FRAMEENGINE] ✅ Added media-rive URL for element: {riveFilename}");
                                                 }
                                             }
                                         }
@@ -369,7 +388,8 @@ namespace JunctionRelayServer.Services
                     sensorData[sensor.SensorTag] = new
                     {
                         value = formattedValue,
-                        unit = unit
+                        unit = unit,
+                        label = sensor.Name
                     };
                 }
 

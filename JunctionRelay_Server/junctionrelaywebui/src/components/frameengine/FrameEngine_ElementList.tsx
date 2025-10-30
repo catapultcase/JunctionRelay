@@ -81,9 +81,9 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
             case 'oscilloscope': return <OscilloscopeIcon fontSize="small" />;
             case 'tunnel': return <TunnelIcon fontSize="small" />;
             case 'weather': return <WeatherIcon fontSize="small" />;
-            case 'asset-image': return <ImageIcon fontSize="small" />;
-            case 'asset-video': return <VideoIcon fontSize="small" />;
-            case 'asset-rive': return <RiveIcon fontSize="small" />;
+            case 'media-image': return <ImageIcon fontSize="small" />;
+            case 'media-video': return <VideoIcon fontSize="small" />;
+            case 'media-rive': return <RiveIcon fontSize="small" />;
             default: return <SensorsIcon fontSize="small" />;
         }
     };
@@ -114,15 +114,15 @@ export const FrameEngine_ElementList: React.FC<ElementListProps> = ({
                 return `Tunnel (${element.properties.tunnelType || 'circular'}, ${mode})`;
             case 'weather':
                 return `Weather (${element.properties.weatherType || 'clear'})`;
-            case 'asset-image':
+            case 'media-image':
                 return element.properties.assetImageUrl
                     ? `Image: ${element.properties.assetImageUrl}`
                     : 'Image Asset';
-            case 'asset-video':
+            case 'media-video':
                 return element.properties.assetVideoUrl
                     ? `Video: ${element.properties.assetVideoUrl}`
                     : 'Video Asset';
-            case 'asset-rive':
+            case 'media-rive':
                 return element.properties.assetRiveFile
                     ? `Rive: ${element.properties.assetRiveFile}`
                     : 'Rive Asset';

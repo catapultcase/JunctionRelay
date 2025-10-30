@@ -263,7 +263,8 @@ const ConfigureFrame: React.FC = () => {
     // Undo operation
     const handleUndo = useCallback(() => {
         setState(prev => {
-            if (prev.historyIndex > 0) {
+            // Prevent undo from going back to initial state (index 0 = template load)
+            if (prev.historyIndex > 1) {
                 const previousState = prev.history[prev.historyIndex - 1];
                 return {
                     ...prev,
@@ -799,7 +800,7 @@ const ConfigureFrame: React.FC = () => {
                     isDirty={state.isDirty}
                     isLoading={state.isLoading}
                     isEditing={isEditing}
-                    canUndo={state.historyIndex > 0}
+                    canUndo={state.historyIndex > 1}
                     canRedo={state.historyIndex < state.history.length - 1}
                     previewMode={state.previewMode}
                     onQuickSave={handleQuickSave}

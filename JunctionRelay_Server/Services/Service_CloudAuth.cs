@@ -752,10 +752,20 @@ namespace JunctionRelayServer.Services
                 var isEnabled = await _settingsService.GetBoolSettingAsync(FALLBACK_ENABLED_KEY, false);
                 var hasUser = await _authService.HasAnyUsersAsync();
 
+                // Get the fallback username if a user is configured
+                string? fallbackUsername = null;
+                if (hasUser)
+                {
+                    var users = await _authService.GetAllUsersAsync();
+                    var fallbackUser = users.FirstOrDefault();
+                    fallbackUsername = fallbackUser?.Username;
+                }
+
                 return new OkObjectResult(new
                 {
                     enabled = isEnabled,
                     userConfigured = hasUser,
+                    username = fallbackUsername,
                     message = isEnabled ? "Fallback authentication is enabled" : "Fallback authentication is disabled"
                 });
             }

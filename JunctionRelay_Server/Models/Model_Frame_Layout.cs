@@ -36,8 +36,8 @@ namespace JunctionRelayServer.Models
         public string? Version { get; set; } = "1.0";
 
         // Frame Dimensions and Orientation
-        public int Width { get; set; } = 792;
-        public int Height { get; set; } = 272;
+        public int Width { get; set; } = 800;
+        public int Height { get; set; } = 600;
         public string Orientation { get; set; } = "landscape"; // "landscape" or "portrait"
 
         // Background Configuration

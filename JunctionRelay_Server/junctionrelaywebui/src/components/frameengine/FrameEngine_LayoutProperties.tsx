@@ -290,15 +290,6 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
         onLayoutUpdate({ riveBindings: { ...currentBindings, [bindingName]: value } });
     };
 
-    // Handle orientation swap
-    const swapOrientation = useCallback(() => {
-        onLayoutUpdate({
-            width: layout.height,
-            height: layout.width,
-            orientation: layout.orientation === 'landscape' ? 'portrait' : 'landscape',
-        });
-    }, [layout.width, layout.height, layout.orientation, onLayoutUpdate]);
-
     // Common styles using theme
     const sectionHeaderStyle = {
         width: '100%',
@@ -438,21 +429,6 @@ export const FrameEngine_LayoutProperties: React.FC<FrameEngine_LayoutProperties
                             />
                         </div>
                     </div>
-
-                    <button
-                        onClick={swapOrientation}
-                        style={buttonStyle}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
-                                ? theme.palette.primary.dark
-                                : '#bbdefb';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = theme.palette.primary.light;
-                        }}
-                    >
-                        🔄 Swap Orientation ({layout.orientation})
-                    </button>
                 </div>
             )}
 

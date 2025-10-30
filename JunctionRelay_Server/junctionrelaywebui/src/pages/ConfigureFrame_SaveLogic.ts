@@ -177,6 +177,7 @@ export const performSave = async (
                         grid: {
                             snapToGrid: false,
                             showGrid: false,
+                            showOutlines: false,
                             gridSize: 10,
                             gridColor: '#000000'
                         },
@@ -184,18 +185,51 @@ export const performSave = async (
                     }
                 },
 
-                background: {
-                    type: layout.backgroundType || 'color',
-                    color: layout.backgroundColor || '#FFFFFF',
-                    imageUrl: layout.backgroundImageUrl || null,
-                    imageFit: layout.backgroundImageFit || 'cover',
-                    videoUrl: layout.backgroundVideoUrl || null,
-                    videoFit: layout.backgroundVideoFit || 'cover',
-                    videoLoop: layout.videoLoop ?? true,
-                    videoMuted: layout.videoMuted ?? true,
-                    videoAutoplay: layout.videoAutoplay ?? true,
-                    opacity: layout.backgroundOpacity || 1.0
-                },
+                background: (() => {
+                    const bgType = layout.backgroundType || 'color';
+                    const baseBackground = {
+                        type: bgType,
+                        color: layout.backgroundColor || '#FFFFFF',
+                        opacity: layout.backgroundOpacity || 1.0
+                    };
+
+                    // Only include fields relevant to the selected background type
+                    if (bgType === 'image') {
+                        return {
+                            ...baseBackground,
+                            imageUrl: layout.backgroundImageUrl || null,
+                            imageFit: layout.backgroundImageFit || 'cover',
+                            videoUrl: null,
+                            videoFit: null,
+                            videoLoop: null,
+                            videoMuted: null,
+                            videoAutoplay: null
+                        };
+                    } else if (bgType === 'video') {
+                        return {
+                            ...baseBackground,
+                            imageUrl: null,
+                            imageFit: null,
+                            videoUrl: layout.backgroundVideoUrl || null,
+                            videoFit: layout.backgroundVideoFit || 'cover',
+                            videoLoop: layout.videoLoop ?? true,
+                            videoMuted: layout.videoMuted ?? true,
+                            videoAutoplay: layout.videoAutoplay ?? true
+                        };
+                    } else {
+                        // For 'color', 'none', and 'rive' - no media fields
+                        return {
+                            ...baseBackground,
+                            imageUrl: null,
+                            imageFit: null,
+                            videoUrl: null,
+                            videoFit: null,
+                            videoLoop: null,
+                            videoMuted: null,
+                            videoAutoplay: null
+                        };
+                    }
+                })(),
 
                 ...(layout.backgroundType === 'rive' || layout.riveFile ? {
                     rive: {
@@ -239,18 +273,51 @@ export const performSave = async (
                     }
                 },
 
-                background: {
-                    type: layout.backgroundType || 'color',
-                    color: layout.backgroundColor || '#FFFFFF',
-                    imageUrl: layout.backgroundImageUrl || null,
-                    imageFit: layout.backgroundImageFit || 'cover',
-                    videoUrl: layout.backgroundVideoUrl || null,
-                    videoFit: layout.backgroundVideoFit || 'cover',
-                    videoLoop: layout.videoLoop ?? true,
-                    videoMuted: layout.videoMuted ?? true,
-                    videoAutoplay: layout.videoAutoplay ?? true,
-                    opacity: layout.backgroundOpacity || 1.0
-                },
+                background: (() => {
+                    const bgType = layout.backgroundType || 'color';
+                    const baseBackground = {
+                        type: bgType,
+                        color: layout.backgroundColor || '#FFFFFF',
+                        opacity: layout.backgroundOpacity || 1.0
+                    };
+
+                    // Only include fields relevant to the selected background type
+                    if (bgType === 'image') {
+                        return {
+                            ...baseBackground,
+                            imageUrl: layout.backgroundImageUrl || null,
+                            imageFit: layout.backgroundImageFit || 'cover',
+                            videoUrl: null,
+                            videoFit: null,
+                            videoLoop: null,
+                            videoMuted: null,
+                            videoAutoplay: null
+                        };
+                    } else if (bgType === 'video') {
+                        return {
+                            ...baseBackground,
+                            imageUrl: null,
+                            imageFit: null,
+                            videoUrl: layout.backgroundVideoUrl || null,
+                            videoFit: layout.backgroundVideoFit || 'cover',
+                            videoLoop: layout.videoLoop ?? true,
+                            videoMuted: layout.videoMuted ?? true,
+                            videoAutoplay: layout.videoAutoplay ?? true
+                        };
+                    } else {
+                        // For 'color', 'none', and 'rive' - no media fields
+                        return {
+                            ...baseBackground,
+                            imageUrl: null,
+                            imageFit: null,
+                            videoUrl: null,
+                            videoFit: null,
+                            videoLoop: null,
+                            videoMuted: null,
+                            videoAutoplay: null
+                        };
+                    }
+                })(),
 
                 ...(layout.backgroundType === 'rive' || layout.riveFile ? {
                     rive: {
@@ -322,7 +389,7 @@ export const performSave = async (
             }
 
             // Add asset-rive discoveries if applicable
-            if (element.type === 'asset-rive' && elementRiveDiscoveries && elementRiveDiscoveries[element.id]) {
+            if (element.type === 'media-rive' && elementRiveDiscoveries && elementRiveDiscoveries[element.id]) {
                 const discovery = elementRiveDiscoveries[element.id];
                 return {
                     ...baseElement,
@@ -349,7 +416,8 @@ export const performSave = async (
             return baseElement;
         });
 
-        // Prepare the save data
+        // Prepare the save data - only include fields relevant to the selected background type
+        const bgType = layout.backgroundType || 'color';
         const saveData = {
             displayName: layout.displayName,
             description: layout.description,
@@ -359,18 +427,18 @@ export const performSave = async (
             orientation: layout.orientation,
             backgroundType: layout.backgroundType,
             backgroundColor: layout.backgroundColor,
-            backgroundImageUrl: layout.backgroundImageUrl,
-            backgroundImageFit: layout.backgroundImageFit,
-            backgroundVideoUrl: layout.backgroundVideoUrl,
-            backgroundVideoFit: layout.backgroundVideoFit,
-            videoLoop: layout.videoLoop,
-            videoMuted: layout.videoMuted,
-            videoAutoplay: layout.videoAutoplay,
+            // Image background fields - only include if image mode
+            backgroundImageUrl: bgType === 'image' ? layout.backgroundImageUrl : null,
+            backgroundImageFit: bgType === 'image' ? layout.backgroundImageFit : null,
+            // Video background fields - only include if video mode
+            backgroundVideoUrl: bgType === 'video' ? layout.backgroundVideoUrl : null,
+            backgroundVideoFit: bgType === 'video' ? layout.backgroundVideoFit : null,
+            videoLoop: bgType === 'video' ? layout.videoLoop : false,
+            videoMuted: bgType === 'video' ? layout.videoMuted : false,
+            videoAutoplay: bgType === 'video' ? layout.videoAutoplay : false,
             backgroundOpacity: layout.backgroundOpacity,
-            riveFile: layout.riveFile,
-            riveStateMachine: layout.riveStateMachine,
-            riveInputs: layout.riveInputs,
-            riveBindings: layout.riveBindings,
+            // Rive background fields - only include if rive mode (other rive settings are in JSON config)
+            riveFile: bgType === 'rive' ? layout.riveFile : null,
             thumbnailOverride: customThumbnail ? true : layout.thumbnailOverride,
             isTemplate: layout.isTemplate,
             isDraft: layout.isDraft,

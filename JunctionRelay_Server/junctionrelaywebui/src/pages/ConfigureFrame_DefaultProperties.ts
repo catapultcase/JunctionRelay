@@ -68,6 +68,7 @@ export const getDefaultElementProperties = (elementType: ElementType): Record<st
                 sensorTag: '',
                 waveformColor: '#00ff00',
                 backgroundColor: '#000000',
+                gridBackgroundColor: 'transparent',
                 gridColor: 'rgba(0, 255, 0, 0.2)',
                 showGrid: true,
                 showBorder: true,
@@ -180,14 +181,14 @@ export const getDefaultElementProperties = (elementType: ElementType): Record<st
                 backgroundColor: 'transparent'
             };
 
-        case 'asset-image':
+        case 'media-image':
             return {
                 assetImageUrl: '',
                 imageFit: 'cover',
                 opacity: 1
             };
 
-        case 'asset-video':
+        case 'media-video':
             return {
                 assetVideoUrl: '',
                 videoFit: 'cover',
@@ -197,7 +198,7 @@ export const getDefaultElementProperties = (elementType: ElementType): Record<st
                 opacity: 1
             };
 
-        case 'asset-rive':
+        case 'media-rive':
             return {
                 assetRiveFile: '',
                 riveStateMachine: '',

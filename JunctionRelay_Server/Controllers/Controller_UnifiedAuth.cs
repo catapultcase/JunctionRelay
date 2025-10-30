@@ -19,6 +19,7 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication;
 using JunctionRelayServer.Interfaces;
 using JunctionRelayServer.Services;
 using System.Text.Json;
@@ -33,17 +34,20 @@ namespace JunctionRelayServer.Controllers
         private readonly ILocalAuthService _localAuthService;
         private readonly ICloudAuthService _cloudAuthService;
         private readonly Service_CloudSessionStore _cloudSessionStore;
+        private readonly IService_Auth _authService;
 
         public Controller_UnifiedAuth(
             IAuthModeService authModeService,
             ILocalAuthService localAuthService,
             ICloudAuthService cloudAuthService,
-            Service_CloudSessionStore cloudSessionStore)
+            Service_CloudSessionStore cloudSessionStore,
+            IService_Auth authService)
         {
             _authModeService = authModeService ?? throw new ArgumentNullException(nameof(authModeService));
             _localAuthService = localAuthService ?? throw new ArgumentNullException(nameof(localAuthService));
             _cloudAuthService = cloudAuthService ?? throw new ArgumentNullException(nameof(cloudAuthService));
             _cloudSessionStore = cloudSessionStore ?? throw new ArgumentNullException(nameof(cloudSessionStore));
+            _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         }
 
         [HttpGet("status")]
@@ -415,13 +419,81 @@ namespace JunctionRelayServer.Controllers
             {
                 var authMode = await _authModeService.GetCurrentAuthModeAsync();
 
-                return authMode switch
+                if (authMode == "local")
                 {
-                    "local" => await _localAuthService.ChangeUsernameAsync(request, HttpContext),
-                    "cloud" => BadRequest(new { message = "Username changes handled through cloud account management" }),
-                    "none" => BadRequest(new { message = "Authentication is disabled" }),
-                    _ => BadRequest(new { message = "Unknown authentication mode" })
-                };
+                    // Scenario 1: User logged in as local auth
+                    // Manually authenticate using the "Local" JWT scheme
+                    var authResult = await HttpContext.AuthenticateAsync("Local");
+                    if (!authResult.Succeeded || authResult.Principal == null)
+                    {
+                        return Unauthorized(new { message = "Invalid or missing authentication token" });
+                    }
+
+                    // Set the authenticated user on HttpContext
+                    HttpContext.User = authResult.Principal;
+
+                    return await _localAuthService.ChangeUsernameAsync(request, HttpContext);
+                }
+                else if (authMode == "cloud")
+                {
+                    // Scenario 2: User logged in as cloud, wants to change fallback user
+
+                    // Verify cloud authentication
+                    var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                    if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                    {
+                        return Unauthorized(new { message = "Authentication required" });
+                    }
+
+                    // Validate the cloud token by checking user info
+                    var userInfoResult = await _cloudAuthService.GetUserInfoAsync(authHeader);
+                    if (userInfoResult is not OkObjectResult)
+                    {
+                        return Unauthorized(new { message = "Invalid or expired cloud authentication" });
+                    }
+
+                    // Get the fallback username (should be only one user)
+                    var users = await _authService.GetAllUsersAsync();
+                    var fallbackUser = users.FirstOrDefault();
+
+                    if (fallbackUser == null)
+                    {
+                        return BadRequest(new { message = "No fallback user configured" });
+                    }
+
+                    // Extract new username from request
+                    if (!request.TryGetProperty("newUsername", out var newUsernameElement))
+                    {
+                        return BadRequest(new { message = "New username is required" });
+                    }
+
+                    var newUsername = newUsernameElement.GetString();
+                    if (string.IsNullOrWhiteSpace(newUsername) || newUsername.Trim().Length < 3)
+                    {
+                        return BadRequest(new { message = "Username must be at least 3 characters long" });
+                    }
+
+                    // Update the fallback username
+                    try
+                    {
+                        await _authService.UpdateUsername(fallbackUser.Username, newUsername.Trim());
+                        Console.WriteLine($"Fallback username updated from {fallbackUser.Username} to {newUsername.Trim()}");
+                        return Ok(new { message = "Fallback username updated successfully" });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error changing fallback username: {ex.Message}");
+                        return BadRequest(new { message = ex.Message });
+                    }
+                }
+                else if (authMode == "none")
+                {
+                    return BadRequest(new { message = "Authentication is disabled" });
+                }
+                else
+                {
+                    return BadRequest(new { message = "Unknown authentication mode" });
+                }
             }
             catch (Exception ex)
             {
@@ -437,13 +509,86 @@ namespace JunctionRelayServer.Controllers
             {
                 var authMode = await _authModeService.GetCurrentAuthModeAsync();
 
-                return authMode switch
+                if (authMode == "local")
                 {
-                    "local" => await _localAuthService.ChangePasswordAsync(request, HttpContext),
-                    "cloud" => BadRequest(new { message = "Password changes are managed through your cloud account at https://accounts.junctionrelay.com/user" }),
-                    "none" => BadRequest(new { message = "Authentication is disabled" }),
-                    _ => BadRequest(new { message = "Unknown authentication mode" })
-                };
+                    // Scenario 1: User logged in as local auth
+                    // Manually authenticate using the "Local" JWT scheme
+                    var authResult = await HttpContext.AuthenticateAsync("Local");
+                    if (!authResult.Succeeded || authResult.Principal == null)
+                    {
+                        return Unauthorized(new { message = "Invalid or missing authentication token" });
+                    }
+
+                    // Set the authenticated user on HttpContext
+                    HttpContext.User = authResult.Principal;
+
+                    return await _localAuthService.ChangePasswordAsync(request, HttpContext);
+                }
+                else if (authMode == "cloud")
+                {
+                    // Scenario 2: User logged in as cloud, wants to change fallback password
+
+                    // Verify cloud authentication
+                    var authHeader = Request.Headers.Authorization.FirstOrDefault();
+                    if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                    {
+                        return Unauthorized(new { message = "Authentication required" });
+                    }
+
+                    // Validate the cloud token by checking user info
+                    var userInfoResult = await _cloudAuthService.GetUserInfoAsync(authHeader);
+                    if (userInfoResult is not OkObjectResult)
+                    {
+                        return Unauthorized(new { message = "Invalid or expired cloud authentication" });
+                    }
+
+                    // Get the fallback username (should be only one user)
+                    var users = await _authService.GetAllUsersAsync();
+                    var fallbackUser = users.FirstOrDefault();
+
+                    if (fallbackUser == null)
+                    {
+                        return BadRequest(new { message = "No fallback user configured" });
+                    }
+
+                    // Extract passwords from request
+                    if (!request.TryGetProperty("currentPassword", out var currentPasswordElement) ||
+                        !request.TryGetProperty("newPassword", out var newPasswordElement))
+                    {
+                        return BadRequest(new { message = "Current password and new password are required" });
+                    }
+
+                    var currentPassword = currentPasswordElement.GetString();
+                    var newPassword = newPasswordElement.GetString();
+
+                    if (string.IsNullOrWhiteSpace(currentPassword) || string.IsNullOrWhiteSpace(newPassword))
+                    {
+                        return BadRequest(new { message = "Current password and new password cannot be empty" });
+                    }
+
+                    if (newPassword.Length < 6)
+                    {
+                        return BadRequest(new { message = "New password must be at least 6 characters long" });
+                    }
+
+                    // Update the fallback password
+                    var success = await _authService.ChangePasswordAsync(fallbackUser.Username, currentPassword, newPassword);
+                    if (!success)
+                    {
+                        return BadRequest(new { message = "Current password is incorrect" });
+                    }
+
+                    Console.WriteLine($"Fallback password changed for user: {fallbackUser.Username}");
+                    return Ok(new { message = "Fallback password changed successfully" });
+                }
+                else if (authMode == "none")
+                {
+                    return BadRequest(new { message = "Authentication is disabled" });
+                }
+                else
+                {
+                    return BadRequest(new { message = "Unknown authentication mode" });
+                }
             }
             catch (Exception ex)
             {

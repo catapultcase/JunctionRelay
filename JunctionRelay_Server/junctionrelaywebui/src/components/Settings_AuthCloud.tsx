@@ -52,6 +52,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
     // Fallback authentication state
     const [fallbackEnabled, setFallbackEnabled] = useState<boolean>(false);
     const [fallbackUserConfigured, setFallbackUserConfigured] = useState<boolean>(false);
+    const [fallbackStoredUsername, setFallbackStoredUsername] = useState<string>('');
     const [fallbackLoading, setFallbackLoading] = useState<boolean>(false);
 
     // Fallback setup dialog
@@ -222,6 +223,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                 const data = await response.json();
                 setFallbackEnabled(data.enabled);
                 setFallbackUserConfigured(data.userConfigured);
+                setFallbackStoredUsername(data.username || '');
             }
         } catch (error) {
             console.error('Error fetching fallback status:', error);
@@ -331,12 +333,12 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
         setFallbackLoading(true);
 
         try {
-            const localToken = localStorage.getItem('junctionrelay_token');
+            const cloudToken = localStorage.getItem('cloud_proxy_token');
             const response = await fetch('/api/unified-auth/change-username', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localToken}`
+                    'Authorization': `Bearer ${cloudToken}`
                 },
                 body: JSON.stringify({
                     newUsername: newUsername.trim()
@@ -344,9 +346,10 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             });
 
             if (response.ok) {
-                showSnackbar('Username changed successfully', 'success');
+                showSnackbar('Fallback username changed successfully', 'success');
                 setShowChangeUsername(false);
                 setNewUsername('');
+                await fetchFallbackStatus(); // Refresh to show new username
             } else {
                 const error = await response.json();
                 throw new Error(error.message || 'Failed to change username');
@@ -372,12 +375,12 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
         setFallbackLoading(true);
 
         try {
-            const localToken = localStorage.getItem('junctionrelay_token');
+            const cloudToken = localStorage.getItem('cloud_proxy_token');
             const response = await fetch('/api/unified-auth/change-password', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localToken}`
+                    'Authorization': `Bearer ${cloudToken}`
                 },
                 body: JSON.stringify({
                     currentPassword: currentPassword,
@@ -386,7 +389,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
             });
 
             if (response.ok) {
-                showSnackbar('Password changed successfully', 'success');
+                showSnackbar('Fallback password changed successfully', 'success');
                 setShowChangePassword(false);
                 setCurrentPassword('');
                 setNewPassword('');
@@ -703,7 +706,7 @@ const Settings_AuthCloud: React.FC<AuthComponentProps> = ({
                                         <ListItemIcon><PersonIcon /></ListItemIcon>
                                         <ListItemText
                                             primary="Username"
-                                            secondary="Fallback username configured"
+                                            secondary={fallbackStoredUsername || "Fallback username configured"}
                                         />
                                     </ListItem>
                                     <ListItem

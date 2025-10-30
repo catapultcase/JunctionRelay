@@ -22,12 +22,13 @@ export type ElementType =
     | 'ecg'
     | 'gauge'
     | 'clock'
+    | 'timedate'
     | 'oscilloscope'
     | 'tunnel'
     | 'weather'
-    | 'asset-image'
-    | 'asset-video'
-    | 'asset-rive';
+    | 'media-image'
+    | 'media-video'
+    | 'media-rive';
 
 export interface PlacedElement {
     id: string;
@@ -108,6 +109,7 @@ export interface FrameLayoutConfig {
     riveInputs?: Record<string, any> | null;
     riveBindings?: Record<string, any> | null;
     riveConfiguration?: RiveConfiguration;
+    sensorTestValues?: Record<string, string | number>; // Test values for sensor tags (tag -> value)
     rows?: number;
     columns?: number;
     isTemplate: boolean;
@@ -128,6 +130,8 @@ export interface FrameLayoutConfig {
             gridColor: string;
         };
         elementPadding: number;
+        testBindingsInterval?: number;
+        testBindingsEnabled?: boolean;
     };
 }
 

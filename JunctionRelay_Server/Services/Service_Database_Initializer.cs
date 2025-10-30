@@ -1,7 +1,7 @@
-﻿/*
+/*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024�present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,11 +62,11 @@ namespace JunctionRelayServer.Services
             if (existingScreenTemplates == 0)
             {
                 await layoutTemplates.InitializeLayoutTemplatesAsync();
-                Console.WriteLine("✅ Initialized screen layout templates");
+                Console.WriteLine("? Initialized screen layout templates");
             }
             else
             {
-                Console.WriteLine($"ℹ️ Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
+                Console.WriteLine($"?? Skipped screen layout template initialization - {existingScreenTemplates} templates already exist");
             }
 
             // STEP 4: Seed frame layout templates
@@ -76,16 +76,16 @@ namespace JunctionRelayServer.Services
                 var templatesCreated = await _frameEngineManager.RestoreDefaultTemplatesAsync();
                 if (templatesCreated)
                 {
-                    Console.WriteLine("✅ Initialized frame layout templates");
+                    Console.WriteLine("? Initialized frame layout templates");
                 }
                 else
                 {
-                    Console.WriteLine("ℹ️ No frame layout templates were created");
+                    Console.WriteLine("?? No frame layout templates were created");
                 }
             }
             else
             {
-                Console.WriteLine($"ℹ️ Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
+                Console.WriteLine($"?? Skipped frame layout template initialization - {existingFrameTemplates} templates already exist");
             }
 
             // STEP 5: Seed settings
@@ -879,8 +879,10 @@ namespace JunctionRelayServer.Services
             {
                 ("device_actions_alignment", "left", "Controls the alignment of the Actions column in device tables"),
                 ("device_combine_cloud_devices", "false", "If true, show a single unified table for local and cloud devices"),
-                ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ⚠️ Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
+                ("device_custom_firmware_flashing", "false", "If true, enables uploading custom firmware via OTA. ?? Use at your own risk. This feature is provided as-is with no warranty or guarantee. The developers assume no liability for any damage, malfunction, or data loss resulting from its use"),
                 ("frameengine_auto_cleanup", "false", "If true, automatically clean up orphaned FrameEngine files on application startup"),
+                ("use_frameengine2", "false", "If true, use the new FrameEngine2 editor instead of the legacy ConfigureFrame"),
+                ("use_virtualscreenviewer2", "false", "If true, use the new VirtualScreenViewer2 instead of the legacy VirtualScreenViewer"),
                 ("global_sensorcache_expiry", "60000", "Time in milliseconds after which sensor data expires from the global cache (default: 1 minute)"),
                 ("junction_actions_alignment", "right", "Controls the alignment of the Actions column in the Junction tables"),
                 ("junction_autostart_enabled", "true", "Master toggle for the junction autostart service. If false, no junctions will auto-start regardless of their individual AutoStartOnLaunch setting"),
@@ -919,7 +921,7 @@ namespace JunctionRelayServer.Services
             }
             if (addedCount > 0)
             {
-                Console.WriteLine($"✅ Added {addedCount} missing settings to the database.");
+                Console.WriteLine($"? Added {addedCount} missing settings to the database.");
             }
 
             // Notification category settings (stored in NotificationSettings table)
@@ -957,13 +959,13 @@ namespace JunctionRelayServer.Services
             }
             if (notificationSettingsAdded > 0)
             {
-                Console.WriteLine($"✅ Added {notificationSettingsAdded} notification settings to the database.");
+                Console.WriteLine($"? Added {notificationSettingsAdded} notification settings to the database.");
             }
         }
 
         private async Task ApplySchemaUpdatesAsync()
         {
-            Console.WriteLine("[DATABASE] 🔄 Checking for schema updates...");
+            Console.WriteLine("[DATABASE] ?? Checking for schema updates...");
 
             // Define schema updates
             var schemaUpdates = new Dictionary<string, (string columnName, string columnType)[]>
@@ -1004,7 +1006,7 @@ namespace JunctionRelayServer.Services
             {
                 if (columnsToAdd.Length == 0) continue;
 
-                Console.WriteLine($"[DATABASE] 🔍 Checking {tableName} table for missing columns...");
+                Console.WriteLine($"[DATABASE] ?? Checking {tableName} table for missing columns...");
 
                 foreach (var (columnName, columnType) in columnsToAdd)
                 {
@@ -1019,24 +1021,24 @@ namespace JunctionRelayServer.Services
                         if (!columnExists)
                         {
                             _db.Execute($"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType};");
-                            Console.WriteLine($"✅ Added {columnName} column to {tableName} table");
+                            Console.WriteLine($"? Added {columnName} column to {tableName} table");
                             totalUpdatesApplied++;
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"⚠️ Failed to add {columnName} column to {tableName} table: {ex.Message}");
+                        Console.WriteLine($"?? Failed to add {columnName} column to {tableName} table: {ex.Message}");
                     }
                 }
             }
 
             if (totalUpdatesApplied > 0)
             {
-                Console.WriteLine($"[DATABASE] ✅ Applied {totalUpdatesApplied} schema update(s) successfully");
+                Console.WriteLine($"[DATABASE] ? Applied {totalUpdatesApplied} schema update(s) successfully");
             }
             else
             {
-                Console.WriteLine("[DATABASE] ℹ️ No schema updates needed - database is up to date");
+                Console.WriteLine("[DATABASE] ?? No schema updates needed - database is up to date");
             }
 
             await Task.CompletedTask;

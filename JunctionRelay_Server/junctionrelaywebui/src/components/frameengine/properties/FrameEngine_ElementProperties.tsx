@@ -112,11 +112,11 @@ export const FrameEngine_ElementProperties: React.FC<BaseElementPropertiesProps>
                 return <TunnelProperties {...props} />;
             case 'weather':
                 return <WeatherProperties {...props} />;
-            case 'asset-image':
+            case 'media-image':
                 return <AssetImageProperties {...props} />;
-            case 'asset-video':
+            case 'media-video':
                 return <AssetVideoProperties {...props} />;
-            case 'asset-rive':
+            case 'media-rive':
                 return <AssetRiveProperties {...props} />;
             default:
                 return null;
