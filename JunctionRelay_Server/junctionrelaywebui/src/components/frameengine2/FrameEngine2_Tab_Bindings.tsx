@@ -18,10 +18,15 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Box, Typography, ToggleButtonGroup, ToggleButton, TextField, Paper, Chip, Switch, FormControlLabel } from '@mui/material';
+import { Box, Typography, ToggleButtonGroup, ToggleButton, TextField, Paper, Chip, Switch, FormControlLabel, Slider } from '@mui/material';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import LabelIcon from '@mui/icons-material/Label';
 import type { PlacedElement, FrameLayoutConfig } from './types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding,
+    DiscoveredRiveInput
+} from './types/FrameEngine2_ElementTypes';
 import { getElementIcon, getElementDisplayName } from './FrameEngine2_ElementIcons';
 
 /**
@@ -48,6 +53,19 @@ interface FrameEngine2_Tab_BindingsProps {
 
     /** Callback to toggle sensor tag inclusion (managed in parent) */
     onToggleIncludeSensorTag: (sensorTag: string) => void;
+
+    /** Background Rive discoveries */
+    backgroundRiveMachines?: DiscoveredRiveStateMachine[];
+    backgroundRiveBindings?: DiscoveredRiveDataBinding[];
+
+    /** Element Rive discoveries */
+    elementRiveDiscoveries?: Map<string, {
+        machines: DiscoveredRiveStateMachine[];
+        bindings: DiscoveredRiveDataBinding[];
+    }>;
+
+    /** Callback to update element properties (for Rive inputs) */
+    onUpdateElement?: (elementId: string, updates: Partial<PlacedElement>) => void;
 }
 
 type ViewMode = 'asset' | 'sensortag';
@@ -62,9 +80,14 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
     layout,
     onLayoutUpdate,
     includedSensorTags,
-    onToggleIncludeSensorTag
+    onToggleIncludeSensorTag,
+    backgroundRiveMachines = [],
+    backgroundRiveBindings = [],
+    elementRiveDiscoveries = new Map(),
+    onUpdateElement
 }) => {
     const [viewMode, setViewMode] = useState<ViewMode>('sensortag');
+
 
     /**
      * Derive values directly from layout.canvasSettings (no local state needed)
@@ -75,6 +98,7 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
 
     /**
      * Extract all SensorTags from elements (deduplicated)
+     * Includes Rive inputs and data bindings as sensor tags (no prefix - treated the same)
      */
     const allSensorTags = useMemo(() => {
         const tags = new Set<string>();
@@ -84,12 +108,34 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
             if ((element.type === 'sensor' || element.type === 'gauge' || element.type === 'ecg') && element.properties.sensorTag) {
                 tags.add(element.properties.sensorTag);
             }
+        });
 
-            // TODO: Add Rive inputs/bindings when we have Rive elements
+        // Add background Rive state machine inputs as sensor tags (no prefix)
+        backgroundRiveMachines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                tags.add(input.name);
+            });
+        });
+
+        // Add background Rive data bindings as sensor tags (no prefix)
+        backgroundRiveBindings.forEach(binding => {
+            tags.add(binding.name);
+        });
+
+        // Add element Rive inputs and bindings as sensor tags (no prefix)
+        elementRiveDiscoveries.forEach((discovery) => {
+            discovery.machines.forEach((machine: DiscoveredRiveStateMachine) => {
+                machine.inputs.forEach(input => {
+                    tags.add(input.name);
+                });
+            });
+            discovery.bindings.forEach((binding: DiscoveredRiveDataBinding) => {
+                tags.add(binding.name);
+            });
         });
 
         return Array.from(tags).sort();
-    }, [elements]);
+    }, [elements, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries]);
 
     /**
      * Group elements by type for Asset View
@@ -110,8 +156,33 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
 
     /**
      * Get current test value for a sensor tag
+     * Checks Rive inputs and bindings first, then falls back to regular test values
      */
     const getTestValue = (sensorTag: string): string => {
+        // Check background Rive inputs
+        if (layout.riveInputs?.[sensorTag] !== undefined) {
+            return String(layout.riveInputs[sensorTag]);
+        }
+
+        // Check background Rive bindings
+        if (layout.riveBindings?.[sensorTag] !== undefined) {
+            return String(layout.riveBindings[sensorTag]);
+        }
+
+        // Check element Rive inputs and bindings
+        for (const [elementId, discovery] of elementRiveDiscoveries.entries()) {
+            const element = elements.find(el => el.id === elementId);
+            if (element && element.type === 'media-rive') {
+                if (element.properties.riveInputs?.[sensorTag] !== undefined) {
+                    return String(element.properties.riveInputs[sensorTag]);
+                }
+                if (element.properties.riveBindings?.[sensorTag] !== undefined) {
+                    return String(element.properties.riveBindings[sensorTag]);
+                }
+            }
+        }
+
+        // Fall back to regular sensor test values
         const testData = layout.sensorTestValues?.[sensorTag];
         if (typeof testData === 'object' && testData !== null) {
             return testData.value !== undefined ? String(testData.value) : '';
@@ -142,9 +213,106 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
     };
 
     /**
+     * Handle background Rive input change
+     */
+    const handleBackgroundRiveInputChange = useCallback((inputName: string, value: any) => {
+        const riveInputs = { ...(layout.riveInputs || {}) };
+        riveInputs[inputName] = value;
+        onLayoutUpdate({ riveInputs });
+    }, [layout.riveInputs, onLayoutUpdate]);
+
+    /**
+     * Handle background Rive binding change
+     */
+    const handleBackgroundRiveBindingChange = useCallback((bindingName: string, value: any) => {
+        const riveBindings = { ...(layout.riveBindings || {}) };
+        riveBindings[bindingName] = value;
+        onLayoutUpdate({ riveBindings });
+    }, [layout.riveBindings, onLayoutUpdate]);
+
+    /**
+     * Handle element Rive input change
+     */
+    const handleElementRiveInputChange = useCallback((elementId: string, inputName: string, value: any) => {
+        if (!onUpdateElement) return;
+
+        const element = elements.find(el => el.id === elementId);
+        if (!element || element.type !== 'media-rive') return;
+
+        const riveInputs = { ...(element.properties.riveInputs || {}) };
+        riveInputs[inputName] = value;
+
+        onUpdateElement(elementId, {
+            properties: {
+                ...element.properties,
+                riveInputs
+            }
+        });
+    }, [elements, onUpdateElement]);
+
+    /**
+     * Handle element Rive binding change
+     */
+    const handleElementRiveBindingChange = useCallback((elementId: string, bindingName: string, value: any) => {
+        if (!onUpdateElement) return;
+
+        const element = elements.find(el => el.id === elementId);
+        if (!element || element.type !== 'media-rive') return;
+
+        const riveBindings = { ...(element.properties.riveBindings || {}) };
+        riveBindings[bindingName] = value;
+
+        onUpdateElement(elementId, {
+            properties: {
+                ...element.properties,
+                riveBindings
+            }
+        });
+    }, [elements, onUpdateElement]);
+
+    /**
      * Update test value for a sensor tag
+     * Checks if it's a Rive input/binding and updates accordingly
      */
     const handleTestValueChange = useCallback((sensorTag: string, value: string) => {
+        // Parse value once
+        const numValue = parseFloat(value);
+        const parsedValue = value.trim() === '' ? undefined : (isNaN(numValue) ? value : numValue);
+
+        // Check if this is a background Rive input
+        const isBackgroundRiveInput = backgroundRiveMachines.some(machine =>
+            machine.inputs.some(input => input.name === sensorTag)
+        );
+        if (isBackgroundRiveInput) {
+            handleBackgroundRiveInputChange(sensorTag, parsedValue);
+            return;
+        }
+
+        // Check if this is a background Rive binding
+        const isBackgroundRiveBinding = backgroundRiveBindings.some(binding => binding.name === sensorTag);
+        if (isBackgroundRiveBinding) {
+            handleBackgroundRiveBindingChange(sensorTag, parsedValue);
+            return;
+        }
+
+        // Check if this is an element Rive input or binding
+        for (const [elementId, discovery] of elementRiveDiscoveries.entries()) {
+            const isElementRiveInput = discovery.machines.some((machine: DiscoveredRiveStateMachine) =>
+                machine.inputs.some(input => input.name === sensorTag)
+            );
+            if (isElementRiveInput) {
+                handleElementRiveInputChange(elementId, sensorTag, parsedValue);
+                return;
+            }
+
+            const isElementRiveBinding = discovery.bindings.some((binding: DiscoveredRiveDataBinding) => binding.name === sensorTag);
+            if (isElementRiveBinding) {
+                handleElementRiveBindingChange(elementId, sensorTag, parsedValue);
+                return;
+            }
+        }
+
+        // Fall back to regular sensor test value update
         const sensorTestValues = { ...layout.sensorTestValues };
         const existing = sensorTestValues[sensorTag] || {};
 
@@ -152,16 +320,14 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
             // Remove entirely if all fields empty
             delete sensorTestValues[sensorTag];
         } else {
-            // Try to parse as number, otherwise store as string
-            const numValue = parseFloat(value);
             sensorTestValues[sensorTag] = {
                 ...existing,
-                value: value.trim() === '' ? undefined : (isNaN(numValue) ? value : numValue)
+                value: parsedValue
             };
         }
 
         onLayoutUpdate({ sensorTestValues });
-    }, [layout.sensorTestValues, onLayoutUpdate]);
+    }, [layout.sensorTestValues, onLayoutUpdate, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries, handleBackgroundRiveInputChange, handleBackgroundRiveBindingChange, handleElementRiveInputChange, handleElementRiveBindingChange]);
 
     /**
      * Update test label for a sensor tag
@@ -252,25 +418,6 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
         }
     };
 
-
-    if (elements.length === 0) {
-        return (
-            <Box
-                sx={{
-                    p: 1.5,
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}
-            >
-                <Typography variant="caption" color="text.secondary" textAlign="center">
-                    No elements on canvas
-                </Typography>
-            </Box>
-        );
-    }
-
     return (
         <Box
             sx={{
@@ -330,9 +477,58 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
                             }}
                         />
 
-                        <Typography variant="caption" color="text.secondary" display="block">
-                            SensorTag Bindings grouped by element type:
-                        </Typography>
+                        {/* Background Rive Section */}
+                        {(backgroundRiveMachines.length > 0 || backgroundRiveBindings.length > 0) && (
+                            <Paper
+                                elevation={0}
+                                sx={{ p: 1, border: 1, borderColor: 'primary.main', bgcolor: 'action.selected' }}
+                            >
+                                <Typography variant="caption" fontWeight="bold" display="block" mb={1}>
+                                    Background Rive
+                                </Typography>
+
+                                {backgroundRiveMachines.flatMap((machine: DiscoveredRiveStateMachine) => machine.inputs).map((input: DiscoveredRiveInput) => (
+                                    <Box key={`bg-input-${input.name}`} sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                            Input:
+                                        </Typography>
+                                        <Typography variant="caption" fontWeight="bold" fontSize="11px" sx={{ fontFamily: 'monospace' }}>
+                                            {input.name}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                            ({input.type})
+                                        </Typography>
+                                    </Box>
+                                ))}
+
+                                {backgroundRiveBindings.map(binding => (
+                                    <Box key={`bg-binding-${binding.name}`} sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                            Binding:
+                                        </Typography>
+                                        <Typography variant="caption" fontWeight="bold" fontSize="11px" sx={{ fontFamily: 'monospace' }}>
+                                            {binding.name}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                            ({binding.type})
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Paper>
+                        )}
+
+                        {/* Show "no elements" message only if no Background Rive and no elements */}
+                        {elements.length === 0 && backgroundRiveMachines.length === 0 && backgroundRiveBindings.length === 0 && (
+                            <Typography variant="caption" color="text.secondary" textAlign="center" display="block" sx={{ py: 2 }}>
+                                No elements or Rive assets on canvas
+                            </Typography>
+                        )}
+
+                        {elements.length > 0 && (
+                            <Typography variant="caption" color="text.secondary" display="block">
+                                SensorTag Bindings grouped by element type:
+                            </Typography>
+                        )}
 
                         {Object.entries(elementsByType).map(([elementType, typeElements]) => {
                             // Filter to only elements with SensorTags (sensor and gauge types)
@@ -361,21 +557,71 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
                                     </Box>
 
                                     {elementsWithTags.map(element => (
-                                        <Box key={element.id} sx={{ mb: 1, '&:last-child': { mb: 0 } }}>
-                                            <Typography variant="caption" color="text.secondary" display="block" fontSize="10px" mb={0.5}>
-                                                {element.id.substring(0, 8)}...
+                                        <Box key={element.id} sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                                Tag:
                                             </Typography>
-                                            <TextField
-                                                label={element.properties.sensorTag}
-                                                value={getTestValue(element.properties.sensorTag)}
-                                                onChange={(e) => handleTestValueChange(element.properties.sensorTag, e.target.value)}
-                                                placeholder="Test value"
-                                                size="small"
-                                                fullWidth
-                                                sx={{
-                                                    '& input': { fontFamily: 'monospace', fontSize: '12px' }
-                                                }}
-                                            />
+                                            <Typography variant="caption" fontWeight="bold" fontSize="11px" sx={{ fontFamily: 'monospace' }}>
+                                                {element.properties.sensorTag}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.disabled" fontSize="9px">
+                                                (...{element.id.substring(element.id.length - 8)})
+                                            </Typography>
+                                        </Box>
+                                    ))}
+                                </Paper>
+                            );
+                        })}
+
+                        {/* MediaRive Elements Section */}
+                        {Array.from(elementRiveDiscoveries.entries()).map(([elementId, discovery]) => {
+                            const element = elements.find(el => el.id === elementId);
+                            if (!element || element.type !== 'media-rive') return null;
+                            if (discovery.machines.length === 0 && discovery.bindings.length === 0) return null;
+
+                            return (
+                                <Paper
+                                    key={`rive-${elementId}`}
+                                    elevation={0}
+                                    sx={{ p: 1, border: 1, borderColor: 'divider' }}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                                        <Box sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                                            {getElementIcon('media-rive', 'small')}
+                                        </Box>
+                                        <Typography variant="caption" fontWeight="bold">
+                                            {getElementDisplayName('media-rive')}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                            (...{elementId.slice(-8)})
+                                        </Typography>
+                                    </Box>
+
+                                    {discovery.machines.flatMap((machine: DiscoveredRiveStateMachine) => machine.inputs).map((input: DiscoveredRiveInput) => (
+                                        <Box key={`${elementId}-input-${input.name}`} sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                                Input:
+                                            </Typography>
+                                            <Typography variant="caption" fontWeight="bold" fontSize="11px" sx={{ fontFamily: 'monospace' }}>
+                                                {input.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                                ({input.type})
+                                            </Typography>
+                                        </Box>
+                                    ))}
+
+                                    {discovery.bindings.map((binding: DiscoveredRiveDataBinding) => (
+                                        <Box key={`${elementId}-binding-${binding.name}`} sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                                Binding:
+                                            </Typography>
+                                            <Typography variant="caption" fontWeight="bold" fontSize="11px" sx={{ fontFamily: 'monospace' }}>
+                                                {binding.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                                ({binding.type})
+                                            </Typography>
                                         </Box>
                                     ))}
                                 </Paper>
@@ -449,7 +695,25 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
                                 const elementsUsingTag = elements.filter(el =>
                                     hasSensorTag(el) && el.properties.sensorTag === sensorTag
                                 );
+
+                                // Check if this is a background Rive input
+                                const isBackgroundRiveInput = backgroundRiveMachines.some(machine =>
+                                    machine.inputs.some(input => input.name === sensorTag)
+                                );
+
+                                // Check if this is an element Rive input and collect element IDs
+                                const riveElementIds: string[] = [];
+                                elementRiveDiscoveries.forEach((discovery, elementId) => {
+                                    const hasInput = discovery.machines.some((machine: DiscoveredRiveStateMachine) =>
+                                        machine.inputs.some(input => input.name === sensorTag)
+                                    );
+                                    if (hasInput) {
+                                        riveElementIds.push(elementId);
+                                    }
+                                });
+
                                 const isIncluded = includedSensorTags.has(sensorTag);
+                                const hasUsage = elementsUsingTag.length > 0 || isBackgroundRiveInput || riveElementIds.length > 0;
 
                                 return (
                                     <Paper
@@ -519,12 +783,42 @@ const FrameEngine2_Tab_Bindings: React.FC<FrameEngine2_Tab_BindingsProps> = ({
                                             }}
                                         />
 
-                                        {/* List elements using this sensor tag */}
-                                        {elementsUsingTag.length > 0 && (
+                                        {/* List usage (elements and Rive inputs) */}
+                                        {hasUsage && (
                                             <Box sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
                                                 <Typography variant="caption" color="text.secondary" display="block" fontSize="9px" mb={0.5}>
                                                     Used by:
                                                 </Typography>
+
+                                                {/* Background Rive */}
+                                                {isBackgroundRiveInput && (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                        <Typography variant="caption" fontSize="10px" color="primary">
+                                                            Background Rive
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+
+                                                {/* Rive Elements */}
+                                                {riveElementIds.map(elementId => {
+                                                    const element = elements.find(el => el.id === elementId);
+                                                    if (!element) return null;
+                                                    return (
+                                                        <Box key={`rive-${elementId}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                            <Box sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                                                                {getElementIcon('media-rive', 'small')}
+                                                            </Box>
+                                                            <Typography variant="caption" fontSize="10px">
+                                                                {getElementDisplayName('media-rive')}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary" fontSize="9px">
+                                                                (...{elementId.slice(-8)})
+                                                            </Typography>
+                                                        </Box>
+                                                    );
+                                                })}
+
+                                                {/* Regular Elements */}
                                                 {elementsUsingTag.map(element => (
                                                     <Box key={element.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                                                         <Box sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center' }}>

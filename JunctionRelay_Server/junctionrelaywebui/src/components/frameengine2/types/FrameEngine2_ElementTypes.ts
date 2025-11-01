@@ -131,12 +131,44 @@ export interface MediaVideoProperties {
 }
 
 /**
+ * Discovered Rive input from state machine
+ */
+export interface DiscoveredRiveInput {
+    name: string;
+    type: 'number' | 'boolean' | 'trigger' | 'unknown';
+    currentValue?: any;
+    ref?: any;
+}
+
+/**
+ * Discovered Rive state machine with inputs
+ */
+export interface DiscoveredRiveStateMachine {
+    name: string;
+    inputNames: string[];
+    inputs: DiscoveredRiveInput[];
+}
+
+/**
+ * Discovered Rive data binding (View Model property)
+ */
+export interface DiscoveredRiveDataBinding {
+    name: string;
+    type: 'number' | 'string' | 'boolean' | 'color' | 'trigger' | 'enum' | 'list' | 'image' | 'unknown';
+    currentValue?: any;
+    ref?: any;
+}
+
+/**
  * Properties for MediaRive element type
  */
 export interface MediaRiveProperties {
     filename: string | null;
     autoplay: boolean;
     backgroundColor: string;
+    riveStateMachine?: string;
+    riveInputs?: Record<string, any>;
+    riveBindings?: Record<string, any>;
 }
 
 /**

@@ -148,6 +148,26 @@ export interface SensorTagStats {
 // ============================================================================
 
 /**
+ * Rive discovery information for debug panel
+ */
+export interface RiveDebugInfo {
+    /** Number of discovered state machines */
+    stateMachines: number;
+
+    /** Total number of state machine inputs */
+    totalInputs: number;
+
+    /** Number of discovered data bindings */
+    dataBindings: number;
+
+    /** Input names */
+    inputNames: string[];
+
+    /** Data binding names */
+    bindingNames: string[];
+}
+
+/**
  * Complete data structure for the debug panel
  */
 export interface SensorDebugData {
@@ -159,4 +179,7 @@ export interface SensorDebugData {
 
     /** Statistics summary */
     stats: SensorTagStats;
+
+    /** Rive discovery information (optional) */
+    riveInfo?: RiveDebugInfo;
 }

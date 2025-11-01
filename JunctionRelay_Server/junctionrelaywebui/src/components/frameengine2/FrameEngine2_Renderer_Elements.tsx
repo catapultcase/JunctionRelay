@@ -23,6 +23,10 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import type { PlacedElement, GridSettings } from './types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from './types/FrameEngine2_ElementTypes';
 import FrameEngine2_Element_Sensor from './elements/FrameEngine2_Element_Sensor';
 import FrameEngine2_Element_Text from './elements/FrameEngine2_Element_Text';
 import FrameEngine2_Element_TimeDate from './elements/FrameEngine2_Element_TimeDate';
@@ -80,6 +84,9 @@ interface FrameEngine2_Renderer_ElementsProps {
 
     /** Preview mode - disables selection and editing */
     previewMode?: boolean;
+
+    /** Callback for Rive discovery (MediaRive elements only) */
+    onRiveDiscovery?: (elementId: string, machines: DiscoveredRiveStateMachine[], bindings: DiscoveredRiveDataBinding[]) => void;
 }
 
 /**
@@ -95,7 +102,8 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
     showPlaceholders = true,
     elementPadding = 4,
     grid,
-    previewMode = false
+    previewMode = false,
+    onRiveDiscovery
 }) => {
     // Hover state for border highlighting
     const [isHovered, setIsHovered] = useState(false);
@@ -181,9 +189,11 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                 return (
                     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#f5f5f5' }} />}>
                         <FrameEngine2_Element_MediaRive
+                            elementId={element.id}
                             properties={element.properties}
                             width={element.width}
                             height={element.height}
+                            onRiveDiscovery={onRiveDiscovery}
                         />
                     </Suspense>
                 );
@@ -221,7 +231,7 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                     </div>
                 );
         }
-    }, [element.type, element.properties, element.width, element.height, resolvedValues, showPlaceholders, elementPadding]);
+    }, [element.type, element.properties, element.width, element.height, element.id, resolvedValues, showPlaceholders, elementPadding, onRiveDiscovery]);
 
     /**
      * Handle click - select element

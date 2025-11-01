@@ -126,7 +126,57 @@ export function useSensorTagManager(params: UseSensorTagManagerParams): UseSenso
                     value: undefined
                 });
             }
+
+            // Scan media-rive elements for Rive inputs/bindings
+            if (element.type === 'media-rive') {
+                // Scan Rive inputs
+                if (element.properties.riveInputs) {
+                    Object.keys(element.properties.riveInputs).forEach(inputName => {
+                        addTarget(inputName, {
+                            type: 'element-rive-input',
+                            elementId: element.id,
+                            elementType: element.type,
+                            propertyPath: `riveInputs.${inputName}`,
+                            value: undefined
+                        });
+                    });
+                }
+
+                // Scan Rive bindings
+                if (element.properties.riveBindings) {
+                    Object.keys(element.properties.riveBindings).forEach(bindingName => {
+                        addTarget(bindingName, {
+                            type: 'element-rive-binding',
+                            elementId: element.id,
+                            elementType: element.type,
+                            propertyPath: `riveBindings.${bindingName}`,
+                            value: undefined
+                        });
+                    });
+                }
+            }
         });
+
+        // Scan background Rive inputs/bindings
+        if (layout.riveInputs) {
+            Object.keys(layout.riveInputs).forEach(inputName => {
+                addTarget(inputName, {
+                    type: 'background-rive-input',
+                    propertyPath: `riveInputs.${inputName}`,
+                    value: undefined
+                });
+            });
+        }
+
+        if (layout.riveBindings) {
+            Object.keys(layout.riveBindings).forEach(bindingName => {
+                addTarget(bindingName, {
+                    type: 'background-rive-binding',
+                    propertyPath: `riveBindings.${bindingName}`,
+                    value: undefined
+                });
+            });
+        }
 
         // Update registry with new outputs
         setRegistry(prev => ({

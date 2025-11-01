@@ -243,7 +243,8 @@ const FrameEngine2_CanvasControls: React.FC<FrameEngine2_CanvasControlsProps> = 
         borderRadius: '4px',
         cursor: 'pointer',
         boxShadow: theme.shadows[2],
-        fontWeight: 'bold'
+        fontWeight: 'bold',
+        width: '100%'
     }), [theme, showDebugPanel, isDebugButtonHovered]);
 
     const controlPanelStyle = useMemo(() => ({
@@ -329,13 +330,6 @@ const FrameEngine2_CanvasControls: React.FC<FrameEngine2_CanvasControlsProps> = 
         margin: '6px 0'
     }), [theme]);
 
-    const debugButtonContainerStyle = useMemo(() => ({
-        position: 'absolute' as const,
-        bottom: '16px',
-        right: '16px',
-        zIndex: 100
-    }), []);
-
     return (
         <>
             {/* Top-right controls */}
@@ -346,6 +340,17 @@ const FrameEngine2_CanvasControls: React.FC<FrameEngine2_CanvasControlsProps> = 
                         ⚠️ {missingSensorTagCount} element{missingSensorTagCount !== 1 ? 's' : ''} missing SensorTag
                     </div>
                 )}
+
+                {/* Debug Toggle Button */}
+                <button
+                    onClick={onToggleDebugPanel}
+                    style={debugButtonStyle}
+                    onMouseEnter={() => setIsDebugButtonHovered(true)}
+                    onMouseLeave={() => setIsDebugButtonHovered(false)}
+                    title="Toggle sensor tag debug panel"
+                >
+                    {showDebugPanel ? 'Hide Debug' : 'Show Debug'}
+                </button>
 
                 {/* Reset View Button */}
                 <FrameEngine2_ResetViewButton onReset={onResetView} />
@@ -589,19 +594,6 @@ const FrameEngine2_CanvasControls: React.FC<FrameEngine2_CanvasControlsProps> = 
                         </div>
                     </div>
                 )}
-            </div>
-
-            {/* Bottom-right Debug button */}
-            <div style={debugButtonContainerStyle}>
-                <button
-                    onClick={onToggleDebugPanel}
-                    style={debugButtonStyle}
-                    onMouseEnter={() => setIsDebugButtonHovered(true)}
-                    onMouseLeave={() => setIsDebugButtonHovered(false)}
-                    title="Toggle sensor tag debug panel"
-                >
-                    {showDebugPanel ? 'Hide Debug' : 'Show Debug'}
-                </button>
             </div>
         </>
     );

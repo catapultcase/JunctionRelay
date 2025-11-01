@@ -19,6 +19,10 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { FrameLayoutConfig, PlacedElement } from '../types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from '../types/FrameEngine2_ElementTypes';
 
 /**
  * Parameters for useValueGenerator hook
@@ -32,6 +36,18 @@ export interface UseValueGeneratorParams {
 
     /** Callback to update layout (for saving test values) */
     onLayoutUpdate: (updates: Partial<FrameLayoutConfig>) => void;
+
+    /** Background Rive state machine discoveries */
+    backgroundRiveMachines?: DiscoveredRiveStateMachine[];
+
+    /** Background Rive data binding discoveries */
+    backgroundRiveBindings?: DiscoveredRiveDataBinding[];
+
+    /** Element Rive discoveries */
+    elementRiveDiscoveries?: Map<string, {
+        machines: DiscoveredRiveStateMachine[];
+        bindings: DiscoveredRiveDataBinding[];
+    }>;
 }
 
 /**
@@ -64,7 +80,7 @@ export interface UseValueGeneratorResult {
  * @returns Value generator interface
  */
 export function useValueGenerator(params: UseValueGeneratorParams): UseValueGeneratorResult {
-    const { layout, elements, onLayoutUpdate } = params;
+    const { layout, elements, onLayoutUpdate, backgroundRiveMachines = [], backgroundRiveBindings = [], elementRiveDiscoveries = new Map() } = params;
 
     // State for which sensor tags are included in generation
     // Initialize from layout.canvasSettings.includedSensorTags if available
@@ -82,19 +98,46 @@ export function useValueGenerator(params: UseValueGeneratorParams): UseValueGene
     const hasSyncedRef = useRef<boolean>(false); // Track if we've synced from saved preferences
 
     /**
-     * Extract all SensorTags from elements
+     * Extract all SensorTags from elements, Rive inputs, and Rive data bindings
      * OPTIMIZATION: Memoized to prevent recalculation on every render
      */
     const allSensorTags = useMemo(() => {
         const tags = new Set<string>();
+
+        // Extract from sensor and gauge elements
         elements.forEach(element => {
             // Type guard: only sensor and gauge elements have sensorTag
             if ((element.type === 'sensor' || element.type === 'gauge') && element.properties.sensorTag) {
                 tags.add(element.properties.sensorTag);
             }
         });
+
+        // Extract from background Rive state machine inputs
+        backgroundRiveMachines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                tags.add(input.name);
+            });
+        });
+
+        // Extract from background Rive data bindings
+        backgroundRiveBindings.forEach(binding => {
+            tags.add(binding.name);
+        });
+
+        // Extract from element Rive inputs and data bindings
+        elementRiveDiscoveries.forEach((discovery) => {
+            discovery.machines.forEach((machine: DiscoveredRiveStateMachine) => {
+                machine.inputs.forEach(input => {
+                    tags.add(input.name);
+                });
+            });
+            discovery.bindings.forEach((binding: DiscoveredRiveDataBinding) => {
+                tags.add(binding.name);
+            });
+        });
+
         return Array.from(tags);
-    }, [elements]);
+    }, [elements, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries]);
 
     /**
      * Keep refs in sync with state/props

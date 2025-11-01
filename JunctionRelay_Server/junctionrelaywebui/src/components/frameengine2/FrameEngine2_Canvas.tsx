@@ -24,7 +24,18 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useTheme } from '@mui/material/styles';
 import type { FrameLayoutConfig, PlacedElement } from './types/FrameEngine2_LayoutTypes';
-import type { SensorProperties, TextProperties, GaugeProperties, TimeDateProperties, MediaImageProperties, MediaVideoProperties, MediaRiveProperties, ECGProperties } from './types/FrameEngine2_ElementTypes';
+import type {
+    SensorProperties,
+    TextProperties,
+    GaugeProperties,
+    TimeDateProperties,
+    MediaImageProperties,
+    MediaVideoProperties,
+    MediaRiveProperties,
+    ECGProperties,
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from './types/FrameEngine2_ElementTypes';
 import FrameEngine2_CanvasControls from './FrameEngine2_CanvasControls';
 import FrameEngine2_SensorDebugPanel from './FrameEngine2_SensorDebugPanel';
 import FrameEngine2_Renderer_Elements from './FrameEngine2_Renderer_Elements';
@@ -111,6 +122,12 @@ interface FrameEngine2_CanvasProps {
 
     /** Preview mode - hides canvas options */
     previewMode?: boolean;
+
+    /** Optional callback when background Rive discoveries change */
+    onBackgroundRiveDiscovery?: (machines: DiscoveredRiveStateMachine[], bindings: DiscoveredRiveDataBinding[]) => void;
+
+    /** Optional callback when element Rive discoveries change */
+    onElementRiveDiscovery?: (discoveries: Map<string, { machines: DiscoveredRiveStateMachine[]; bindings: DiscoveredRiveDataBinding[] }>) => void;
 }
 
 /**
@@ -254,7 +271,9 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
     selectedElementId,
     onSelectElement,
     onZoomChange,
-    previewMode = false
+    previewMode = false,
+    onBackgroundRiveDiscovery,
+    onElementRiveDiscovery
 }, ref) => {
     const theme = useTheme();
 
@@ -267,15 +286,43 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
     // Drag over state for visual feedback
     const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
+    // Rive discovery state - Background
+    const [backgroundRiveMachines, setBackgroundRiveMachines] = useState<DiscoveredRiveStateMachine[]>([]);
+    const [backgroundRiveBindings, setBackgroundRiveBindings] = useState<DiscoveredRiveDataBinding[]>([]);
+
+    // Rive discovery state - Elements (Map of elementId -> discoveries)
+    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Map<string, {
+        machines: DiscoveredRiveStateMachine[];
+        bindings: DiscoveredRiveDataBinding[];
+    }>>(new Map());
+
     // Color picker context (replaces window API)
     const colorPicker = useColorPicker();
 
     // Initialize sensor tag manager
-    const { debugData, resolvedValues } = useSensorTagManager({
+    const { debugData: baseDebugData, resolvedValues } = useSensorTagManager({
         layout,
         elements,
         enabled: true
     });
+
+    // Enhance debug data with Rive discovery info
+    const debugData = useMemo(() => {
+        const totalInputs = backgroundRiveMachines.reduce((sum, m) => sum + m.inputs.length, 0);
+        const inputNames = backgroundRiveMachines.flatMap(m => m.inputs.map(i => i.name));
+        const bindingNames = backgroundRiveBindings.map(b => b.name);
+
+        return {
+            ...baseDebugData,
+            riveInfo: {
+                stateMachines: backgroundRiveMachines.length,
+                totalInputs,
+                dataBindings: backgroundRiveBindings.length,
+                inputNames,
+                bindingNames
+            }
+        };
+    }, [baseDebugData, backgroundRiveMachines, backgroundRiveBindings]);
 
     // Initialize canvas viewport for pan/zoom
     const {
@@ -334,6 +381,62 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
     const handleToggleDebugPanel = useCallback(() => {
         setShowDebugPanel(prev => !prev);
     }, []);
+
+    /**
+     * Handle Rive discovery from background renderer
+     */
+    const handleBackgroundRiveDiscovery = useCallback((
+        machines: DiscoveredRiveStateMachine[],
+        bindings: DiscoveredRiveDataBinding[]
+    ) => {
+        console.log('[FrameEngine2_Canvas] Background Rive discovery received:', {
+            machines: machines.length,
+            bindings: bindings.length
+        });
+        setBackgroundRiveMachines(machines);
+        setBackgroundRiveBindings(bindings);
+    }, []);
+
+    /**
+     * Handle Rive discovery from element renderers
+     */
+    const handleElementRiveDiscovery = useCallback((
+        elementId: string,
+        machines: DiscoveredRiveStateMachine[],
+        bindings: DiscoveredRiveDataBinding[]
+    ) => {
+        console.log(`[FrameEngine2_Canvas] Element Rive discovery received for ${elementId}:`, {
+            machines: machines.length,
+            bindings: bindings.length
+        });
+        setElementRiveDiscoveries(prev => {
+            const next = new Map(prev);
+            next.set(elementId, { machines, bindings });
+            console.log('[FrameEngine2_Canvas] Element discoveries map updated:', {
+                totalElements: next.size,
+                elementIds: Array.from(next.keys())
+            });
+            return next;
+        });
+    }, []);
+
+    /**
+     * Notify parent when background Rive discoveries change
+     */
+    useEffect(() => {
+        if (onBackgroundRiveDiscovery) {
+            onBackgroundRiveDiscovery(backgroundRiveMachines, backgroundRiveBindings);
+        }
+    }, [backgroundRiveMachines, backgroundRiveBindings, onBackgroundRiveDiscovery]);
+
+    /**
+     * Notify parent when element Rive discoveries change
+     */
+    useEffect(() => {
+        if (onElementRiveDiscovery) {
+            onElementRiveDiscovery(elementRiveDiscoveries);
+        }
+    }, [elementRiveDiscoveries, onElementRiveDiscovery]);
 
     /**
      * Convert color picker string to RgbaColor object
@@ -539,7 +642,10 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
                 style={canvasContainerStyle}
             >
                 {/* Background Layer (Image/Video/Rive) - z-index: 0 */}
-                <FrameEngine2_Renderer_Background layout={layout} />
+                <FrameEngine2_Renderer_Background
+                    layout={layout}
+                    onRiveDiscovery={handleBackgroundRiveDiscovery}
+                />
 
                 {/* Grid Overlay */}
                 {grid.showGrid && (
@@ -562,6 +668,7 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
                             elementPadding={canvasSettings.elementPadding}
                             grid={grid}
                             previewMode={previewMode}
+                            onRiveDiscovery={handleElementRiveDiscovery}
                         />
                     ))}
                 </div>

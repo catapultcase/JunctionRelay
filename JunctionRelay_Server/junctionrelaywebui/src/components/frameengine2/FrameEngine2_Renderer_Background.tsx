@@ -24,9 +24,19 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { useRive, UseRiveParameters } from '@rive-app/react-canvas';
 import type { FrameLayoutConfig } from './types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from './types/FrameEngine2_ElementTypes';
+import {
+    discoverRiveInputsAndBindings,
+    applyRiveInputs,
+    applyRiveBindings
+} from './FrameEngine2_RiveDiscovery';
 
 interface FrameEngine2_Renderer_BackgroundProps {
     layout: FrameLayoutConfig;
+    onRiveDiscovery?: (machines: DiscoveredRiveStateMachine[], bindings: DiscoveredRiveDataBinding[]) => void;
 }
 
 /**
@@ -35,17 +45,20 @@ interface FrameEngine2_Renderer_BackgroundProps {
  * Supports three background types:
  * - Image: Static image with fit modes (cover, contain, fill, etc.)
  * - Video: Looping video background with autoplay
- * - Rive: Animated Rive background (no bindings yet - kept simple)
+ * - Rive: Animated Rive background with input/binding discovery and application
  *
  * Performance optimizations:
  * - All styles memoized to prevent recreation
  * - Video/Rive only rendered when actually needed
  * - Error handling to prevent crashes
  * - Error states reset when file changes (ensures new files load)
+ * - Rive discovery runs asynchronously with retry logic
  */
-const FrameEngine2_Renderer_Background: React.FC<FrameEngine2_Renderer_BackgroundProps> = ({ layout }) => {
+const FrameEngine2_Renderer_Background: React.FC<FrameEngine2_Renderer_BackgroundProps> = ({ layout, onRiveDiscovery }) => {
     const [imageError, setImageError] = useState(false);
     const [videoError, setVideoError] = useState(false);
+    const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredRiveStateMachine[]>([]);
+    const [discoveredBindings, setDiscoveredBindings] = useState<DiscoveredRiveDataBinding[]>([]);
 
     /**
      * Determine background type (image, video, rive, or none)
@@ -168,20 +181,25 @@ const FrameEngine2_Renderer_Background: React.FC<FrameEngine2_Renderer_Backgroun
     /**
      * Rive configuration - memoized
      * Only created when Rive background is active
+     * Enables autoBind for View Model data bindings and stateMachine selection
      */
     const riveParams = useMemo<UseRiveParameters | null>(() => {
         if (backgroundType !== 'rive' || !resolvedRiveUrl) return null;
 
         return {
             src: resolvedRiveUrl,
-            autoplay: true
+            autoplay: true,
+            autoBind: true, // Required for View Model data bindings
+            stateMachines: layout.riveStateMachine ? [layout.riveStateMachine] : undefined,
+            automaticallyHandleEvents: true
         };
-    }, [backgroundType, resolvedRiveUrl]);
+    }, [backgroundType, resolvedRiveUrl, layout.riveStateMachine]);
 
     /**
      * Rive hook - only initialized when needed
+     * Returns rive instance for discovery and binding application
      */
-    const { RiveComponent } = useRive(riveParams || {
+    const { RiveComponent, rive } = useRive(riveParams || {
         src: '',
         autoplay: false
     });
@@ -201,6 +219,64 @@ const FrameEngine2_Renderer_Background: React.FC<FrameEngine2_Renderer_Backgroun
         console.warn('[FrameEngine2_Renderer_Background] Failed to load background video:', resolvedVideoUrl);
         setVideoError(true);
     }, [resolvedVideoUrl]);
+
+    /**
+     * Discovery effect - triggers when Rive file changes
+     * Discovers state machine inputs and view model data bindings
+     */
+    useEffect(() => {
+        if (!rive || backgroundType !== 'rive') {
+            setDiscoveredMachines([]);
+            setDiscoveredBindings([]);
+            return;
+        }
+
+        let cancelled = false;
+
+        // Wait 100ms before discovery (viewModel property may not be immediately available)
+        const timeoutId = setTimeout(() => {
+            if (cancelled) return;
+
+            discoverRiveInputsAndBindings(rive)
+                .then(({ machines, bindings }) => {
+                    if (cancelled) return;
+
+                    setDiscoveredMachines(machines);
+                    setDiscoveredBindings(bindings);
+
+                    // Notify parent of discovery
+                    if (onRiveDiscovery) {
+                        onRiveDiscovery(machines, bindings);
+                    }
+                })
+                .catch((error) => {
+                    console.error('[FrameEngine2_Renderer_Background] Rive discovery failed:', error);
+                });
+        }, 100);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
+    }, [rive, backgroundType, resolvedRiveUrl, onRiveDiscovery]);
+
+    /**
+     * Apply state machine inputs when layout.riveInputs changes
+     */
+    useEffect(() => {
+        if (!rive || !layout.riveInputs || discoveredMachines.length === 0) return;
+
+        applyRiveInputs(discoveredMachines, layout.riveInputs);
+    }, [rive, layout.riveInputs, discoveredMachines]);
+
+    /**
+     * Apply data bindings when layout.riveBindings changes
+     */
+    useEffect(() => {
+        if (!rive || !layout.riveBindings || discoveredBindings.length === 0) return;
+
+        applyRiveBindings(discoveredBindings, layout.riveBindings);
+    }, [rive, layout.riveBindings, discoveredBindings]);
 
     /**
      * Render appropriate background type

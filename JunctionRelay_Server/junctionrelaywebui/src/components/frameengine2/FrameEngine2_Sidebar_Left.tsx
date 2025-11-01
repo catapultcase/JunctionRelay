@@ -27,6 +27,10 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import LinkIcon from '@mui/icons-material/Link';
 import type { FrameLayoutConfig, PlacedElement } from './types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from './types/FrameEngine2_ElementTypes';
 import FrameEngine2_Tab_Layout from './FrameEngine2_Tab_Layout';
 import FrameEngine2_Tab_Element from './FrameEngine2_Tab_Element';
 import FrameEngine2_Tab_Bindings from './FrameEngine2_Tab_Bindings';
@@ -76,6 +80,16 @@ interface FrameEngine2_Sidebar_LeftProps {
 
     /** Callback when tab changes */
     onTabChange: (tab: number) => void;
+
+    /** Background Rive discoveries (from Canvas) */
+    backgroundRiveMachines?: DiscoveredRiveStateMachine[];
+    backgroundRiveBindings?: DiscoveredRiveDataBinding[];
+
+    /** Element Rive discoveries (from Canvas) */
+    elementRiveDiscoveries?: Map<string, {
+        machines: DiscoveredRiveStateMachine[];
+        bindings: DiscoveredRiveDataBinding[];
+    }>;
 }
 
 const FrameEngine2_Sidebar_Left: React.FC<FrameEngine2_Sidebar_LeftProps> = ({
@@ -93,7 +107,10 @@ const FrameEngine2_Sidebar_Left: React.FC<FrameEngine2_Sidebar_LeftProps> = ({
     onCaptureThumbnail,
     onUploadThumbnail,
     currentTab,
-    onTabChange
+    onTabChange,
+    backgroundRiveMachines = [],
+    backgroundRiveBindings = [],
+    elementRiveDiscoveries = new Map()
 }) => {
     // Force tab to Bindings (index 2) when in preview mode
     useEffect(() => {
@@ -186,6 +203,10 @@ const FrameEngine2_Sidebar_Left: React.FC<FrameEngine2_Sidebar_LeftProps> = ({
                         onLayoutUpdate={onLayoutUpdate}
                         includedSensorTags={includedSensorTags}
                         onToggleIncludeSensorTag={onToggleIncludeSensorTag}
+                        backgroundRiveMachines={backgroundRiveMachines}
+                        backgroundRiveBindings={backgroundRiveBindings}
+                        elementRiveDiscoveries={elementRiveDiscoveries}
+                        onUpdateElement={onUpdateElement}
                     />
                 )}
             </Box>
