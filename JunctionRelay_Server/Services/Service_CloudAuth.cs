@@ -36,6 +36,7 @@ namespace JunctionRelayServer.Services
         private readonly IService_Auth _authService;
         private readonly IService_Settings _settingsService;
         private readonly IService_Jwt _jwtService;
+        private readonly Service_LoginAndAuthentication_Logger _authLogger;
 
         // Cache configuration
         private static readonly TimeSpan ValidResponseCacheDuration = TimeSpan.FromSeconds(60);
@@ -55,7 +56,8 @@ namespace JunctionRelayServer.Services
             IMemoryCache cache,
             IService_Auth authService,
             IService_Settings settingsService,
-            IService_Jwt jwtService)
+            IService_Jwt jwtService,
+            Service_LoginAndAuthentication_Logger authLogger)
         {
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _httpClient = httpClientFactory.CreateClient();
@@ -64,6 +66,7 @@ namespace JunctionRelayServer.Services
             _authService = authService ?? throw new ArgumentNullException(nameof(authService));
             _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
             _jwtService = jwtService ?? throw new ArgumentNullException(nameof(jwtService));
+            _authLogger = authLogger ?? throw new ArgumentNullException(nameof(authLogger));
         }
 
         public async Task<IActionResult> InitiateLoginAsync(JsonElement request)
@@ -90,6 +93,7 @@ namespace JunctionRelayServer.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"[CLOUD_AUTH] Failed to initiate cloud auth: {response.StatusCode}");
+                    _authLogger.LogOAuthFlow("InitiateLogin", success: false, errorMessage: $"HTTP {response.StatusCode}");
                     return new ObjectResult(new { message = "Failed to initiate cloud auth" }) { StatusCode = 500 };
                 }
 
@@ -103,16 +107,19 @@ namespace JunctionRelayServer.Services
                     if (!string.IsNullOrWhiteSpace(authUrl))
                     {
                         Console.WriteLine("[CLOUD_AUTH] 🔁 Returning authUrl for browser redirect.");
+                        _authLogger.LogOAuthFlow("InitiateLogin", success: true);
                         return new OkObjectResult(new { authUrl });
                     }
                 }
 
                 Console.WriteLine("[CLOUD_AUTH] Cloud response missing authUrl; refusing to return tokens.");
+                _authLogger.LogOAuthFlow("InitiateLogin", success: false, errorMessage: "Missing authUrl in response");
                 return new ObjectResult(new { message = "Auth URL not available" }) { StatusCode = 500 };
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CLOUD_AUTH] Error initiating login: {ex.Message}");
+                _authLogger.LogOAuthFlow("InitiateLogin", success: false, errorMessage: ex.Message);
                 return new ObjectResult(new { message = "Error contacting cloud" }) { StatusCode = 500 };
             }
         }
@@ -139,6 +146,7 @@ namespace JunctionRelayServer.Services
             var friendlyName = _cloudSessionStore.GetFriendlyName();
 
             Console.WriteLine($"[CLOUD_AUTH] 🌐 Exchanging code with cloud. Code={code}, State={state}, Backend={backendId}");
+            _authLogger.LogOAuthFlow("ExchangeCode", state: state, code: code);
 
             try
             {
@@ -155,11 +163,14 @@ namespace JunctionRelayServer.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"[CLOUD_AUTH] Failed to exchange code with cloud: {response.StatusCode}");
+                    _authLogger.LogOAuthFlow("ExchangeCode", state: state, code: code, success: false, errorMessage: $"HTTP {response.StatusCode}");
                     return new ObjectResult(new { message = "Failed to exchange cloud auth code." }) { StatusCode = 500 };
                 }
 
                 var tokenData = await response.Content.ReadFromJsonAsync<JsonElement>();
 
+                string? userId = null;
+                string? email = null;
                 if (tokenData.TryGetProperty("token", out var tokenElement) &&
                     tokenData.TryGetProperty("refreshToken", out var refreshTokenElement))
                 {
@@ -168,7 +179,8 @@ namespace JunctionRelayServer.Services
 
                     if (!string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(refreshToken))
                     {
-                        string? userId = ExtractUserIdFromToken(token);
+                        userId = ExtractUserIdFromToken(token);
+                        email = ExtractEmailFromToken(token);
                         if (!string.IsNullOrEmpty(userId))
                         {
                             _cloudSessionStore.StoreSession(token, refreshToken, userId);
@@ -181,11 +193,13 @@ namespace JunctionRelayServer.Services
                 }
 
                 Console.WriteLine("[CLOUD_AUTH] ✅ Successfully exchanged code and received cloud tokens.");
+                _authLogger.LogLogin(userId ?? "Unknown", email ?? "Unknown", "cloud", success: true);
                 return new OkObjectResult(tokenData);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CLOUD_AUTH] Error during code exchange: {ex.Message}");
+                _authLogger.LogOAuthFlow("ExchangeCode", state: state, code: code, success: false, errorMessage: ex.Message);
                 return new ObjectResult(new { message = "Error during code exchange" }) { StatusCode = 500 };
             }
         }
@@ -270,6 +284,11 @@ namespace JunctionRelayServer.Services
 
         public async Task<IActionResult> GetAuthStatusAsync(string? authHeader)
         {
+            // Log frontend status check for navbar/UI
+            var userId = _cloudSessionStore.GetUserId();
+            var isAuthenticated = _cloudSessionStore.IsAuthenticated;
+            _authLogger.LogFrontendStatusCheck(userId, isAuthenticated, source: "GetAuthStatusAsync");
+
             var cloudApiUrl = _configuration["JunctionRelayCloud:ApiUrl"];
             if (string.IsNullOrEmpty(cloudApiUrl))
             {
@@ -289,10 +308,10 @@ namespace JunctionRelayServer.Services
             try
             {
                 var backendToken = await _cloudSessionStore.GetValidAccessTokenAsync();
-                var userId = _cloudSessionStore.GetUserId();
 
                 if (string.IsNullOrEmpty(backendToken) || string.IsNullOrEmpty(userId))
                 {
+                    _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: userId);
                     return new OkObjectResult(new
                     {
                         authMode = "cloud",
@@ -306,10 +325,14 @@ namespace JunctionRelayServer.Services
                 }
 
                 // Validate backend token without caching (to avoid stale cache after token refresh)
+                Console.WriteLine($"[CLOUD_AUTH] Validating backend token for user: {userId}");
                 var userInfoResult = await ValidateBackendTokenAsync(backendToken);
 
                 if (userInfoResult is OkObjectResult okResult && okResult.Value is JsonElement userInfo)
                 {
+                    Console.WriteLine($"[CLOUD_AUTH] Backend token validation SUCCESS for user: {userId}");
+                    _authLogger.LogBackendValidation(userId, success: true);
+                    _authLogger.LogBackendAuthStatus(isAuthenticated: true, userId: userId);
                     return new OkObjectResult(new
                     {
                         authMode = "cloud",
@@ -323,6 +346,13 @@ namespace JunctionRelayServer.Services
                 }
                 else
                 {
+                    var statusCode = userInfoResult is ObjectResult objResult ? objResult.StatusCode : null;
+                    var errorMsg = userInfoResult is ObjectResult errorResult && errorResult.Value != null
+                        ? errorResult.Value.ToString()
+                        : "Non-OK response from cloud API";
+                    Console.WriteLine($"[CLOUD_AUTH] Backend token validation FAILED for user: {userId}, StatusCode: {statusCode}");
+                    _authLogger.LogBackendValidation(userId, success: false, statusCode: statusCode, errorMessage: errorMsg);
+                    _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: userId);
                     return new OkObjectResult(new
                     {
                         authMode = "cloud",
@@ -338,6 +368,8 @@ namespace JunctionRelayServer.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[CLOUD_AUTH] Error getting cloud auth status: {ex.Message}");
+                _authLogger.LogBackendValidation(userId ?? "Unknown", success: false, statusCode: null, errorMessage: $"Exception: {ex.Message}");
+                _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: userId);
                 return new OkObjectResult(new
                 {
                     authMode = "cloud",
@@ -737,6 +769,32 @@ namespace JunctionRelayServer.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[CLOUD_AUTH] Failed to extract userId from token: {ex.Message}");
+                return null;
+            }
+        }
+
+        private string? ExtractEmailFromToken(string token)
+        {
+            try
+            {
+                var parts = token.Split('.');
+                if (parts.Length != 3) return null;
+
+                var payload = parts[1];
+                // Add padding if needed
+                payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
+
+                var bytes = Convert.FromBase64String(payload);
+                var json = Encoding.UTF8.GetString(bytes);
+
+                using var doc = JsonDocument.Parse(json);
+                return doc.RootElement.TryGetProperty("email", out var emailElement)
+                    ? emailElement.GetString()
+                    : null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLOUD_AUTH] Failed to extract email from token: {ex.Message}");
                 return null;
             }
         }

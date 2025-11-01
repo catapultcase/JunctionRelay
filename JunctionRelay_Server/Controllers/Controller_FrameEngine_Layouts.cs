@@ -126,6 +126,9 @@ namespace JunctionRelayServer.Controllers
                 if (errors.Count > 0)
                     return BadRequest(new { message = "Validation failed", errors });
 
+                // Determine background type and clean up unused properties
+                var backgroundType = (string.IsNullOrWhiteSpace(request.BackgroundType) ? "color" : request.BackgroundType).ToLowerInvariant();
+
                 var newFrameLayout = new Model_Frame_Layout
                 {
                     DisplayName = request.DisplayName.Trim(),
@@ -134,17 +137,25 @@ namespace JunctionRelayServer.Controllers
                     Width = request.Width ?? 800,
                     Height = request.Height ?? 600,
                     Orientation = string.IsNullOrWhiteSpace(request.Orientation) ? "landscape" : request.Orientation.ToLowerInvariant(),
-                    BackgroundType = string.IsNullOrWhiteSpace(request.BackgroundType) ? "color" : request.BackgroundType.ToLowerInvariant(),
+                    BackgroundType = backgroundType,
                     BackgroundColor = request.BackgroundColor ?? "#FFFFFF",
-                    BackgroundImageUrl = request.BackgroundImageUrl?.Trim(),
-                    BackgroundImageFit = request.BackgroundImageFit ?? "cover",
-                    BackgroundVideoUrl = request.BackgroundVideoUrl?.Trim(),
-                    BackgroundVideoFit = request.BackgroundVideoFit ?? "cover",
-                    VideoLoop = request.VideoLoop ?? true,
-                    VideoMuted = request.VideoMuted ?? true,
-                    VideoAutoplay = request.VideoAutoplay ?? true,
+
+                    // Only set image properties if using image background
+                    BackgroundImageUrl = (backgroundType == "image" || backgroundType == "url") ? request.BackgroundImageUrl?.Trim() : null,
+                    BackgroundImageFit = (backgroundType == "image" || backgroundType == "url") ? (request.BackgroundImageFit ?? "cover") : null,
+
+                    // Only set video properties if using video background
+                    BackgroundVideoUrl = (backgroundType == "video") ? request.BackgroundVideoUrl?.Trim() : null,
+                    BackgroundVideoFit = (backgroundType == "video") ? (request.BackgroundVideoFit ?? "cover") : null,
+                    VideoLoop = (backgroundType == "video") ? (request.VideoLoop ?? true) : true,
+                    VideoMuted = (backgroundType == "video") ? (request.VideoMuted ?? true) : true,
+                    VideoAutoplay = (backgroundType == "video") ? (request.VideoAutoplay ?? true) : true,
+
                     BackgroundOpacity = Math.Clamp(request.BackgroundOpacity ?? 1.0, 0.0, 1.0),
-                    RiveFile = request.RiveFile?.Trim(),
+
+                    // Only set rive file if using rive background
+                    RiveFile = (backgroundType == "rive") ? request.RiveFile?.Trim() : null,
+
                     JsonFrameConfig = SanitizeJson(request.JsonFrameConfig) ?? "{}",
                     JsonFrameElements = SanitizeJson(request.JsonFrameElements) ?? "[]",
 
@@ -202,23 +213,57 @@ namespace JunctionRelayServer.Controllers
                 if (request.BackgroundColor != null)
                     existing.BackgroundColor = request.BackgroundColor;
 
-                // Background image fields - allow null to clear the value
-                existing.BackgroundImageUrl = request.BackgroundImageUrl?.Trim();
-                existing.BackgroundImageFit = request.BackgroundImageFit;
+                // Clean up unused background properties based on backgroundType
+                var backgroundType = existing.BackgroundType.ToLowerInvariant();
 
-                // Background video fields - allow null to clear the value
-                existing.BackgroundVideoUrl = request.BackgroundVideoUrl?.Trim();
-                existing.BackgroundVideoFit = request.BackgroundVideoFit;
-                // Video boolean fields - always update (frontend sends false for non-video modes)
-                existing.VideoLoop = request.VideoLoop ?? existing.VideoLoop;
-                existing.VideoMuted = request.VideoMuted ?? existing.VideoMuted;
-                existing.VideoAutoplay = request.VideoAutoplay ?? existing.VideoAutoplay;
+                // Background image fields
+                if (backgroundType != "image" && backgroundType != "url")
+                {
+                    // NULL out image properties if not using image background
+                    existing.BackgroundImageUrl = null;
+                    existing.BackgroundImageFit = null;
+                }
+                else
+                {
+                    // Only update if using image background
+                    existing.BackgroundImageUrl = request.BackgroundImageUrl?.Trim();
+                    existing.BackgroundImageFit = request.BackgroundImageFit;
+                }
+
+                // Background video fields
+                if (backgroundType != "video")
+                {
+                    // NULL out video properties if not using video background
+                    existing.BackgroundVideoUrl = null;
+                    existing.BackgroundVideoFit = null;
+                    existing.VideoLoop = true; // Reset to default
+                    existing.VideoMuted = true; // Reset to default
+                    existing.VideoAutoplay = true; // Reset to default
+                }
+                else
+                {
+                    // Only update if using video background
+                    existing.BackgroundVideoUrl = request.BackgroundVideoUrl?.Trim();
+                    existing.BackgroundVideoFit = request.BackgroundVideoFit;
+                    existing.VideoLoop = request.VideoLoop ?? existing.VideoLoop;
+                    existing.VideoMuted = request.VideoMuted ?? existing.VideoMuted;
+                    existing.VideoAutoplay = request.VideoAutoplay ?? existing.VideoAutoplay;
+                }
+
+                // Rive fields
+                if (backgroundType != "rive")
+                {
+                    // NULL out rive properties if not using rive background
+                    existing.RiveFile = null;
+                }
+                else
+                {
+                    // Only update if using rive background
+                    existing.RiveFile = request.RiveFile?.Trim();
+                }
 
                 if (request.BackgroundOpacity.HasValue)
                     existing.BackgroundOpacity = Math.Clamp(request.BackgroundOpacity.Value, 0.0, 1.0);
-
-                // Rive fields - allow null to clear the value
-                existing.RiveFile = request.RiveFile?.Trim();
                 if (request.ThumbnailOverride.HasValue)
                     existing.ThumbnailOverride = request.ThumbnailOverride.Value;
 

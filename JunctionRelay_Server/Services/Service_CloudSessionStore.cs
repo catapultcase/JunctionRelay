@@ -39,6 +39,7 @@ namespace JunctionRelayServer.Services
         private readonly object _lock = new();
         private readonly Service_BackendIdentity _backendIdentity;
         private readonly Service_TokenIpcClient _tokenIpcClient;
+        private readonly Service_LoginAndAuthentication_Logger _authLogger;
 
         private string? _encryptedAccessToken;
         private string? _encryptedRefreshToken;
@@ -53,7 +54,8 @@ namespace JunctionRelayServer.Services
             IConfiguration configuration,
             IDbConnection db,
             Service_BackendIdentity backendIdentity,
-            Service_TokenIpcClient tokenIpcClient)
+            Service_TokenIpcClient tokenIpcClient,
+            Service_LoginAndAuthentication_Logger authLogger)
         {
             _secretsService = secretsService;
             _httpClientFactory = httpClientFactory;
@@ -61,6 +63,7 @@ namespace JunctionRelayServer.Services
             _db = db;
             _backendIdentity = backendIdentity;
             _tokenIpcClient = tokenIpcClient;
+            _authLogger = authLogger;
         }
 
 
@@ -173,17 +176,20 @@ namespace JunctionRelayServer.Services
                 if (!string.IsNullOrEmpty(newToken))
                 {
                     Console.WriteLine("[CLOUD_SESSION] ✅ Force refresh completed successfully");
+                    // Logging happens in RefreshTokenInternalAsync, no need to duplicate here
                     return (true, "Token refreshed successfully", newToken);
                 }
                 else
                 {
                     Console.WriteLine("[CLOUD_SESSION] ❌ Force refresh failed - no token returned");
+                    // Logging happens in RefreshTokenInternalAsync, no need to duplicate here
                     return (false, "Token refresh failed - no token returned", null);
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CLOUD_SESSION] ❌ Force refresh failed: {ex.Message}");
+                // Exception during GetValidAccessTokenAsync would have been logged already
                 return (false, $"Token refresh failed: {ex.Message}", null);
             }
         }
@@ -202,6 +208,7 @@ namespace JunctionRelayServer.Services
                 if (string.IsNullOrEmpty(_encryptedRefreshToken))
                 {
                     Console.WriteLine("[CLOUD_SESSION] ❌ No refresh token available");
+                    _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: _userId);
                     return null;
                 }
 
@@ -221,7 +228,9 @@ namespace JunctionRelayServer.Services
                 }
                 else
                 {
-                    Console.WriteLine("[CLOUD_SESSION] 🔄 Access token missing or expiring, starting refresh...");
+                    var minutesUntilExpiry = _tokenExpiryTime?.Subtract(DateTime.UtcNow).TotalMinutes ?? 0;
+                    Console.WriteLine($"[CLOUD_SESSION] 🔄 Access token missing or expiring (minutes left: {minutesUntilExpiry:F1}), starting auto-refresh...");
+                    _authLogger.LogSessionManagement("AutoRefreshTriggered", _userId ?? "Unknown", sessionId: null, sessionCount: null);
                     _refreshTask = RefreshTokenInternalAsync(cancellationToken);
                 }
             }
@@ -290,6 +299,8 @@ namespace JunctionRelayServer.Services
                             new { UserId = userIdToDelete, BackendId = backendId });
 
                         Console.WriteLine($"[CLOUD_SESSION] 🗑️ Cleared cloud session for user: {userIdToDelete} on backend: {backendId}");
+                        _authLogger.LogLogout(userIdToDelete);
+                        _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: null);
                     }
                     catch (Exception ex)
                     {
@@ -299,6 +310,7 @@ namespace JunctionRelayServer.Services
                 else
                 {
                     Console.WriteLine("[CLOUD_SESSION] 🗑️ Cleared cloud session (in-memory only)");
+                    _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: null);
                 }
             }
         }
@@ -373,6 +385,7 @@ namespace JunctionRelayServer.Services
                     var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
                     Console.WriteLine($"[CLOUD_SESSION] 🔄 Requesting token refresh from cloud (attempt {attempt}/3)...");
+                    _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "Started");
                     var response = await httpClient.PostAsync(refreshUrl, content, cancellationToken);
 
                     if (response.IsSuccessStatusCode)
@@ -425,6 +438,7 @@ namespace JunctionRelayServer.Services
                                     _refreshTask = null;
                                 }
                                 Console.WriteLine($"[CLOUD_SESSION] ✅ Token refreshed successfully on attempt {attempt}");
+                                _authLogger.LogTokenRefresh(_userId ?? "Unknown", success: true, attemptNumber: attempt);
 
                                 // Send refreshed token to Tray for auto-updates (fire and forget)
                                 _ = Task.Run(async () =>
@@ -444,14 +458,18 @@ namespace JunctionRelayServer.Services
                             }
                         }
                         Console.WriteLine("[CLOUD_SESSION] ❌ Invalid response format from refresh endpoint");
+                        _authLogger.LogTokenRefresh(_userId ?? "Unknown", success: false, errorMessage: "Invalid response format", attemptNumber: attempt);
                         return null;
                     }
                     else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
                         Console.WriteLine($"[CLOUD_SESSION] ⚠️ Refresh token unauthorized on attempt {attempt}/3");
+                        _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "Unauthorized", errorMessage: "Refresh token unauthorized/expired", statusCode: 401);
                         if (attempt == 3)
                         {
                             Console.WriteLine("[CLOUD_SESSION] 🚨 Refresh token invalid/expired after 3 attempts - clearing session");
+                            _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "AllAttemptsFailed", errorMessage: "Refresh token unauthorized/expired after 3 attempts");
+                            _authLogger.LogSessionCleared(_userId ?? "Unknown", "TokenRefreshUnauthorized", "All 3 refresh attempts returned 401");
                             ClearSession();
                             return null;
                         }
@@ -460,8 +478,10 @@ namespace JunctionRelayServer.Services
                     else
                     {
                         Console.WriteLine($"[CLOUD_SESSION] ❌ Token refresh failed: {response.StatusCode} (attempt {attempt}/3)");
+                        _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "Failed", errorMessage: $"HTTP {response.StatusCode}", statusCode: (int)response.StatusCode);
                         if (attempt == 3)
                         {
+                            _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "AllAttemptsFailed", errorMessage: $"HTTP {response.StatusCode} after 3 attempts");
                             return null;
                         }
                         await Task.Delay(1000, cancellationToken);
@@ -470,14 +490,19 @@ namespace JunctionRelayServer.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[CLOUD_SESSION] ❌ Exception during token refresh (attempt {attempt}/3): {ex.Message}");
+                    _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "Failed", errorMessage: $"Exception: {ex.Message}");
                     if (attempt == 3)
                     {
+                        _authLogger.LogRefreshAttempt(_userId ?? "Unknown", attempt, "AllAttemptsFailed", errorMessage: $"Exception after 3 attempts: {ex.Message}");
                         return null;
                     }
                     await Task.Delay(1000, cancellationToken);
                 }
             }
 
+            // Should never reach here, but just in case
+            Console.WriteLine("[CLOUD_SESSION] ❌ All retry attempts failed");
+            _authLogger.LogRefreshAttempt(_userId ?? "Unknown", 3, "AllAttemptsFailed", errorMessage: "All retry attempts failed");
             return null;
         }
 

@@ -219,6 +219,12 @@ namespace JunctionRelayServer.Services
             if (fileName.StartsWith("blit_resources"))
                 return "BlitMode";
 
+            if (fileName.StartsWith("stream_history_resources"))
+                return "StreamHistory";
+
+            if (fileName.StartsWith("auth_"))
+                return "LoginAndAuthentication";
+
             return "Unknown";
         }
 
