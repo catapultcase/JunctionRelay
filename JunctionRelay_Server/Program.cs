@@ -358,6 +358,7 @@ builder.Services.AddSingleton<Service_Events>();
 builder.Services.AddSingleton<Service_CloudBackup_Scheduler>();
 builder.Services.AddSingleton<Service_BlitMode_ResourceMonitor>();
 builder.Services.AddSingleton<Service_StreamHistory_ResourceMonitor>();
+builder.Services.AddSingleton<Service_LoginAndAuthentication_Logger>();
 builder.Services.AddSingleton<Service_LogRotation_Manager>();
 
 // Register WebSocket services
@@ -541,6 +542,20 @@ app.Lifetime.ApplicationStarted.Register(async () =>
         catch (Exception ex)
         {
             Console.WriteLine($"[STARTUP] Stream History resource monitoring failed to start: {ex.Message}");
+        }
+
+        // ===================================================================
+        // Login & Authentication Logger
+        // ===================================================================
+        try
+        {
+            var authLogger = app.Services.GetRequiredService<Service_LoginAndAuthentication_Logger>();
+            authLogger.Initialize();
+            Console.WriteLine("[STARTUP] Login & Authentication logging started");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STARTUP] Login & Authentication logging failed to start: {ex.Message}");
         }
 
         // ===================================================================

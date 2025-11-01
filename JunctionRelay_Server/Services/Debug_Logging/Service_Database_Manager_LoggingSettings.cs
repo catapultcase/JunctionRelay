@@ -134,6 +134,13 @@ namespace JunctionRelayServer.Services
                     Enabled = false,
                     LogIntervalMinutes = 15,
                     Description = "Stream history memory tracking (entry counts, estimated memory usage)"
+                },
+                new Model_LoggingSettings
+                {
+                    Category = "LoginAndAuthentication",
+                    Enabled = true,
+                    LogIntervalMinutes = 60,
+                    Description = "Authentication events, token refresh, OAuth flows, and session management"
                 }
             };
 

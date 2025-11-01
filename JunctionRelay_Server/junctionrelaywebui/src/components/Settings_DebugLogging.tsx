@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
     Typography,
@@ -37,7 +37,13 @@ import {
     Alert,
     Chip,
     IconButton,
-    Tooltip
+    Tooltip,
+    Select,
+    MenuItem,
+    FormControl,
+    InputLabel,
+    TablePagination,
+    TableSortLabel
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -45,6 +51,8 @@ import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { AlertColor } from '@mui/material/Alert';
 
 interface LoggingSettings {
@@ -98,6 +106,13 @@ const Settings_DebugLogging: React.FC = () => {
     });
     // Local state for text field editing to prevent immediate updates
     const [editingValues, setEditingValues] = useState<{ [key: string]: number }>({});
+
+    // File list filtering, sorting, and pagination
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');
+    const [orderBy, setOrderBy] = useState<keyof LogFileInfo>('lastModified');
+    const [order, setOrder] = useState<'asc' | 'desc'>('desc');
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
 
     // Fetch logging settings
     const fetchLoggingSettings = async () => {
@@ -349,6 +364,54 @@ const Settings_DebugLogging: React.FC = () => {
         }
     };
 
+    // View log file in new window
+    const handleViewFile = async (fileName: string) => {
+        try {
+            const response = await fetch(`/api/Controller_LoggingSettings/logs/download/${fileName}`);
+            if (response.ok) {
+                const text = await response.text();
+                const newWindow = window.open('', '_blank');
+                if (newWindow) {
+                    newWindow.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>${fileName}</title>
+                            <style>
+                                body {
+                                    margin: 0;
+                                    padding: 20px;
+                                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                                    font-size: 12px;
+                                    line-height: 1.5;
+                                    background: #1e1e1e;
+                                    color: #d4d4d4;
+                                }
+                                pre {
+                                    margin: 0;
+                                    white-space: pre-wrap;
+                                    word-wrap: break-word;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <pre>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                        </body>
+                        </html>
+                    `);
+                    newWindow.document.close();
+                } else {
+                    showSnackbar('Failed to open new window. Please allow pop-ups.', 'warning');
+                }
+            } else {
+                showSnackbar('Failed to load log file', 'error');
+            }
+        } catch (error) {
+            console.error('Failed to view log:', error);
+            showSnackbar('Failed to view log file', 'error');
+        }
+    };
+
     // Delete specific log file
     const handleDeleteFile = async (fileName: string) => {
         if (!window.confirm(`Are you sure you want to delete ${fileName}?`)) {
@@ -384,6 +447,103 @@ const Settings_DebugLogging: React.FC = () => {
         if (!dateString) return 'Never';
         const date = new Date(dateString);
         return date.toLocaleString();
+    };
+
+    // Delete all log files
+    const handleDeleteAllFiles = async () => {
+        if (!window.confirm('Are you sure you want to delete ALL log files? This action cannot be undone.')) {
+            return;
+        }
+        try {
+            const deletePromises = logDirectoryInfo?.files.map(file =>
+                fetch(`/api/Controller_LoggingSettings/logs/delete/${file.fileName}`, { method: 'DELETE' })
+            ) || [];
+
+            await Promise.all(deletePromises);
+            showSnackbar('All log files deleted', 'success');
+            await fetchLogDirectoryInfo();
+        } catch (error) {
+            console.error('Failed to delete all logs:', error);
+            showSnackbar('Failed to delete all log files', 'error');
+        }
+    };
+
+    // Get unique categories from logging settings (so all configured categories show even without files)
+    const categories = useMemo(() => {
+        if (loggingSettings.length === 0) return [];
+        const configuredCategories = loggingSettings.map(s => s.category).sort();
+
+        // Also include any file categories that might not be in settings (for legacy/unknown files)
+        if (logDirectoryInfo) {
+            const fileCategories = Array.from(new Set(logDirectoryInfo.files.map(f => f.category)));
+            const additionalCategories = fileCategories.filter(cat => !configuredCategories.includes(cat));
+            return [...configuredCategories, ...additionalCategories.sort()];
+        }
+
+        return configuredCategories;
+    }, [loggingSettings, logDirectoryInfo]);
+
+    // Handle sort request
+    const handleRequestSort = (property: keyof LogFileInfo) => {
+        const isAsc = orderBy === property && order === 'asc';
+        setOrder(isAsc ? 'desc' : 'asc');
+        setOrderBy(property);
+    };
+
+    // Filter and sort files
+    const filteredAndSortedFiles = useMemo(() => {
+        if (!logDirectoryInfo) return [];
+
+        let files = [...logDirectoryInfo.files];
+
+        // Apply category filter
+        if (categoryFilter !== 'all') {
+            files = files.filter(f => f.category === categoryFilter);
+        }
+
+        // Apply sorting
+        files.sort((a, b) => {
+            let aValue = a[orderBy];
+            let bValue = b[orderBy];
+
+            // Handle date sorting
+            if (orderBy === 'lastModified' || orderBy === 'createdAt') {
+                aValue = new Date(aValue as string).getTime();
+                bValue = new Date(bValue as string).getTime();
+            }
+
+            // Handle number sorting
+            if (orderBy === 'sizeBytes') {
+                aValue = aValue as number;
+                bValue = bValue as number;
+            }
+
+            if (aValue < bValue) {
+                return order === 'asc' ? -1 : 1;
+            }
+            if (aValue > bValue) {
+                return order === 'asc' ? 1 : -1;
+            }
+            return 0;
+        });
+
+        return files;
+    }, [logDirectoryInfo, categoryFilter, orderBy, order]);
+
+    // Paginated files
+    const paginatedFiles = useMemo(() => {
+        return filteredAndSortedFiles.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    }, [filteredAndSortedFiles, page, rowsPerPage]);
+
+    // Handle page change
+    const handleChangePage = (event: unknown, newPage: number) => {
+        setPage(newPage);
+    };
+
+    // Handle rows per page change
+    const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
     };
 
     if (loading) {
@@ -536,9 +696,19 @@ const Settings_DebugLogging: React.FC = () => {
                 <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
                     <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                         <Typography variant="subtitle2">
-                            Log Files ({logDirectoryInfo.totalFiles} files, {formatBytes(logDirectoryInfo.totalSizeBytes)})
+                            Log Files ({filteredAndSortedFiles.length} of {logDirectoryInfo.totalFiles} files, {formatBytes(logDirectoryInfo.totalSizeBytes)})
                         </Typography>
                         <Box display="flex" gap={1}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                color="error"
+                                startIcon={<DeleteSweepIcon />}
+                                onClick={handleDeleteAllFiles}
+                                disabled={logDirectoryInfo.files.length === 0}
+                            >
+                                Delete All
+                            </Button>
                             <Button
                                 variant="outlined"
                                 size="small"
@@ -558,20 +728,73 @@ const Settings_DebugLogging: React.FC = () => {
                         </Box>
                     </Box>
 
+                    {/* Category Filter */}
+                    <Box mb={2}>
+                        <FormControl size="small" sx={{ minWidth: 200 }}>
+                            <InputLabel>Filter by Category</InputLabel>
+                            <Select
+                                value={categoryFilter}
+                                label="Filter by Category"
+                                onChange={(e) => {
+                                    setCategoryFilter(e.target.value);
+                                    setPage(0); // Reset to first page when filtering
+                                }}
+                            >
+                                <MenuItem value="all">All Categories</MenuItem>
+                                {categories.map(cat => (
+                                    <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
+
                     {logDirectoryInfo.files.length > 0 ? (
-                        <TableContainer>
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>File Name</TableCell>
-                                        <TableCell>Category</TableCell>
-                                        <TableCell>Size</TableCell>
-                                        <TableCell>Last Modified</TableCell>
-                                        <TableCell align="right">Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {logDirectoryInfo.files.map((file) => (
+                        <>
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>
+                                                <TableSortLabel
+                                                    active={orderBy === 'fileName'}
+                                                    direction={orderBy === 'fileName' ? order : 'asc'}
+                                                    onClick={() => handleRequestSort('fileName')}
+                                                >
+                                                    File Name
+                                                </TableSortLabel>
+                                            </TableCell>
+                                            <TableCell>
+                                                <TableSortLabel
+                                                    active={orderBy === 'category'}
+                                                    direction={orderBy === 'category' ? order : 'asc'}
+                                                    onClick={() => handleRequestSort('category')}
+                                                >
+                                                    Category
+                                                </TableSortLabel>
+                                            </TableCell>
+                                            <TableCell>
+                                                <TableSortLabel
+                                                    active={orderBy === 'sizeBytes'}
+                                                    direction={orderBy === 'sizeBytes' ? order : 'asc'}
+                                                    onClick={() => handleRequestSort('sizeBytes')}
+                                                >
+                                                    Size
+                                                </TableSortLabel>
+                                            </TableCell>
+                                            <TableCell>
+                                                <TableSortLabel
+                                                    active={orderBy === 'lastModified'}
+                                                    direction={orderBy === 'lastModified' ? order : 'asc'}
+                                                    onClick={() => handleRequestSort('lastModified')}
+                                                >
+                                                    Last Modified
+                                                </TableSortLabel>
+                                            </TableCell>
+                                            <TableCell align="right">Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {paginatedFiles.map((file) => (
                                         <TableRow key={file.fileName}>
                                             <TableCell>
                                                 <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
@@ -592,6 +815,15 @@ const Settings_DebugLogging: React.FC = () => {
                                                 </Typography>
                                             </TableCell>
                                             <TableCell align="right">
+                                                <Tooltip title="View in Browser">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleViewFile(file.fileName)}
+                                                        color="primary"
+                                                    >
+                                                        <OpenInNewIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
                                                 <Tooltip title="Download">
                                                     <IconButton
                                                         size="small"
@@ -615,6 +847,16 @@ const Settings_DebugLogging: React.FC = () => {
                                 </TableBody>
                             </Table>
                         </TableContainer>
+                        <TablePagination
+                            rowsPerPageOptions={[5, 10, 25, 50, 100]}
+                            component="div"
+                            count={filteredAndSortedFiles.length}
+                            rowsPerPage={rowsPerPage}
+                            page={page}
+                            onPageChange={handleChangePage}
+                            onRowsPerPageChange={handleChangeRowsPerPage}
+                        />
+                    </>
                     ) : (
                         <Typography variant="body2" color="text.secondary" textAlign="center" py={2}>
                             No log files found
