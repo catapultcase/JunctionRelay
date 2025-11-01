@@ -124,7 +124,7 @@ namespace JunctionRelayServer.Services
                 new Model_LoggingSettings
                 {
                     Category = "BlitMode",
-                    Enabled = true,
+                    Enabled = false,
                     LogIntervalMinutes = 60,
                     Description = "Blit mode resource consumption monitoring (memory, CPU, frame metrics)"
                 },
@@ -132,13 +132,13 @@ namespace JunctionRelayServer.Services
                 {
                     Category = "StreamHistory",
                     Enabled = false,
-                    LogIntervalMinutes = 15,
+                    LogIntervalMinutes = 60,
                     Description = "Stream history memory tracking (entry counts, estimated memory usage)"
                 },
                 new Model_LoggingSettings
                 {
                     Category = "LoginAndAuthentication",
-                    Enabled = true,
+                    Enabled = false,
                     LogIntervalMinutes = 60,
                     Description = "Authentication events, token refresh, OAuth flows, and session management"
                 }

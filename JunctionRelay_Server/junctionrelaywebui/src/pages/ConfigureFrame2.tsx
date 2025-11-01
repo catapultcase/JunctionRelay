@@ -43,6 +43,10 @@ import { useGifCapture } from '../components/frameengine2/hooks/FrameEngine2_use
 
 // Types
 import type { FrameLayoutConfig, PlacedElement } from '../components/frameengine2/types/FrameEngine2_LayoutTypes';
+import type {
+    DiscoveredRiveStateMachine,
+    DiscoveredRiveDataBinding
+} from '../components/frameengine2/types/FrameEngine2_ElementTypes';
 
 const ConfigureFrame2: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -90,6 +94,16 @@ const ConfigureFrame2: React.FC = () => {
 
     // Canvas ref for calling resetView
     const canvasRef = useRef<FrameEngine2_CanvasRef>(null);
+
+    // Rive discovery state - Background
+    const [backgroundRiveMachines, setBackgroundRiveMachines] = useState<DiscoveredRiveStateMachine[]>([]);
+    const [backgroundRiveBindings, setBackgroundRiveBindings] = useState<DiscoveredRiveDataBinding[]>([]);
+
+    // Rive discovery state - Elements (Map of elementId -> discoveries)
+    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Map<string, {
+        machines: DiscoveredRiveStateMachine[];
+        bindings: DiscoveredRiveDataBinding[];
+    }>>(new Map());
 
     /**
      * Memoized selected element to avoid expensive find on every render
@@ -152,6 +166,36 @@ const ConfigureFrame2: React.FC = () => {
      */
     const handleZoomChange = useCallback((zoom: number) => {
         setCurrentZoom(zoom);
+    }, []);
+
+    /**
+     * Handle background Rive discovery from canvas
+     * Wrapped in useCallback to prevent unnecessary re-renders
+     */
+    const handleBackgroundRiveDiscovery = useCallback((
+        machines: DiscoveredRiveStateMachine[],
+        bindings: DiscoveredRiveDataBinding[]
+    ) => {
+        console.log('[ConfigureFrame2] Background Rive discovery received:', {
+            machines: machines.length,
+            bindings: bindings.length
+        });
+        setBackgroundRiveMachines(machines);
+        setBackgroundRiveBindings(bindings);
+    }, []);
+
+    /**
+     * Handle element Rive discovery from canvas
+     * Wrapped in useCallback to prevent unnecessary re-renders
+     */
+    const handleElementRiveDiscovery = useCallback((
+        discoveries: Map<string, { machines: DiscoveredRiveStateMachine[]; bindings: DiscoveredRiveDataBinding[] }>
+    ) => {
+        console.log('[ConfigureFrame2] Element Rive discoveries received:', {
+            totalElements: discoveries.size,
+            elementIds: Array.from(discoveries.keys())
+        });
+        setElementRiveDiscoveries(discoveries);
     }, []);
 
     /**
@@ -435,8 +479,110 @@ const ConfigureFrame2: React.FC = () => {
     const { includedSensorTags, handleToggleIncludeSensorTag } = useValueGenerator({
         layout,
         elements,
-        onLayoutUpdate: handleLayoutUpdate
+        onLayoutUpdate: handleLayoutUpdate,
+        backgroundRiveMachines,
+        backgroundRiveBindings,
+        elementRiveDiscoveries
     });
+
+    /**
+     * Sync Value Generator test values to Rive inputs and bindings
+     * When sensorTestValues changes, update corresponding Rive inputs/bindings
+     * Batches all updates to prevent multiple render cycles
+     */
+    useEffect(() => {
+        if (!layout?.sensorTestValues) return;
+
+        let hasBackgroundInputUpdates = false;
+        let hasBackgroundBindingUpdates = false;
+        const newRiveInputs = { ...(layout.riveInputs || {}) };
+        const newRiveBindings = { ...(layout.riveBindings || {}) };
+
+        // Check background Rive inputs
+        backgroundRiveMachines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                const testValue = layout.sensorTestValues?.[input.name];
+                if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
+                    const currentValue = layout.riveInputs?.[input.name];
+                    if (currentValue !== testValue.value) {
+                        newRiveInputs[input.name] = testValue.value;
+                        hasBackgroundInputUpdates = true;
+                    }
+                }
+            });
+        });
+
+        // Check background Rive bindings
+        backgroundRiveBindings.forEach(binding => {
+            const testValue = layout.sensorTestValues?.[binding.name];
+            if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
+                const currentValue = layout.riveBindings?.[binding.name];
+                if (currentValue !== testValue.value) {
+                    newRiveBindings[binding.name] = testValue.value;
+                    hasBackgroundBindingUpdates = true;
+                }
+            }
+        });
+
+        // Apply background updates if any
+        if (hasBackgroundInputUpdates) {
+            handleLayoutUpdate({ riveInputs: newRiveInputs });
+        }
+        if (hasBackgroundBindingUpdates) {
+            handleLayoutUpdate({ riveBindings: newRiveBindings });
+        }
+
+        // Check element Rive inputs and bindings
+        elementRiveDiscoveries.forEach((discovery, elementId) => {
+            let hasElementInputUpdates = false;
+            let hasElementBindingUpdates = false;
+            const element = elements.find(el => el.id === elementId);
+            if (!element || element.type !== 'media-rive') return;
+
+            const newElementRiveInputs = { ...(element.properties.riveInputs || {}) };
+            const newElementRiveBindings = { ...(element.properties.riveBindings || {}) };
+
+            // Check inputs
+            discovery.machines.forEach(machine => {
+                machine.inputs.forEach(input => {
+                    const testValue = layout.sensorTestValues?.[input.name];
+                    if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
+                        const currentValue = element.properties.riveInputs?.[input.name];
+                        if (currentValue !== testValue.value) {
+                            newElementRiveInputs[input.name] = testValue.value;
+                            hasElementInputUpdates = true;
+                        }
+                    }
+                });
+            });
+
+            // Check bindings
+            discovery.bindings.forEach(binding => {
+                const testValue = layout.sensorTestValues?.[binding.name];
+                if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
+                    const currentValue = element.properties.riveBindings?.[binding.name];
+                    if (currentValue !== testValue.value) {
+                        newElementRiveBindings[binding.name] = testValue.value;
+                        hasElementBindingUpdates = true;
+                    }
+                }
+            });
+
+            // Apply element updates if any
+            if (hasElementInputUpdates || hasElementBindingUpdates) {
+                const propertyUpdates: any = { ...element.properties };
+                if (hasElementInputUpdates) {
+                    propertyUpdates.riveInputs = newElementRiveInputs;
+                }
+                if (hasElementBindingUpdates) {
+                    propertyUpdates.riveBindings = newElementRiveBindings;
+                }
+                handleUpdateElement(elementId, {
+                    properties: propertyUpdates
+                });
+            }
+        });
+    }, [layout?.sensorTestValues, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries, elements, layout?.riveInputs, layout?.riveBindings, handleLayoutUpdate, handleUpdateElement]);
 
     // Loading state
     if (loading) {
@@ -564,6 +710,9 @@ const ConfigureFrame2: React.FC = () => {
                         onUploadThumbnail={handleUploadThumbnail}
                         currentTab={sidebarTab}
                         onTabChange={setSidebarTab}
+                        backgroundRiveMachines={backgroundRiveMachines}
+                        backgroundRiveBindings={backgroundRiveBindings}
+                        elementRiveDiscoveries={elementRiveDiscoveries}
                     />
 
                     {/* Center Canvas Area */}
@@ -578,6 +727,8 @@ const ConfigureFrame2: React.FC = () => {
                         onSelectElement={handleSelectElement}
                         onZoomChange={handleZoomChange}
                         previewMode={previewMode}
+                        onBackgroundRiveDiscovery={handleBackgroundRiveDiscovery}
+                        onElementRiveDiscovery={handleElementRiveDiscovery}
                     />
 
                     {/* Right Sidebar - Hidden in preview mode */}

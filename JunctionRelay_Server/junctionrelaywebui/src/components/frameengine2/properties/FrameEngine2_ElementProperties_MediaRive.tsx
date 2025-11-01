@@ -71,9 +71,9 @@ export const MediaRiveProperties: React.FC<ElementPropertyPanelProps> = ({
                 onChange={(v) => updateProperty('backgroundColor', v)}
             />
 
-            {/* Note about bindings */}
+            {/* Info about bindings */}
             <Typography variant="caption" color="text.disabled" display="block" mt={1}>
-                Note: Rive input bindings not yet implemented
+                Configure Rive inputs and data bindings in the Bindings tab
             </Typography>
         </Box>
     );

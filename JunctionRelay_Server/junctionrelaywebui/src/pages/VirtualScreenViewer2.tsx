@@ -91,6 +91,8 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [currentBrightness, setCurrentBrightness] = useState<number>(1.0);
+    const [backgroundRiveMachines, setBackgroundRiveMachines] = useState<any[]>([]);
+    const [backgroundRiveBindings, setBackgroundRiveBindings] = useState<any[]>([]);
 
     const isMountedRef = useRef(true);
     const riveConfigRef = useRef<RiveConfig | null>(null);
@@ -180,7 +182,6 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
 
             if (normalizedBrightness !== currentBrightness) {
                 setCurrentBrightness(normalizedBrightness);
-                console.log(`JR Brightness: ${brightnessValue} (${Math.round(normalizedBrightness * 100)}%)`);
                 return true;
             }
         }
@@ -214,8 +215,6 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
      * FRAMEENGINE2 FORMAT ONLY - NO CONVERSION
      */
     const processConfigData = useCallback((config: RiveConfig) => {
-        console.log('[VirtualScreenViewer2] Processing FrameEngine2 config:', config);
-
         riveConfigRef.current = config;
 
         const layoutConfig = convertToLayout(config);
@@ -235,13 +234,94 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
             zIndex: element.zIndex
         }));
 
-        console.log('[VirtualScreenViewer2] Layout:', layoutConfig);
-        console.log('[VirtualScreenViewer2] Elements:', placedElements);
-
         setLayout(layoutConfig);
         setElements(placedElements);
         setIsReady(true);
     }, [convertToLayout]);
+
+    /**
+     * Handle background Rive discovery
+     * Initializes layout.riveInputs and layout.riveBindings with discovered properties
+     */
+    const handleBackgroundRiveDiscovery = useCallback((machines: any[], bindings: any[]) => {
+        setBackgroundRiveMachines(machines);
+        setBackgroundRiveBindings(bindings);
+
+        // Initialize layout.riveInputs and layout.riveBindings with discovered names
+        setLayout(prev => {
+            if (!prev) return prev;
+
+            const riveInputs: Record<string, any> = { ...prev.riveInputs };
+            const riveBindings: Record<string, any> = { ...prev.riveBindings };
+
+            // Add all discovered inputs
+            machines.forEach((machine: any) => {
+                machine.inputs?.forEach((input: any) => {
+                    if (input.name && !(input.name in riveInputs)) {
+                        riveInputs[input.name] = input.currentValue ?? null;
+                    }
+                });
+            });
+
+            // Add all discovered bindings
+            bindings.forEach((binding: any) => {
+                if (binding.name && !(binding.name in riveBindings)) {
+                    riveBindings[binding.name] = binding.currentValue ?? null;
+                }
+            });
+
+            return {
+                ...prev,
+                riveInputs,
+                riveBindings
+            };
+        });
+    }, []);
+
+    /**
+     * Update Rive inputs/bindings from sensor data
+     * Maps resolvedValues (from sensors) to Rive inputs and bindings
+     */
+    useEffect(() => {
+        if (!layout || !isReady || Object.keys(resolvedValues).length === 0) return;
+
+        // Update layout with sensor values mapped to Rive inputs/bindings
+        setLayout(prev => {
+            if (!prev) return prev;
+
+            const updatedRiveInputs = { ...prev.riveInputs };
+            const updatedRiveBindings = { ...prev.riveBindings };
+            let hasChanges = false;
+
+            // Map resolvedValues to Rive inputs/bindings
+            Object.entries(resolvedValues).forEach(([tag, sensorData]) => {
+                // Extract the actual value from sensor data object
+                const value = (sensorData as any)?.value ?? sensorData;
+
+                // Check if this tag matches any discovered input
+                if (updatedRiveInputs && tag in updatedRiveInputs && updatedRiveInputs[tag] !== value) {
+                    updatedRiveInputs[tag] = value;
+                    hasChanges = true;
+                }
+                // Check if this tag matches any discovered binding
+                if (updatedRiveBindings && tag in updatedRiveBindings && updatedRiveBindings[tag] !== value) {
+                    updatedRiveBindings[tag] = value;
+                    hasChanges = true;
+                }
+            });
+
+            // Only update if there are actual changes
+            if (hasChanges) {
+                return {
+                    ...prev,
+                    riveInputs: updatedRiveInputs,
+                    riveBindings: updatedRiveBindings
+                };
+            }
+
+            return prev;
+        });
+    }, [resolvedValues, isReady]);
 
     /**
      * Connect to data provider
@@ -404,7 +484,10 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
                     ...brightnessStyle
                 }}
             >
-                <FrameEngine2_Renderer_Background layout={layout} />
+                <FrameEngine2_Renderer_Background
+                    layout={layout}
+                    onRiveDiscovery={handleBackgroundRiveDiscovery}
+                />
 
                 {elements
                     .filter(element => element.visible)
@@ -554,7 +637,10 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
                     ...brightnessStyle
                 }}
             >
-                <FrameEngine2_Renderer_Background layout={layout} />
+                <FrameEngine2_Renderer_Background
+                    layout={layout}
+                    onRiveDiscovery={handleBackgroundRiveDiscovery}
+                />
 
                 <div style={{
                     position: 'absolute',

@@ -32,8 +32,9 @@ interface FrameEngine2_SensorDebugPanelProps {
 const FrameEngine2_SensorDebugPanel: React.FC<FrameEngine2_SensorDebugPanelProps> = ({ debugData }) => {
     const [inputsExpanded, setInputsExpanded] = useState<boolean>(true);
     const [outputsExpanded, setOutputsExpanded] = useState<boolean>(true);
+    const [riveExpanded, setRiveExpanded] = useState<boolean>(true);
 
-    const { inputs, outputs, stats } = debugData;
+    const { inputs, outputs, stats, riveInfo } = debugData;
 
     /**
      * Format timestamp as seconds ago
@@ -238,6 +239,83 @@ const FrameEngine2_SensorDebugPanel: React.FC<FrameEngine2_SensorDebugPanelProps
                     </div>
                 )}
             </div>
+
+            {/* Rive Section */}
+            {riveInfo && (riveInfo.totalInputs > 0 || riveInfo.dataBindings > 0) && (
+                <div style={{ borderBottom: '1px solid #003300' }}>
+                    <div
+                        onClick={() => setRiveExpanded(!riveExpanded)}
+                        style={{
+                            padding: '8px 12px',
+                            cursor: 'pointer',
+                            backgroundColor: '#001100',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            userSelect: 'none'
+                        }}
+                    >
+                        <span>{riveExpanded ? '▼' : '▶'}</span>
+                        <span>🎨 RIVE ({riveInfo.stateMachines} SM | {riveInfo.totalInputs + riveInfo.dataBindings} bindings)</span>
+                    </div>
+
+                    {riveExpanded && (
+                        <div style={{ padding: '8px 12px' }}>
+                            {riveInfo.totalInputs > 0 && (
+                                <div style={{ marginBottom: riveInfo.dataBindings > 0 ? '12px' : '0' }}>
+                                    <div style={{
+                                        fontSize: '10px',
+                                        color: '#00aaff',
+                                        marginBottom: '6px',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        STATE MACHINE INPUTS ({riveInfo.totalInputs}):
+                                    </div>
+                                    {riveInfo.inputNames.map((name, index) => (
+                                        <div
+                                            key={index}
+                                            style={{
+                                                marginLeft: '12px',
+                                                fontSize: '11px',
+                                                color: '#00dd00',
+                                                marginBottom: index < riveInfo.inputNames.length - 1 ? '3px' : '0'
+                                            }}
+                                        >
+                                            • {name}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {riveInfo.dataBindings > 0 && (
+                                <div>
+                                    <div style={{
+                                        fontSize: '10px',
+                                        color: '#00aaff',
+                                        marginBottom: '6px',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        DATA BINDINGS ({riveInfo.dataBindings}):
+                                    </div>
+                                    {riveInfo.bindingNames.map((name, index) => (
+                                        <div
+                                            key={index}
+                                            style={{
+                                                marginLeft: '12px',
+                                                fontSize: '11px',
+                                                color: '#00dd00',
+                                                marginBottom: index < riveInfo.bindingNames.length - 1 ? '3px' : '0'
+                                            }}
+                                        >
+                                            • {name}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Stats Section - Always Visible */}
             <div
