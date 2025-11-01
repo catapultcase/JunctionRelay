@@ -18,6 +18,7 @@
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { colorToRgba } from './ColorUtils';
 
 interface OscilloscopeElementProps {
     sensorTag: string;
@@ -264,7 +265,7 @@ export const FrameEngine_OscilloscopeElement: React.FC<OscilloscopeElementProps>
 
         } else if (mode === 'filled') {
             // Filled waveform
-            offCtx.fillStyle = waveformColor.replace(')', ', 0.3)').replace('rgb', 'rgba');
+            offCtx.fillStyle = colorToRgba(waveformColor, 0.3);
             offCtx.strokeStyle = waveformColor;
             offCtx.lineWidth = lineWidth;
             offCtx.beginPath();

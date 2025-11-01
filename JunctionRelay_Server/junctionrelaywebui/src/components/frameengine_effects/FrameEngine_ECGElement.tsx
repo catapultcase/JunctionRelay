@@ -26,6 +26,7 @@ interface ECGElementProps {
     height: number;
     waveformColor?: string;
     backgroundColor?: string;
+    gridBackgroundColor?: string;
     gridColor?: string;
     showGrid?: boolean;
     showBorder?: boolean;
@@ -42,6 +43,7 @@ export const FrameEngine_ECGElement: React.FC<ECGElementProps> = ({
     height,
     waveformColor = '#00ff00',
     backgroundColor = '#000000',
+    gridBackgroundColor = 'transparent',
     gridColor = 'rgba(0, 255, 0, 0.2)',
     showGrid = true,
     showBorder = true,
@@ -126,6 +128,12 @@ export const FrameEngine_ECGElement: React.FC<ECGElementProps> = ({
         offCtx.fillStyle = backgroundColor;
         offCtx.fillRect(0, 0, width, height);
 
+        // Grid background (layer between background and grid lines)
+        if (showGrid && gridBackgroundColor && gridBackgroundColor !== 'transparent') {
+            offCtx.fillStyle = gridBackgroundColor;
+            offCtx.fillRect(0, 0, width, height);
+        }
+
         // Grid with parallax scrolling
         if (showGrid) {
             offCtx.strokeStyle = gridColor;
@@ -188,7 +196,7 @@ export const FrameEngine_ECGElement: React.FC<ECGElementProps> = ({
         if (isMountedRef.current) {
             animationRef.current = requestAnimationFrame(animate);
         }
-    }, [width, height, waveformColor, backgroundColor, gridColor, showGrid, showBorder, bufferSize, lineWidth, gridScrollSpeed]);
+    }, [width, height, waveformColor, backgroundColor, gridBackgroundColor, gridColor, showGrid, showBorder, bufferSize, lineWidth, gridScrollSpeed]);
 
     // Initialize offscreen and start animation
     useEffect(() => {

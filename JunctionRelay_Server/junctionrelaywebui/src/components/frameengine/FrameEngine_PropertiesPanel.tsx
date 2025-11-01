@@ -69,7 +69,23 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
     const theme = useTheme();
     const [activeSection, setActiveSection] = useState<'layout' | 'element' | 'bindings'>('layout');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
-        new Set(['basic', 'position', 'appearance', 'dimensions', 'background', 'sensor', 'sensorTypography', 'text', 'textTypography', 'clockTypography', 'bindings-background', 'bindings-assets', 'bindings-sensors'])
+        new Set([
+            // Layout sections
+            'basic', 'appearance', 'dimensions', 'background',
+            // Element sections (same as ElementLibrary)
+            'position',
+            'sensor', 'sensorTypography',
+            'text', 'textTypography',
+            'clock', 'clockTypography',
+            'ecg',
+            'gauge-data', 'gauge-shape', 'gauge-display', 'gauge-colors',
+            'oscilloscope',
+            'tunnel',
+            'weather',
+            // Bindings sections
+            'bindings-background', 'bindings-assets', 'bindings-sensors'
+            // Note: 'visibility' is intentionally excluded - it starts collapsed
+        ])
     );
 
     // Switch to element properties when elements are selected
@@ -84,9 +100,10 @@ export const FrameEngine_PropertiesPanel: React.FC<FrameEngine_PropertiesPanelPr
         console.log('🏗️ Main Panel - Layout updated:', {
             riveFile: layout.riveFile,
             riveStateMachine: layout.riveStateMachine,
-            riveInputs: layout.riveInputs
+            riveInputs: layout.riveInputs,
+            sensorTestValues: layout.sensorTestValues
         });
-    }, [layout.riveFile, layout.riveStateMachine, layout.riveInputs]);
+    }, [layout.riveFile, layout.riveStateMachine, layout.riveInputs, layout.sensorTestValues]);
 
     // Toggle section expansion
     const toggleSection = useCallback((sectionId: string) => {

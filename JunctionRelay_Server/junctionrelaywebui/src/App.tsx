@@ -32,7 +32,7 @@ import ConfigureService from "pages/ConfigureService";
 import ConfigureCollector from "pages/ConfigureCollector";
 import ConfigureJunction from "pages/ConfigureJunction";
 import FrameEngine from "pages/FrameEngine";
-import ConfigureFrame from "pages/ConfigureFrame";
+import ConfigureFrameRouter from "pages/ConfigureFrameRouter";
 import EventEngine from "pages/EventEngine";
 import ConfigureEventRule from "pages/ConfigureEventRule";
 import Payloads from "pages/Payloads";
@@ -40,7 +40,7 @@ import ConfigurePayload from "pages/ConfigurePayload";
 import HostInfo from "pages/HostInfo";
 import HostCharts from "pages/HostCharts";
 import Settings from "pages/Settings";
-import VirtualScreenViewer from "pages/VirtualScreenViewer";
+import VirtualScreenViewerRouter from "pages/VirtualScreenViewerRouter";
 import LoginOnly from "components/LoginOnly";
 import { AuthProvider } from "auth/AuthContext";
 import { NotificationProvider } from "context/NotificationContext";
@@ -842,12 +842,12 @@ const AppRoutes: React.FC = () => {
                     <Route path="/configure-eventrule/:id" element={<ConfigureEventRule />} />
                     <Route path="/configure-junction/:id" element={<ConfigureJunction />} />
                     <Route path="/frameengine" element={<FrameEngine />} />
-                    <Route path="/configure-frame/:id" element={<ConfigureFrame />} />
+                    <Route path="/configure-frame/:id" element={<ConfigureFrameRouter />} />
                     <Route path="/eventengine" element={<EventEngine />} />
                     <Route path="/payloads" element={<Payloads />} />
                     <Route path="/configure-payload/:id" element={<ConfigurePayload />} />
-                    <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewer key={location.pathname} />} />
-                    <Route path="/device/:deviceId/virtual-screen/fullscreen" element={<VirtualScreenViewer key={location.pathname} />} />
+                    <Route path="/device/:deviceId/virtual-screen" element={<VirtualScreenViewerRouter key={location.pathname} />} />
+                    <Route path="/device/:deviceId/virtual-screen/fullscreen" element={<VirtualScreenViewerRouter key={location.pathname} />} />
                     <Route path="/hostinfo" element={<HostInfo />} />
                     <Route path="/hostcharts" element={<HostCharts />} />
                     <Route path="/settings" element={<Settings />} />

@@ -150,6 +150,22 @@ export const ECGProperties: React.FC<ElementPropertyPanelProps> = ({
                         onChange={updateElementProperty}
                     />
 
+                    <ColorInput
+                        label="Grid Background Color"
+                        property="gridBackgroundColor"
+                        defaultValue="transparent"
+                        value={getCommonPropertyValue('gridBackgroundColor')}
+                        onChange={updateElementProperty}
+                    />
+
+                    <ColorInput
+                        label="Grid Color"
+                        property="gridColor"
+                        defaultValue="rgba(0, 255, 0, 0.2)"
+                        value={getCommonPropertyValue('gridColor')}
+                        onChange={updateElementProperty}
+                    />
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#333' }}>
                             <input

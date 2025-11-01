@@ -96,6 +96,7 @@ export const loadFrameLayout = async (layoutId: number): Promise<{
             grid: {
                 snapToGrid: false,
                 showGrid: false,
+                showOutlines: false,
                 gridSize: 10,
                 gridColor: '#000000'
             },
@@ -184,6 +185,7 @@ export const getDefaultCanvasSettings = () => ({
     grid: {
         snapToGrid: false,
         showGrid: false,
+        showOutlines: false,
         gridSize: 10,
         gridColor: '#000000'
     },

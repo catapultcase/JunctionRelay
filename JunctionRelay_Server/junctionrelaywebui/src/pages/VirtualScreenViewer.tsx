@@ -144,7 +144,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
 
         // Extract rive discoveries from asset-rive elements
         elements.forEach(element => {
-            if (element.type === 'asset-rive' && (element as any).riveDiscovery) {
+            if (element.type === 'media-rive' && (element as any).riveDiscovery) {
                 const discovery = (element as any).riveDiscovery;
                 discoveries[element.id] = {
                     machines: discovery.machines || [],
@@ -377,7 +377,7 @@ export const VirtualScreenViewerComponent: React.FC<VirtualScreenViewerComponent
         // Update displayElements with new rive inputs/bindings for changed elements
         if (updatedElementIds.length > 0) {
             setDisplayElements(prev => prev.map(element => {
-                if (element.type === 'asset-rive' && updatedElementIds.includes(element.id)) {
+                if (element.type === 'media-rive' && updatedElementIds.includes(element.id)) {
                     return {
                         ...element,
                         properties: {

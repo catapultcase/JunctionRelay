@@ -19,7 +19,7 @@
 
 import React, { useCallback, useMemo } from 'react';
 import { FrameEngine_ECGElement } from '../frameengine_effects/FrameEngine_ECGElement';
-import { FrameEngine_GaugeElement } from '../frameengine_effects/FrameEngine_GaugeElement';
+import { FrameEngine_MUIGaugeElement } from '../frameengine_effects/FrameEngine_MUIGaugeElement';
 import { FrameEngine_ClockElement } from '../frameengine_effects/FrameEngine_ClockElement';
 import { FrameEngine_OscilloscopeElement } from '../frameengine_effects/FrameEngine_OscilloscopeElement';
 import { FrameEngine_TunnelElement } from '../frameengine_effects/FrameEngine_TunnelElement';
@@ -57,6 +57,7 @@ export interface RendererConfig {
     showPlaceholders: boolean;
     elementPadding: number;
     enableSensorVisibility?: boolean; // Enable sensor-based visibility in runtime
+    sensorTestValues?: Record<string, string | number>; // Test values for sensor tags
 }
 
 // Specialized element interfaces that extend BaseElement
@@ -140,7 +141,7 @@ export interface WeatherElement extends BaseElement {
 }
 
 export interface AssetImageElement extends BaseElement {
-    type: 'asset-image';
+    type: 'media-image';
     properties: {
         assetImageUrl?: string;
         imageFit?: 'cover' | 'contain' | 'fill' | 'tile' | 'stretch' | 'none';
@@ -151,7 +152,7 @@ export interface AssetImageElement extends BaseElement {
 }
 
 export interface AssetVideoElement extends BaseElement {
-    type: 'asset-video';
+    type: 'media-video';
     properties: {
         assetVideoUrl?: string;
         videoFit?: 'cover' | 'contain' | 'fill' | 'stretch' | 'none';
@@ -165,7 +166,7 @@ export interface AssetVideoElement extends BaseElement {
 }
 
 export interface AssetRiveElement extends BaseElement {
-    type: 'asset-rive';
+    type: 'media-rive';
     properties: {
         assetRiveFile?: string;
         riveStateMachine?: string;
@@ -256,7 +257,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
         const isLocked = element.locked ?? false;
         const isVisualEffect = element.type === 'ecg' || element.type === 'gauge' || element.type === 'clock' ||
             element.type === 'oscilloscope' || element.type === 'tunnel' || element.type === 'weather' ||
-            element.type === 'asset-image' || element.type === 'asset-video' || element.type === 'asset-rive';
+            element.type === 'media-image' || element.type === 'media-video' || element.type === 'media-rive';
 
         // Determine outline - locked elements only show outline when selected
         let outlineStyle = 'none';
@@ -393,16 +394,43 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
             case 'ecg': {
                 const ecgElement = element as ECGElement;
                 const data = getSensorData(ecgElement);
-                const sensorValue = data?.value != null ? parseFloat(data.value) : undefined;
+                const testValue = ecgElement.properties.sensorTag
+                    ? config.sensorTestValues?.[ecgElement.properties.sensorTag]
+                    : undefined;
+
+                // Data hierarchy: Live > Test > undefined
+                let displayValue: number | undefined;
+
+                // 1. Check for live sensor data (highest priority)
+                if (data?.value != null && data.value !== '') {
+                    const parsed = parseFloat(data.value);
+                    if (!isNaN(parsed)) {
+                        displayValue = parsed;
+                    }
+                }
+                // 2. If no live data, check for test value
+                else if (testValue !== undefined) {
+                    // Parse test value if it's a string
+                    if (typeof testValue === 'string') {
+                        const parsed = parseFloat(testValue);
+                        if (!isNaN(parsed)) {
+                            displayValue = parsed;
+                        }
+                    } else {
+                        displayValue = testValue;
+                    }
+                }
+                // 3. If no live data and no test value, displayValue remains undefined
 
                 return (
                     <FrameEngine_ECGElement
                         sensorTag={element.properties.sensorTag || ''}
-                        sensorValue={sensorValue}
+                        sensorValue={displayValue}
                         width={element.position.width}
                         height={element.position.height}
                         waveformColor={element.properties.waveformColor || '#00ff00'}
                         backgroundColor={element.properties.backgroundColor || '#000000'}
+                        gridBackgroundColor={element.properties.gridBackgroundColor || 'transparent'}
                         gridColor={element.properties.gridColor || 'rgba(0, 255, 0, 0.2)'}
                         showGrid={element.properties.showGrid !== false}
                         showBorder={element.properties.showBorder !== false}
@@ -418,36 +446,65 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
             case 'gauge': {
                 const gaugeElement = element as GaugeElement;
                 const data = getSensorData(gaugeElement);
-                const sensorValue = data?.value != null ? parseFloat(data.value) : undefined;
+                const testValue = gaugeElement.properties.sensorTag
+                    ? config.sensorTestValues?.[gaugeElement.properties.sensorTag]
+                    : undefined;
 
+                // Data hierarchy: Live > Test > Default (0)
+                let displayValue: number;
+
+                // 1. Check for live sensor data (highest priority)
+                if (data?.value != null && data.value !== '') {
+                    displayValue = parseFloat(data.value);
+                    // Handle NaN from parseFloat
+                    if (isNaN(displayValue)) {
+                        displayValue = 0;
+                    }
+                }
+                // 2. If no live data, check for test value
+                else if (testValue !== undefined) {
+                    // Parse test value if it's a string
+                    if (typeof testValue === 'string') {
+                        displayValue = parseFloat(testValue);
+                        if (isNaN(displayValue)) {
+                            displayValue = 0;
+                        }
+                    } else {
+                        displayValue = testValue;
+                    }
+                }
+                // 3. If no live data and no test value, use default
+                else {
+                    displayValue = 0;
+                }
+
+                // Always use MUI Gauge
                 return (
-                    <FrameEngine_GaugeElement
-                        sensorTag={element.properties.sensorTag || ''}
-                        sensorValue={sensorValue}
+                    <FrameEngine_MUIGaugeElement
                         width={element.position.width}
                         height={element.position.height}
-                        gaugeType={element.properties.gaugeType || 'semicircle'}
-                        minValue={element.properties.minValue ?? 0}
-                        maxValue={element.properties.maxValue ?? 100}
-                        valueLabel={element.properties.valueLabel || ''}
-                        showLabels={element.properties.showLabels !== false}
-                        showTicks={element.properties.showTicks !== false}
-                        pointerType={element.properties.pointerType || 'needle'}
-                        pointerColor={element.properties.pointerColor || '#464A4F'}
-                        pointerLength={element.properties.pointerLength ?? 0.7}
-                        pointerWidth={element.properties.pointerWidth ?? 15}
-                        pointerElastic={element.properties.pointerElastic !== false}
-                        pointerAnimationDelay={element.properties.pointerAnimationDelay ?? 0}
-                        arcColors={element.properties.arcColors || [
-                            { limit: 33, color: '#5BE12C' },
-                            { limit: 66, color: '#F5CD19' },
-                            { limit: 100, color: '#EA4228' }
-                        ]}
-                        arcPadding={element.properties.arcPadding ?? 0.02}
-                        arcWidth={element.properties.arcWidth ?? 0.2}
-                        cornerRadius={element.properties.cornerRadius ?? 5}
-                        valueLabelColor={element.properties.valueLabelColor || '#333'}
-                        tickLabelColor={element.properties.tickLabelColor || '#666'}
+                        properties={{
+                            value: displayValue,
+                            minValue: element.properties.minValue ?? 0,
+                            maxValue: element.properties.maxValue ?? 100,
+                            startAngle: element.properties.startAngle ?? -90,
+                            endAngle: element.properties.endAngle ?? 90,
+                            innerRadius: element.properties.innerRadius || '70%',
+                            outerRadius: element.properties.outerRadius || '100%',
+                            cornerRadius: element.properties.cornerRadius || '50%',
+                            valueLabel: element.properties.valueLabel || '',
+                            showValue: element.properties.showValue !== false,
+                            // Arc colors
+                            gaugeColor: element.properties.gaugeColor || '#2196f3',
+                            referenceArcColor: element.properties.referenceArcColor || '#e0e0e0',
+                            // Text styling
+                            textColor: element.properties.textColor || '#333333',
+                            textFontSize: element.properties.textFontSize || 0,
+                            textFontFamily: element.properties.textFontFamily || 'Roboto, sans-serif',
+                            textFontWeight: element.properties.textFontWeight || 600,
+                            // Container
+                            backgroundColor: element.properties.backgroundColor || 'transparent',
+                        }}
                     />
                 );
             }
@@ -455,12 +512,38 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
             case 'oscilloscope': {
                 const oscElement = element as OscilloscopeElement;
                 const data = getSensorData(oscElement);
-                const sensorValue = data?.value != null ? parseFloat(data.value) : undefined;
+                const testValue = oscElement.properties.sensorTag
+                    ? config.sensorTestValues?.[oscElement.properties.sensorTag]
+                    : undefined;
+
+                // Data hierarchy: Live > Test > undefined
+                let displayValue: number | undefined;
+
+                // 1. Check for live sensor data (highest priority)
+                if (data?.value != null && data.value !== '') {
+                    const parsed = parseFloat(data.value);
+                    if (!isNaN(parsed)) {
+                        displayValue = parsed;
+                    }
+                }
+                // 2. If no live data, check for test value
+                else if (testValue !== undefined) {
+                    // Parse test value if it's a string
+                    if (typeof testValue === 'string') {
+                        const parsed = parseFloat(testValue);
+                        if (!isNaN(parsed)) {
+                            displayValue = parsed;
+                        }
+                    } else {
+                        displayValue = testValue;
+                    }
+                }
+                // 3. If no live data and no test value, displayValue remains undefined
 
                 return (
                     <FrameEngine_OscilloscopeElement
                         sensorTag={element.properties.sensorTag || ''}
-                        sensorValue={sensorValue}
+                        sensorValue={displayValue}
                         width={element.position.width}
                         height={element.position.height}
                         waveformColor={element.properties.waveformColor || '#00ff00'}
@@ -490,7 +573,33 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
             case 'tunnel': {
                 const tunnelElement = element as TunnelElement;
                 const data = getSensorData(tunnelElement);
-                const sensorValue = data?.value != null ? parseFloat(data.value) : undefined;
+                const testValue = tunnelElement.properties.sensorTag
+                    ? config.sensorTestValues?.[tunnelElement.properties.sensorTag]
+                    : undefined;
+
+                // Data hierarchy: Live > Test > undefined
+                let displayValue: number | undefined;
+
+                // 1. Check for live sensor data (highest priority)
+                if (data?.value != null && data.value !== '') {
+                    const parsed = parseFloat(data.value);
+                    if (!isNaN(parsed)) {
+                        displayValue = parsed;
+                    }
+                }
+                // 2. If no live data, check for test value
+                else if (testValue !== undefined) {
+                    // Parse test value if it's a string
+                    if (typeof testValue === 'string') {
+                        const parsed = parseFloat(testValue);
+                        if (!isNaN(parsed)) {
+                            displayValue = parsed;
+                        }
+                    } else {
+                        displayValue = testValue;
+                    }
+                }
+                // 3. If no live data and no test value, displayValue remains undefined
 
                 const renderMode = element.properties.renderMode || '2d';
 
@@ -498,7 +607,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                     return (
                         <FrameEngine_TunnelElementWebGL
                             sensorTag={element.properties.sensorTag || ''}
-                            sensorValue={sensorValue}
+                            sensorValue={displayValue}
                             width={element.position.width}
                             height={element.position.height}
                             primaryColor={element.properties.primaryColor || '#ff00ff'}
@@ -538,7 +647,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                     return (
                         <FrameEngine_TunnelElement
                             sensorTag={element.properties.sensorTag || ''}
-                            sensorValue={sensorValue}
+                            sensorValue={displayValue}
                             width={element.position.width}
                             height={element.position.height}
                             primaryColor={element.properties.primaryColor || '#ff00ff'}
@@ -601,7 +710,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                 );
             }
 
-            case 'asset-image': {
+            case 'media-image': {
                 const assetImageElement = element as AssetImageElement;
                 return (
                     <FrameEngine_Asset_Image
@@ -614,7 +723,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                 );
             }
 
-            case 'asset-video': {
+            case 'media-video': {
                 const assetVideoElement = element as AssetVideoElement;
                 return (
                     <FrameEngine_Asset_Video
@@ -630,7 +739,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                 );
             }
 
-            case 'asset-rive': {
+            case 'media-rive': {
                 const assetRiveElement = element as AssetRiveElement;
                 return (
                     <FrameEngine_Asset_Rive
@@ -650,41 +759,60 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
             case 'sensor': {
                 const sensorElement = element as SensorElement;
                 const data = getSensorData(sensorElement);
+                const testValue = sensorElement.properties.sensorTag
+                    ? config.sensorTestValues?.[sensorElement.properties.sensorTag]
+                    : undefined;
 
                 const showLabel: boolean = element.properties.showLabel === true;
                 const showUnit: boolean = element.properties.showUnit !== false;
 
-                if (!data && !config.showPlaceholders) {
-                    return (
-                        <div style={{ ...textStyles, color: '#888888' }}>
-                            NO DATA
-                        </div>
-                    );
+                // Data hierarchy: Live > Test > Placeholder
+                let valueToDisplay: string | number | undefined;
+                let unitToDisplay: string = '';
+
+                // 1. Check for live sensor data (highest priority)
+                if (data) {
+                    if (data.displayValue && data.displayValue.trim() !== '') {
+                        // Use pre-formatted displayValue from live data
+                        return (
+                            <div style={textStyles}>
+                                {data.displayValue}
+                            </div>
+                        );
+                    } else if (data.value != null && data.value !== '') {
+                        valueToDisplay = data.value;
+                        unitToDisplay = data.unit || '';
+                    }
                 }
 
-                let content: string;
-                if (data?.displayValue && data.displayValue.trim() !== '') {
-                    content = data.displayValue;
-                } else if (data) {
-                    const labelText: string = showLabel ? (element.properties.placeholderSensorLabel || '') : '';
-                    const valueText: string = data.value?.toString() || '--';
-                    const unitText: string = showUnit ? (data.unit || '') : '';
-
-                    content = '';
-                    if (labelText) content += labelText + ' ';
-                    content += valueText;
-                    if (unitText) content += ' ' + unitText;
-                } else {
-                    const labelText: string = showLabel ? (element.properties.placeholderSensorLabel || '') : '';
-                    const valueText: string = (element.properties.placeholderValue ?? '').toString().trim() || '--';
-                    const unitText: string = showUnit ?
-                        (element.properties.placeholderUnit ?? '').toString().trim() : '';
-
-                    content = '';
-                    if (labelText) content += labelText + ' ';
-                    content += valueText;
-                    if (unitText) content += ' ' + unitText;
+                // 2. If no live data, check for test value
+                if (valueToDisplay === undefined && testValue !== undefined) {
+                    valueToDisplay = testValue;
+                    unitToDisplay = (element.properties.placeholderUnit ?? '').toString().trim();
                 }
+
+                // 3. If no live data and no test value, use placeholder
+                if (valueToDisplay === undefined) {
+                    if (!config.showPlaceholders) {
+                        return (
+                            <div style={{ ...textStyles, color: '#888888' }}>
+                                NO DATA
+                            </div>
+                        );
+                    }
+                    valueToDisplay = (element.properties.placeholderValue ?? '').toString().trim() || '--';
+                    unitToDisplay = (element.properties.placeholderUnit ?? '').toString().trim();
+                }
+
+                // Build display string (valueToDisplay is guaranteed to be defined here)
+                const labelText: string = showLabel ? (element.properties.placeholderSensorLabel || '') : '';
+                const valueText: string = (valueToDisplay as string | number).toString();
+                const unitText: string = showUnit ? unitToDisplay : '';
+
+                let content = '';
+                if (labelText) content += labelText + ' ';
+                content += valueText;
+                if (unitText) content += ' ' + unitText;
 
                 return (
                     <div style={textStyles}>
@@ -770,7 +898,7 @@ export const FrameEngine_ElementRenderer: React.FC<ElementRendererProps> = ({
                     </div>
                 );
         }
-    }, [getTextStyles, getSensorData, config.showPlaceholders]);
+    }, [getTextStyles, getSensorData, config.showPlaceholders, config.sensorTestValues]);
 
     const renderedElements = useMemo(() => {
         const filtered = elements.filter(element => {

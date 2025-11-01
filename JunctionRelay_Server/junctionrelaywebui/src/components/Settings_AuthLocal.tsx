@@ -21,7 +21,7 @@ import React, { useState, useEffect } from "react";
 import {
     Box, Typography, Paper, Button, Dialog, DialogTitle, DialogContent,
     DialogActions, TextField, CircularProgress, List, ListItem, ListItemIcon,
-    ListItemText, IconButton, Chip
+    ListItemText, IconButton, Chip, Alert
 } from "@mui/material";
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
@@ -31,6 +31,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import WarningIcon from '@mui/icons-material/Warning';
 import WifiOffIcon from '@mui/icons-material/WifiOff';
 import { AuthComponentProps } from "./Settings_UserManagement";
+import { useNavigate } from "react-router-dom";
 
 const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
     authStatus,
@@ -40,6 +41,7 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
     login,
     logout
 }) => {
+    const navigate = useNavigate();
     const [setupDialogOpen, setSetupDialogOpen] = useState<boolean>(false);
     const [adminUsername, setAdminUsername] = useState<string>('');
     const [adminPassword, setAdminPassword] = useState<string>('');
@@ -138,16 +140,19 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             setUsernameLoading(true);
             const response = await fetch("/api/unified-auth/change-username", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${user.token}`
+                },
                 body: JSON.stringify({ newUsername: newUsername.trim() })
             });
 
             if (response.ok) {
                 setUsernameDialogOpen(false);
                 setNewUsername("");
+                showSnackbar("Username updated successfully. Logging out...", "success");
                 logout();
-                await fetchAuthStatus();
-                showSnackbar("Username updated successfully. Please log in with your new username.", "success");
+                navigate('/');
             } else {
                 const error = await response.json();
                 throw new Error(error.message || "Failed to update username");
@@ -177,7 +182,10 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             setPasswordLoading(true);
             const response = await fetch("/api/unified-auth/change-password", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${user.token}`
+                },
                 body: JSON.stringify({
                     currentPassword: currentPassword,
                     newPassword: newPassword
@@ -189,7 +197,9 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
                 setCurrentPassword("");
                 setNewPassword("");
                 setConfirmPassword("");
-                showSnackbar("Password changed successfully.", "success");
+                showSnackbar("Password changed successfully. Logging out...", "success");
+                logout();
+                navigate('/');
             } else {
                 const error = await response.json();
                 throw new Error(error.message || "Failed to change password");
@@ -440,6 +450,9 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             >
                 <DialogTitle>Change Username</DialogTitle>
                 <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        After changing your username, you will be logged out and need to sign in again with your new username.
+                    </Alert>
                     <TextField
                         autoFocus
                         margin="dense"
@@ -488,6 +501,9 @@ const Settings_AuthLocal: React.FC<AuthComponentProps> = ({
             >
                 <DialogTitle>Change Password</DialogTitle>
                 <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        After changing your password, you will be logged out and need to sign in again with your new password.
+                    </Alert>
                     <TextField
                         autoFocus
                         margin="dense"

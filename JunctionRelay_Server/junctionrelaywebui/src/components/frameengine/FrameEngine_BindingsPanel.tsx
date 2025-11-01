@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 import { ModernRiveBindings } from './FrameEngine_ModernRiveBindings';
 import type {
@@ -56,6 +56,7 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
     elementRiveDiscoveries = {},
 }) => {
     const theme = useTheme();
+    const [viewMode, setViewMode] = useState<'asset' | 'sensorTag'>('asset');
 
     // Collect all sensor tag inputs from elements
     const sensorInputs = useMemo(() => {
@@ -83,8 +84,254 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
 
     // Collect all asset-rive elements
     const riveAssetElements = useMemo(() => {
-        return elements.filter((element) => element.type === 'asset-rive');
+        return elements.filter((element) => element.type === 'media-rive');
     }, [elements]);
+
+    // Collect all unified inputs (Rive inputs + Sensor tags) for Sensor Tag view
+    const unifiedInputs = useMemo(() => {
+        const inputMap = new Map<string, {
+            name: string;
+            sources: Array<{
+                type: 'rive-input' | 'frameengine' | 'rive-binding';
+                elementId?: string;
+                elementType?: string;
+                elementName?: string;
+                riveSource?: string;
+                inputType?: string;
+            }>;
+        }>();
+
+        // 1. Add FrameEngine sensor tags
+        elements.forEach((element) => {
+            const sensorTag = element.properties.sensorTag;
+            if (sensorTag) {
+                if (!inputMap.has(sensorTag)) {
+                    inputMap.set(sensorTag, { name: sensorTag, sources: [] });
+                }
+                inputMap.get(sensorTag)!.sources.push({
+                    type: 'frameengine',
+                    elementId: element.id,
+                    elementType: element.type,
+                    elementName: element.properties.placeholderSensorLabel || element.properties.name
+                });
+            }
+        });
+
+        // 2. Add Rive background inputs
+        discoveredMachines.forEach((machine) => {
+            machine.inputs.forEach((input) => {
+                if (!inputMap.has(input.name)) {
+                    inputMap.set(input.name, { name: input.name, sources: [] });
+                }
+                inputMap.get(input.name)!.sources.push({
+                    type: 'rive-input',
+                    riveSource: `Background (${machine.name})`,
+                    inputType: input.type
+                });
+            });
+        });
+
+        // 3. Add Rive asset inputs
+        Object.entries(elementRiveDiscoveries).forEach(([elementId, discovery]) => {
+            const element = elements.find((el) => el.id === elementId);
+            if (!element) return;
+
+            const elementName = element.properties.name || element.id;
+
+            discovery.machines.forEach((machine) => {
+                machine.inputs.forEach((input) => {
+                    if (!inputMap.has(input.name)) {
+                        inputMap.set(input.name, { name: input.name, sources: [] });
+                    }
+                    inputMap.get(input.name)!.sources.push({
+                        type: 'rive-input',
+                        riveSource: `${elementName} (${machine.name})`,
+                        inputType: input.type
+                    });
+                });
+            });
+        });
+
+        // 4. Add Rive background bindings
+        discoveredBindings.forEach((binding) => {
+            if (!inputMap.has(binding.name)) {
+                inputMap.set(binding.name, { name: binding.name, sources: [] });
+            }
+            inputMap.get(binding.name)!.sources.push({
+                type: 'rive-binding',
+                elementName: `Background Binding: ${binding.name}`,
+            });
+        });
+
+        // 5. Add Rive asset bindings
+        Object.entries(elementRiveDiscoveries).forEach(([elementId, discovery]) => {
+            const element = elements.find((el) => el.id === elementId);
+            if (!element) return;
+
+            const elementName = element.properties.name || element.id;
+
+            discovery.bindings.forEach((binding) => {
+                if (!inputMap.has(binding.name)) {
+                    inputMap.set(binding.name, { name: binding.name, sources: [] });
+                }
+                inputMap.get(binding.name)!.sources.push({
+                    type: 'rive-binding',
+                    elementName: `${elementName} Binding: ${binding.name}`,
+                });
+            });
+        });
+
+        return Array.from(inputMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }, [elements, discoveredMachines, discoveredBindings, elementRiveDiscoveries]);
+
+    // Handler for unified inputs (updates background Rive, asset Rive elements, and sensor tags)
+    const handleUnifiedInputChange = (inputName: string, value: string) => {
+        console.log('[UnifiedInput] handleUnifiedInputChange called:', { inputName, value });
+
+        // 1. Check if this input exists in background Rive
+        const isBackgroundRiveInput = discoveredMachines.some(m =>
+            m.inputs.some(i => i.name === inputName)
+        );
+
+        // 2. Find ALL asset elements that have this input
+        const matchingAssetElements = Object.entries(elementRiveDiscoveries)
+            .filter(([elementId, discovery]) =>
+                discovery.machines.some(m => m.inputs.some(i => i.name === inputName))
+            )
+            .map(([elementId]) => elementId);
+
+        // 3. Check if any sensor tag matches
+        const hasSensorTag = elements.some(el => el.properties.sensorTag === inputName);
+
+        console.log('[UnifiedInput] Usage check:', {
+            inputName,
+            isBackgroundRiveInput,
+            matchingAssetElements,
+            hasSensorTag
+        });
+
+        // 4. Update background Rive if needed
+        if (isBackgroundRiveInput) {
+            const parsedValue = value === '' ? undefined : (parseFloat(value) || value);
+            handleRiveInputChange(inputName, parsedValue);
+        }
+
+        // 5. Update each matching asset element
+        console.log('[UnifiedInput] About to update matching asset elements:', matchingAssetElements);
+        matchingAssetElements.forEach(elementId => {
+            const element = elements.find(el => el.id === elementId);
+            if (!element) return;
+
+            const currentInputs = element.properties.riveInputs || {};
+
+            if (value === '') {
+                // Remove the input
+                const { [inputName]: _, ...rest } = currentInputs;
+                onElementUpdate(elementId, {
+                    properties: {
+                        ...element.properties,
+                        riveInputs: Object.keys(rest).length > 0 ? rest : undefined
+                    }
+                });
+            } else {
+                // Set the input
+                const numValue = parseFloat(value);
+                const finalValue = !isNaN(numValue) && value.trim() !== '' ? numValue : value;
+                console.log('[UnifiedInput] Calling onElementUpdate for element:', { elementId, inputName, finalValue, newInputs: { ...currentInputs, [inputName]: finalValue } });
+                onElementUpdate(elementId, {
+                    properties: {
+                        ...element.properties,
+                        riveInputs: { ...currentInputs, [inputName]: finalValue }
+                    }
+                });
+            }
+        });
+
+        // 6. Update sensor tag if needed
+        if (hasSensorTag) {
+            handleSensorTestValueChange(inputName, value);
+        }
+    };
+
+    // Handler for sensor test values (legacy - used by Asset View)
+    const handleSensorTestValueChange = (sensorTag: string, value: string) => {
+        const currentValues = layout.sensorTestValues || {};
+
+        if (value === '') {
+            // Remove test value if cleared
+            const { [sensorTag]: _, ...rest } = currentValues;
+            const newValues = Object.keys(rest).length > 0 ? rest : undefined;
+            onLayoutUpdate({ sensorTestValues: newValues });
+        } else {
+            // Try to parse as number, otherwise keep as string
+            const numValue = parseFloat(value);
+            const finalValue = !isNaN(numValue) && value.trim() !== '' ? numValue : value;
+            const newValues = { ...currentValues, [sensorTag]: finalValue };
+            onLayoutUpdate({
+                sensorTestValues: newValues
+            });
+        }
+    };
+
+    // Collect all Rive inputs and bindings (for Sensor Tag view)
+    const allRiveInputsAndBindings = useMemo(() => {
+        const items: Array<{
+            type: 'input' | 'binding';
+            name: string;
+            source: string;
+            sourceId?: string;
+        }> = [];
+
+        // Background Rive inputs
+        discoveredMachines.forEach(machine => {
+            machine.inputs.forEach(input => {
+                items.push({
+                    type: 'input',
+                    name: input.name,
+                    source: `Background (${machine.name})`
+                });
+            });
+        });
+
+        // Background Rive bindings
+        discoveredBindings.forEach(binding => {
+            items.push({
+                type: 'binding',
+                name: binding.name,
+                source: 'Background'
+            });
+        });
+
+        // Asset Rive inputs and bindings
+        Object.entries(elementRiveDiscoveries).forEach(([elementId, discovery]) => {
+            const element = elements.find(el => el.id === elementId);
+            if (!element) return;
+
+            const elementName = element.properties.name || element.id;
+
+            discovery.machines.forEach(machine => {
+                machine.inputs.forEach(input => {
+                    items.push({
+                        type: 'input',
+                        name: input.name,
+                        source: `${elementName} (${machine.name})`,
+                        sourceId: elementId
+                    });
+                });
+            });
+
+            discovery.bindings.forEach(binding => {
+                items.push({
+                    type: 'binding',
+                    name: binding.name,
+                    source: elementName,
+                    sourceId: elementId
+                });
+            });
+        });
+
+        return items.sort((a, b) => a.name.localeCompare(b.name));
+    }, [discoveredMachines, discoveredBindings, elementRiveDiscoveries, elements]);
 
     // Handlers for background rive bindings
     const handleRiveInputChange = (inputName: string, value: any) => {
@@ -167,6 +414,52 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
 
     return (
         <div>
+            {/* View Toggle */}
+            <div style={{
+                padding: '12px 16px',
+                backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.grey[50],
+                borderBottom: `2px solid ${theme.palette.divider}`,
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '8px',
+            }}>
+                <button
+                    style={{
+                        padding: '6px 16px',
+                        borderRadius: '4px',
+                        border: `1px solid ${theme.palette.divider}`,
+                        backgroundColor: viewMode === 'asset' ? theme.palette.primary.main : theme.palette.background.paper,
+                        color: viewMode === 'asset' ? theme.palette.primary.contrastText : theme.palette.text.primary,
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                    }}
+                    onClick={() => setViewMode('asset')}
+                >
+                    Asset View
+                </button>
+                <button
+                    style={{
+                        padding: '6px 16px',
+                        borderRadius: '4px',
+                        border: `1px solid ${theme.palette.divider}`,
+                        backgroundColor: viewMode === 'sensorTag' ? theme.palette.primary.main : theme.palette.background.paper,
+                        color: viewMode === 'sensorTag' ? theme.palette.primary.contrastText : theme.palette.text.primary,
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                    }}
+                    onClick={() => setViewMode('sensorTag')}
+                >
+                    Sensor Tag View
+                </button>
+            </div>
+
+            {/* Asset View (Current) */}
+            {viewMode === 'asset' && (
+                <>
             {/* Background Rive Bindings Section */}
             <div>
                 <div
@@ -296,6 +589,7 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
                                                         riveBindings: element.properties.riveBindings,
                                                     }}
                                                     onInputChange={(inputName, value) => {
+                                                        console.log('[AssetView] onInputChange called:', { elementId: element.id, elementName: element.properties.name, inputName, value, currentInputs: element.properties.riveInputs });
                                                         const currentInputs = element.properties.riveInputs || {};
                                                         onElementUpdate(element.id, {
                                                             properties: {
@@ -339,7 +633,7 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
                     onClick={() => onToggleSection('bindings-sensors')}
                 >
                     <h4 style={sectionTitleStyle}>
-                        Sensor Tag Inputs
+                        FrameEngine SensorTag Inputs
                         {sensorInputs.length > 0 && (
                             <span style={{ ...badgeStyle, marginLeft: '8px' }}>
                                 {sensorInputs.length}
@@ -373,6 +667,22 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
                                                 <span style={{ opacity: 0.7 }}>Tag:</span> {input.sensorTag}
                                             </div>
                                         </div>
+                                        <input
+                                            type="text"
+                                            value={layout.sensorTestValues?.[input.sensorTag] ?? ''}
+                                            onChange={(e) => handleSensorTestValueChange(input.sensorTag, e.target.value)}
+                                            placeholder="Test value"
+                                            style={{
+                                                width: '80px',
+                                                padding: '4px 6px',
+                                                fontSize: '11px',
+                                                border: `1px solid ${theme.palette.divider}`,
+                                                borderRadius: '3px',
+                                                backgroundColor: theme.palette.background.paper,
+                                                color: theme.palette.text.primary,
+                                                marginRight: '8px',
+                                            }}
+                                        />
                                         <button
                                             style={jumpButtonStyle}
                                             onClick={() => onElementSelect([input.elementId])}
@@ -398,6 +708,170 @@ export const FrameEngine_BindingsPanel: React.FC<FrameEngine_BindingsPanelProps>
                     </div>
                 )}
             </div>
+                </>
+            )}
+
+            {/* Sensor Tag View (Unified Inputs) */}
+            {viewMode === 'sensorTag' && (
+                <div>
+                    {unifiedInputs.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px' }}>
+                            {unifiedInputs.map((input) => {
+                                // Get current value (priority: riveInputs > sensorTestValues)
+                                const currentValue = layout.riveInputs?.[input.name] ?? layout.sensorTestValues?.[input.name] ?? '';
+
+                                return (
+                                    <div key={input.name} style={{
+                                        padding: '12px',
+                                        backgroundColor: theme.palette.background.default,
+                                        borderRadius: '6px',
+                                        border: `1px solid ${theme.palette.divider}`,
+                                    }}>
+                                        {/* Input Header with Value Input */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            marginBottom: '12px',
+                                            paddingBottom: '8px',
+                                            borderBottom: `1px solid ${theme.palette.divider}`,
+                                        }}>
+                                            <div style={{
+                                                fontWeight: 600,
+                                                color: theme.palette.text.primary,
+                                                fontSize: '12px',
+                                                flex: 1,
+                                            }}>
+                                                {input.name}
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '3px',
+                                                    backgroundColor: theme.palette.info.main,
+                                                    color: '#fff',
+                                                    fontWeight: 500,
+                                                    marginLeft: '8px',
+                                                }}>
+                                                    {input.sources.length}
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={currentValue}
+                                                onChange={(e) => handleUnifiedInputChange(input.name, e.target.value)}
+                                                placeholder="Value"
+                                                style={{
+                                                    width: '120px',
+                                                    padding: '4px 8px',
+                                                    fontSize: '11px',
+                                                    border: `1px solid ${theme.palette.divider}`,
+                                                    borderRadius: '3px',
+                                                    backgroundColor: theme.palette.background.paper,
+                                                    color: theme.palette.text.primary,
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Sources using this input */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            {input.sources.map((source, idx) => (
+                                                <div key={idx} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '6px 8px',
+                                                    backgroundColor: theme.palette.background.paper,
+                                                    borderRadius: '4px',
+                                                    border: `1px solid ${theme.palette.divider}`,
+                                                }}>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{
+                                                            fontSize: '11px',
+                                                            fontWeight: 500,
+                                                            color: theme.palette.text.primary,
+                                                        }}>
+                                                            {source.type === 'rive-input' && (
+                                                                <span style={{
+                                                                    fontSize: '8px',
+                                                                    padding: '2px 4px',
+                                                                    borderRadius: '2px',
+                                                                    backgroundColor: theme.palette.warning.main,
+                                                                    color: '#fff',
+                                                                    fontWeight: 500,
+                                                                    marginRight: '6px',
+                                                                }}>
+                                                                    RIVE INPUT
+                                                                </span>
+                                                            )}
+                                                            {source.type === 'rive-binding' && (
+                                                                <span style={{
+                                                                    fontSize: '8px',
+                                                                    padding: '2px 4px',
+                                                                    borderRadius: '2px',
+                                                                    backgroundColor: theme.palette.success.main,
+                                                                    color: '#fff',
+                                                                    fontWeight: 500,
+                                                                    marginRight: '6px',
+                                                                }}>
+                                                                    RIVE BINDING
+                                                                </span>
+                                                            )}
+                                                            {source.type === 'frameengine' && (
+                                                                <span style={{
+                                                                    fontSize: '8px',
+                                                                    padding: '2px 4px',
+                                                                    borderRadius: '2px',
+                                                                    backgroundColor: theme.palette.info.main,
+                                                                    color: '#fff',
+                                                                    fontWeight: 500,
+                                                                    marginRight: '6px',
+                                                                }}>
+                                                                    SENSOR TAG
+                                                                </span>
+                                                            )}
+                                                            {source.type === 'frameengine'
+                                                                ? (source.elementType ? source.elementType.charAt(0).toUpperCase() + source.elementType.slice(1).replace(/-/g, ' ') : 'Element')
+                                                                : source.riveSource || source.elementName || 'Rive'
+                                                            }
+                                                        </div>
+                                                        <div style={{
+                                                            fontSize: '10px',
+                                                            color: theme.palette.text.secondary,
+                                                        }}>
+                                                            {source.type === 'frameengine' && (source.elementName || 'element')}
+                                                            {source.type === 'rive-input' && source.inputType && `Type: ${source.inputType}`}
+                                                        </div>
+                                                    </div>
+                                                    {source.elementId && (
+                                                        <button
+                                                            style={jumpButtonStyle}
+                                                            onClick={() => onElementSelect([source.elementId!])}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = theme.palette.mode === 'dark'
+                                                                    ? theme.palette.grey[700]
+                                                                    : theme.palette.grey[200];
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = theme.palette.background.paper;
+                                                            }}
+                                                        >
+                                                            Select
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div style={emptyMessageStyle}>
+                            No inputs found. Add elements or Rive assets to see them here.
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };

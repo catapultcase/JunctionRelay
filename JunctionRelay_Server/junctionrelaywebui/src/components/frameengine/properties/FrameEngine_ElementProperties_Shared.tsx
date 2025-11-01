@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { googleFonts } from '../GoogleFonts';
 import type { PlacedElement } from '../FrameEngine_Types';
 import { inputStyle, sectionHeaderStyle } from './FrameEngine_ElementProperties_Types';
@@ -58,29 +58,63 @@ export const ColorInput: React.FC<ColorInputProps> = ({
     value,
     onChange
 }) => {
-    // Only use hex colors for color input (it doesn't support "transparent" or other color names)
-    const isValidHexColor = (color: string) => /^#[0-9A-F]{6}$/i.test(color);
-    const colorInputValue = isValidHexColor(value) ? value : (isValidHexColor(defaultValue) ? defaultValue : '#000000');
+    const currentValue = value || defaultValue;
+
+    // Get display color for the swatch
+    const getSwatchColor = () => {
+        if (!currentValue || currentValue === 'transparent') {
+            return 'transparent';
+        }
+        return currentValue;
+    };
+
+    // Open the global color picker on the canvas
+    const handleSwatchClick = () => {
+        const globalPicker = (window as any).__canvasColorPicker;
+        if (globalPicker && globalPicker.open) {
+            globalPicker.open(currentValue, (newColor: string) => {
+                onChange(property, newColor);
+            });
+        }
+    };
 
     return (
         <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#333', marginBottom: '4px' }}>
                 {label}
             </label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                    type="color"
-                    value={colorInputValue}
-                    onChange={(e) => onChange(property, e.target.value)}
-                    style={{ width: '48px', height: '32px', border: '1px solid #ccc', borderRadius: '4px' }}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {/* Color swatch button */}
+                <div
+                    onClick={handleSwatchClick}
+                    style={{
+                        width: '48px',
+                        height: '32px',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        backgroundColor: getSwatchColor(),
+                        backgroundImage: currentValue === 'transparent'
+                            ? 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)'
+                            : 'none',
+                        backgroundSize: '8px 8px',
+                        backgroundPosition: '0 0, 4px 4px'
+                    }}
                 />
+
+                {/* Text input */}
                 <input
                     type="text"
-                    value={value || defaultValue}
+                    value={currentValue}
                     onChange={(e) => onChange(property, e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                     placeholder={placeholder || defaultValue}
                 />
+            </div>
+
+            {/* Help text */}
+            <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                Supports hex, rgb(), rgba(), hsl(), hsla(), or 'transparent'
             </div>
         </div>
     );

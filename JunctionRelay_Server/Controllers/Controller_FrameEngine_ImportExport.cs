@@ -320,15 +320,15 @@ namespace JunctionRelayServer.Controllers
 
                                 var elementType = typeProperty.GetString();
 
-                                // Handle asset-image elements
-                                if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var imageUrlProp))
+                                // Handle media-image elements
+                                if (elementType == "media-image" && propertiesElement.TryGetProperty("filename", out var imageFilename))
                                 {
-                                    var imageUrl = imageUrlProp.GetString();
-                                    if (!string.IsNullOrEmpty(imageUrl) &&
-                                        !imageUrl.StartsWith("http://") &&
-                                        !imageUrl.StartsWith("https://"))
+                                    var imageFile = imageFilename.GetString();
+                                    if (!string.IsNullOrEmpty(imageFile) &&
+                                        !imageFile.StartsWith("http://") &&
+                                        !imageFile.StartsWith("https://"))
                                     {
-                                        var fileName = Path.GetFileName(imageUrl);
+                                        var fileName = Path.GetFileName(imageFile);
                                         var filePath = FindAssetFile(fileName, assetsPath, templatesPath);
                                         if (!string.IsNullOrEmpty(filePath))
                                         {
@@ -337,15 +337,15 @@ namespace JunctionRelayServer.Controllers
                                     }
                                 }
 
-                                // Handle asset-video elements
-                                if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var videoUrlProp))
+                                // Handle media-video elements
+                                if (elementType == "media-video" && propertiesElement.TryGetProperty("filename", out var videoFilename))
                                 {
-                                    var videoUrl = videoUrlProp.GetString();
-                                    if (!string.IsNullOrEmpty(videoUrl) &&
-                                        !videoUrl.StartsWith("http://") &&
-                                        !videoUrl.StartsWith("https://"))
+                                    var videoFile = videoFilename.GetString();
+                                    if (!string.IsNullOrEmpty(videoFile) &&
+                                        !videoFile.StartsWith("http://") &&
+                                        !videoFile.StartsWith("https://"))
                                     {
-                                        var fileName = Path.GetFileName(videoUrl);
+                                        var fileName = Path.GetFileName(videoFile);
                                         var filePath = FindAssetFile(fileName, videosPath, templatesPath);
                                         if (!string.IsNullOrEmpty(filePath))
                                         {
@@ -354,10 +354,10 @@ namespace JunctionRelayServer.Controllers
                                     }
                                 }
 
-                                // Handle asset-rive elements
-                                if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var riveFileProp))
+                                // Handle media-rive elements
+                                if (elementType == "media-rive" && propertiesElement.TryGetProperty("filename", out var riveFilename))
                                 {
-                                    var riveFile = riveFileProp.GetString();
+                                    var riveFile = riveFilename.GetString();
                                     if (!string.IsNullOrEmpty(riveFile))
                                     {
                                         var filePath = FindAssetFile(riveFile, rivePath, templatesPath);

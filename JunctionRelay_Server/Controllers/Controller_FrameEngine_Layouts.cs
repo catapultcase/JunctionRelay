@@ -131,8 +131,8 @@ namespace JunctionRelayServer.Controllers
                     DisplayName = request.DisplayName.Trim(),
                     Description = request.Description?.Trim(),
                     LayoutType = string.IsNullOrWhiteSpace(request.LayoutType) ? "PRE_RENDERED_IMAGE" : request.LayoutType.ToUpperInvariant(),
-                    Width = request.Width ?? 792,
-                    Height = request.Height ?? 272,
+                    Width = request.Width ?? 800,
+                    Height = request.Height ?? 600,
                     Orientation = string.IsNullOrWhiteSpace(request.Orientation) ? "landscape" : request.Orientation.ToLowerInvariant(),
                     BackgroundType = string.IsNullOrWhiteSpace(request.BackgroundType) ? "color" : request.BackgroundType.ToLowerInvariant(),
                     BackgroundColor = request.BackgroundColor ?? "#FFFFFF",
@@ -201,24 +201,24 @@ namespace JunctionRelayServer.Controllers
                     existing.BackgroundType = request.BackgroundType.ToLowerInvariant();
                 if (request.BackgroundColor != null)
                     existing.BackgroundColor = request.BackgroundColor;
-                if (request.BackgroundImageUrl != null)
-                    existing.BackgroundImageUrl = request.BackgroundImageUrl.Trim();
-                if (request.BackgroundImageFit != null)
-                    existing.BackgroundImageFit = request.BackgroundImageFit;
-                if (request.BackgroundVideoUrl != null)
-                    existing.BackgroundVideoUrl = request.BackgroundVideoUrl.Trim();
-                if (request.BackgroundVideoFit != null)
-                    existing.BackgroundVideoFit = request.BackgroundVideoFit;
-                if (request.VideoLoop.HasValue)
-                    existing.VideoLoop = request.VideoLoop.Value;
-                if (request.VideoMuted.HasValue)
-                    existing.VideoMuted = request.VideoMuted.Value;
-                if (request.VideoAutoplay.HasValue)
-                    existing.VideoAutoplay = request.VideoAutoplay.Value;
+
+                // Background image fields - allow null to clear the value
+                existing.BackgroundImageUrl = request.BackgroundImageUrl?.Trim();
+                existing.BackgroundImageFit = request.BackgroundImageFit;
+
+                // Background video fields - allow null to clear the value
+                existing.BackgroundVideoUrl = request.BackgroundVideoUrl?.Trim();
+                existing.BackgroundVideoFit = request.BackgroundVideoFit;
+                // Video boolean fields - always update (frontend sends false for non-video modes)
+                existing.VideoLoop = request.VideoLoop ?? existing.VideoLoop;
+                existing.VideoMuted = request.VideoMuted ?? existing.VideoMuted;
+                existing.VideoAutoplay = request.VideoAutoplay ?? existing.VideoAutoplay;
+
                 if (request.BackgroundOpacity.HasValue)
                     existing.BackgroundOpacity = Math.Clamp(request.BackgroundOpacity.Value, 0.0, 1.0);
-                if (request.RiveFile != null)
-                    existing.RiveFile = request.RiveFile.Trim();
+
+                // Rive fields - allow null to clear the value
+                existing.RiveFile = request.RiveFile?.Trim();
                 if (request.ThumbnailOverride.HasValue)
                     existing.ThumbnailOverride = request.ThumbnailOverride.Value;
 

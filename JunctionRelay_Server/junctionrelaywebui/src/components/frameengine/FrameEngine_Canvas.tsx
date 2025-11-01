@@ -19,6 +19,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTheme } from '@mui/material/styles';
+import { SketchPicker, ColorResult } from 'react-color';
 import {
     FrameEngine_ElementRenderer,
     BaseElement,
@@ -129,6 +130,66 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         elementType: null,
     });
 
+    // Global color picker state
+    const [colorPicker, setColorPicker] = useState<{
+        visible: boolean;
+        color: string;
+        onChange: ((color: string) => void) | null;
+    }>({
+        visible: false,
+        color: '#000000',
+        onChange: null,
+    });
+
+    // Global color picker handlers
+    const openColorPicker = useCallback((color: string, onChange: (color: string) => void) => {
+        setColorPicker({
+            visible: true,
+            color: color || '#000000',
+            onChange: onChange,
+        });
+    }, []);
+
+    const closeColorPicker = useCallback(() => {
+        setColorPicker({
+            visible: false,
+            color: '#000000',
+            onChange: null,
+        });
+    }, []);
+
+    const handleColorPickerChange = useCallback((colorResult: ColorResult) => {
+        const { r, g, b, a } = colorResult.rgb;
+
+        let colorString: string;
+        if (a !== undefined && a < 1) {
+            colorString = `rgba(${r}, ${g}, ${b}, ${a})`;
+        } else {
+            colorString = colorResult.hex;
+        }
+
+        if (colorPicker.onChange) {
+            colorPicker.onChange(colorString);
+        }
+
+        setColorPicker(prev => ({
+            ...prev,
+            color: colorString,
+        }));
+    }, [colorPicker.onChange]);
+
+    // Expose color picker to window for ColorInput components
+    useEffect(() => {
+        (window as any).__canvasColorPicker = {
+            open: openColorPicker,
+            close: closeColorPicker,
+        };
+
+        return () => {
+            delete (window as any).__canvasColorPicker;
+        };
+    }, [openColorPicker, closeColorPicker]);
+
     // Check if an element is locked
     const isElementLocked = useCallback((elementId: string): boolean => {
         const element = elements.find(el => el.id === elementId);
@@ -172,7 +233,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         elementPadding: elementPadding,
         isInteractive: !previewMode,
         showPlaceholders: true,
-    }), [elementPadding, previewMode]);
+        sensorTestValues: layout.sensorTestValues,
+    }), [elementPadding, previewMode, layout.sensorTestValues]);
 
     // Create background configuration for the shared renderer
     const backgroundConfig: BackgroundConfig = useMemo(() => {
@@ -182,7 +244,12 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
             type: bgType,
             color: layout.backgroundColor,
             imageUrl: layout.backgroundImageUrl || undefined,
+            imageFit: layout.backgroundImageFit || 'cover',
             videoUrl: layout.backgroundVideoUrl || undefined,
+            videoFit: layout.backgroundVideoFit || 'cover',
+            videoLoop: layout.videoLoop ?? true,
+            videoMuted: layout.videoMuted ?? true,
+            videoAutoplay: layout.videoAutoplay ?? true,
             riveFile: layout.riveFile || undefined,
             riveStateMachine: layout.riveStateMachine || undefined,
             riveInputs: layout.riveInputs || undefined,
@@ -191,7 +258,12 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
     }, [
         layout.backgroundColor,
         layout.backgroundImageUrl,
+        layout.backgroundImageFit,
         layout.backgroundVideoUrl,
+        layout.backgroundVideoFit,
+        layout.videoLoop,
+        layout.videoMuted,
+        layout.videoAutoplay,
         layout.backgroundType,
         layout.riveFile,
         layout.riveStateMachine,
@@ -602,13 +674,14 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
         };
     }, [isPanning, dragState, panStart, screenToCanvas, onElementUpdate, snapToGrid, snapToGridValue, previewMode, isElementLocked]);
 
-    // Handle canvas click (clear selection)
+    // Handle canvas click (clear selection and close color picker)
     const handleCanvasClick = useCallback((event: React.MouseEvent) => {
         if (previewMode) return;
         if (event.target === event.currentTarget) {
             onCanvasClick();
+            closeColorPicker();
         }
-    }, [onCanvasClick, previewMode]);
+    }, [onCanvasClick, previewMode, closeColorPicker]);
 
     // Handle drag over for external drops
     const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -773,6 +846,13 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                     cursor: isPanning ? 'grabbing' : 'default',
                 }}
                 onMouseDown={handleMouseDown}
+                onClick={(e) => {
+                    // Close color picker and deselect elements when clicking outside canvas (on viewport background)
+                    if (e.target === e.currentTarget && !previewMode) {
+                        closeColorPicker();
+                        onCanvasClick();
+                    }
+                }}
             >
                 {/* Enhanced Control Panel - HIDDEN in preview mode */}
                 {!previewMode && (
@@ -785,7 +865,8 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             zIndex: 100,
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '8px'
+                            gap: '8px',
+                            width: '218px'  // Match SketchPicker width to prevent resizing
                         }}
                     >
                         <button
@@ -818,8 +899,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             boxShadow: theme.shadows[2],
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '6px',
-                            minWidth: '120px'
+                            gap: '6px'
                         }}>
                             <label style={{
                                 display: 'flex',
@@ -922,8 +1002,7 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                             boxShadow: theme.shadows[2],
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '6px',
-                            minWidth: '120px'
+                            gap: '6px'
                         }}>
                             <div style={{
                                 display: 'flex',
@@ -958,6 +1037,51 @@ const ImprovedFrameEngine_Canvas: React.FC<CanvasProps> = ({
                                 <span>px</span>
                             </div>
                         </div>
+
+                        {/* Global Color Picker - positioned below grid controls */}
+                        {colorPicker.visible && (
+                            <div
+                                data-skip-thumbnail="true"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                    position: 'relative',
+                                    marginTop: '8px',
+                                    boxShadow: theme.shadows[4],
+                                    borderRadius: '4px',
+                                    overflow: 'hidden'
+                                }}
+                            >
+                                <SketchPicker
+                                    color={colorPicker.color}
+                                    onChange={handleColorPickerChange}
+                                    onChangeComplete={handleColorPickerChange}
+                                />
+                                <button
+                                    onClick={closeColorPicker}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '8px',
+                                        right: '8px',
+                                        width: '24px',
+                                        height: '24px',
+                                        backgroundColor: theme.palette.background.paper,
+                                        border: `1px solid ${theme.palette.divider}`,
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                        fontWeight: 'bold',
+                                        color: theme.palette.text.primary,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        zIndex: 1000
+                                    }}
+                                    title="Close color picker"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 

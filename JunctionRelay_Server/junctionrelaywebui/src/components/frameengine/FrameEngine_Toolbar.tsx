@@ -95,9 +95,9 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
                 switch (e.key) {
                     case 's':
                         e.preventDefault();
-                        if (e.shiftKey && isDirty) {
+                        if (e.shiftKey) {
                             handleSave();
-                        } else if (isDirty) {
+                        } else {
                             handleQuickSave();
                         }
                         break;
@@ -115,7 +115,7 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isDirty, canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo, previewMode]);
+    }, [canUndo, canRedo, handleQuickSave, handleSave, onUndo, onRedo, previewMode]);
 
     const getButtonStyle = (variant: 'default' | 'primary' | 'success' | 'disabled' | 'preview') => {
         const baseStyle = {
@@ -185,18 +185,18 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <button
                     onClick={handleQuickSave}
-                    disabled={previewMode || !isDirty || isLoading}
+                    disabled={previewMode || isLoading}
                     style={getButtonStyle(
-                        (previewMode || !isDirty || isLoading) ? 'disabled' : 'primary'
+                        (previewMode || isLoading) ? 'disabled' : 'primary'
                     )}
                     title={previewMode ? "Quick Save (disabled in preview mode)" : "Quick Save (Ctrl+S) - Save with current thumbnail settings"}
                     onMouseEnter={(e) => {
-                        if (!previewMode && isDirty && !isLoading) {
+                        if (!previewMode && !isLoading) {
                             e.currentTarget.style.background = theme.palette.primary.dark;
                         }
                     }}
                     onMouseLeave={(e) => {
-                        if (!previewMode && isDirty && !isLoading) {
+                        if (!previewMode && !isLoading) {
                             e.currentTarget.style.background = theme.palette.primary.main;
                         }
                     }}
@@ -206,18 +206,18 @@ const FrameEngine_Toolbar: React.FC<ToolbarProps> = ({
 
                 <button
                     onClick={handleSave}
-                    disabled={previewMode || !isDirty || isLoading}
+                    disabled={previewMode || isLoading}
                     style={getButtonStyle(
-                        (previewMode || !isDirty || isLoading) ? 'disabled' : 'success'
+                        (previewMode || isLoading) ? 'disabled' : 'success'
                     )}
                     title={previewMode ? "Save (disabled in preview mode)" : "Save & Manage Thumbnail (Ctrl+Shift+S) - Review and update thumbnail"}
                     onMouseEnter={(e) => {
-                        if (!previewMode && isDirty && !isLoading) {
+                        if (!previewMode && !isLoading) {
                             e.currentTarget.style.background = theme.palette.success.dark;
                         }
                     }}
                     onMouseLeave={(e) => {
-                        if (!previewMode && isDirty && !isLoading) {
+                        if (!previewMode && !isLoading) {
                             e.currentTarget.style.background = theme.palette.success.main;
                         }
                     }}

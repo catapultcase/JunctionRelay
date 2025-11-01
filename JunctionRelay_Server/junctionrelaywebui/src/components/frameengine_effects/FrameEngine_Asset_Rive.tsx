@@ -76,14 +76,36 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
     const [discoveredInputs, setDiscoveredInputs] = useState<Record<string, any>>({});
     const [discoveredBindings, setDiscoveredBindings] = useState<Record<string, any>>({});
     const [riveKey, setRiveKey] = useState(0);
+    const [retryCount, setRetryCount] = useState(0);
+    const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Retry configuration
+    const MAX_RETRIES = 3;
+    const RETRY_DELAYS = [0, 500, 1500]; // Progressive backoff: immediate, 500ms, 1.5s
 
     // Detect Rive file changes and force remount
     useEffect(() => {
         if (assetRiveFile) {
             console.log('🔄 Asset Rive file changed, forcing reload:', assetRiveFile);
             setRiveKey(prev => prev + 1);
+            setRetryCount(0); // Reset retry count on file change
+
+            // Clear any pending retry
+            if (retryTimeoutRef.current) {
+                clearTimeout(retryTimeoutRef.current);
+                retryTimeoutRef.current = null;
+            }
         }
     }, [assetRiveFile]);
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (retryTimeoutRef.current) {
+                clearTimeout(retryTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Determine Rive options
     const riveOptions = useMemo(() => {
@@ -91,9 +113,10 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
             return null;
         }
 
+        // Properly encode the filename to handle spaces and special characters
         const riveFileUrl = assetRiveFile.startsWith('http')
             ? assetRiveFile
-            : `/api/frameengine/rive/${assetRiveFile}/content`;
+            : `/api/frameengine/rive/${encodeURIComponent(assetRiveFile)}/content`;
 
         let layoutFit: Fit;
         switch (riveFit) {
@@ -119,14 +142,33 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
             }),
             onLoad: () => {
                 console.log('✅ Asset Rive loaded:', assetRiveFile);
+                setRetryCount(0); // Reset retry count on successful load
                 if (onRiveLoad) onRiveLoad();
             },
             onLoadError: (error: any) => {
-                console.error('❌ Asset Rive load error:', error, { riveFile: assetRiveFile });
-                if (onRiveError) onRiveError(error);
+                console.error('❌ Asset Rive load error:', {
+                    error,
+                    riveFile: assetRiveFile,
+                    retryCount,
+                    maxRetries: MAX_RETRIES,
+                    willRetry: retryCount < MAX_RETRIES
+                });
+
+                if (retryCount < MAX_RETRIES) {
+                    const delay = RETRY_DELAYS[retryCount] || 1500;
+                    console.log(`⏳ Retrying Rive load in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+
+                    retryTimeoutRef.current = setTimeout(() => {
+                        setRetryCount(prev => prev + 1);
+                        setRiveKey(prev => prev + 1); // Force reload by changing key
+                    }, delay);
+                } else {
+                    console.error('❌ Rive load failed after', MAX_RETRIES, 'retries:', assetRiveFile);
+                    if (onRiveError) onRiveError(error);
+                }
             },
         };
-    }, [assetRiveFile, riveFit, onRiveLoad, onRiveError, riveKey]);
+    }, [assetRiveFile, riveFit, onRiveLoad, onRiveError, riveKey, retryCount]);
 
     // Initialize Rive
     const { rive, RiveComponent } = useRive(riveOptions || { src: '', autoplay: false });
@@ -531,6 +573,7 @@ export const FrameEngine_Asset_Rive: React.FC<AssetRiveElementProps> = ({
     // Apply input changes when inputs prop changes
     useEffect(() => {
         if (!assetRiveFile || !riveInputs || Object.keys(discoveredInputs).length === 0) return;
+        console.log('🎨 Asset_Rive - Props received:', { assetRiveFile, riveInputs, discoveredInputs });
 
         Object.entries(riveInputs || {}).forEach(([inputKey, inputValue]) => {
             const discovered = discoveredInputs[inputKey];

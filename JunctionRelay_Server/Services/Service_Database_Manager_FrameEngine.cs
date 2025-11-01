@@ -639,7 +639,7 @@ namespace JunctionRelayServer.Services
 
                 if (!string.IsNullOrEmpty(backgroundImagePath) && System.IO.File.Exists(backgroundImagePath))
                 {
-                    packageContents.Add($"assets/{backgroundImageFileName}");
+                    packageContents.Add($"images/{backgroundImageFileName}");
                 }
                 else
                 {
@@ -704,15 +704,15 @@ namespace JunctionRelayServer.Services
                                     properties[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
                                 }
 
-                                // Handle asset-image elements
-                                if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var assetImageUrl))
+                                // Handle media-image elements
+                                if (elementType == "media-image" && propertiesElement.TryGetProperty("filename", out var imageFilename))
                                 {
-                                    var imageUrl = assetImageUrl.GetString();
-                                    if (!string.IsNullOrEmpty(imageUrl) &&
-                                        !imageUrl.StartsWith("http://") &&
-                                        !imageUrl.StartsWith("https://"))
+                                    var imageFile = imageFilename.GetString();
+                                    if (!string.IsNullOrEmpty(imageFile) &&
+                                        !imageFile.StartsWith("http://") &&
+                                        !imageFile.StartsWith("https://"))
                                     {
-                                        var fileName = Path.GetFileName(imageUrl);
+                                        var fileName = Path.GetFileName(imageFile);
                                         var filePath = GetAssetFilePath(fileName, assetsPath, templatesPath);
 
                                         if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
@@ -723,20 +723,20 @@ namespace JunctionRelayServer.Services
                                                 elementAssets[fileName] = (filePath, zipPath, $"images/{fileName}");
                                                 packageContents.Add(zipPath);
                                             }
-                                            properties["assetImageUrl"] = $"images/{fileName}";
+                                            properties["filename"] = fileName;
                                         }
                                     }
                                 }
 
-                                // Handle asset-video elements
-                                if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var assetVideoUrl))
+                                // Handle media-video elements
+                                if (elementType == "media-video" && propertiesElement.TryGetProperty("filename", out var videoFilename))
                                 {
-                                    var videoUrl = assetVideoUrl.GetString();
-                                    if (!string.IsNullOrEmpty(videoUrl) &&
-                                        !videoUrl.StartsWith("http://") &&
-                                        !videoUrl.StartsWith("https://"))
+                                    var videoFile = videoFilename.GetString();
+                                    if (!string.IsNullOrEmpty(videoFile) &&
+                                        !videoFile.StartsWith("http://") &&
+                                        !videoFile.StartsWith("https://"))
                                     {
-                                        var fileName = Path.GetFileName(videoUrl);
+                                        var fileName = Path.GetFileName(videoFile);
                                         var filePath = GetAssetFilePath(fileName, videosPath, templatesPath);
 
                                         if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
@@ -747,15 +747,15 @@ namespace JunctionRelayServer.Services
                                                 elementAssets[fileName] = (filePath, zipPath, $"videos/{fileName}");
                                                 packageContents.Add(zipPath);
                                             }
-                                            properties["assetVideoUrl"] = $"videos/{fileName}";
+                                            properties["filename"] = fileName;
                                         }
                                     }
                                 }
 
-                                // Handle asset-rive elements
-                                if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var assetRiveFile))
+                                // Handle media-rive elements
+                                if (elementType == "media-rive" && propertiesElement.TryGetProperty("filename", out var riveFilename))
                                 {
-                                    var riveFileStr = assetRiveFile.GetString();
+                                    var riveFileStr = riveFilename.GetString();
                                     if (!string.IsNullOrEmpty(riveFileStr))
                                     {
                                         var filePath = GetAssetFilePath(riveFileStr, rivePath, templatesPath);
@@ -768,7 +768,8 @@ namespace JunctionRelayServer.Services
                                                 elementAssets[riveFileStr] = (filePath, zipPath, riveFileStr);
                                                 packageContents.Add(zipPath);
                                             }
-                                            properties["assetRiveFile"] = riveFileStr;
+                                            // Keep original filename property for media-rive
+                                            properties["filename"] = riveFileStr;
                                         }
                                     }
                                 }
@@ -841,6 +842,16 @@ namespace JunctionRelayServer.Services
                                 }
                             }
 
+                            // Handle background Rive file if present
+                            if (backgroundDict.ContainsKey("riveFile") && backgroundDict["riveFile"] != null)
+                            {
+                                var currentRiveFile = backgroundDict["riveFile"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentRiveFile) && !currentRiveFile.StartsWith("http"))
+                                {
+                                    backgroundDict["riveFile"] = Path.GetFileName(currentRiveFile);
+                                }
+                            }
+
                             frameConfigDict["background"] = backgroundDict;
                         }
 
@@ -905,6 +916,16 @@ namespace JunctionRelayServer.Services
                                 if (!string.IsNullOrEmpty(currentVideoUrl) && !currentVideoUrl.StartsWith("http"))
                                 {
                                     backgroundDict["videoUrl"] = $"videos/{Path.GetFileName(currentVideoUrl)}";
+                                }
+                            }
+
+                            // Handle background Rive file if present
+                            if (backgroundDict.ContainsKey("riveFile") && backgroundDict["riveFile"] != null)
+                            {
+                                var currentRiveFile = backgroundDict["riveFile"]?.ToString();
+                                if (!string.IsNullOrEmpty(currentRiveFile) && !currentRiveFile.StartsWith("http"))
+                                {
+                                    backgroundDict["riveFile"] = Path.GetFileName(currentRiveFile);
                                 }
                             }
 
@@ -1266,6 +1287,17 @@ namespace JunctionRelayServer.Services
                                 backgroundDict["videoUrl"] = backgroundVideoUrl;
                             }
 
+                            // Handle background Rive file if present in the import data
+                            if (backgroundDict.ContainsKey("riveFile") && backgroundDict["riveFile"] != null)
+                            {
+                                // Keep the riveFile as-is during import (it should already be just a filename)
+                                var bgRiveFile = backgroundDict["riveFile"]?.ToString();
+                                if (!string.IsNullOrEmpty(bgRiveFile) && !bgRiveFile.StartsWith("http"))
+                                {
+                                    backgroundDict["riveFile"] = Path.GetFileName(bgRiveFile);
+                                }
+                            }
+
                             frameConfigDict["background"] = backgroundDict;
                         }
 
@@ -1311,6 +1343,17 @@ namespace JunctionRelayServer.Services
                             if (!string.IsNullOrEmpty(backgroundVideoUrl))
                             {
                                 backgroundDict["videoUrl"] = backgroundVideoUrl;
+                            }
+
+                            // Handle background Rive file if present in the import data
+                            if (backgroundDict.ContainsKey("riveFile") && backgroundDict["riveFile"] != null)
+                            {
+                                // Keep the riveFile as-is during import (it should already be just a filename)
+                                var bgRiveFile = backgroundDict["riveFile"]?.ToString();
+                                if (!string.IsNullOrEmpty(bgRiveFile) && !bgRiveFile.StartsWith("http"))
+                                {
+                                    backgroundDict["riveFile"] = Path.GetFileName(bgRiveFile);
+                                }
                             }
 
                             frameConfigDict["background"] = backgroundDict;
