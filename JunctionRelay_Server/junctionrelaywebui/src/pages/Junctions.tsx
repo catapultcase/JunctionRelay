@@ -199,7 +199,7 @@ const Junctions = () => {
     // Refresh junctions data (for after add/clone/delete operations)
     const refreshJunctions = useCallback(async () => {
         try {
-            const response = await fetch("/api/junctions");
+            const response = await fetch("/api/junctions/summary");
             if (!response.ok) {
                 throw new Error("Failed to fetch junctions");
             }
@@ -248,7 +248,7 @@ const Junctions = () => {
                 // Fetch service settings first
                 await fetchServiceSettings();
 
-                const junctionsResponse = await fetch("/api/junctions");
+                const junctionsResponse = await fetch("/api/junctions/summary");
                 if (!junctionsResponse.ok) {
                     throw new Error("Failed to fetch junctions");
                 }

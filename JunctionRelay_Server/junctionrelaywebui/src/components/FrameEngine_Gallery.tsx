@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import FrameEngine_CloudVersionsModal from './FrameEngine_CloudVersionsModal';
 import {
     Box,
@@ -45,6 +45,7 @@ import {
     BrokenImage as BrokenImageIcon,
     Dashboard as DashboardIcon,
     CloudUpload as CloudUploadIcon,
+    AccountTree as AccountTreeIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -60,6 +61,29 @@ interface FrameLayoutListItem {
     hasThumbnail?: boolean;
     thumbnailPath?: string;
     thumbnailGeneratedAt?: string;
+}
+
+interface Junction {
+    junctionId: number;
+    junctionName: string;
+    layoutIds: {
+        frameLayoutId?: number;
+        screenLayoutId?: number;
+    }[];
+}
+
+interface DeviceScreenDefault {
+    deviceId: number;
+    deviceName: string;
+    screenKey: string;
+    screenDisplayName: string;
+    frameLayoutId?: number;
+    screenLayoutId?: number;
+}
+
+interface LayoutUsageResponse {
+    junctionUsages: Junction[];
+    deviceScreenDefaults: DeviceScreenDefault[];
 }
 
 interface FrameEngine_GalleryProps {
@@ -185,7 +209,9 @@ const GalleryCard = memo(({
     onEdit,
     onClone,
     onShowSnackbar,
-    hasProLicense
+    hasProLicense,
+    junctions,
+    deviceScreenDefaults
 }: {
     frameLayout: FrameLayoutListItem;
     onDelete: (e: React.MouseEvent, id: string) => void;
@@ -193,11 +219,27 @@ const GalleryCard = memo(({
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void;
     onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void;
     hasProLicense?: boolean;
+    junctions: Junction[];
+    deviceScreenDefaults: DeviceScreenDefault[];
 }) => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [thumbnailError, setThumbnailError] = useState(false);
     const [cloudVersionsModalOpen, setCloudVersionsModalOpen] = useState(false);
     const navigate = useNavigate();
+
+    // Find junctions that use this frame layout
+    const usedByJunctions = junctions.filter(junction => {
+        return junction.layoutIds.some(layoutIdPair => {
+            const layoutId = layoutIdPair.frameLayoutId || layoutIdPair.screenLayoutId;
+            return layoutId && String(layoutId) === String(frameLayout.id);
+        });
+    });
+
+    // Find device screens that have this layout as default
+    const deviceScreensUsingAsDefault = deviceScreenDefaults.filter(ds => {
+        const layoutId = ds.frameLayoutId || ds.screenLayoutId;
+        return layoutId && String(layoutId) === String(frameLayout.id);
+    });
 
     const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -411,16 +453,76 @@ const GalleryCard = memo(({
                         )}
                     </Box>
                 </Box>
-                {/* Absolutely positioned Cloud Versions button */}
-                {!frameLayout.isTemplate && (
-                    <Box
-                        sx={{
-                            position: 'absolute',
-                            bottom: 16,
-                            right: 16,
-                            zIndex: 10
-                        }}
-                    >
+                {/* Absolutely positioned indicators - Junction Usage and Cloud Versions */}
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        bottom: 16,
+                        right: 16,
+                        zIndex: 10,
+                        display: 'flex',
+                        gap: 1,
+                        alignItems: 'center'
+                    }}
+                >
+                    {/* Junction Usage Indicator */}
+                    {(usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0) && (
+                        <Tooltip
+                            title={
+                                <Box>
+                                    {usedByJunctions.length > 0 && (
+                                        <>
+                                            <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                                                Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
+                                            </Typography>
+                                            {usedByJunctions.map(j => (
+                                                <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                    • {j.junctionName}
+                                                </Typography>
+                                            ))}
+                                        </>
+                                    )}
+                                    {deviceScreensUsingAsDefault.length > 0 && (
+                                        <>
+                                            <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
+                                                Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
+                                            </Typography>
+                                            {deviceScreensUsingAsDefault.map(ds => (
+                                                <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                    • {ds.deviceName}, {ds.screenDisplayName}
+                                                </Typography>
+                                            ))}
+                                        </>
+                                    )}
+                                </Box>
+                            }
+                        >
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                }}
+                                sx={{
+                                    color: 'success.main',
+                                    backgroundColor: 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: 'success.main',
+                                    boxShadow: 2,
+                                    '&:hover': {
+                                        backgroundColor: 'success.main',
+                                        color: 'success.contrastText',
+                                        boxShadow: 4
+                                    }
+                                }}
+                            >
+                                <AccountTreeIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+
+                    {/* Cloud Versions Button - only for non-templates */}
+                    {!frameLayout.isTemplate && (
                         <Tooltip title="Cloud Versions (Pro)">
                             <IconButton
                                 size="small"
@@ -445,8 +547,8 @@ const GalleryCard = memo(({
                                 <CloudUploadIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
-                    </Box>
-                )}
+                    )}
+                </Box>
 
             </CardContent>
 
@@ -482,6 +584,27 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
     onShowSnackbar,
     hasProLicense = false
 }) => {
+    const [junctions, setJunctions] = useState<Junction[]>([]);
+    const [deviceScreenDefaults, setDeviceScreenDefaults] = useState<DeviceScreenDefault[]>([]);
+
+    // Fetch layout usage on mount
+    useEffect(() => {
+        const fetchLayoutUsage = async () => {
+            try {
+                const response = await fetch('/api/junctions/layout-usage');
+                if (response.ok) {
+                    const data: LayoutUsageResponse = await response.json();
+                    setJunctions(data.junctionUsages);
+                    setDeviceScreenDefaults(data.deviceScreenDefaults);
+                }
+            } catch (error) {
+                console.error('Error fetching layout usage:', error);
+            }
+        };
+
+        fetchLayoutUsage();
+    }, []);
+
     if (frameLayouts.length === 0) {
         return (
             <Paper sx={{ p: 6, textAlign: 'center' }}>
@@ -515,6 +638,8 @@ const FrameEngine_Gallery: React.FC<FrameEngine_GalleryProps> = ({
                     onClone={onClone}
                     onShowSnackbar={onShowSnackbar}
                     hasProLicense={hasProLicense}
+                    junctions={junctions}
+                    deviceScreenDefaults={deviceScreenDefaults}
                 />
             ))}
         </Box>

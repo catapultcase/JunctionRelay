@@ -19,7 +19,7 @@
 
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { Box } from '@mui/material';
-import { VirtualScreenViewerComponent } from '../pages/VirtualScreenViewer';
+import { VirtualScreenViewer2Component } from '../pages/VirtualScreenViewer2';
 import { WebSocketDataProvider } from '../providers/WebSocketDataProvider';
 
 interface EmbeddedVirtualScreenViewerProps {
@@ -63,7 +63,7 @@ const EmbeddedVirtualScreenViewer: React.FC<EmbeddedVirtualScreenViewerProps> = 
     }, []);
 
     return (
-        <VirtualScreenViewerComponent
+        <VirtualScreenViewer2Component
             deviceId={deviceId}
             deviceData={deviceData}
             dataProvider={dataProvider}

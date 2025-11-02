@@ -122,8 +122,25 @@ export const updateFrameLayout = async (
     layout: FrameLayoutConfig,
     elements: PlacedElement[]
 ): Promise<void> => {
-    // Serialize elements to JSON string
-    const jsonFrameElements = JSON.stringify(elements);
+    // Strip test values from media-rive elements before serializing
+        const runtimeElements = elements.map(element => {
+            if (element.type === 'media-rive') {
+                // Create a copy with cleared test values
+                const { riveBindings, riveInputs, ...otherProps } = element.properties;
+                return {
+                    ...element,
+                    properties: {
+                        ...otherProps,
+                        riveBindings: {},
+                        riveInputs: {}
+                    }
+                };
+            }
+            return element;
+        });
+
+        // Serialize stripped elements to JSON string
+        const jsonFrameElements = JSON.stringify(runtimeElements);
 
     // Build FrameEngine2 config object (canvasSettings + sensorTestValues)
     const frameEngine2Config = {

@@ -76,6 +76,7 @@ const FrameEngine2_Element_MediaRive: React.FC<MediaRiveElementProps> = ({
     height,
     onRiveDiscovery
 }) => {
+
     const {
         filename = null,
         autoplay = true,

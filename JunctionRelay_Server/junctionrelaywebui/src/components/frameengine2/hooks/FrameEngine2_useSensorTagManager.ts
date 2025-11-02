@@ -376,21 +376,25 @@ export function useSensorTagManager(params: UseSensorTagManagerParams): UseSenso
      * This is the SINGLE SOURCE OF TRUTH for data hierarchy
      */
     const resolvedValues = useMemo(() => {
-        const resolved: Record<string, any> = {};
+    const resolved: Record<string, any> = {};
 
-        // Iterate through all registered inputs
-        registry.inputs.forEach((input, tag) => {
-            // Hierarchy: Live data wins, then test values
-            if (input.value != null) {
-                resolved[tag] = input.value;  // Live sensor data
-            } else if (layout.sensorTestValues?.[tag] !== undefined) {
-                resolved[tag] = layout.sensorTestValues[tag];  // Test data
-            }
-            // If neither exists, don't add to resolved (element will use its default)
-        });
+    registry.inputs.forEach((input, tag) => {
+        if (input.value != null) {
+            resolved[tag] = input.value;
+            // DEBUG
+            // console.log(`[ResolvedValues] ${tag} = ${input.value} (source: ${input.source})`);
+        } else if (layout.sensorTestValues?.[tag] !== undefined) {
+            resolved[tag] = layout.sensorTestValues[tag];
+            // DEBUG
+            // console.log(`[ResolvedValues] ${tag} = ${layout.sensorTestValues[tag]} (source: test)`);
+        }
+    });
 
-        return resolved;
-    }, [registry.inputs, layout.sensorTestValues]);
+    // DEBUG SUMMARY
+    // console.log('[ResolvedValues] Total resolved:', Object.keys(resolved).length, resolved);
+
+    return resolved;
+}, [registry.inputs, layout.sensorTestValues]);
 
     /**
      * Compute debug data from registry
