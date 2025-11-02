@@ -266,11 +266,12 @@ const moveCol = (
 
 // Define column definitions outside the component to prevent recreation
 const defaultJunctionCols: JunctionColumn[] = [
-    { field: "autoStart", label: "Auto-Start", align: "left", sortable: true, width: 140 },   
+    { field: "autoStart", label: "Auto-Start", align: "left", sortable: true, width: 140 },
     { field: "name", label: "Junction Name", align: "left", sortable: true },
     // { field: "description", label: "Description", align: "left", sortable: true },
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "renderingMode", label: "Rendering Mode", align: "left", sortable: true },
+    { field: "layouts", label: "Layouts", align: "left", sortable: false, width: 150 },
     { field: "status", label: "Status", align: "left", sortable: true },
     { field: "sources", label: "Sources", align: "left", sortable: false },
     { field: "targets", label: "Targets", align: "left", sortable: false },
@@ -588,6 +589,34 @@ const JunctionTableRow = memo(({
                         hyperlinkRows={hyperlinkRows}
                         devices={devices}
                         collectors={collectors}
+                    />
+                );
+            case "layouts":
+                // Only show layouts for frame rendering modes (Blit, Composite)
+                const isFrameMode = junction.renderingMode === "Blit" || junction.renderingMode === "Composite";
+                if (!isFrameMode) {
+                    return <Typography variant="body2" color="text.secondary">N/A</Typography>;
+                }
+
+                // Collect all unique layout IDs from device links
+                const layoutIds = new Set<number>();
+                junction.deviceLinks?.forEach((link: any) => {
+                    link.screenLayouts?.forEach((sl: any) => {
+                        if (sl.frameLayoutId) layoutIds.add(sl.frameLayoutId);
+                        if (sl.screenLayoutId) layoutIds.add(sl.screenLayoutId);
+                    });
+                });
+
+                if (layoutIds.size === 0) {
+                    return <Typography variant="body2" color="text.secondary">None</Typography>;
+                }
+
+                return (
+                    <Chip
+                        label={`${layoutIds.size} layout${layoutIds.size > 1 ? 's' : ''}`}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
                     />
                 );
             case "actions":

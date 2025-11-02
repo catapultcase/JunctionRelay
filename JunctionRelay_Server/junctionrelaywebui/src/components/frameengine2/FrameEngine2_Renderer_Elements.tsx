@@ -111,6 +111,45 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
     // Ref for Moveable target element
     const targetRef = useRef<HTMLDivElement>(null);
 
+    /**
+     * Extract element-specific resolved values to prevent unnecessary re-renders
+     * OPTIMIZATION: Only extract the sensor data this element actually needs,
+     * so the element doesn't re-render when unrelated sensors change
+     */
+    const elementSpecificResolvedValues = useMemo(() => {
+        // Sensor, gauge, and ECG elements only need their specific sensor tag
+        if (element.type === 'sensor' || element.type === 'gauge' || element.type === 'ecg') {
+            // Type assertion needed because TypeScript doesn't narrow discriminated unions automatically
+            const sensorTag = (element.properties as any).sensorTag;
+            if (sensorTag) {
+                const sensorValue = resolvedValues[sensorTag];
+                // Return object with only this sensor to maintain component interface
+                return sensorValue !== undefined ? { [sensorTag]: sensorValue } : {};
+            }
+        }
+
+        // Media elements don't use resolvedValues
+        if (element.type.startsWith('media-')) {
+            return {};
+        }
+
+        // Time/date and text elements don't use resolvedValues
+        if (element.type === 'timedate' || element.type === 'text') {
+            return {};
+        }
+
+        // Fallback: return full resolvedValues for other element types
+        return resolvedValues;
+    }, [element.type, element.properties, resolvedValues]);
+
+    /**
+     * Stable reference for element properties
+     * OPTIMIZATION: Only changes when properties actually change (deep comparison via JSON)
+     */
+    const propertiesHash = useMemo(() =>
+        JSON.stringify(element.properties),
+        [element.properties]
+    );
 
     /**
      * Render the appropriate element component based on type
@@ -120,12 +159,14 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
         // Capture type for use in default case (discriminated union narrows to never)
         const elementType = element.type;
 
+        // console.log(`[Renderer] Element ${element.id} (${elementType}) receiving values:`, resolvedValues);
+        
         switch (elementType) {
             case 'sensor':
                 return (
                     <FrameEngine2_Element_Sensor
                         properties={element.properties}
-                        resolvedValues={resolvedValues}
+                        resolvedValues={elementSpecificResolvedValues}
                         showPlaceholders={showPlaceholders}
                         elementPadding={elementPadding}
                         width={element.width}
@@ -148,7 +189,7 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#f5f5f5' }} />}>
                         <FrameEngine2_Element_Gauge
                             properties={element.properties}
-                            resolvedValues={resolvedValues}
+                            resolvedValues={elementSpecificResolvedValues}
                             showPlaceholders={showPlaceholders}
                             elementPadding={elementPadding}
                             width={element.width}
@@ -186,6 +227,11 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                 );
 
             case 'media-rive':
+                console.log('[Renderer] media-rive props', {
+                    id: element.id,
+                    riveBindings: element.properties?.riveBindings,
+                    riveInputs: element.properties?.riveInputs,
+                });
                 return (
                     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#f5f5f5' }} />}>
                         <FrameEngine2_Element_MediaRive
@@ -203,7 +249,7 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#f5f5f5' }} />}>
                         <FrameEngine2_Element_ECG
                             properties={element.properties}
-                            resolvedValues={resolvedValues}
+                            resolvedValues={elementSpecificResolvedValues}
                             showPlaceholders={showPlaceholders}
                             elementPadding={elementPadding}
                             width={element.width}
@@ -231,7 +277,9 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                     </div>
                 );
         }
-    }, [element.type, element.properties, element.width, element.height, element.id, resolvedValues, showPlaceholders, elementPadding, onRiveDiscovery]);
+    // OPTIMIZED: Use propertiesHash for stable reference and elementSpecificResolvedValues to prevent re-renders on unrelated sensor changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [element.type, propertiesHash, element.width, element.height, element.id, elementSpecificResolvedValues, showPlaceholders, elementPadding, onRiveDiscovery]);
 
     /**
      * Handle click - select element

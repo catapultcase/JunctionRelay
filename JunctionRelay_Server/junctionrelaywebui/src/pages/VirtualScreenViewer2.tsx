@@ -21,6 +21,7 @@
 // Note: Component names use underscore naming convention for namespace organization (FrameEngine2_*)
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useParams, useLocation } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Alert, IconButton } from '@mui/material';
 import { Launch, Refresh } from '@mui/icons-material';
@@ -34,11 +35,13 @@ import { WebSocketDataProvider } from '../providers/WebSocketDataProvider';
 import FrameEngine2_Renderer_Background from '../components/frameengine2/FrameEngine2_Renderer_Background';
 import FrameEngine2_Renderer_Elements from '../components/frameengine2/FrameEngine2_Renderer_Elements';
 import { useSensorTagManager } from '../components/frameengine2/hooks/FrameEngine2_useSensorTagManager';
+import type { DeviceData } from '../interfaces/DeviceData';
+import { getSensorValue } from '../interfaces/SensorData';
 
 interface VirtualScreenViewer2Props {
     deviceId?: string;
     containerHeight?: number;
-    deviceData?: any;
+    deviceData?: DeviceData;
     isStandalone?: boolean;
     showControls?: boolean;
     onFullscreenClick?: () => void;
@@ -84,7 +87,7 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
         isScreenshotMode
     );
 
-    const [device, setDevice] = useState<any>(null);
+    const [device, setDevice] = useState<DeviceData | null>(null);
     const [layout, setLayout] = useState<FrameLayoutConfig | null>(null);
     const [elements, setElements] = useState<PlacedElement[]>([]);
     const [isReady, setIsReady] = useState(false);
@@ -93,6 +96,12 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
     const [currentBrightness, setCurrentBrightness] = useState<number>(1.0);
     const [backgroundRiveMachines, setBackgroundRiveMachines] = useState<any[]>([]);
     const [backgroundRiveBindings, setBackgroundRiveBindings] = useState<any[]>([]);
+
+    // Element Rive discovery state (Map of elementId -> discoveries)
+    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Map<string, {
+        machines: any[];
+        bindings: any[];
+    }>>(new Map());
 
     const isMountedRef = useRef(true);
     const riveConfigRef = useRef<RiveConfig | null>(null);
@@ -182,6 +191,7 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
 
             if (normalizedBrightness !== currentBrightness) {
                 setCurrentBrightness(normalizedBrightness);
+                console.log(`JR Brightness: ${brightnessValue} (${Math.round(normalizedBrightness * 100)}%)`);
                 return true;
             }
         }
@@ -215,6 +225,7 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
      * FRAMEENGINE2 FORMAT ONLY - NO CONVERSION
      */
     const processConfigData = useCallback((config: RiveConfig) => {
+        console.log('[VirtualScreenViewer2] Processing FrameEngine2 config:', config);
         riveConfigRef.current = config;
 
         const layoutConfig = convertToLayout(config);
@@ -233,6 +244,8 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
             locked: element.locked ?? false,
             zIndex: element.zIndex
         }));
+        console.log('[VirtualScreenViewer2] Layout:', layoutConfig);
+        console.log('[VirtualScreenViewer2] Elements:', placedElements);
 
         setLayout(layoutConfig);
         setElements(placedElements);
@@ -240,88 +253,221 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
     }, [convertToLayout]);
 
     /**
-     * Handle background Rive discovery
+     * Handle background Rive discovery (BATCHED)
      * Initializes layout.riveInputs and layout.riveBindings with discovered properties
+     *
+     * OPTIMIZATION: Batches all state updates to prevent cascading re-renders
      */
     const handleBackgroundRiveDiscovery = useCallback((machines: any[], bindings: any[]) => {
-        setBackgroundRiveMachines(machines);
-        setBackgroundRiveBindings(bindings);
+        // Batch all state updates together
+        ReactDOM.unstable_batchedUpdates(() => {
+            setBackgroundRiveMachines(machines);
+            setBackgroundRiveBindings(bindings);
 
-        // Initialize layout.riveInputs and layout.riveBindings with discovered names
-        setLayout(prev => {
-            if (!prev) return prev;
+            // Initialize layout.riveInputs and layout.riveBindings with discovered names
+            setLayout(prev => {
+                if (!prev) return prev;
 
-            const riveInputs: Record<string, any> = { ...prev.riveInputs };
-            const riveBindings: Record<string, any> = { ...prev.riveBindings };
+                const riveInputs: Record<string, any> = { ...prev.riveInputs };
+                const riveBindings: Record<string, any> = { ...prev.riveBindings };
 
-            // Add all discovered inputs
-            machines.forEach((machine: any) => {
-                machine.inputs?.forEach((input: any) => {
-                    if (input.name && !(input.name in riveInputs)) {
-                        riveInputs[input.name] = input.currentValue ?? null;
+                // Add all discovered inputs
+                machines.forEach((machine: any) => {
+                    machine.inputs?.forEach((input: any) => {
+                        if (input.name && !(input.name in riveInputs)) {
+                            riveInputs[input.name] = input.currentValue ?? null;
+                        }
+                    });
+                });
+
+                // Add all discovered bindings
+                bindings.forEach((binding: any) => {
+                    if (binding.name && !(binding.name in riveBindings)) {
+                        riveBindings[binding.name] = binding.currentValue ?? null;
                     }
                 });
-            });
 
-            // Add all discovered bindings
-            bindings.forEach((binding: any) => {
-                if (binding.name && !(binding.name in riveBindings)) {
-                    riveBindings[binding.name] = binding.currentValue ?? null;
-                }
+                return {
+                    ...prev,
+                    riveInputs,
+                    riveBindings
+                };
             });
-
-            return {
-                ...prev,
-                riveInputs,
-                riveBindings
-            };
         });
     }, []);
 
     /**
-     * Update Rive inputs/bindings from sensor data
-     * Maps resolvedValues (from sensors) to Rive inputs and bindings
+     * Handle element Rive discovery from element renderers (BATCHED)
+     * Initializes element.properties.riveInputs and element.properties.riveBindings
+     *
+     * OPTIMIZATION: Batches both state updates to prevent cascading re-renders
      */
-    useEffect(() => {
-        if (!layout || !isReady || Object.keys(resolvedValues).length === 0) return;
+    const handleElementRiveDiscovery = useCallback((
+        elementId: string,
+        machines: any[],
+        bindings: any[]
+    ) => {
+        console.log(`[VirtualScreenViewer2] Element Rive discovery received for ${elementId}:`, {
+            machines: machines.length,
+            bindings: bindings.length
+        });
 
-        // Update layout with sensor values mapped to Rive inputs/bindings
-        setLayout(prev => {
-            if (!prev) return prev;
-
-            const updatedRiveInputs = { ...prev.riveInputs };
-            const updatedRiveBindings = { ...prev.riveBindings };
-            let hasChanges = false;
-
-            // Map resolvedValues to Rive inputs/bindings
-            Object.entries(resolvedValues).forEach(([tag, sensorData]) => {
-                // Extract the actual value from sensor data object
-                const value = (sensorData as any)?.value ?? sensorData;
-
-                // Check if this tag matches any discovered input
-                if (updatedRiveInputs && tag in updatedRiveInputs && updatedRiveInputs[tag] !== value) {
-                    updatedRiveInputs[tag] = value;
-                    hasChanges = true;
-                }
-                // Check if this tag matches any discovered binding
-                if (updatedRiveBindings && tag in updatedRiveBindings && updatedRiveBindings[tag] !== value) {
-                    updatedRiveBindings[tag] = value;
-                    hasChanges = true;
-                }
+        // Batch both state updates together
+        ReactDOM.unstable_batchedUpdates(() => {
+            // Store discoveries in state
+            setElementRiveDiscoveries(prev => {
+                const next = new Map(prev);
+                next.set(elementId, { machines, bindings });
+                return next;
             });
 
-            // Only update if there are actual changes
-            if (hasChanges) {
+            // Initialize element properties with discovered bindings
+            setElements(prev => prev.map(el => {
+                if (el.id !== elementId || el.type !== 'media-rive') return el;
+
+                const riveInputs: Record<string, any> = { ...(el.properties.riveInputs || {}) };
+                const riveBindings: Record<string, any> = { ...(el.properties.riveBindings || {}) };
+
+                // Add all discovered inputs
+                machines.forEach((machine: any) => {
+                    machine.inputs?.forEach((input: any) => {
+                        if (input.name && !(input.name in riveInputs)) {
+                            riveInputs[input.name] = input.currentValue ?? null;
+                        }
+                    });
+                });
+
+                // Add all discovered bindings
+                bindings.forEach((binding: any) => {
+                    if (binding.name && !(binding.name in riveBindings)) {
+                        riveBindings[binding.name] = binding.currentValue ?? null;
+                    }
+                });
+
                 return {
-                    ...prev,
-                    riveInputs: updatedRiveInputs,
-                    riveBindings: updatedRiveBindings
+                    ...el,
+                    properties: {
+                        ...el.properties,
+                        riveInputs,
+                        riveBindings
+                    }
                 };
+            }));
+        });
+    }, []);
+
+    /**
+     * Update Rive inputs/bindings from sensor data (BATCHED)
+     * Maps resolvedValues (from sensors) to both layout and element Rive properties
+     *
+     * OPTIMIZATION: Batches both layout and element updates to prevent cascading re-renders
+     */
+    useEffect(() => {
+        if (!isReady || Object.keys(resolvedValues).length === 0) return;
+
+        // Batch both state updates to prevent cascading re-renders
+        ReactDOM.unstable_batchedUpdates(() => {
+            // Update layout Rive inputs/bindings
+            if (layout) {
+                setLayout(prev => {
+                    if (!prev) return prev;
+
+                    const updatedRiveInputs = { ...prev.riveInputs };
+                    const updatedRiveBindings = { ...prev.riveBindings };
+                    let hasChanges = false;
+
+                    // Map resolvedValues to Rive inputs/bindings
+                    Object.entries(resolvedValues).forEach(([tag, sensorData]) => {
+                        // Extract the actual value from sensor data object (type-safe)
+                        const value = getSensorValue(sensorData) ?? sensorData;
+
+                        // Check if this tag matches any discovered input
+                        if (updatedRiveInputs && tag in updatedRiveInputs && updatedRiveInputs[tag] !== value) {
+                            updatedRiveInputs[tag] = value;
+                            hasChanges = true;
+                        }
+                        // Check if this tag matches any discovered binding
+                        if (updatedRiveBindings && tag in updatedRiveBindings && updatedRiveBindings[tag] !== value) {
+                            updatedRiveBindings[tag] = value;
+                            hasChanges = true;
+                        }
+                    });
+
+                    // Only update if there are actual changes
+                    if (hasChanges) {
+                        return {
+                            ...prev,
+                            riveInputs: updatedRiveInputs,
+                            riveBindings: updatedRiveBindings
+                        };
+                    }
+
+                    return prev;
+                });
             }
 
-            return prev;
+            // Update element Rive inputs/bindings
+            if (elementRiveDiscoveries.size > 0) {
+                setElements(prev => {
+                    let hasChanges = false;
+                    const updated = prev.map(el => {
+                        if (el.type !== 'media-rive') return el;
+
+                        const discovery = elementRiveDiscoveries.get(el.id);
+                        if (!discovery) return el;
+
+                        const updatedRiveInputs = { ...(el.properties.riveInputs || {}) };
+                        const updatedRiveBindings = { ...(el.properties.riveBindings || {}) };
+                        let elementHasChanges = false;
+
+                        // Map resolvedValues to element Rive inputs
+                        discovery.machines.forEach((machine: any) => {
+                            machine.inputs?.forEach((input: any) => {
+                                const tag = input.name;
+                                const sensorData = resolvedValues[tag];
+                                if (sensorData !== undefined) {
+                                    const value = getSensorValue(sensorData) ?? sensorData;
+                                    if (updatedRiveInputs[tag] !== value) {
+                                        updatedRiveInputs[tag] = value;
+                                        elementHasChanges = true;
+                                    }
+                                }
+                            });
+                        });
+
+                        // Map resolvedValues to element Rive bindings
+                        discovery.bindings.forEach((binding: any) => {
+                            const tag = binding.name;
+                            const sensorData = resolvedValues[tag];
+                            if (sensorData !== undefined) {
+                                const value = getSensorValue(sensorData) ?? sensorData;
+                                if (updatedRiveBindings[tag] !== value) {
+                                    updatedRiveBindings[tag] = value;
+                                    elementHasChanges = true;
+                                }
+                            }
+                        });
+
+                        if (elementHasChanges) {
+                            hasChanges = true;
+                            return {
+                                ...el,
+                                properties: {
+                                    ...el.properties,
+                                    riveInputs: updatedRiveInputs,
+                                    riveBindings: updatedRiveBindings
+                                }
+                            };
+                        }
+
+                        return el;
+                    });
+
+                    return hasChanges ? updated : prev;
+                });
+            }
         });
-    }, [resolvedValues, isReady]);
+    }, [resolvedValues, elementRiveDiscoveries, isReady]);
 
     /**
      * Connect to data provider
@@ -411,7 +557,7 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
             if (onFullscreenClick) {
                 onFullscreenClick();
             } else {
-                window.open(`/device/${deviceId}/virtual-screen2`, "_blank");
+                window.open(`/device/${deviceId}/virtual-screen`, "_blank");
             }
         }
     }, [isEmbedded, onFullscreenClick, deviceId]);
@@ -498,6 +644,8 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
                         resolvedValues={resolvedValues}
                         showPlaceholders={false}
                         elementPadding={layout.canvasSettings?.elementPadding || 4}
+                        onRiveDiscovery={handleElementRiveDiscovery}
+                        previewMode={true}
                     />
                 ))}
             </div>
@@ -521,7 +669,7 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
                 justifyContent: 'center',
             }}>
                 <iframe
-                    src={`/device/${deviceId}/virtual-screen2`}
+                    src={`/device/${deviceId}/virtual-screen`}
                     style={{
                         width: layout.width,
                         height: layout.height,
@@ -659,6 +807,8 @@ export const VirtualScreenViewer2Component: React.FC<VirtualScreenViewer2Compone
                             resolvedValues={resolvedValues}
                             showPlaceholders={false}
                             elementPadding={layout.canvasSettings?.elementPadding || 4}
+                            onRiveDiscovery={handleElementRiveDiscovery}
+                            previewMode={true}
                         />
                     ))}
                 </div>

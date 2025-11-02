@@ -524,15 +524,18 @@ const ConfigureFrame2: React.FC = () => {
             }
         });
 
-        // Apply background updates if any
-        if (hasBackgroundInputUpdates) {
-            handleLayoutUpdate({ riveInputs: newRiveInputs });
-        }
-        if (hasBackgroundBindingUpdates) {
-            handleLayoutUpdate({ riveBindings: newRiveBindings });
+        // Apply background updates if any (BATCHED - prevents multiple re-renders)
+        if (hasBackgroundInputUpdates || hasBackgroundBindingUpdates) {
+            const updates: any = {};
+            if (hasBackgroundInputUpdates) updates.riveInputs = newRiveInputs;
+            if (hasBackgroundBindingUpdates) updates.riveBindings = newRiveBindings;
+            handleLayoutUpdate(updates);
         }
 
         // Check element Rive inputs and bindings
+        // OPTIMIZATION: Collect all updates first, then apply in a single batch
+        const elementUpdates: Array<{ id: string; updates: Partial<PlacedElement> }> = [];
+
         elementRiveDiscoveries.forEach((discovery, elementId) => {
             let hasElementInputUpdates = false;
             let hasElementBindingUpdates = false;
@@ -568,7 +571,7 @@ const ConfigureFrame2: React.FC = () => {
                 }
             });
 
-            // Apply element updates if any
+            // Collect element updates (instead of applying immediately)
             if (hasElementInputUpdates || hasElementBindingUpdates) {
                 const propertyUpdates: any = { ...element.properties };
                 if (hasElementInputUpdates) {
@@ -577,12 +580,25 @@ const ConfigureFrame2: React.FC = () => {
                 if (hasElementBindingUpdates) {
                     propertyUpdates.riveBindings = newElementRiveBindings;
                 }
-                handleUpdateElement(elementId, {
-                    properties: propertyUpdates
+                elementUpdates.push({
+                    id: elementId,
+                    updates: { properties: propertyUpdates }
                 });
             }
         });
-    }, [layout?.sensorTestValues, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries, elements, layout?.riveInputs, layout?.riveBindings, handleLayoutUpdate, handleUpdateElement]);
+
+        // Apply all element updates in a single batch (prevents N re-renders)
+        if (elementUpdates.length > 0) {
+            setElements(prev => prev.map(el => {
+                const update = elementUpdates.find(u => u.id === el.id);
+                return update ? { ...el, ...update.updates } as PlacedElement : el;
+            }));
+        }
+    // FIXED: Removed layout?.riveInputs and layout?.riveBindings from dependencies to prevent infinite loop
+    // The effect reads these values but also modifies them via handleLayoutUpdate
+    // OPTIMIZATION: Removed handleUpdateElement from deps - now using setElements directly for batching
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [layout?.sensorTestValues, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries, elements, handleLayoutUpdate]);
 
     // Loading state
     if (loading) {

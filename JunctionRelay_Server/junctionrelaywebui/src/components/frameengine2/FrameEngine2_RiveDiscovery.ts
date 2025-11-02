@@ -29,6 +29,7 @@ import type {
     DiscoveredRiveStateMachine,
     DiscoveredRiveDataBinding
 } from './types/FrameEngine2_ElementTypes';
+import type { RiveInstance } from '../../interfaces/RiveTypes';
 
 export interface RiveDiscoveryResult {
     machines: DiscoveredRiveStateMachine[];
@@ -46,7 +47,7 @@ export interface RiveDiscoveryResult {
  * @returns Promise that resolves with discovered machines and bindings
  */
 export async function discoverRiveInputsAndBindings(
-    rive: any,
+    rive: RiveInstance | null,
     maxAttempts: number = 3
 ): Promise<RiveDiscoveryResult> {
     if (!rive) {

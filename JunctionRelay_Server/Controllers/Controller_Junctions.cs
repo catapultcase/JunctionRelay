@@ -91,14 +91,42 @@ namespace JunctionRelayServer.Controllers
         public async Task<ActionResult<List<JunctionSummaryDto>>> GetAllJunctionSummaries()
         {
             var junctions = await _junctionDb.GetAllJunctionsAsync();
+            var allDevices = await _deviceDb.GetAllDevicesAsync();
+            var allCollectors = await _collectorDb.GetAllCollectorsAsync();
 
             var summaries = junctions.Select(j => new JunctionSummaryDto
             {
                 Id = j.Id,
                 Name = j.Name,
+                Description = j.Description,
                 Type = j.Type,
+                RenderingMode = j.RenderingMode,
                 Status = _connectionManager.IsJunctionRunning(j.Id) ? "Running" : "Idle", // Real-time status
-                ShowOnDashboard = j.ShowOnDashboard
+                ShowOnDashboard = j.ShowOnDashboard,
+                AutoStartOnLaunch = j.AutoStartOnLaunch,
+                AllTargetsAllData = j.AllTargetsAllData,
+                SortOrder = j.SortOrder,
+                GatewayDestination = j.GatewayDestination,
+                GatewayDeviceId = j.GatewayDeviceId,
+                DeviceLinks = j.DeviceLinks.Select(dl => new DeviceLinkSummaryDto
+                {
+                    DeviceId = dl.DeviceId,
+                    Role = dl.Role,
+                    DeviceName = allDevices.FirstOrDefault(d => d.Id == dl.DeviceId)?.Name,
+                    DeviceStatus = allDevices.FirstOrDefault(d => d.Id == dl.DeviceId)?.Status,
+                    ScreenLayouts = dl.ScreenLayouts.Select(sl => new ScreenLayoutSummaryDto
+                    {
+                        FrameLayoutId = sl.FrameLayoutId,
+                        ScreenLayoutId = sl.ScreenLayoutId
+                    }).ToList()
+                }).ToList(),
+                CollectorLinks = j.CollectorLinks.Select(cl => new CollectorLinkSummaryDto
+                {
+                    CollectorId = cl.CollectorId,
+                    Role = cl.Role,
+                    CollectorName = allCollectors.FirstOrDefault(c => c.Id == cl.CollectorId)?.Name,
+                    CollectorStatus = allCollectors.FirstOrDefault(c => c.Id == cl.CollectorId)?.Status
+                }).ToList()
             }).ToList();
 
             return Ok(summaries);
@@ -108,9 +136,115 @@ namespace JunctionRelayServer.Controllers
         {
             public int Id { get; set; }
             public required string Name { get; set; }
+            public string Description { get; set; } = string.Empty;
             public required string Type { get; set; }
+            public required string RenderingMode { get; set; }
             public required string Status { get; set; }
             public bool ShowOnDashboard { get; set; }
+            public bool AutoStartOnLaunch { get; set; }
+            public bool AllTargetsAllData { get; set; }
+            public int SortOrder { get; set; }
+            public string? GatewayDestination { get; set; }
+            public int? GatewayDeviceId { get; set; }
+            public List<DeviceLinkSummaryDto> DeviceLinks { get; set; } = new();
+            public List<CollectorLinkSummaryDto> CollectorLinks { get; set; } = new();
+        }
+
+        public class DeviceLinkSummaryDto
+        {
+            public int DeviceId { get; set; }
+            public required string Role { get; set; }
+            public string? DeviceName { get; set; }
+            public string? DeviceStatus { get; set; }
+            public List<ScreenLayoutSummaryDto> ScreenLayouts { get; set; } = new();
+        }
+
+        public class CollectorLinkSummaryDto
+        {
+            public int CollectorId { get; set; }
+            public required string Role { get; set; }
+            public string? CollectorName { get; set; }
+            public string? CollectorStatus { get; set; }
+        }
+
+        public class ScreenLayoutSummaryDto
+        {
+            public int? FrameLayoutId { get; set; }
+            public int? ScreenLayoutId { get; set; }
+        }
+
+        // GET: /api/junctions/layout-usage
+        [HttpGet("layout-usage")]
+        public async Task<ActionResult<LayoutUsageResponseDto>> GetJunctionLayoutUsage()
+        {
+            var junctions = await _junctionDb.GetAllJunctionsAsync();
+            var allDevices = await _deviceDb.GetAllDevicesAsync();
+
+            // Get junction usage
+            var junctionUsages = junctions.Select(j => new JunctionLayoutUsageDto
+            {
+                JunctionId = j.Id,
+                JunctionName = j.Name,
+                LayoutIds = j.DeviceLinks
+                    .SelectMany(link => link.ScreenLayouts)
+                    .Select(sl => new LayoutIdPair
+                    {
+                        FrameLayoutId = sl.FrameLayoutId,
+                        ScreenLayoutId = sl.ScreenLayoutId
+                    })
+                    .Where(pair => pair.FrameLayoutId.HasValue || pair.ScreenLayoutId.HasValue)
+                    .Distinct()
+                    .ToList()
+            }).ToList();
+
+            // Get device screen defaults
+            var deviceScreenDefaults = allDevices
+                .SelectMany(device => device.Screens.Select(screen => new DeviceScreenDefaultDto
+                {
+                    DeviceId = device.Id,
+                    DeviceName = device.Name,
+                    ScreenKey = screen.ScreenKey,
+                    ScreenDisplayName = screen.DisplayName ?? screen.ScreenKey,
+                    FrameLayoutId = screen.FrameLayoutId,
+                    ScreenLayoutId = screen.ScreenLayoutId
+                }))
+                .Where(ds => ds.FrameLayoutId.HasValue || ds.ScreenLayoutId.HasValue)
+                .ToList();
+
+            return Ok(new LayoutUsageResponseDto
+            {
+                JunctionUsages = junctionUsages,
+                DeviceScreenDefaults = deviceScreenDefaults
+            });
+        }
+
+        public class LayoutUsageResponseDto
+        {
+            public List<JunctionLayoutUsageDto> JunctionUsages { get; set; } = new();
+            public List<DeviceScreenDefaultDto> DeviceScreenDefaults { get; set; } = new();
+        }
+
+        public class JunctionLayoutUsageDto
+        {
+            public int JunctionId { get; set; }
+            public required string JunctionName { get; set; }
+            public List<LayoutIdPair> LayoutIds { get; set; } = new();
+        }
+
+        public class DeviceScreenDefaultDto
+        {
+            public int DeviceId { get; set; }
+            public required string DeviceName { get; set; }
+            public required string ScreenKey { get; set; }
+            public required string ScreenDisplayName { get; set; }
+            public int? FrameLayoutId { get; set; }
+            public int? ScreenLayoutId { get; set; }
+        }
+
+        public class LayoutIdPair
+        {
+            public int? FrameLayoutId { get; set; }
+            public int? ScreenLayoutId { get; set; }
         }
 
         // GET: /api/junctions/{id}
