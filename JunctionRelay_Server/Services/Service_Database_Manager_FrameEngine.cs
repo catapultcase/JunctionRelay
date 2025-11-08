@@ -60,22 +60,28 @@ namespace JunctionRelayServer.Services
             return await _db.QuerySingleOrDefaultAsync<Model_Frame_Layout>(query, new { DisplayName = displayName });
         }
 
+        public async Task<Model_Frame_Layout?> GetFrameLayoutByCloudVariantIdAsync(string cloudVariantId)
+        {
+            const string query = "SELECT * FROM FrameLayouts WHERE CloudVariantId = @CloudVariantId LIMIT 1";
+            return await _db.QueryFirstOrDefaultAsync<Model_Frame_Layout>(query, new { CloudVariantId = cloudVariantId });
+        }
+
         public async Task<int> CreateFrameLayoutAsync(Model_Frame_Layout frameLayout)
         {
             ValidateFrameLayout(frameLayout);
 
             const string sql = @"
-        INSERT INTO FrameLayouts 
+        INSERT INTO FrameLayouts
           (DisplayName, Description, LayoutType,
-           IsTemplate, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
-           BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageFit, BackgroundVideoUrl, 
+           IsTemplate, CloudTemplateId, CloudVariantId, IsDraft, IsPublished, Created, LastModified, CreatedBy, Version,
+           BackgroundType, BackgroundColor, BackgroundImageUrl, BackgroundImageFit, BackgroundVideoUrl,
            BackgroundVideoFit, VideoLoop, VideoMuted, VideoAutoplay, BackgroundOpacity,
            Width, Height, Orientation, RiveFile,
            JsonFrameConfig, JsonFrameConfigRuntime, JsonFrameElements,
            HasThumbnail, ThumbnailPath, ThumbnailGeneratedAt, ThumbnailFormat, ThumbnailOverride)
-        VALUES 
+        VALUES
           (@DisplayName, @Description, @LayoutType,
-           @IsTemplate, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
+           @IsTemplate, @CloudTemplateId, @CloudVariantId, @IsDraft, @IsPublished, @Created, @LastModified, @CreatedBy, @Version,
            @BackgroundType, @BackgroundColor, @BackgroundImageUrl, @BackgroundImageFit, @BackgroundVideoUrl,
            @BackgroundVideoFit, @VideoLoop, @VideoMuted, @VideoAutoplay, @BackgroundOpacity,
            @Width, @Height, @Orientation, @RiveFile,
@@ -88,6 +94,13 @@ namespace JunctionRelayServer.Services
                 frameLayout.Created = DateTime.UtcNow;
 
             frameLayout.LastModified = DateTime.UtcNow;
+
+            // Generate UUIDs for user-created layouts (if not already set, e.g., from FrameXchange downloads)
+            if (string.IsNullOrEmpty(frameLayout.CloudTemplateId))
+                frameLayout.CloudTemplateId = Guid.NewGuid().ToString();
+
+            if (string.IsNullOrEmpty(frameLayout.CloudVariantId))
+                frameLayout.CloudVariantId = Guid.NewGuid().ToString();
 
             return await _db.ExecuteScalarAsync<int>(sql, frameLayout);
         }
@@ -105,11 +118,13 @@ namespace JunctionRelayServer.Services
 
             const string sql = @"
                 UPDATE FrameLayouts
-                SET 
+                SET
                   DisplayName           = @DisplayName,
                   Description           = @Description,
                   LayoutType            = @LayoutType,
                   IsTemplate            = @IsTemplate,
+                  CloudTemplateId       = @CloudTemplateId,
+                  CloudVariantId        = @CloudVariantId,
                   IsDraft               = @IsDraft,
                   IsPublished           = @IsPublished,
                   LastModified          = @LastModified,
@@ -173,6 +188,8 @@ namespace JunctionRelayServer.Services
                 Description = original.Description,
                 LayoutType = original.LayoutType,
                 IsTemplate = false,
+                CloudTemplateId = Guid.NewGuid().ToString(),
+                CloudVariantId = Guid.NewGuid().ToString(),
                 IsDraft = true,
                 IsPublished = false,
                 Created = DateTime.UtcNow,
@@ -381,6 +398,9 @@ namespace JunctionRelayServer.Services
                 type = "frame_layout_package",
                 exportDate = DateTime.UtcNow.ToString("O"),
                 layoutId = frameLayout.Id,
+                cloudTemplateId = frameLayout.CloudTemplateId,
+                cloudVariantId = frameLayout.CloudVariantId,
+                isTemplate = frameLayout.IsTemplate,
                 displayName = frameLayout.DisplayName,
                 description = frameLayout.Description,
                 layoutType = frameLayout.LayoutType,
@@ -419,6 +439,8 @@ namespace JunctionRelayServer.Services
                 type = "frame_layout_package",
                 exportDate = DateTime.UtcNow.ToString("O"),
                 layoutId = frameLayout.Id,
+                cloudTemplateId = frameLayout.CloudTemplateId,
+                cloudVariantId = frameLayout.CloudVariantId,
                 displayName = frameLayout.DisplayName,
                 description = frameLayout.Description,
                 layoutType = frameLayout.LayoutType,
@@ -1068,7 +1090,8 @@ namespace JunctionRelayServer.Services
     string rivePath,
     string assetsPath,
     string videosPath,
-    string dbPath)
+    string dbPath,
+    bool preserveCloudIds = true)
         {
             using var zipStream = new MemoryStream(zipData);
             using var archive = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Read);
@@ -1181,6 +1204,59 @@ namespace JunctionRelayServer.Services
             else if (importData.TryGetProperty("jsonFrameElements", out var elementsOld))
             {
                 jsonFrameElements = JsonSerializer.Serialize(elementsOld);
+            }
+
+            // Extract cloud template tracking fields if present (UUID strings)
+            string? cloudTemplateId = null;
+            string? cloudVariantId = null;
+
+            if (importData.TryGetProperty("cloudTemplateId", out var cloudTemplateIdValue))
+            {
+                if (cloudTemplateIdValue.ValueKind == JsonValueKind.String)
+                {
+                    cloudTemplateId = cloudTemplateIdValue.GetString();
+                }
+            }
+
+            if (importData.TryGetProperty("cloudVariantId", out var cloudVariantIdValue))
+            {
+                if (cloudVariantIdValue.ValueKind == JsonValueKind.String)
+                {
+                    cloudVariantId = cloudVariantIdValue.GetString();
+                }
+            }
+
+            // Read isTemplate from config.json (don't derive it from cloud IDs)
+            bool isTemplate = false;
+            if (importData.TryGetProperty("isTemplate", out var isTemplateProp))
+            {
+                isTemplate = isTemplateProp.GetBoolean();
+            }
+
+            // Handle preserveCloudIds parameter
+            if (!preserveCloudIds)
+            {
+                // New layout mode - generate fresh UUIDs
+                cloudTemplateId = Guid.NewGuid().ToString();
+                cloudVariantId = Guid.NewGuid().ToString();
+                Console.WriteLine($"[IMPORT] Generating new UUIDs for new layout - TID: {cloudTemplateId}, VID: {cloudVariantId}");
+            }
+            else
+            {
+                // Migration mode - check for duplicate CloudVariantId
+                if (!string.IsNullOrEmpty(cloudVariantId))
+                {
+                    var existingLayout = await GetFrameLayoutByCloudVariantIdAsync(cloudVariantId);
+                    if (existingLayout != null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot migrate: A layout with CloudVariantId '{cloudVariantId}' already exists " +
+                            $"(ID: {existingLayout.Id}, Name: '{existingLayout.DisplayName}'). " +
+                            $"Delete the existing layout before importing as a migration, or choose 'Import as New Layout' instead."
+                        );
+                    }
+                }
+                Console.WriteLine($"[IMPORT] Migration mode - preserving UUIDs - TID: {cloudTemplateId}, VID: {cloudVariantId}");
             }
 
             var uniqueName = await EnsureUniqueLayoutName(displayName);
@@ -1401,10 +1477,10 @@ namespace JunctionRelayServer.Services
                                     properties[prop.Name] = JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
                                 }
 
-                                // Handle asset-image elements
-                                if (elementType == "asset-image" && propertiesElement.TryGetProperty("assetImageUrl", out var assetImageUrl))
+                                // Handle media-image elements
+                                if (elementType == "media-image" && propertiesElement.TryGetProperty("filename", out var imageFilename))
                                 {
-                                    var imageUrl = assetImageUrl.GetString();
+                                    var imageUrl = imageFilename.GetString();
                                     if (!string.IsNullOrEmpty(imageUrl) &&
                                         !imageUrl.StartsWith("http://") &&
                                         !imageUrl.StartsWith("https://"))
@@ -1425,15 +1501,15 @@ namespace JunctionRelayServer.Services
                                             using var imageFileStream = new FileStream(imageFilePath, FileMode.Create);
                                             await imageStream.CopyToAsync(imageFileStream);
 
-                                            properties["assetImageUrl"] = savedElementImageFileName;
+                                            properties["filename"] = savedElementImageFileName;
                                         }
                                     }
                                 }
 
-                                // Handle asset-video elements
-                                if (elementType == "asset-video" && propertiesElement.TryGetProperty("assetVideoUrl", out var assetVideoUrl))
+                                // Handle media-video elements
+                                if (elementType == "media-video" && propertiesElement.TryGetProperty("filename", out var videoFilename))
                                 {
-                                    var videoUrl = assetVideoUrl.GetString();
+                                    var videoUrl = videoFilename.GetString();
                                     if (!string.IsNullOrEmpty(videoUrl) &&
                                         !videoUrl.StartsWith("http://") &&
                                         !videoUrl.StartsWith("https://"))
@@ -1454,15 +1530,15 @@ namespace JunctionRelayServer.Services
                                             using var videoFileStream = new FileStream(videoFilePath, FileMode.Create);
                                             await videoStream.CopyToAsync(videoFileStream);
 
-                                            properties["assetVideoUrl"] = savedElementVideoFileName;
+                                            properties["filename"] = savedElementVideoFileName;
                                         }
                                     }
                                 }
 
-                                // Handle asset-rive elements
-                                if (elementType == "asset-rive" && propertiesElement.TryGetProperty("assetRiveFile", out var assetRiveFile))
+                                // Handle media-rive elements
+                                if (elementType == "media-rive" && propertiesElement.TryGetProperty("filename", out var riveFilename))
                                 {
-                                    var riveFileStr = assetRiveFile.GetString();
+                                    var riveFileStr = riveFilename.GetString();
                                     if (!string.IsNullOrEmpty(riveFileStr))
                                     {
                                         var riveEntry = archive.GetEntry($"rive/{riveFileStr}");
@@ -1480,7 +1556,7 @@ namespace JunctionRelayServer.Services
                                             using var riveFileStream = new FileStream(riveFilePath2, FileMode.Create);
                                             await riveStream.CopyToAsync(riveFileStream);
 
-                                            properties["assetRiveFile"] = savedRiveFileName2;
+                                            properties["filename"] = savedRiveFileName2;
                                         }
                                     }
                                 }
@@ -1522,7 +1598,9 @@ namespace JunctionRelayServer.Services
                 JsonFrameConfig = jsonFrameConfig,
                 JsonFrameConfigRuntime = jsonFrameConfigRuntime,
                 JsonFrameElements = jsonFrameElements,
-                IsTemplate = false,
+                IsTemplate = isTemplate,
+                CloudTemplateId = cloudTemplateId,
+                CloudVariantId = cloudVariantId,
                 IsDraft = true,
                 IsPublished = false,
                 Created = DateTime.UtcNow,

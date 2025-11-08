@@ -82,7 +82,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
         {
             using var scope = _serviceProvider.CreateScope();
             var cloudSessionStore = scope.ServiceProvider.GetRequiredService<Service_CloudSessionStore>();
-            var backupService = scope.ServiceProvider.GetRequiredService<Service_Backups>();
+            var manifestBackupService = scope.ServiceProvider.GetRequiredService<Service_CloudBackups_Manifest>();
             var backendIdentityService = scope.ServiceProvider.GetRequiredService<Service_BackendIdentity>();
 
             try
@@ -150,7 +150,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
 
                 // Perform the backup
                 var backupResult = await PerformBackupAsync(
-                    backupService,
+                    manifestBackupService,
                     backendIdentityService,
                     token,
                     settings,
@@ -216,7 +216,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
         }
 
         private async Task<bool> PerformBackupAsync(
-            Service_Backups backupService,
+            Service_CloudBackups_Manifest manifestBackupService,
             Service_BackendIdentity backendIdentityService,
             string token,
             JsonElement settings,
@@ -229,23 +229,29 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     keysProp.GetBoolean() : true;
                 var includeIdentity = settings.TryGetProperty("includeIdentity", out var identityProp) ?
                     identityProp.GetBoolean() : true;
+                var includeFrameEngine = settings.TryGetProperty("includeFrameEngine", out var frameEngineProp) ?
+                    frameEngineProp.GetBoolean() : false;
 
-                var options = new Service_Backups.BackupOptions
+                var options = new Service_CloudBackups_Manifest.CloudBackupOptions
                 {
                     IncludeKeys = includeKeys,
                     IncludeIdentity = includeIdentity,
+                    IncludeFrameEngine = includeFrameEngine,
+                    ProgressCallback = null  // Scheduler doesn't have UI progress tracking
                 };
 
-                // Create local backup
-                Console.WriteLine("[CLOUD_BACKUP] 📦 Creating local backup...");
-                var backupResult = await backupService.CreateBackupAsync(options);
+                // Create cloud backup with manifest
+                var backupType = includeFrameEngine ? "manifest-based backup with FrameEngine" : "traditional backup";
+                Console.WriteLine($"[CLOUD_BACKUP] 📦 Creating {backupType}...");
+
+                var backupResult = await manifestBackupService.CreateCloudBackupAsync(options);
                 if (!backupResult.Success || backupResult.BackupData == null)
                 {
-                    Console.WriteLine($"[CLOUD_BACKUP] ❌ Failed to create local backup: {backupResult.ErrorMessage}");
+                    Console.WriteLine($"[CLOUD_BACKUP] ❌ Failed to create cloud backup: {backupResult.ErrorMessage}");
                     return false;
                 }
 
-                Console.WriteLine($"[CLOUD_BACKUP] ✅ Local backup created: {backupResult.Filename} ({backupResult.BackupData.Length} bytes)");
+                Console.WriteLine($"[CLOUD_BACKUP] ✅ Cloud backup created: {backupResult.Filename} ({backupResult.BackupData.Length} bytes)");
 
                 // Get backend ID
                 var backendId = backendIdentityService.GetBackendId();
@@ -256,7 +262,8 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     filename = backupResult.Filename,
                     backendId = backendId,
                     uncompressedSize = backupResult.BackupData.Length,
-                    compressedSize = backupResult.BackupData.Length
+                    compressedSize = backupResult.BackupData.Length,
+                    manifest = backupResult.Manifest  // Include manifest if available
                 };
 
                 var requestUploadResult = await CallCloudApiAsync("POST", "/cloud-backups/request-upload", token, uploadRequest);
@@ -286,7 +293,8 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 var completeRequest = new
                 {
                     backupId = backupId,
-                    actualCompressedSize = backupResult.BackupData.Length
+                    actualCompressedSize = backupResult.BackupData.Length,
+                    manifest = backupResult.Manifest  // Include manifest in completion
                 };
 
                 var completeResult = await CallCloudApiAsync("POST", "/cloud-backups/complete-upload", token, completeRequest);

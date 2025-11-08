@@ -82,7 +82,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[HEARTBEATS] ⚠️ Cloud session initialization failed: {ex.Message}");
+                    Console.WriteLine($"[HEARTBEATS] ❌ Cloud session initialization failed: {ex.Message}");
                 }
 
                 var deviceDb = initScope.ServiceProvider.GetRequiredService<Service_Database_Manager_Devices>();
@@ -115,7 +115,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     {
                         if (isFirstRun)
                         {
-                            Console.WriteLine("[HEARTBEATS] ⏸️ Heartbeat service is DISABLED via settings - skipping processing");
+                            // Console.WriteLine("[HEARTBEATS] ⏸️ Heartbeat service is DISABLED via settings - skipping processing");
                             isFirstRun = false;
                         }
                         await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
@@ -140,7 +140,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                             _failureCounts[d.Id] = 0;
                             d.LastPingStatus = "Testing";
                             await deviceDb.UpdateDeviceAsync(d.Id, d).ConfigureAwait(false);
-                            Console.WriteLine($"[HEARTBEATS] 🔄 Reset in-memory failure count and set '{d.Name}' heartbeat status to TESTING after grace period");
+                            // Console.WriteLine($"[HEARTBEATS] 🔄 Reset in-memory failure count and set '{d.Name}' heartbeat status to TESTING after grace period");
                         }
                     }
 
@@ -180,7 +180,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     // Process heartbeat devices sequentially
                     if (heartbeatDevices.Any())
                     {
-                        Console.WriteLine($"[HEARTBEATS] 📊 Processing {heartbeatDevices.Count} device(s) sequentially");
+                        // Console.WriteLine($"[HEARTBEATS] 📊 Processing {heartbeatDevices.Count} device(s) sequentially");
                         await ProcessDevicesSequentiallyAsync(deviceDb, heartbeatDevices, stoppingToken).ConfigureAwait(false);
                     }
                 }
@@ -193,7 +193,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken).ConfigureAwait(false);
             }
 
-            Console.WriteLine("[HEARTBEATS] ⛔ Heartbeat service stopping...");
+            // Console.WriteLine("[HEARTBEATS] ⛔ Heartbeat service stopping...");
         }
 
         private async Task ProcessDevicesSequentiallyAsync(
@@ -249,7 +249,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     success = true;
                     duration = (int)streamLatency;
 
-                    Console.WriteLine($"[HEARTBEATS] 📡 Device '{device.Name}' ONLINE via stream activity ({duration}ms latency, threshold: {thresholdMs}ms)");
+                    // Console.WriteLine($"[HEARTBEATS] 📡 Device '{device.Name}' ONLINE via stream activity ({duration}ms latency, threshold: {thresholdMs}ms)");
 
                     // Update success metrics and skip traditional heartbeat
                     device.LastPinged = now;
@@ -264,7 +264,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     // Update status transitions
                     if (!string.Equals(prevHeartbeatStatus, device.LastPingStatus, StringComparison.OrdinalIgnoreCase))
                     {
-                        Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' HEARTBEAT status transition: {prevHeartbeatStatus} -> {device.LastPingStatus}");
+                        // Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' HEARTBEAT status transition: {prevHeartbeatStatus} -> {device.LastPingStatus}");
                     }
 
                     await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
@@ -272,7 +272,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 }
                 else
                 {
-                    Console.WriteLine($"[HEARTBEATS] 📡 No recent stream activity for '{device.Name}' within {thresholdMs}ms, falling back to {device.HeartbeatProtocol} heartbeat");
+                    // Console.WriteLine($"[HEARTBEATS] 📡 No recent stream activity for '{device.Name}' within {thresholdMs}ms, falling back to {device.HeartbeatProtocol} heartbeat");
                 }
             }
 
@@ -322,7 +322,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 else
                 {
                     if (prevHeartbeatStatus != "Online")
-                        Console.WriteLine($"[HEARTBEATS] ⚠️ No HTTP target or IP address for device '{device.Name}'");
+                        Console.WriteLine($"[HEARTBEATS] ❌ No HTTP target or IP address for device '{device.Name}'");
                     return;
                 }
 
@@ -338,7 +338,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
 
                 try
                 {
-                    Console.WriteLine($"[HEARTBEATS] 🌐 HTTP ping to '{device.Name}' at {targetUrl}");
+                    // Console.WriteLine($"[HEARTBEATS] 🌐 HTTP ping to '{device.Name}' at {targetUrl}");
 
                     // Perform HTTP ping
                     var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -375,38 +375,38 @@ namespace JunctionRelayServer.Services.BackgroundServices
                                         contentValid = false;
                                         Console.WriteLine($"[HEARTBEATS] ❌ MAC mismatch for '{device.Name}': Expected '{device.UniqueIdentifier}', got '{responseMac}'");
                                     }
-                                    else
-                                    {
-                                        Console.WriteLine($"[HEARTBEATS] ✅ MAC verified for '{device.Name}': {responseMac}");
-                                    }
+                                    // else
+                                    // {
+                                    //     Console.WriteLine($"[HEARTBEATS] ✅ MAC verified for '{device.Name}': {responseMac}");
+                                    // }
                                 }
 
-                                if (prevHeartbeatStatus != "Online")
-                                {
-                                    if (root.TryGetProperty("firmware", out var firmwareElement))
-                                    {
-                                        var firmware = firmwareElement.GetString();
-                                        Console.WriteLine($"[HEARTBEATS] 📟 Device '{device.Name}' firmware: {firmware}");
-                                    }
+                                // if (prevHeartbeatStatus != "Online")
+                                // {
+                                //     if (root.TryGetProperty("firmware", out var firmwareElement))
+                                //     {
+                                //         var firmware = firmwareElement.GetString();
+                                //         Console.WriteLine($"[HEARTBEATS] 📟 Device '{device.Name}' firmware: {firmware}");
+                                //     }
 
-                                    if (root.TryGetProperty("uptime", out var uptimeElement))
-                                    {
-                                        var uptime = uptimeElement.GetInt64();
-                                        var uptimeSeconds = uptime / 1000;
-                                        Console.WriteLine($"[HEARTBEATS] ⏱️ Device '{device.Name}' uptime: {uptimeSeconds}s");
-                                    }
+                                //     if (root.TryGetProperty("uptime", out var uptimeElement))
+                                //     {
+                                //         var uptime = uptimeElement.GetInt64();
+                                //         var uptimeSeconds = uptime / 1000;
+                                //         Console.WriteLine($"[HEARTBEATS] ⏱️ Device '{device.Name}' uptime: {uptimeSeconds}s");
+                                //     }
 
-                                    if (root.TryGetProperty("free_heap", out var heapElement))
-                                    {
-                                        var freeHeap = heapElement.GetInt32();
-                                        Console.WriteLine($"[HEARTBEATS] 💾 Device '{device.Name}' free heap: {freeHeap} bytes");
-                                    }
-                                }
+                                //     if (root.TryGetProperty("free_heap", out var heapElement))
+                                //     {
+                                //         var freeHeap = heapElement.GetInt32();
+                                //         Console.WriteLine($"[HEARTBEATS] 💾 Device '{device.Name}' free heap: {freeHeap} bytes");
+                                //     }
+                                // }
                             }
                             catch (JsonException)
                             {
                                 if (prevHeartbeatStatus != "Online")
-                                    Console.WriteLine($"[HEARTBEATS] ⚠️ Non-JSON response from '{device.Name}': {content.Substring(0, Math.Min(50, content.Length))}");
+                                    Console.WriteLine($"[HEARTBEATS] ❌ Non-JSON response from '{device.Name}': {content.Substring(0, Math.Min(50, content.Length))}");
                             }
                         }
 
@@ -422,7 +422,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 catch (Exception ex)
                 {
                     if (prevHeartbeatStatus != "Online")
-                        Console.WriteLine($"[HEARTBEATS] ⚠️ HTTP error for device '{device.Name}' at {targetUrl}: {ex.Message}");
+                        Console.WriteLine($"[HEARTBEATS] ❌ HTTP error for device '{device.Name}' at {targetUrl}: {ex.Message}");
                     success = false;
                 }
             }
@@ -447,7 +447,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     catch (Exception ex)
                     {
                         if (prevHeartbeatStatus != "Online")
-                            Console.WriteLine($"[HEARTBEATS] ⚠️ ICMP error for device '{device.Name}': {ex.Message}");
+                            Console.WriteLine($"[HEARTBEATS] ❌ ICMP error for device '{device.Name}': {ex.Message}");
                     }
                 }
             }
@@ -482,14 +482,14 @@ namespace JunctionRelayServer.Services.BackgroundServices
                         success = validationResult.isValid;
                         duration = wsDuration;
 
-                        if (success)
-                        {
-                            Console.WriteLine($"[HEARTBEATS] ✅ WebSocket heartbeat verified for '{device.Name}': {validationResult.details}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[HEARTBEATS] ❌ WebSocket heartbeat validation failed for '{device.Name}': {validationResult.details}");
-                        }
+                        // if (success)
+                        // {
+                        //     Console.WriteLine($"[HEARTBEATS] ✅ WebSocket heartbeat verified for '{device.Name}': {validationResult.details}");
+                        // }
+                        // else
+                        // {
+                        //     Console.WriteLine($"[HEARTBEATS] ❌ WebSocket heartbeat validation failed for '{device.Name}': {validationResult.details}");
+                        // }
                     }
                     else
                     {
@@ -507,14 +507,14 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 success = false;
                 duration = 0;
 
-                if (device.UseStreamAsHeartbeat)
-                {
-                    Console.WriteLine($"[HEARTBEATS] 📡 ESP-NOW device '{device.Name}' has no recent stream activity - marking as failed");
-                }
-                else
-                {
-                    Console.WriteLine($"[HEARTBEATS] 📡 ESP-NOW device '{device.Name}' requires stream heartbeat to be enabled - marking as failed");
-                }
+                // if (device.UseStreamAsHeartbeat)
+                // {
+                //     Console.WriteLine($"[HEARTBEATS] 📡 ESP-NOW device '{device.Name}' has no recent stream activity - marking as failed");
+                // }
+                // else
+                // {
+                //     Console.WriteLine($"[HEARTBEATS] 📡 ESP-NOW device '{device.Name}' requires stream heartbeat to be enabled - marking as failed");
+                // }
             }
 
             // Send health report to cloud sync service for batching
@@ -528,7 +528,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 device.LastPingDurationMs = duration;
                 device.ConsecutivePingFailures = 0;
                 _failureCounts.TryRemove(device.Id, out _);
-                Console.WriteLine($"[HEARTBEATS] ✅ Device '{device.Name}' is ONLINE ({duration}ms)");
+                // Console.WriteLine($"[HEARTBEATS] ✅ Device '{device.Name}' is ONLINE ({duration}ms)");
             }
             else
             {
@@ -542,57 +542,57 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 if (failures >= max)
                 {
                     device.LastPingStatus = "Offline";
-                    Console.WriteLine($"[HEARTBEATS] 🚨 Device '{device.Name}' marked OFFLINE after {failures} failures");
+                    // Console.WriteLine($"[HEARTBEATS] 🚨 Device '{device.Name}' marked OFFLINE after {failures} failures");
                 }
                 else
                 {
                     if (prevHeartbeatStatus == "Online")
                     {
                         device.LastPingStatus = "Unstable";
-                        Console.WriteLine($"[HEARTBEATS] ❌ Device '{device.Name}' heartbeat is UNSTABLE ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] ❌ Device '{device.Name}' heartbeat is UNSTABLE ({duration}ms), attempt #{failures}");
                     }
                     else if (prevHeartbeatStatus == "Testing" || prevHeartbeatStatus == "Failed")
                     {
                         device.LastPingStatus = "Retesting";
-                        Console.WriteLine($"[HEARTBEATS] 🔄 Retesting device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] 🔄 Retesting device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
                     }
                     else if (prevHeartbeatStatus == "Offline")
                     {
                         device.LastPingStatus = "Testing";
-                        Console.WriteLine($"[HEARTBEATS] 🔍 Testing offline device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] 🔍 Testing offline device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
                     }
                     else if (prevHeartbeatStatus == "Retesting")
                     {
                         device.LastPingStatus = "Retesting";
-                        Console.WriteLine($"[HEARTBEATS] 🔄 Retesting device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] 🔄 Retesting device '{device.Name}' heartbeat ({duration}ms), attempt #{failures}");
                     }
                     else if (prevHeartbeatStatus == "Unstable")
                     {
                         device.LastPingStatus = "Retesting";
-                        Console.WriteLine($"[HEARTBEATS] 🔄 Device '{device.Name}' heartbeat moved from UNSTABLE to RETESTING ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] 🔄 Device '{device.Name}' heartbeat moved from UNSTABLE to RETESTING ({duration}ms), attempt #{failures}");
                     }
                     else if (prevHeartbeatStatus == "Timeout")
                     {
                         device.LastPingStatus = "Retesting";
-                        Console.WriteLine($"[HEARTBEATS] 🔄 Device '{device.Name}' heartbeat moved from TIMEOUT to RETESTING ({duration}ms), attempt #{failures}");
+                        // Console.WriteLine($"[HEARTBEATS] 🔄 Device '{device.Name}' heartbeat moved from TIMEOUT to RETESTING ({duration}ms), attempt #{failures}");
                     }
                     else
                     {
                         device.LastPingStatus = "Testing";
-                        Console.WriteLine($"[HEARTBEATS] ⚠️ Unexpected heartbeat status '{prevHeartbeatStatus}' for device '{device.Name}', setting to TESTING, attempt #{failures}");
+                        Console.WriteLine($"[HEARTBEATS] ❌ Unexpected heartbeat status '{prevHeartbeatStatus}' for device '{device.Name}', setting to TESTING, attempt #{failures}");
                     }
                 }
             }
 
-            if (!string.Equals(prevHeartbeatStatus, device.LastPingStatus, StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' HEARTBEAT status transition: {prevHeartbeatStatus} -> {device.LastPingStatus}");
-            }
+            // if (!string.Equals(prevHeartbeatStatus, device.LastPingStatus, StringComparison.OrdinalIgnoreCase))
+            // {
+            //     Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' HEARTBEAT status transition: {prevHeartbeatStatus} -> {device.LastPingStatus}");
+            // }
 
-            if (!string.Equals(prevDeviceStatus, device.Status, StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' DEVICE status transition: {prevDeviceStatus} -> {device.Status}");
-            }
+            // if (!string.Equals(prevDeviceStatus, device.Status, StringComparison.OrdinalIgnoreCase))
+            // {
+            //     Console.WriteLine($"[HEARTBEATS] ↔️ Device '{device.Name}' DEVICE status transition: {prevDeviceStatus} -> {device.Status}");
+            // }
 
             await deviceDb.UpdateDeviceAsync(device.Id, device).ConfigureAwait(false);
         }
@@ -724,7 +724,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[HEARTBEATS] ⚠️ Failed to send health report for '{device.Name}' to cloud sync service: {ex.Message}");
+                Console.WriteLine($"[HEARTBEATS] ❌ Failed to send health report for '{device.Name}' to cloud sync service: {ex.Message}");
             }
         }
 
@@ -845,7 +845,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[HEARTBEATS] ⚠️ Error checking stream activity for device {deviceId}: {ex.Message}");
+                Console.WriteLine($"[HEARTBEATS] ❌ Error checking stream activity for device {deviceId}: {ex.Message}");
                 return (false, 0);
             }
         }
@@ -879,7 +879,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
         [Obsolete("No longer needed - WebSocket client service handles responses internally")]
         public void HandleWebSocketHeartbeatResponse(string deviceMac, bool success, string? responseData = null)
         {
-            Console.WriteLine($"[HEARTBEATS] ⚠️ HandleWebSocketHeartbeatResponse called but no longer needed for {deviceMac}");
+            // Console.WriteLine($"[HEARTBEATS] ⚠️ HandleWebSocketHeartbeatResponse called but no longer needed for {deviceMac}");
         }
 
         [Obsolete("No longer needed with new WebSocket client architecture")]

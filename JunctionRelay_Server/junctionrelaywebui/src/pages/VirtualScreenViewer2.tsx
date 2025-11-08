@@ -25,6 +25,7 @@ import ReactDOM from 'react-dom';
 import { useParams, useLocation } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Alert, IconButton } from '@mui/material';
 import { Launch, Refresh } from '@mui/icons-material';
+import { usePageTitle } from '../hooks/usePageTitle';
 import type { FrameLayoutConfig, PlacedElement } from '../components/frameengine2/types/FrameEngine2_LayoutTypes';
 import {
     VirtualDisplayDataProvider,
@@ -824,6 +825,20 @@ const VirtualScreenViewer2: React.FC<VirtualScreenViewer2Props> = (props) => {
     const { deviceId: urlDeviceId } = useParams<{ deviceId: string }>();
     const deviceId = props.deviceId || urlDeviceId;
     const dataProviderRef = useRef<WebSocketDataProvider | null>(null);
+    const [deviceName, setDeviceName] = useState<string | null>(null);
+
+    // Set page title dynamically based on device name
+    usePageTitle(deviceName ? `VirtualScreen - ${deviceName}` : 'VirtualScreen');
+
+    // Fetch device name for page title
+    useEffect(() => {
+        if (deviceId) {
+            fetch(`/api/devices/${deviceId}`)
+                .then(res => res.json())
+                .then(data => setDeviceName(data.name))
+                .catch(() => setDeviceName(null));
+        }
+    }, [deviceId]);
 
     if (!dataProviderRef.current) {
         dataProviderRef.current = new WebSocketDataProvider({

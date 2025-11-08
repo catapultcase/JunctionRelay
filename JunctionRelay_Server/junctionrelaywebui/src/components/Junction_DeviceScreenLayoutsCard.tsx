@@ -157,6 +157,17 @@ interface RiveInput {
     sourceLayoutId?: number;
 }
 
+// Unified SensorTag interface that combines both SensorTags and Rive inputs
+interface UnifiedSensorTag {
+    sensorTag: string;
+    isConnected: boolean;
+    showLabel: boolean;
+    showUnit: boolean;
+    placeholderValue: string;
+    placeholderUnit: string;
+    placeholderSensorLabel: string;
+}
+
 interface DiscoveredRiveData {
     machines: Array<{
         name: string;
@@ -202,121 +213,67 @@ const supportsFrameEngine = (junctionType: string): boolean => {
     ].includes(junctionType);
 };
 
-const extractRiveInputsFromTemplates = (availableLayouts: any[], availableSensors: Sensor[]): RiveInput[] => {
-    const allRiveInputs: RiveInput[] = [];
-    const inputMap = new Map<string, RiveInput>();
+/**
+ * DEPRECATED: This function is no longer used.
+ * SensorTags are now extracted directly from jsonFrameConfig.sensorTestValues
+ * which is the single source of truth for all SensorTags used in a layout.
+ */
+const extractRiveInputsFromTemplates_DEPRECATED = (): RiveInput[] => {
+    return [];
+};
 
-    availableLayouts.forEach(layout => {
+/**
+ * Extract all SensorTags from a layout's jsonFrameConfig.sensorTestValues
+ * This is the single source of truth for all SensorTags used in a layout,
+ * including sensor elements, ECG elements, Rive inputs, and Rive bindings.
+ */
+const extractAllSensorTags = (layoutId: number, availableLayouts: any[], availableSensors: Sensor[]): UnifiedSensorTag[] => {
+    const layout = availableLayouts.find(l => String(l.id) === String(layoutId));
+    if (!layout) {
+        return [];
+    }
+
+    // Helper function to check if a SensorTag is connected
+    const isSensorTagMapped = (sensorTag: string): boolean => {
+        return availableSensors.some(sensor => {
+            if (!sensor.IsSelected) return false;
+            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
+            return sensorTags.includes(sensorTag);
+        });
+    };
+
+    try {
         if (!layout.jsonFrameConfig) {
-            return;
+            return [];
         }
 
-        try {
-            const frameConfig = JSON.parse(layout.jsonFrameConfig);
-            const riveConfig = frameConfig.frameConfig?.rive;
+        const frameConfig = JSON.parse(layout.jsonFrameConfig);
 
-            if (!riveConfig?.discovery) {
-                return;
-            }
-
-            const discovery: DiscoveredRiveData = riveConfig.discovery;
-
-            if (discovery.machines && Array.isArray(discovery.machines)) {
-                discovery.machines.forEach((machine) => {
-                    if (machine.inputs && Array.isArray(machine.inputs)) {
-                        machine.inputs.forEach((input) => {
-                            const fullKey = `${machine.name}.${input.name}`;
-                            const uniqueKey = `${layout.id}-${fullKey}`;
-
-                            if (!inputMap.has(uniqueKey)) {
-                                const mappedSensors = availableSensors.filter(sensor => {
-                                    if (!sensor.IsSelected) return false;
-                                    const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
-                                    return sensorTags.some(tag =>
-                                        tag === input.name ||
-                                        tag === fullKey
-                                    );
-                                });
-
-                                const mappedSensorTags: string[] = [];
-                                mappedSensors.forEach(sensor => {
-                                    const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
-                                    sensorTags.forEach(tag => {
-                                        if (tag === input.name || tag === fullKey) {
-                                            if (!mappedSensorTags.includes(tag)) {
-                                                mappedSensorTags.push(tag);
-                                            }
-                                        }
-                                    });
-                                });
-
-                                const riveInput: RiveInput = {
-                                    name: input.name,
-                                    type: input.type,
-                                    fullKey,
-                                    currentValue: input.currentValue,
-                                    mappedSensorTags: mappedSensorTags,
-                                    isConfigured: mappedSensorTags.length > 0,
-                                    elementType: 'input',
-                                    machineName: machine.name,
-                                    sourceLayoutId: layout.id
-                                };
-
-                                inputMap.set(uniqueKey, riveInput);
-                                allRiveInputs.push(riveInput);
-                            }
-                        });
-                    }
-                });
-            }
-
-            if (discovery.bindings && Array.isArray(discovery.bindings)) {
-                discovery.bindings.forEach((binding) => {
-                    const bindingKey = binding.name;
-                    const uniqueKey = `${layout.id}-${bindingKey}`;
-
-                    if (!inputMap.has(uniqueKey)) {
-                        const mappedSensors = availableSensors.filter(sensor => {
-                            if (!sensor.IsSelected) return false;
-                            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
-                            return sensorTags.some(tag => tag === binding.name);
-                        });
-
-                        const mappedSensorTags: string[] = [];
-                        mappedSensors.forEach(sensor => {
-                            const sensorTags = sensor.sensorTag.split(',').map(tag => tag.trim());
-                            sensorTags.forEach(tag => {
-                                if (tag === binding.name) {
-                                    if (!mappedSensorTags.includes(tag)) {
-                                        mappedSensorTags.push(tag);
-                                    }
-                                }
-                            });
-                        });
-
-                        const riveInput: RiveInput = {
-                            name: binding.name,
-                            type: binding.type || 'string',
-                            fullKey: bindingKey,
-                            currentValue: binding.currentValue,
-                            mappedSensorTags: mappedSensorTags,
-                            isConfigured: mappedSensorTags.length > 0,
-                            elementType: 'binding',
-                            sourceLayoutId: layout.id
-                        };
-
-                        inputMap.set(uniqueKey, riveInput);
-                        allRiveInputs.push(riveInput);
-                    }
-                });
-            }
-
-        } catch (error) {
-            console.error(`Error parsing JsonFrameConfig for layout ${layout.id}:`, error);
+        // All SensorTags in use are stored as keys in sensorTestValues
+        if (!frameConfig.sensorTestValues) {
+            return [];
         }
-    });
 
-    return allRiveInputs;
+        // Extract SensorTags from sensorTestValues keys and sort alphabetically
+        const sensorTags = Object.keys(frameConfig.sensorTestValues).sort();
+
+        return sensorTags.map(sensorTag => {
+            const testValue = frameConfig.sensorTestValues[sensorTag];
+
+            return {
+                sensorTag,
+                placeholderSensorLabel: testValue.label || sensorTag,
+                showLabel: true,
+                showUnit: !!testValue.unit,
+                placeholderValue: String(testValue.value ?? ''),
+                placeholderUnit: testValue.unit || '',
+                isConnected: isSensorTagMapped(sensorTag)
+            };
+        });
+    } catch (error) {
+        console.error('Error parsing jsonFrameConfig:', error);
+        return [];
+    }
 };
 
 const RiveInputsForLayout: React.FC<{
@@ -544,58 +501,10 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
     }, [showSnackbar]);
 
     const extractSensorTagsFromTemplate = useCallback((layoutId: number): SensorTag[] => {
-        const layout = availableLayouts.find(l => String(l.id) === String(layoutId));
-        if (!layout || !layout.jsonFrameElements) {
-            return [];
-        }
-
-        try {
-            const elements: FrameElement[] = JSON.parse(layout.jsonFrameElements);
-            const sensorTags: SensorTag[] = [];
-
-            elements.forEach(element => {
-                // Extract main sensor tag (for data display)
-                if ((element.type === 'sensor' || element.type === 'ecg') && element.properties?.sensorTag) {
-                    const sensorTag = element.properties.sensorTag;
-                    const isConnected = isSensorTagMapped(sensorTag);
-
-                    sensorTags.push({
-                        sensorTag: sensorTag,
-                        placeholderSensorLabel: element.properties.placeholderSensorLabel || 'Unknown',
-                        showLabel: element.properties.showLabel ?? false,
-                        showUnit: element.properties.showUnit ?? false,
-                        placeholderValue: element.properties.placeholderValue || '',
-                        placeholderUnit: element.properties.placeholderUnit || '',
-                        isConnected: isConnected
-                    });
-                }
-
-                // Extract visibility sensor tag (for visibility control) - for ALL element types
-                if (element.properties?.visibilitySensorTag) {
-                    const visibilityTag = element.properties.visibilitySensorTag;
-                    const isConnected = isSensorTagMapped(visibilityTag);
-
-                    // Only add if not already in the list
-                    if (!sensorTags.find(st => st.sensorTag === visibilityTag)) {
-                        sensorTags.push({
-                            sensorTag: visibilityTag,
-                            placeholderSensorLabel: `[Visibility Control for ${element.type}]`,
-                            showLabel: false,
-                            showUnit: false,
-                            placeholderValue: 'true/false',
-                            placeholderUnit: '',
-                            isConnected: isConnected
-                        });
-                    }
-                }
-            });
-
-            return sensorTags;
-        } catch (error) {
-            console.error('Error parsing template JSON:', error);
-            return [];
-        }
-    }, [availableLayouts, isSensorTagMapped]);
+        // SIMPLIFIED: Use the new extractAllSensorTags function that reads from jsonFrameConfig.sensorTestValues
+        // This is the single source of truth for all SensorTags used in a layout
+        return extractAllSensorTags(layoutId, availableLayouts, availableSensors);
+    }, [availableLayouts, availableSensors]);
 
     const getSelectedLayoutIds = useCallback((): number[] => {
         const selectedIds = new Set<number>();
@@ -636,67 +545,37 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
             .join(',');
     }, [availableSensors]);
 
+    // SIMPLIFIED: Rive inputs are now extracted from jsonFrameConfig.sensorTestValues
+    // No need for separate tracking - all SensorTags are in sensorTestValues
     const riveInputs = useMemo(() => {
-        if (!isAnyFrameMode) {
-            return [];
-        }
+        return [];
+    }, []);
 
-        const selectedLayoutIds = getSelectedLayoutIds();
-        const selectedLayouts = availableLayouts.filter(layout => {
-            const layoutIdAsNumber = parseInt(String(layout.id), 10);
-            return selectedLayoutIds.includes(layoutIdAsNumber);
-        });
-
-        return extractRiveInputsFromTemplates(selectedLayouts, availableSensors);
-    }, [
-        isAnyFrameMode,
-        availableLayouts.length,
-        Object.keys(screenConfigs).join(','),
-        Object.keys(deviceScreens).join(','),
-        targetDeviceLinks.length,
-        sensorSelectionHash,
-        getSelectedLayoutIds
-    ]);
-
-    const previousRiveInputsRef = useRef<string>('');
-
+    // SIMPLIFIED: No longer tracking separate Rive inputs - all tags in sensorTestValues
     useEffect(() => {
         if (onRiveInputsUpdate) {
-            const currentInputsHash = JSON.stringify(riveInputs.map(input => ({
-                fullKey: input.fullKey,
-                isConfigured: input.isConfigured,
-                sourceLayoutId: input.sourceLayoutId
-            })));
-
-            if (currentInputsHash !== previousRiveInputsRef.current) {
-                previousRiveInputsRef.current = currentInputsHash;
-                onRiveInputsUpdate(riveInputs);
-            }
+            onRiveInputsUpdate([]);
         }
-    }, [riveInputs, onRiveInputsUpdate]);
+    }, [onRiveInputsUpdate]);
 
-    // MAPPED SENSOR TAGS EFFECT - Send all mapped sensor tags to parent
+    // MAPPED SENSOR TAGS EFFECT - Send all SensorTags used in layouts to parent
+    // SIMPLIFIED: All SensorTags now extracted from jsonFrameConfig.sensorTestValues
+    // This list is used to show binding indicators for sensors that match layout SensorTags
     const previousMappedSensorTagsRef = useRef<string>('');
 
     useEffect(() => {
         if (onMappedSensorTagsUpdate) {
             const allMappedTags = new Set<string>();
 
-            // 1. Add sensor tags from riveInputs (machine inputs and bindings)
-            riveInputs.forEach(input => {
-                if (input.isConfigured && input.mappedSensorTags) {
-                    input.mappedSensorTags.forEach(tag => allMappedTags.add(tag.trim()));
-                }
-            });
-
-            // 2. Add sensor tags from frame elements (sensor/ecg elements with sensorTag property)
+            // Extract ALL SensorTags from all selected layouts (from sensorTestValues keys)
+            // These are the tags that the layout is configured to use
             const selectedLayoutIds = getSelectedLayoutIds();
             selectedLayoutIds.forEach(layoutId => {
                 const sensorTags = extractSensorTagsFromTemplate(layoutId);
+                // Add ALL tags from the layout, not just connected ones
+                // This allows binding indicators to show which sensors COULD be connected
                 sensorTags.forEach(sensorTag => {
-                    if (sensorTag.isConnected) {
-                        allMappedTags.add(sensorTag.sensorTag.trim());
-                    }
+                    allMappedTags.add(sensorTag.sensorTag.trim());
                 });
             });
 
@@ -708,7 +587,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                 onMappedSensorTagsUpdate(mappedTagsArray);
             }
         }
-    }, [riveInputs, onMappedSensorTagsUpdate, getSelectedLayoutIds, extractSensorTagsFromTemplate]);
+    }, [onMappedSensorTagsUpdate, getSelectedLayoutIds, extractSensorTagsFromTemplate]);
 
     // VALIDATION EFFECT - NEW
     useEffect(() => {
@@ -1250,7 +1129,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
         return `${getBaseUrl()}/device/${virtualDeviceId}/virtual-screen`;
     }, [getBaseUrl]);
 
-    const renderSensorTagsTable = useCallback((sensorTags: SensorTag[], layoutName: string, isMobile: boolean) => {
+    const renderSensorTagsTable = useCallback((sensorTags: UnifiedSensorTag[], layoutName: string, isMobile: boolean) => {
         if (sensorTags.length === 0) {
             return (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
@@ -1271,7 +1150,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                         {sensorTags.map((sensorTag, index) => (
                             <Card key={`${sensorTag.sensorTag}-${index}`} variant="outlined" sx={{ borderRadius: 1 }}>
                                 <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                                    {/* Sensor Tag Name */}
+                                    {/* SensorTag Name */}
                                     <Box display="flex" alignItems="center" mb={1}>
                                         <SensorsIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
                                         <Typography variant="body2" fontWeight="bold">
@@ -1553,7 +1432,7 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                     {isAnyFrameMode ? <ImageIcon sx={{ mr: 1 }} /> : <ScreenshotIcon sx={{ mr: 1 }} />}
                     {isCompositeMode
                         ? "Frame Assembly Configurations"
-                        : (isBlitMode ? "Pre-rendered Frame Configurations" : "Screen Layout Overrides")}
+                        : (isBlitMode ? "Pre-rendered Frame Configurations" : "Payload Layout Configurations")}
                 </Typography>
             </Box>
 
@@ -1687,10 +1566,10 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                         {screen.displayName || screen.screenKey}
                                                                     </Typography>
 
-                                                                    {/* Frame/Screen Layout */}
+                                                                    {/* Frame/Payload Layout */}
                                                                     <Box mb={3}>
                                                                         <Typography variant="body2" color="text.secondary" gutterBottom>
-                                                                            {isCompositeMode ? "Frame Layout" : (isBlitMode ? "Frame Layout" : "Screen Layout")}
+                                                                            {isCompositeMode ? "Frame Layout" : (isBlitMode ? "Frame Layout" : "Payload Layout")}
                                                                         </Typography>
                                                                         <FormControl
                                                                             fullWidth
@@ -1904,23 +1783,9 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                     )}
                                                                 </Box>
 
-                                                                {/* Right Column: Mappings */}
+                                                                {/* Right Column: Unified SensorTags */}
                                                                 <Box>
-                                                                    {/* SensorTags Section */}
-                                                                    {sensorTags.length > 0 && isAnyFrameMode && (
-                                                                        <Box sx={{
-                                                                            p: 2,
-                                                                            backgroundColor: 'action.hover',
-                                                                            border: 1,
-                                                                            borderColor: 'divider',
-                                                                            borderRadius: 1,
-                                                                            mb: 2
-                                                                        }}>
-                                                                            {renderSensorTagsTable(sensorTags, selectedLayout?.displayName || 'Unknown Layout', isMobile)}
-                                                                        </Box>
-                                                                    )}
-
-                                                                    {/* Rive Inputs Section */}
+                                                                    {/* Unified SensorTags Section (includes sensor elements + Rive inputs) */}
                                                                     {isAnyFrameMode && currentLayoutId && (
                                                                         <Box sx={{
                                                                             p: 2,
@@ -1932,13 +1797,18 @@ const DeviceScreenLayoutsCard: React.FC<DeviceScreenLayoutsCardProps> = ({
                                                                                 color: 'text.primary'
                                                                             }
                                                                         }}>
-                                                                            <RiveInputsForLayout
-                                                                                layoutId={currentLayoutId}
-                                                                                layoutName={selectedLayout?.displayName || 'Unknown Layout'}
-                                                                                riveInputs={riveInputs}
-                                                                                availableSensors={availableSensors}
-                                                                                onInputMappingChange={handleRiveInputMappingChange}
-                                                                            />
+                                                                            {(() => {
+                                                                                const allSensorTags = extractAllSensorTags(
+                                                                                    currentLayoutId,
+                                                                                    availableLayouts,
+                                                                                    availableSensors
+                                                                                );
+                                                                                return renderSensorTagsTable(
+                                                                                    allSensorTags,
+                                                                                    selectedLayout?.displayName || 'Unknown Layout',
+                                                                                    isMobile
+                                                                                );
+                                                                            })()}
                                                                         </Box>
                                                                     )}
                                                                 </Box>

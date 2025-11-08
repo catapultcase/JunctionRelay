@@ -33,15 +33,18 @@ namespace JunctionRelayServer.Services
         private readonly Service_Database_Manager_FrameEngine _frameLayoutService;
         private readonly DatabasePathProvider _dbPathProvider;
         private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly IFrameEngineHashUtility _hashUtility;
 
         public Service_FrameEngine_Filesystem(
             Service_Database_Manager_FrameEngine frameLayoutService,
             DatabasePathProvider dbPathProvider,
-            IWebHostEnvironment webHostEnvironment)
+            IWebHostEnvironment webHostEnvironment,
+            IFrameEngineHashUtility hashUtility)
         {
             _frameLayoutService = frameLayoutService;
             _dbPathProvider = dbPathProvider;
             _webHostEnvironment = webHostEnvironment;
+            _hashUtility = hashUtility;
         }
 
         /// <summary>
@@ -112,6 +115,9 @@ namespace JunctionRelayServer.Services
 
                 // Audit assets (background images and videos)
                 await AuditAssets(frameLayouts, report);
+
+                // Audit for duplicate assets
+                await AuditDuplicateAssets(frameLayouts, report);
 
                 // Calculate totals
                 report.TotalOrphanedFiles = report.OrphanedRiveFiles.Count +
@@ -269,8 +275,8 @@ namespace JunctionRelayServer.Services
                     .Select(fl => fl.RiveFile!)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                // Extract asset element references from jsonFrameElements
-                var referencedAssetRiveFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // Extract media-rive element references from jsonFrameElements
+                var referencedMediaRiveFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var layout in frameLayouts)
                 {
@@ -289,13 +295,13 @@ namespace JunctionRelayServer.Services
 
                                         if (element.TryGetProperty("properties", out var properties))
                                         {
-                                            // Asset Rive elements
-                                            if (elementType == "asset-rive" &&
-                                                properties.TryGetProperty("assetRiveFile", out var riveFile))
+                                            // Media Rive elements
+                                            if (elementType == "media-rive" &&
+                                                properties.TryGetProperty("filename", out var riveFile))
                                             {
                                                 var file = riveFile.GetString();
                                                 if (!string.IsNullOrEmpty(file))
-                                                    referencedAssetRiveFiles.Add(file);
+                                                    referencedMediaRiveFiles.Add(file);
                                             }
                                         }
                                     }
@@ -314,7 +320,7 @@ namespace JunctionRelayServer.Services
                 {
                     var fileName = Path.GetFileName(riveFile);
 
-                    if (!referencedRiveFiles.Contains(fileName) && !referencedAssetRiveFiles.Contains(fileName))
+                    if (!referencedRiveFiles.Contains(fileName) && !referencedMediaRiveFiles.Contains(fileName))
                     {
                         report.OrphanedRiveFiles.Add(fileName);
 
@@ -412,14 +418,14 @@ namespace JunctionRelayServer.Services
             }
         }
 
-        // Audit assets (background images and videos in separate directories)
+        // Audit assets (images and videos in separate directories)
         private async Task AuditAssets(List<Model_Frame_Layout> frameLayouts, OrphanedFilesReport report)
         {
             try
             {
-                // Extract asset element references from jsonFrameElements
-                var referencedAssetImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var referencedAssetVideos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // Extract media element references from jsonFrameElements
+                var referencedMediaImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var referencedMediaVideos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var layout in frameLayouts)
                 {
@@ -438,22 +444,22 @@ namespace JunctionRelayServer.Services
 
                                         if (element.TryGetProperty("properties", out var properties))
                                         {
-                                            // Asset Image elements
-                                            if (elementType == "asset-image" &&
-                                                properties.TryGetProperty("assetImageUrl", out var imageUrl))
+                                            // Media Image elements
+                                            if (elementType == "media-image" &&
+                                                properties.TryGetProperty("filename", out var imageFile))
                                             {
-                                                var url = imageUrl.GetString();
-                                                if (!string.IsNullOrEmpty(url))
-                                                    referencedAssetImages.Add(url);
+                                                var file = imageFile.GetString();
+                                                if (!string.IsNullOrEmpty(file))
+                                                    referencedMediaImages.Add(file);
                                             }
 
-                                            // Asset Video elements
-                                            if (elementType == "asset-video" &&
-                                                properties.TryGetProperty("assetVideoUrl", out var videoUrl))
+                                            // Media Video elements
+                                            if (elementType == "media-video" &&
+                                                properties.TryGetProperty("filename", out var videoFile))
                                             {
-                                                var url = videoUrl.GetString();
-                                                if (!string.IsNullOrEmpty(url))
-                                                    referencedAssetVideos.Add(url);
+                                                var file = videoFile.GetString();
+                                                if (!string.IsNullOrEmpty(file))
+                                                    referencedMediaVideos.Add(file);
                                             }
                                         }
                                     }
@@ -468,7 +474,7 @@ namespace JunctionRelayServer.Services
                 }
 
                 // ========================================
-                // Audit Background Images (images folder)
+                // Audit Images (images folder)
                 // ========================================
                 var assetsPath = GetAssetsUserPath();
                 if (Directory.Exists(assetsPath))
@@ -489,7 +495,7 @@ namespace JunctionRelayServer.Services
                     {
                         var fileName = Path.GetFileName(imageFile);
 
-                        if (!referencedImages.Contains(fileName) && !referencedAssetImages.Contains(fileName))
+                        if (!referencedImages.Contains(fileName) && !referencedMediaImages.Contains(fileName))
                         {
                             report.OrphanedAssets.Add(fileName);
 
@@ -501,7 +507,7 @@ namespace JunctionRelayServer.Services
                 }
 
                 // ========================================
-                // Audit Background Videos (videos folder)
+                // Audit Videos (videos folder)
                 // ========================================
                 var videosPath = GetVideosUserPath();
                 if (Directory.Exists(videosPath))
@@ -522,7 +528,7 @@ namespace JunctionRelayServer.Services
                     {
                         var fileName = Path.GetFileName(videoFile);
 
-                        if (!referencedVideos.Contains(fileName) && !referencedAssetVideos.Contains(fileName))
+                        if (!referencedVideos.Contains(fileName) && !referencedMediaVideos.Contains(fileName))
                         {
                             report.OrphanedAssets.Add(fileName);
 
@@ -537,6 +543,165 @@ namespace JunctionRelayServer.Services
             {
                 Console.WriteLine($"[SERVICE_FRAMEENGINE_FILESYSTEM] Error auditing assets: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Audits the filesystem for duplicate asset files (same content, different names).
+        /// Uses SHA256 hash comparison to detect identical files.
+        /// </summary>
+        private async Task AuditDuplicateAssets(List<Model_Frame_Layout> frameLayouts, OrphanedFilesReport report)
+        {
+            try
+            {
+                var duplicateGroups = new List<Model_DuplicateGroup_DTO>();
+
+                // Audit images for duplicates
+                var imagesDuplicates = await _hashUtility.FindDuplicatesByHashAsync(GetAssetsUserPath(), "*.*");
+                ProcessDuplicateGroups(imagesDuplicates, "image", frameLayouts, duplicateGroups);
+
+                // Audit videos for duplicates
+                var videosDuplicates = await _hashUtility.FindDuplicatesByHashAsync(GetVideosUserPath(), "*.*");
+                ProcessDuplicateGroups(videosDuplicates, "video", frameLayouts, duplicateGroups);
+
+                // Audit Rive files for duplicates
+                var riveDuplicates = await _hashUtility.FindDuplicatesByHashAsync(GetRiveUserPath(), "*.riv");
+                ProcessDuplicateGroups(riveDuplicates, "rive", frameLayouts, duplicateGroups);
+
+                // Populate report
+                report.DuplicateAssets = duplicateGroups;
+                report.TotalDuplicateSpaceSavingsBytes = duplicateGroups.Sum(g => g.SpaceSavingsBytes);
+                report.TotalDuplicateFileCount = duplicateGroups.Sum(g => g.Duplicates.Count);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SERVICE_FRAMEENGINE_FILESYSTEM] Error auditing duplicate assets: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Processes duplicate file groups from hash utility into DTO format.
+        /// Identifies oldest file as canonical, calculates space savings, counts usage.
+        /// </summary>
+        private void ProcessDuplicateGroups(
+            Dictionary<string, List<FileInfo>> hashGroups,
+            string assetType,
+            List<Model_Frame_Layout> frameLayouts,
+            List<Model_DuplicateGroup_DTO> duplicateGroups)
+        {
+            foreach (var hashGroup in hashGroups)
+            {
+                var hash = hashGroup.Key;
+                var files = hashGroup.Value;
+
+                // Skip if only one file (not a duplicate)
+                if (files.Count < 2) continue;
+
+                // Sort by creation time (oldest first)
+                var sortedFiles = files.OrderBy(f => f.CreationTime).ToList();
+                var canonicalFile = sortedFiles.First();
+
+                var group = new Model_DuplicateGroup_DTO
+                {
+                    FileHash = hash,
+                    AssetType = assetType,
+                    CanonicalFile = canonicalFile.Name,
+                    Duplicates = new List<Model_DuplicateFile_DTO>(),
+                    SpaceSavingsBytes = 0
+                };
+
+                // Process duplicates (all files except the canonical)
+                foreach (var file in sortedFiles.Skip(1))
+                {
+                    var usageCount = CountFileUsage(file.Name, assetType, frameLayouts);
+
+                    group.Duplicates.Add(new Model_DuplicateFile_DTO
+                    {
+                        Filename = file.Name,
+                        SizeBytes = file.Length,
+                        CreatedDate = file.CreationTime,
+                        UsageCount = usageCount
+                    });
+
+                    // Space savings = size of each duplicate
+                    group.SpaceSavingsBytes += file.Length;
+                }
+
+                duplicateGroups.Add(group);
+            }
+        }
+
+        /// <summary>
+        /// Counts how many FrameLayouts reference a specific asset file.
+        /// Checks both direct references (BackgroundImageUrl, etc.) and JsonFrameElements.
+        /// </summary>
+        private int CountFileUsage(string filename, string assetType, List<Model_Frame_Layout> frameLayouts)
+        {
+            var count = 0;
+
+            foreach (var layout in frameLayouts)
+            {
+                // Check direct references based on asset type
+                switch (assetType)
+                {
+                    case "image":
+                        if (filename.Equals(layout.BackgroundImageUrl, StringComparison.OrdinalIgnoreCase))
+                            count++;
+                        break;
+
+                    case "video":
+                        if (filename.Equals(layout.BackgroundVideoUrl, StringComparison.OrdinalIgnoreCase))
+                            count++;
+                        break;
+
+                    case "rive":
+                        if (filename.Equals(layout.RiveFile, StringComparison.OrdinalIgnoreCase))
+                            count++;
+                        break;
+                }
+
+                // Check JsonFrameElements
+                if (!string.IsNullOrEmpty(layout.JsonFrameElements))
+                {
+                    try
+                    {
+                        var elements = JsonSerializer.Deserialize<List<JsonElement>>(layout.JsonFrameElements);
+                        if (elements != null)
+                        {
+                            foreach (var element in elements)
+                            {
+                                if (element.TryGetProperty("type", out var typeProperty) &&
+                                    element.TryGetProperty("properties", out var properties))
+                                {
+                                    var elementType = typeProperty.GetString();
+                                    var matchingType = assetType switch
+                                    {
+                                        "image" => "media-image",
+                                        "video" => "media-video",
+                                        "rive" => "media-rive",
+                                        _ => null
+                                    };
+
+                                    if (elementType == matchingType &&
+                                        properties.TryGetProperty("filename", out var filenameProperty))
+                                    {
+                                        var elementFilename = filenameProperty.GetString();
+                                        if (filename.Equals(elementFilename, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            count++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore JSON parsing errors
+                    }
+                }
+            }
+
+            return count;
         }
 
         // Path helper methods
@@ -623,6 +788,11 @@ namespace JunctionRelayServer.Services
         public List<string> OrphanedAssets { get; set; } = new();
         public int TotalOrphanedFiles { get; set; }
         public double EstimatedSizeMB { get; set; }
+
+        // Duplicate asset detection results
+        public List<Model_DuplicateGroup_DTO> DuplicateAssets { get; set; } = new();
+        public long TotalDuplicateSpaceSavingsBytes { get; set; }
+        public int TotalDuplicateFileCount { get; set; }
     }
 
     public class CleanupResult

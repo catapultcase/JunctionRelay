@@ -38,11 +38,13 @@ import AddIcon from '@mui/icons-material/Add';
 import UploadIcon from '@mui/icons-material/Upload';
 import { useTheme, useMediaQuery } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Import sub-components
 import FrameEngineManagementSection from '../components/FrameEngine_ManagementSection';
 import FrameEngineListingSection from '../components/FrameEngine_ListingSection';
 import SetupInstructions_FrameEngine from '../components/SetupInstructions_FrameEngine';
+import FrameEngine_ImportModeModal from '../components/FrameEngine_ImportModeModal';
 import { preloadCommonFonts } from '../components/frameengine2/FrameEngine2_FontLoader';
 
 // Types
@@ -394,6 +396,7 @@ const AddFrameLayoutModal: React.FC<{
 
 // Main FrameEngine Component
 const FrameEngine = () => {
+    usePageTitle('FrameEngine');
     const { hasValidLicense } = useAuth();
     const [frameLayouts, setFrameLayouts] = useState<FrameLayoutListItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
@@ -401,6 +404,12 @@ const FrameEngine = () => {
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
     const [importLoading, setImportLoading] = useState<boolean>(false);
+    const [importModalOpen, setImportModalOpen] = useState<boolean>(false);
+    const [importModalData, setImportModalData] = useState<{
+        file: File;
+        layoutName: string;
+        cloudVariantId: string;
+    } | null>(null);
 
     // View mode and table management state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -536,16 +545,70 @@ const FrameEngine = () => {
             return;
         }
 
+        try {
+            // Dynamically import JSZip
+            const JSZip = (await import('jszip')).default;
+
+            // Read ZIP file
+            const zip = await JSZip.loadAsync(file);
+
+            // Extract config.json
+            const configFile = zip.file('config.json');
+            if (!configFile) {
+                // No config.json, import directly
+                await uploadFile(file, true);
+                event.target.value = '';
+                return;
+            }
+
+            const configText = await configFile.async('text');
+            const config = JSON.parse(configText);
+
+            const isCommunityTemplate = config.isTemplate === true;
+
+            if (isCommunityTemplate) {
+                // Community template - import directly, no modal
+                await uploadFile(file, true);
+            } else {
+                // User layout - show migration modal
+                setImportModalData({
+                    file,
+                    layoutName: config.displayName || 'Unnamed Layout',
+                    cloudVariantId: config.cloudVariantId || 'Unknown'
+                });
+                setImportModalOpen(true);
+            }
+        } catch (error: any) {
+            console.error('Error reading import file:', error);
+            showSnackbar(`Error reading import file: ${error.message}`, "error");
+        }
+
+        // Reset file input
+        event.target.value = '';
+    };
+
+    const handleImportModeConfirm = async (preserveIds: boolean) => {
+        if (!importModalData) return;
+
+        await uploadFile(importModalData.file, preserveIds);
+        setImportModalOpen(false);
+        setImportModalData(null);
+    };
+
+    const uploadFile = async (file: File, preserveCloudIds: boolean) => {
         setImportLoading(true);
 
         try {
             const formData = new FormData();
             formData.append('packageFile', file);
 
-            const response = await fetch('/api/frameengine/import-package', {
-                method: 'POST',
-                body: formData,
-            });
+            const response = await fetch(
+                `/api/frameengine/import-package?preserveCloudIds=${preserveCloudIds}`,
+                {
+                    method: 'POST',
+                    body: formData,
+                }
+            );
 
             if (!response.ok) {
                 const error = await response.json();
@@ -559,7 +622,6 @@ const FrameEngine = () => {
             showSnackbar(`Import failed: ${error.message}`, "error");
         } finally {
             setImportLoading(false);
-            event.target.value = '';
         }
     };
 
@@ -691,6 +753,18 @@ const FrameEngine = () => {
                 open={addFrameLayoutModalOpen}
                 onClose={() => setAddFrameLayoutModalOpen(false)}
                 onFrameLayoutAdded={handleFrameLayoutAdded}
+            />
+
+            {/* Import Mode Selection Modal */}
+            <FrameEngine_ImportModeModal
+                open={importModalOpen}
+                onClose={() => {
+                    setImportModalOpen(false);
+                    setImportModalData(null);
+                }}
+                onConfirm={handleImportModeConfirm}
+                layoutName={importModalData?.layoutName || ''}
+                cloudVariantId={importModalData?.cloudVariantId || ''}
             />
         </Box>
     );

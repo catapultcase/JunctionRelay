@@ -1,19 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
     Button,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemSecondaryAction,
     IconButton,
     Typography,
     CircularProgress,
     Box,
-    Tooltip
+    Tooltip,
+    TablePagination,
+    Table,
+    TableHead,
+    TableBody,
+    TableRow,
+    TableCell,
+    TableContainer,
+    Paper,
+    TextField,
+    Chip
 } from '@mui/material';
 import {
     Download as DownloadIcon,
@@ -21,13 +27,16 @@ import {
     Close as CloseIcon,
     Lock as LockIcon,
     CheckCircle as CheckCircleIcon,
-    Delete as DeleteIcon
+    Delete as DeleteIcon,
+    ArrowUpward as ArrowUpwardIcon,
+    ArrowDownward as ArrowDownwardIcon
 } from '@mui/icons-material';
 
 interface CloudVersion {
     id: string;
     templateName: string;
     snapshotAt: string;
+    isBackupSnapshot: boolean;
 }
 
 interface CloudVersionsModalProps {
@@ -52,6 +61,11 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
     const [uploading, setUploading] = useState(false);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [dateFrom, setDateFrom] = useState<string>('');
+    const [dateTo, setDateTo] = useState<string>('');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
     useEffect(() => {
         if (open && hasProLicense) {
@@ -62,7 +76,8 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
     const loadVersions = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/frameengine/cloud-versions/${templateId}`);
+            // Call cloud backend directly - local backend proxies to cloud
+            const response = await fetch(`/api/frameengine/cloud-templates/${templateId}/cloud-versions`);
             if (!response.ok) {
                 throw new Error('Failed to load versions');
             }
@@ -79,7 +94,7 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
     const handleSaveNewVersion = async () => {
         setUploading(true);
         try {
-            const response = await fetch(`/api/frameengine/${templateId}/save-cloud-version`, {
+            const response = await fetch(`/api/frameengine/cloud-templates/${templateId}/cloud-version`, {
                 method: 'POST'
             });
 
@@ -113,7 +128,9 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
     const handleDownload = async (snapshotId: string, versionName: string) => {
         setDownloadingId(snapshotId);
         try {
-            const response = await fetch(`/api/frameengine/cloud-versions/${snapshotId}/download`);
+            const response = await fetch(`/api/frameengine/cloud-templates/${templateId}/cloud-versions/${snapshotId}/download`, {
+                method: 'POST'
+            });
 
             if (!response.ok) {
                 throw new Error('Failed to download version');
@@ -146,7 +163,7 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
 
         setDeletingId(snapshotId);
         try {
-            const response = await fetch(`/api/frameengine/cloud-versions/${snapshotId}`, {
+            const response = await fetch(`/api/frameengine/cloud-templates/${templateId}/cloud-versions/${snapshotId}`, {
                 method: 'DELETE'
             });
 
@@ -166,15 +183,66 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
         }
     };
 
+    const handleChangePage = (_event: unknown, newPage: number) => {
+        setPage(newPage);
+    };
+
+    const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
+
+    // Filter versions based on date range and sort
+    const filteredVersions = useMemo(() => {
+        let filtered = versions;
+
+        // Filter by date from
+        if (dateFrom) {
+            const fromDate = new Date(dateFrom);
+            fromDate.setHours(0, 0, 0, 0);
+            filtered = filtered.filter(version => {
+                const versionDate = new Date(version.snapshotAt);
+                return versionDate >= fromDate;
+            });
+        }
+
+        // Filter by date to
+        if (dateTo) {
+            const toDate = new Date(dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            filtered = filtered.filter(version => {
+                const versionDate = new Date(version.snapshotAt);
+                return versionDate <= toDate;
+            });
+        }
+
+        // Sort by date
+        filtered = [...filtered].sort((a, b) => {
+            const dateA = new Date(a.snapshotAt).getTime();
+            const dateB = new Date(b.snapshotAt).getTime();
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+
+        return filtered;
+    }, [versions, dateFrom, dateTo, sortOrder]);
+
+    // Calculate paginated versions
+    const paginatedVersions = useMemo(() => {
+        return filteredVersions.slice(
+            page * rowsPerPage,
+            page * rowsPerPage + rowsPerPage
+        );
+    }, [filteredVersions, page, rowsPerPage]);
+
     return (
         <Dialog
             open={open}
             onClose={onClose}
-            maxWidth="sm"
+            maxWidth="md"
             fullWidth
             onClick={(e) => e.stopPropagation()}
         >
-            <DialogTitle>
+            <DialogTitle sx={{ pb: 1 }}>
                 <Box display="flex" alignItems="center" justifyContent="space-between">
                     <Typography variant="h6">Cloud Versions: {templateName}</Typography>
                     <IconButton onClick={onClose} size="small">
@@ -182,7 +250,8 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
                     </IconButton>
                 </Box>
             </DialogTitle>
-            <DialogContent>
+            <DialogContent dividers>
+                <Box sx={{ p: 3 }}>
                 {!hasProLicense ? (
                     <Box textAlign="center" py={4} px={2}>
                         <LockIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
@@ -240,51 +309,174 @@ const FrameEngine_CloudVersionsModal: React.FC<CloudVersionsModalProps> = ({
                         </Typography>
                     </Box>
                 ) : (
-                    <List>
-                        {versions.map((version) => (
-                            <ListItem key={version.id} divider disablePadding={false}>
-                                <ListItemText
-                                    primary={new Date(version.snapshotAt).toLocaleString()}
-                                    secondary={version.templateName}
-                                />
-                                <ListItemSecondaryAction>
-                                    <Tooltip title="Download this version">
-                                        <IconButton
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownload(version.id, version.templateName);
-                                            }}
-                                            disabled={downloadingId !== null || deletingId !== null}
+                    <>
+                        {/* Date Range Filter */}
+                        <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+                            <TextField
+                                label="From Date"
+                                type="date"
+                                size="small"
+                                value={dateFrom}
+                                onChange={(e) => {
+                                    setDateFrom(e.target.value);
+                                    setPage(0);
+                                }}
+                                InputLabelProps={{
+                                    shrink: true,
+                                }}
+                                sx={{ width: 200 }}
+                            />
+                            <TextField
+                                label="To Date"
+                                type="date"
+                                size="small"
+                                value={dateTo}
+                                onChange={(e) => {
+                                    setDateTo(e.target.value);
+                                    setPage(0);
+                                }}
+                                InputLabelProps={{
+                                    shrink: true,
+                                }}
+                                sx={{ width: 200 }}
+                            />
+                            <Button
+                                size="small"
+                                onClick={() => {
+                                    setDateFrom('');
+                                    setDateTo('');
+                                    setPage(0);
+                                }}
+                                variant="outlined"
+                                disabled={!dateFrom && !dateTo}
+                                sx={{ minWidth: 80 }}
+                            >
+                                Clear
+                            </Button>
+                        </Box>
+
+                        {/* Table */}
+                        <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 400 }}>
+                            <Table size="small" stickyHeader>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell
+                                            sx={{ cursor: 'pointer', userSelect: 'none' }}
+                                            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
                                         >
-                                            {downloadingId === version.id ? (
-                                                <CircularProgress size={24} />
-                                            ) : (
-                                                <DownloadIcon />
-                                            )}
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Delete this version">
-                                        <IconButton
-                                            edge="end"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDelete(version.id);
-                                            }}
-                                            disabled={downloadingId !== null || deletingId !== null}
-                                            color="error"
-                                        >
-                                            {deletingId === version.id ? (
-                                                <CircularProgress size={24} />
-                                            ) : (
-                                                <DeleteIcon />
-                                            )}
-                                        </IconButton>
-                                    </Tooltip>
-                                </ListItemSecondaryAction>
-                            </ListItem>
-                        ))}
-                    </List>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                Date & Time
+                                                {sortOrder === 'desc' ? (
+                                                    <ArrowDownwardIcon fontSize="small" />
+                                                ) : (
+                                                    <ArrowUpwardIcon fontSize="small" />
+                                                )}
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>Template Name</TableCell>
+                                        <TableCell align="center">Status</TableCell>
+                                        <TableCell align="right">Actions</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {paginatedVersions.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={4} align="center">
+                                                <Typography variant="body2" color="text.secondary" py={3}>
+                                                    No versions match your search
+                                                </Typography>
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        paginatedVersions.map((version) => (
+                                            <TableRow key={version.id} hover>
+                                                <TableCell>
+                                                    <Typography variant="body2">
+                                                        {new Date(version.snapshotAt).toLocaleString()}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
+                                                        {version.templateName}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    {version.isBackupSnapshot ? (
+                                                        <Tooltip title="Protected backup snapshot - cannot be deleted">
+                                                            <Chip
+                                                                icon={<LockIcon />}
+                                                                label="Protected"
+                                                                color="warning"
+                                                                size="small"
+                                                            />
+                                                        </Tooltip>
+                                                    ) : (
+                                                        <Chip
+                                                            label="Manual"
+                                                            color="default"
+                                                            size="small"
+                                                        />
+                                                    )}
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                                                        <Tooltip title="Download this version">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDownload(version.id, version.templateName);
+                                                                }}
+                                                                disabled={downloadingId !== null || deletingId !== null}
+                                                            >
+                                                                {downloadingId === version.id ? (
+                                                                    <CircularProgress size={20} />
+                                                                ) : (
+                                                                    <DownloadIcon fontSize="small" />
+                                                                )}
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        {!version.isBackupSnapshot && (
+                                                            <Tooltip title="Delete this version">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDelete(version.id);
+                                                                    }}
+                                                                    disabled={downloadingId !== null || deletingId !== null}
+                                                                    color="error"
+                                                                >
+                                                                    {deletingId === version.id ? (
+                                                                        <CircularProgress size={20} />
+                                                                    ) : (
+                                                                        <DeleteIcon fontSize="small" />
+                                                                    )}
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
+                                                    </Box>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+
+                        {/* Pagination */}
+                        <TablePagination
+                            component="div"
+                            count={filteredVersions.length}
+                            page={page}
+                            onPageChange={handleChangePage}
+                            rowsPerPage={rowsPerPage}
+                            onRowsPerPageChange={handleChangeRowsPerPage}
+                            rowsPerPageOptions={[5, 10, 25, 50]}
+                        />
+                    </>
                 )}
+                </Box>
             </DialogContent>
             <DialogActions>
                 {hasProLicense && (

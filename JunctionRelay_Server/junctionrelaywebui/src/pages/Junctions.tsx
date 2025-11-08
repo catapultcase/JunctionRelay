@@ -38,6 +38,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { useTheme, useMediaQuery } from "@mui/material";
 import { useFeatureFlags } from "../hooks/useFeatureFlags";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Import the JunctionsTable component and its types
 import JunctionsTable, { JunctionColumn, Junction } from "../components/JunctionsTable";
@@ -45,6 +46,8 @@ import AddJunctionModal from "../components/Junction_AddJunctionModal";
 
 // Main Junctions Component following Devices page pattern
 const Junctions = () => {
+    usePageTitle('Junctions');
+
     const [junctions, setJunctions] = useState<Junction[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);

@@ -31,7 +31,8 @@ import {
     MenuItem,
     CircularProgress,
     Alert,
-    Typography
+    Typography,
+    SelectChangeEvent
 } from '@mui/material';
 import { CloudUpload as UploadIcon } from '@mui/icons-material';
 
@@ -201,7 +202,7 @@ const FrameEngine2_AssetSelector: React.FC<FrameEngine2_AssetSelectorProps> = ({
     /**
      * Handle asset selection from dropdown
      */
-    const handleSelect = useCallback((event: any) => {
+    const handleSelect = useCallback((event: SelectChangeEvent<string>) => {
         const newValue = event.target.value;
         onChange(newValue === '' ? null : newValue);
     }, [onChange]);

@@ -351,6 +351,48 @@ namespace JunctionRelayServer.Services
                         ? errorResult.Value.ToString()
                         : "Non-OK response from cloud API";
                     Console.WriteLine($"[CLOUD_AUTH] Backend token validation FAILED for user: {userId}, StatusCode: {statusCode}");
+
+                    // If validation failed with 401/400, the token is invalid (likely due to cloud redeploy)
+                    // Invalidate the cached token and retry once with a fresh token
+                    if (statusCode == 401 || statusCode == 400)
+                    {
+                        Console.WriteLine($"[CLOUD_AUTH] Token rejected by cloud (status {statusCode}), invalidating and retrying with refresh...");
+                        _cloudSessionStore.InvalidateAccessToken();
+
+                        // Retry once with fresh token
+                        var freshToken = await _cloudSessionStore.GetValidAccessTokenAsync();
+                        if (!string.IsNullOrEmpty(freshToken))
+                        {
+                            Console.WriteLine("[CLOUD_AUTH] Retrying validation with refreshed token...");
+                            var retryResult = await ValidateBackendTokenAsync(freshToken);
+
+                            if (retryResult is OkObjectResult retryOk && retryOk.Value is JsonElement retryInfo)
+                            {
+                                Console.WriteLine($"[CLOUD_AUTH] RETRY SUCCESS - Backend token validated after refresh");
+                                _authLogger.LogBackendValidation(userId, success: true);
+                                _authLogger.LogBackendAuthStatus(isAuthenticated: true, userId: userId);
+                                return new OkObjectResult(new
+                                {
+                                    authMode = "cloud",
+                                    isAuthenticated = true,
+                                    user = retryInfo.TryGetProperty("email", out var email) ? email.GetString() : userId,
+                                    hasValidLicense = retryInfo.TryGetProperty("hasValidLicense", out var license) && license.GetBoolean(),
+                                    licenseType = retryInfo.TryGetProperty("hasValidLicense", out var lic) && lic.GetBoolean() ? "Pro" : "Cloud",
+                                    backendAuthenticated = true,
+                                    profileImageUrl = retryInfo.TryGetProperty("profileImageUrl", out var imgUrl) ? imgUrl.GetString() : null
+                                });
+                            }
+                            else
+                            {
+                                Console.WriteLine("[CLOUD_AUTH] RETRY FAILED - Token still invalid after refresh");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("[CLOUD_AUTH] Failed to get fresh token for retry");
+                        }
+                    }
+
                     _authLogger.LogBackendValidation(userId, success: false, statusCode: statusCode, errorMessage: errorMsg);
                     _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: userId);
                     return new OkObjectResult(new

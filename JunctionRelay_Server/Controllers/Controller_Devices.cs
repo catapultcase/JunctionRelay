@@ -877,10 +877,10 @@ namespace JunctionRelayServer.Controllers
             if (existing == null || existing.DeviceId != deviceId)
                 return NotFound("Screen not found for this device.");
 
-            // Update fields if new values are provided
+            // Update fields - allow clearing layout IDs by setting to null
             existing.DisplayName = updated.DisplayName ?? existing.DisplayName;
-            existing.ScreenLayoutId = updated.ScreenLayoutId ?? existing.ScreenLayoutId;
-            existing.FrameLayoutId = updated.FrameLayoutId ?? existing.FrameLayoutId;
+            existing.ScreenLayoutId = updated.ScreenLayoutId; // Allow null to clear selection
+            existing.FrameLayoutId = updated.FrameLayoutId; // Allow null to clear selection
             existing.SupportsConfigPayloads = updated.SupportsConfigPayloads ?? existing.SupportsConfigPayloads;
             existing.SupportsSensorPayloads = updated.SupportsSensorPayloads ?? existing.SupportsSensorPayloads;
 

@@ -35,6 +35,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CodeIcon from '@mui/icons-material/Code';
 import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Import the StreamHistory component
 import StreamHistory from '../components/StreamHistory';
@@ -140,6 +141,7 @@ interface StreamData {
 }
 
 const Streams: React.FC = () => {
+    usePageTitle('Streams');
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 

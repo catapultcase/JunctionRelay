@@ -153,8 +153,8 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         displayName: screen.displayName,
-                        screenLayoutId: screen.screenLayoutId,
-                        frameLayoutId: screen.frameLayoutId,
+                        screenLayoutId: screen.screenLayoutId || null,
+                        frameLayoutId: screen.frameLayoutId || null,
                         supportsConfigPayloads: screen.supportsConfigPayloads,
                         supportsSensorPayloads: screen.supportsSensorPayloads,
                         supportsStopPayloads: screen.supportsStopPayloads
@@ -515,6 +515,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                             }
                                         }}
                                     >
+                                        <MenuItem value="">None</MenuItem>
                                         {layoutTemplates.map((t: any) => (
                                             <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                                         ))}
@@ -537,6 +538,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                             }
                                         }}
                                     >
+                                        <MenuItem value="">None</MenuItem>
                                         {frameTemplates.map((t: any) => (
                                             <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                                         ))}
@@ -736,6 +738,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                             value={screen.screenLayoutId || ""}
                                             onChange={handleScreenSelectChange(screen.id, 'screenLayoutId')}
                                         >
+                                            <MenuItem value="">None</MenuItem>
                                             {layoutTemplates.map((t: any) => (
                                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                                             ))}
@@ -748,6 +751,7 @@ const DeviceScreensPanel: React.FC<DeviceScreensPanelProps> = ({
                                             value={screen.frameLayoutId || ""}
                                             onChange={handleScreenSelectChange(screen.id, 'frameLayoutId')}
                                         >
+                                            <MenuItem value="">None</MenuItem>
                                             {frameTemplates.map((t: any) => (
                                                 <MenuItem key={t.id} value={t.id}>{t.displayName}</MenuItem>
                                             ))}

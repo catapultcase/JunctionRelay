@@ -49,6 +49,7 @@ const FrameEngine2_SensorDebugPanel: React.FC<FrameEngine2_SensorDebugPanelProps
 
     /**
      * Format value for display
+     * @param value - Sensor value (legitimately `any` - sensor data types are dynamic and unknown at compile time)
      */
     const formatValue = (value: any): string => {
         if (value === null || value === undefined) return 'null';

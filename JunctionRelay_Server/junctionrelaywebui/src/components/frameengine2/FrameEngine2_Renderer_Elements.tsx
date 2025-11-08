@@ -27,6 +27,8 @@ import type {
     DiscoveredRiveStateMachine,
     DiscoveredRiveDataBinding
 } from './types/FrameEngine2_ElementTypes';
+import { hasSensorTag, getSensorTag } from './types/FrameEngine2_TypeGuards';
+import { deepEqual } from '../../utils/deepEqual';
 import FrameEngine2_Element_Sensor from './elements/FrameEngine2_Element_Sensor';
 import FrameEngine2_Element_Text from './elements/FrameEngine2_Element_Text';
 import FrameEngine2_Element_TimeDate from './elements/FrameEngine2_Element_TimeDate';
@@ -118,9 +120,8 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
      */
     const elementSpecificResolvedValues = useMemo(() => {
         // Sensor, gauge, and ECG elements only need their specific sensor tag
-        if (element.type === 'sensor' || element.type === 'gauge' || element.type === 'ecg') {
-            // Type assertion needed because TypeScript doesn't narrow discriminated unions automatically
-            const sensorTag = (element.properties as any).sensorTag;
+        if (hasSensorTag(element)) {
+            const sensorTag = getSensorTag(element);
             if (sensorTag) {
                 const sensorValue = resolvedValues[sensorTag];
                 // Return object with only this sensor to maintain component interface
@@ -144,12 +145,16 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
 
     /**
      * Stable reference for element properties
-     * OPTIMIZATION: Only changes when properties actually change (deep comparison via JSON)
+     * OPTIMIZATION: Only changes when properties actually change (deep comparison)
+     * Uses deepEqual instead of JSON.stringify for better performance
      */
-    const propertiesHash = useMemo(() =>
-        JSON.stringify(element.properties),
-        [element.properties]
-    );
+    const propertiesRef = useRef(element.properties);
+    const stableProperties = useMemo(() => {
+        if (!deepEqual(propertiesRef.current, element.properties)) {
+            propertiesRef.current = element.properties;
+        }
+        return propertiesRef.current;
+    }, [element.properties]);
 
     /**
      * Render the appropriate element component based on type
@@ -227,11 +232,6 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                 );
 
             case 'media-rive':
-                console.log('[Renderer] media-rive props', {
-                    id: element.id,
-                    riveBindings: element.properties?.riveBindings,
-                    riveInputs: element.properties?.riveInputs,
-                });
                 return (
                     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#f5f5f5' }} />}>
                         <FrameEngine2_Element_MediaRive
@@ -277,9 +277,10 @@ const FrameEngine2_Renderer_Elements: React.FC<FrameEngine2_Renderer_ElementsPro
                     </div>
                 );
         }
-    // OPTIMIZED: Use propertiesHash for stable reference and elementSpecificResolvedValues to prevent re-renders on unrelated sensor changes
+    // OPTIMIZED: Use stableProperties for stable reference and elementSpecificResolvedValues to prevent re-renders on unrelated sensor changes
+    // stableProperties only changes when properties content actually changes (deep equality check with deepEqual)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [element.type, propertiesHash, element.width, element.height, element.id, elementSpecificResolvedValues, showPlaceholders, elementPadding, onRiveDiscovery]);
+    }, [element.type, stableProperties, element.width, element.height, element.id, elementSpecificResolvedValues, showPlaceholders, elementPadding, onRiveDiscovery]);
 
     /**
      * Handle click - select element

@@ -36,6 +36,7 @@ interface ColorInputProps {
     value: string;
     onChange: (value: string) => void;
     error?: boolean;
+    disabled?: boolean;
 }
 
 /**
@@ -45,7 +46,8 @@ export const ColorInput: React.FC<ColorInputProps> = React.memo(({
     label,
     value,
     onChange,
-    error = false
+    error = false,
+    disabled = false
 }) => {
     const currentValue = value ?? '#ffffff';
     const colorPicker = useColorPicker();
@@ -58,12 +60,14 @@ export const ColorInput: React.FC<ColorInputProps> = React.memo(({
         return currentValue;
     };
 
-    // Open the global color picker using context
+    // Open the global color picker using context (only if not disabled)
     const handleSwatchClick = useCallback(() => {
-        colorPicker.open(currentValue, (newColor: string) => {
-            onChange(newColor);
-        });
-    }, [colorPicker, currentValue, onChange]);
+        if (!disabled) {
+            colorPicker.open(currentValue, (newColor: string) => {
+                onChange(newColor);
+            });
+        }
+    }, [colorPicker, currentValue, onChange, disabled]);
 
     return (
         <Box sx={{ mb: 1 }}>
@@ -85,7 +89,9 @@ export const ColorInput: React.FC<ColorInputProps> = React.memo(({
                             : 'none',
                         backgroundSize: '8px 8px',
                         backgroundPosition: '0 0, 4px 4px',
-                        '&:hover': {
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled ? 0.5 : 1,
+                        '&:hover': disabled ? {} : {
                             opacity: 0.8
                         }
                     }}
@@ -98,6 +104,7 @@ export const ColorInput: React.FC<ColorInputProps> = React.memo(({
                     value={currentValue}
                     onChange={(e) => onChange(e.target.value)}
                     error={error}
+                    disabled={disabled}
                     sx={{ fontFamily: 'monospace' }}
                 />
             </Box>
@@ -264,6 +271,7 @@ TypographyControls.displayName = 'TypographyControls';
 /**
  * Hook to create property update function
  * Handles both top-level (x, y) and nested (properties.text) updates
+ * @param value - Property value (legitimately `any` - different properties have different types)
  */
 export const usePropertyUpdate = (
     selectedElement: PlacedElement,
@@ -273,12 +281,15 @@ export const usePropertyUpdate = (
         if (propertyPath.includes('.')) {
             // Nested property (e.g., "properties.text")
             const [parent, key] = propertyPath.split('.');
-            onUpdateElement(selectedElement.id, {
-                [parent]: {
-                    ...selectedElement[parent as keyof PlacedElement] as any,
-                    [key]: value
-                }
-            });
+            // All PlacedElement variants have a 'properties' field
+            if (parent === 'properties') {
+                onUpdateElement(selectedElement.id, {
+                    properties: {
+                        ...selectedElement.properties,
+                        [key]: value
+                    }
+                } as Partial<PlacedElement>);
+            }
         } else {
             // Top-level property (e.g., "x", "y")
             onUpdateElement(selectedElement.id, { [propertyPath]: value });
@@ -289,14 +300,18 @@ export const usePropertyUpdate = (
 /**
  * Hook to get property value with default
  * Supports both top-level and nested properties
+ * @param defaultValue - Default value if property doesn't exist (legitimately `any` - properties have varying types)
  */
 export const usePropertyValue = (selectedElement: PlacedElement) => {
     return useCallback((propertyPath: string, defaultValue: any = '') => {
         if (propertyPath.includes('.')) {
             // Nested property (e.g., "properties.text")
             const [parent, key] = propertyPath.split('.');
-            const parentObj = selectedElement[parent as keyof PlacedElement] as any;
-            return parentObj?.[key] ?? defaultValue;
+            // All PlacedElement variants have a 'properties' field
+            if (parent === 'properties') {
+                return (selectedElement.properties as Record<string, any>)?.[key] ?? defaultValue;
+            }
+            return defaultValue;
         } else {
             // Top-level property (e.g., "x", "y")
             return selectedElement[propertyPath as keyof PlacedElement] ?? defaultValue;
@@ -307,6 +322,7 @@ export const usePropertyValue = (selectedElement: PlacedElement) => {
 /**
  * Common property update function for properties object
  * Shorthand for updating element.properties.* values
+ * @param value - Property value (legitimately `any` - different properties have different types)
  */
 export const usePropertiesUpdate = (
     selectedElement: PlacedElement,

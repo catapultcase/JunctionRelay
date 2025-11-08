@@ -130,6 +130,50 @@ namespace JunctionRelayServer.Controllers
             }
         }
 
+        // Add multiple sensors to a collector in bulk
+        [HttpPost("collectors/{collectorId}/bulk")]
+        public async Task<IActionResult> AddSensorsToCollectorBulk(int collectorId, [FromBody] List<Model_Sensor> newSensors)
+        {
+            try
+            {
+                // Validate the sensor list
+                if (newSensors == null || newSensors.Count == 0)
+                {
+                    return BadRequest("Sensor list cannot be empty.");
+                }
+
+                // Filter out invalid sensors (match original behavior - skip invalid, don't fail)
+                var validSensors = newSensors
+                    .Where(sensor => !string.IsNullOrEmpty(sensor.Name) && !string.IsNullOrEmpty(sensor.SensorType))
+                    .ToList();
+
+                var skippedCount = newSensors.Count - validSensors.Count;
+
+                // If no valid sensors, return error
+                if (validSensors.Count == 0)
+                {
+                    return BadRequest("No valid sensors to add. All sensors must have Name and SensorType.");
+                }
+
+                // Add valid sensors to the collector via the service
+                var addedSensors = await _sensorManager.AddSensorsToCollectorBulkAsync(collectorId, validSensors);
+
+                return Ok(new {
+                    message = skippedCount > 0
+                        ? $"Successfully added {addedSensors.Count} sensors. Skipped {skippedCount} invalid sensors."
+                        : $"Successfully added {addedSensors.Count} sensors.",
+                    totalRequested = newSensors.Count,
+                    successCount = addedSensors.Count,
+                    skippedCount = skippedCount,
+                    sensors = addedSensors
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
         // Create custom Junction 
 
         [HttpPost("junction-sensors/{junctionId}/custom")]

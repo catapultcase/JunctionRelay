@@ -74,8 +74,10 @@ import AppsIcon from '@mui/icons-material/Apps';
 import GridViewIcon from '@mui/icons-material/GridView';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import SetupInstructions_Payloads from '../components/SetupInstructions_Payloads';
 import { useTheme, useMediaQuery } from "@mui/material";
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Types
 type ViewMode = 'table' | 'standard' | 'mini';
@@ -96,6 +98,29 @@ interface PayloadColumn {
     label: string;
     align: "left" | "right" | "center" | "inherit" | "justify";
     sortable?: boolean;
+}
+
+interface Junction {
+    junctionId: number;
+    junctionName: string;
+    layoutIds: {
+        frameLayoutId?: number;
+        screenLayoutId?: number;
+    }[];
+}
+
+interface DeviceScreenDefault {
+    deviceId: number;
+    deviceName: string;
+    screenKey: string;
+    screenDisplayName: string;
+    frameLayoutId?: number;
+    screenLayoutId?: number;
+}
+
+interface LayoutUsageResponse {
+    junctionUsages: Junction[];
+    deviceScreenDefaults: DeviceScreenDefault[];
 }
 
 // Storage keys
@@ -138,15 +163,36 @@ const PayloadCard = memo(({
     onDelete,
     onEdit,
     onClone,
+    junctions,
+    deviceScreenDefaults,
 }: {
     payload: LayoutListItem,
     viewMode: 'standard' | 'mini',
     onDelete: (e: React.MouseEvent, id: string) => void,
     onEdit: (e: React.MouseEvent, payload: LayoutListItem) => void,
     onClone: (e: React.MouseEvent, payload: LayoutListItem) => void,
+    junctions: Junction[],
+    deviceScreenDefaults: DeviceScreenDefault[],
 }) => {
     const navigate = useNavigate();
     const typeInfo = getPayloadTypeInfo(payload.layoutType);
+
+    // Find junctions that use this screen layout
+    const usedByJunctions = junctions.filter(junction => {
+        return junction.layoutIds.some(layoutIdPair => {
+            const layoutId = layoutIdPair.screenLayoutId;
+            return layoutId && String(layoutId) === String(payload.id);
+        });
+    });
+
+    // Find device screens that have this layout as default
+    const deviceScreensUsingAsDefault = deviceScreenDefaults.filter(ds => {
+        const layoutId = ds.screenLayoutId;
+        return layoutId && String(layoutId) === String(payload.id);
+    });
+
+    // Check if layout is in use (by junctions or as device screen default)
+    const isInUse = usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0;
 
     const getCardHeight = () => {
         return viewMode === 'mini' ? 120 : 220;
@@ -271,56 +317,137 @@ const PayloadCard = memo(({
                         />
                     </Box>
                 </Box>
-
-                {/* Action Buttons for standard view */}
-                {viewMode === 'standard' && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        {!payload.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEdit(e, payload);
-                                    }}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <Tooltip title="Clone">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClone(e, payload);
-                                }}
-                            >
-                                <ContentCopyIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        {!payload.isTemplate && (
-                            <Tooltip title="Delete">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(e, payload.id);
-                                    }}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
-                )}
             </CardContent>
+
+            {/* Action Buttons at Bottom - Outside CardContent */}
+            <Box sx={{
+                p: viewMode === 'mini' ? 0.5 : 1,
+                pt: 0,
+                display: 'flex',
+                gap: viewMode === 'mini' ? 0.5 : 1
+            }}>
+                <Tooltip title="Edit">
+                    <IconButton
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(e, payload);
+                        }}
+                        sx={{
+                            padding: viewMode === 'mini' ? '4px' : '6px',
+                            border: '1px solid',
+                            borderColor: 'primary.main',
+                            color: 'primary.main',
+                            '&:hover': {
+                                backgroundColor: 'primary.main',
+                                color: 'primary.contrastText'
+                            }
+                        }}
+                    >
+                        <EditIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title="Clone">
+                    <IconButton
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClone(e, payload);
+                        }}
+                        sx={{
+                            padding: viewMode === 'mini' ? '4px' : '6px',
+                            border: '1px solid',
+                            borderColor: 'secondary.main',
+                            color: 'secondary.main',
+                            '&:hover': {
+                                backgroundColor: 'secondary.main',
+                                color: 'secondary.contrastText'
+                            }
+                        }}
+                    >
+                        <ContentCopyIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={isInUse ? "Cannot delete - layout is in use" : "Delete"}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            disabled={isInUse}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isInUse) {
+                                    onDelete(e, payload.id);
+                                }
+                            }}
+                            sx={{
+                                padding: viewMode === 'mini' ? '4px' : '6px',
+                                border: '1px solid',
+                                borderColor: 'error.main',
+                                color: 'error.main',
+                                '&:hover': {
+                                    backgroundColor: 'error.main',
+                                    color: 'error.contrastText'
+                                }
+                            }}
+                        >
+                            <DeleteIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                {/* In Use Indicator - show next to delete button */}
+                {isInUse && (
+                    <Tooltip
+                        title={
+                            <Box>
+                                {usedByJunctions.length > 0 && (
+                                    <>
+                                        <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                                            Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
+                                        </Typography>
+                                        {usedByJunctions.map(j => (
+                                            <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                • {j.junctionName}
+                                            </Typography>
+                                        ))}
+                                    </>
+                                )}
+                                {deviceScreensUsingAsDefault.length > 0 && (
+                                    <>
+                                        <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
+                                            Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
+                                        </Typography>
+                                        {deviceScreensUsingAsDefault.map(ds => (
+                                            <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                • {ds.deviceName}, {ds.screenDisplayName}
+                                            </Typography>
+                                        ))}
+                                    </>
+                                )}
+                            </Box>
+                        }
+                    >
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                            }}
+                            sx={{
+                                padding: viewMode === 'mini' ? '4px' : '6px',
+                                border: '1px solid',
+                                borderColor: 'success.main',
+                                color: 'success.main',
+                                '&:hover': {
+                                    backgroundColor: 'success.main',
+                                    color: 'success.contrastText'
+                                }
+                            }}
+                        >
+                            <AccountTreeIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Box>
         </Card>
     );
 });
@@ -333,6 +460,8 @@ const PayloadTableRow = memo(({
     onDelete,
     onEdit,
     onClone,
+    junctions,
+    deviceScreenDefaults,
 }: {
     payload: LayoutListItem,
     visibleCols: string[],
@@ -340,8 +469,27 @@ const PayloadTableRow = memo(({
     onDelete: (e: React.MouseEvent, id: string) => void,
     onEdit: (e: React.MouseEvent, payload: LayoutListItem) => void,
     onClone: (e: React.MouseEvent, payload: LayoutListItem) => void,
+    junctions: Junction[],
+    deviceScreenDefaults: DeviceScreenDefault[],
 }) => {
     const navigate = useNavigate();
+
+    // Find junctions that use this screen layout
+    const usedByJunctions = junctions.filter(junction => {
+        return junction.layoutIds.some(layoutIdPair => {
+            const layoutId = layoutIdPair.screenLayoutId;
+            return layoutId && String(layoutId) === String(payload.id);
+        });
+    });
+
+    // Find device screens that have this layout as default
+    const deviceScreensUsingAsDefault = deviceScreenDefaults.filter(ds => {
+        const layoutId = ds.screenLayoutId;
+        return layoutId && String(layoutId) === String(payload.id);
+    });
+
+    // Check if layout is in use (by junctions or as device screen default)
+    const isInUse = usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0;
 
     const getPayloadCell = useCallback((field: string) => {
         switch (field) {
@@ -378,16 +526,14 @@ const PayloadTableRow = memo(({
             case "actions":
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                        {!payload.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => onEdit(e, payload)}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                        <Tooltip title="Edit">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => onEdit(e, payload)}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Clone">
                             <IconButton
                                 size="small"
@@ -396,13 +542,70 @@ const PayloadTableRow = memo(({
                                 <ContentCopyIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
-                        {!payload.isTemplate && (
-                            <Tooltip title="Delete">
+                        <Tooltip title={isInUse ? "Cannot delete - layout is in use" : "Delete"}>
+                            <span>
                                 <IconButton
                                     size="small"
-                                    onClick={(e) => onDelete(e, payload.id)}
+                                    disabled={isInUse}
+                                    onClick={(e) => {
+                                        if (!isInUse) {
+                                            onDelete(e, payload.id);
+                                        }
+                                    }}
                                 >
                                     <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        {/* In Use Indicator - show next to delete button */}
+                        {isInUse && (
+                            <Tooltip
+                                title={
+                                    <Box>
+                                        {usedByJunctions.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                                                    Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {usedByJunctions.map(j => (
+                                                    <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {j.junctionName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                        {deviceScreensUsingAsDefault.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
+                                                    Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {deviceScreensUsingAsDefault.map(ds => (
+                                                    <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {ds.deviceName}, {ds.screenDisplayName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                    </Box>
+                                }
+                            >
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                    }}
+                                    sx={{
+                                        color: 'success.main',
+                                        border: '1px solid',
+                                        borderColor: 'success.main',
+                                        '&:hover': {
+                                            backgroundColor: 'success.light',
+                                            borderColor: 'success.main'
+                                        }
+                                    }}
+                                >
+                                    <AccountTreeIcon fontSize="small" />
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -411,7 +614,7 @@ const PayloadTableRow = memo(({
             default:
                 return payload[field as keyof LayoutListItem] || "-";
         }
-    }, [payload, onDelete, onEdit, onClone]);
+    }, [payload, onDelete, onEdit, onClone, isInUse]);
 
     return (
         <TableRow
@@ -864,12 +1067,16 @@ const AddLayoutModal: React.FC<{
 
 // Main Payloads Component
 const Payloads = () => {
+    usePageTitle('Payloads');
+
     const [layouts, setLayouts] = useState<LayoutListItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [resetLoading, setResetLoading] = useState<boolean>(false);
     const [addLayoutModalOpen, setAddLayoutModalOpen] = useState<boolean>(false);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
     const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning" | "error">("success");
+    const [junctions, setJunctions] = useState<Junction[]>([]);
+    const [deviceScreenDefaults, setDeviceScreenDefaults] = useState<DeviceScreenDefault[]>([]);
 
     // View mode and table management state
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -936,6 +1143,24 @@ const Payloads = () => {
 
     useEffect(() => {
         fetchLayouts();
+    }, []);
+
+    // Fetch layout usage on mount
+    useEffect(() => {
+        const fetchLayoutUsage = async () => {
+            try {
+                const response = await fetch('/api/junctions/layout-usage');
+                if (response.ok) {
+                    const data: LayoutUsageResponse = await response.json();
+                    setJunctions(data.junctionUsages);
+                    setDeviceScreenDefaults(data.deviceScreenDefaults);
+                }
+            } catch (error) {
+                console.error('Error fetching layout usage:', error);
+            }
+        };
+
+        fetchLayoutUsage();
     }, []);
 
     // Listen for view mode changes from bottom action bar (mobile only) 
@@ -1383,6 +1608,8 @@ const Payloads = () => {
                                         onDelete={handleDelete}
                                         onEdit={handleEdit}
                                         onClone={handleClone}
+                                        junctions={junctions}
+                                        deviceScreenDefaults={deviceScreenDefaults}
                                     />
                                 ))
                             ) : (
@@ -1412,6 +1639,8 @@ const Payloads = () => {
                                 onDelete={handleDelete}
                                 onEdit={handleEdit}
                                 onClone={handleClone}
+                                junctions={junctions}
+                                deviceScreenDefaults={deviceScreenDefaults}
                             />
                         ))
                     ) : (

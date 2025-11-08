@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ import {
     Divider
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Import icons
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -131,6 +132,9 @@ const ConfigureLayout: React.FC = () => {
 
     const [loading, setLoading] = useState<boolean>(true);
     const [layoutData, setLayoutData] = useState<any>(null);
+
+    // Set page title dynamically based on layout display name
+    usePageTitle(layoutData?.displayName || 'Payload Layout');
 
     // Basic Info
     const [displayName, setDisplayName] = useState<string>("");

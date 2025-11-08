@@ -110,6 +110,54 @@ SELECT last_insert_rowid();";
             return newSensor;
         }
 
+        // Add multiple sensors to the database in bulk
+        public async Task<List<Model_Sensor>> AddSensorsBulkAsync(List<Model_Sensor> newSensors)
+        {
+            if (newSensors == null || newSensors.Count == 0)
+                return new List<Model_Sensor>();
+
+            var addedSensors = new List<Model_Sensor>();
+            var now = DateTime.UtcNow;
+
+            // Prepare the SQL statement (same as AddSensorAsync)
+            var sql = @"
+INSERT INTO Sensors (
+    Name, SensorType, Value, DecimalPlaces, ComponentName, Unit, DeviceId, ServiceId, CollectorId, ExternalId, SensorTag, Category, DeviceName, LastUpdated,
+    MQTTTopic, MQTTServiceId, MQTTQoS, Formula, IsMissing, IsStale, IsSelected, IsVisible, IsCustomJunctionSensor, IsEventSensor, SensorOrder, JunctionId, JunctionDeviceLinkId, JunctionCollectorLinkId,
+    CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8, CustomAttribute9, CustomAttribute10
+)
+VALUES (
+    @Name, @SensorType, @Value, @DecimalPlaces, @ComponentName, @Unit, @DeviceId, @ServiceId, @CollectorId, @ExternalId, @SensorTag, @Category, @DeviceName, @LastUpdated,
+    @MQTTTopic, @MQTTServiceId, @MQTTQoS, @Formula, @IsMissing, @IsStale, @IsSelected, @IsVisible, @IsCustomJunctionSensor, @IsEventSensor, @SensorOrder, @JunctionId, @JunctionDeviceLinkId, @JunctionCollectorLinkId,
+    @CustomAttribute1, @CustomAttribute2, @CustomAttribute3, @CustomAttribute4, @CustomAttribute5, @CustomAttribute6, @CustomAttribute7, @CustomAttribute8, @CustomAttribute9, @CustomAttribute10
+);
+SELECT last_insert_rowid();";
+
+            // Use a transaction for all inserts
+            using (var transaction = _db.BeginTransaction())
+            {
+                try
+                {
+                    foreach (var sensor in newSensors)
+                    {
+                        sensor.LastUpdated = now;
+                        int newId = await _db.ExecuteScalarAsync<int>(sql, sensor, transaction);
+                        sensor.Id = newId;
+                        addedSensors.Add(sensor);
+                    }
+
+                    transaction.Commit();
+                }
+                catch
+                {
+                    transaction.Rollback();
+                    throw;
+                }
+            }
+
+            return addedSensors;
+        }
+
         // Add Custom Junction Sensor
 
         public async Task<Model_Sensor> CreateCustomJunctionSensorAsync(int junctionId, Model_Sensor customSensor)
@@ -508,7 +556,14 @@ INSERT INTO JunctionSensors (
         {
             const string sql = @"
         INSERT INTO JunctionSensorTargets (JunctionId, SensorId, DeviceId, ScreenId)
-        VALUES (@JunctionId, @SensorId, @DeviceId, @ScreenId);";
+        SELECT @JunctionId, @SensorId, @DeviceId, @ScreenId
+        WHERE NOT EXISTS (
+            SELECT 1 FROM JunctionSensorTargets
+            WHERE JunctionId = @JunctionId
+                AND SensorId = @SensorId
+                AND DeviceId = @DeviceId
+                AND (ScreenId = @ScreenId OR (ScreenId IS NULL AND @ScreenId IS NULL))
+        );";
 
             await _db.ExecuteAsync(sql, new
             {
@@ -582,14 +637,17 @@ INSERT INTO JunctionSensors (
 
         public async Task AddScreenToJunctionSensorTargetAsync(int junctionId, int sensorId, int deviceId, int screenId)
         {
-            const string sql = @"
+            // Simply insert a new record for this specific screen
+            // Do not update NULL records - those serve as base target relationships
+            const string insertSql = @"
         INSERT INTO JunctionSensorTargets (JunctionId, SensorId, DeviceId, ScreenId)
         SELECT @JunctionId, @SensorId, @DeviceId, @ScreenId
         WHERE NOT EXISTS (
             SELECT 1 FROM JunctionSensorTargets
             WHERE JunctionId = @JunctionId AND SensorId = @SensorId AND DeviceId = @DeviceId AND ScreenId = @ScreenId
         );";
-            await _db.ExecuteAsync(sql, new { JunctionId = junctionId, SensorId = sensorId, DeviceId = deviceId, ScreenId = screenId });
+
+            await _db.ExecuteAsync(insertSql, new { JunctionId = junctionId, SensorId = sensorId, DeviceId = deviceId, ScreenId = screenId });
         }
 
         public async Task RemoveScreenFromJunctionSensorTargetAsync(int junctionId, int sensorId, int deviceId, int screenId)

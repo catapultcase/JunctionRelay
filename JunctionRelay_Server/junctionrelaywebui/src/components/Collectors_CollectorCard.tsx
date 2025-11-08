@@ -253,30 +253,19 @@ const CollectorCard = memo(({
                         />
                     </Box>
                 </Box>
+            </CardContent>
 
-                {/* Action Buttons for standard view - Hidden for FrameEngine */}
-                {viewMode === 'standard' && !isFrameEngine && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        {onTest && (
-                            <Tooltip title="Test Connection">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onTest(e, collector.id);
-                                    }}
-                                    color="secondary"
-                                >
-                                    <BiotechIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+            {/* Action Buttons at Bottom - Outside CardContent - Hidden for FrameEngine */}
+            {!isFrameEngine && (
+                <Box sx={{
+                    p: viewMode === 'mini' ? 0.5 : 1,
+                    pt: 0,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: viewMode === 'mini' ? 0.5 : 1
+                }}>
+                    {/* Left side: Management buttons */}
+                    <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
                         <Tooltip title="Edit">
                             <IconButton
                                 size="small"
@@ -286,8 +275,18 @@ const CollectorCard = memo(({
                                 }}
                                 data-collector-id={collector.id}
                                 data-action="edit"
+                                sx={{
+                                    padding: viewMode === 'mini' ? '4px' : '6px',
+                                    border: '1px solid',
+                                    borderColor: 'primary.main',
+                                    color: 'primary.main',
+                                    '&:hover': {
+                                        backgroundColor: 'primary.main',
+                                        color: 'primary.contrastText'
+                                    }
+                                }}
                             >
-                                <EditIcon fontSize="small" />
+                                <EditIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
                             </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete">
@@ -297,20 +296,61 @@ const CollectorCard = memo(({
                                     e.stopPropagation();
                                     onDelete(e, collector.id);
                                 }}
+                                sx={{
+                                    padding: viewMode === 'mini' ? '4px' : '6px',
+                                    border: '1px solid',
+                                    borderColor: 'error.main',
+                                    color: 'error.main',
+                                    '&:hover': {
+                                        backgroundColor: 'error.main',
+                                        color: 'error.contrastText'
+                                    }
+                                }}
                             >
-                                <DeleteIcon fontSize="small" />
+                                <DeleteIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
                             </IconButton>
                         </Tooltip>
                     </Box>
-                )}
 
-                {/* Special notice for FrameEngine in standard view */}
-                {viewMode === 'standard' && isFrameEngine && (
+                    {/* Right side: Primary action (Test) */}
+                    <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                        {onTest && (
+                            <Tooltip title="Test Connection">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onTest(e, collector.id);
+                                    }}
+                                    sx={{
+                                        padding: viewMode === 'mini' ? '4px' : '6px',
+                                        border: '1px solid',
+                                        borderColor: 'secondary.main',
+                                        color: 'secondary.main',
+                                        '&:hover': {
+                                            backgroundColor: 'secondary.main',
+                                            color: 'secondary.contrastText'
+                                        }
+                                    }}
+                                >
+                                    <BiotechIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
+                </Box>
+            )}
+
+            {/* Special notice for FrameEngine in standard view */}
+            {viewMode === 'standard' && isFrameEngine && (
+                <Box sx={{
+                    p: 1,
+                    pt: 0
+                }}>
                     <Box sx={{
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
-                        mt: 1,
                         p: 1,
                         backgroundColor: 'action.hover',
                         borderRadius: 1
@@ -319,8 +359,8 @@ const CollectorCard = memo(({
                             Managed by EventEngine
                         </Typography>
                     </Box>
-                )}
-            </CardContent>
+                </Box>
+            )}
         </Card>
     );
 });

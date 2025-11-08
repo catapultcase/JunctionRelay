@@ -253,6 +253,32 @@ export const updateFrameLayout = async (
 };
 
 /**
+ * Clone frame layout
+ * @param originalId - ID of the layout to clone
+ * @param newName - Optional new name for the cloned layout
+ * @returns ID of the cloned layout
+ */
+export const cloneFrameLayout = async (originalId: string, newName?: string): Promise<number> => {
+    const response = await fetch(`${API_BASE_URL}/clone`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            originalId: parseInt(originalId),
+            newName: newName || null
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to clone layout: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.id;
+};
+
+/**
  * Debounced save function
  * Returns a function that delays execution until after wait milliseconds
  */

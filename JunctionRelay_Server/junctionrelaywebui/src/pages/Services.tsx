@@ -60,6 +60,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import RouterIcon from '@mui/icons-material/Router';
 import ApiIcon from '@mui/icons-material/Api';
 import { useTheme, useMediaQuery } from "@mui/material";
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Import sub-components
 import ServiceCard from '../components/Services_ServiceCard';
@@ -108,6 +109,8 @@ const getServiceTypeInfo = (type: string) => {
 
 // Main Services Component
 const Services = () => {
+    usePageTitle('Services');
+
     const [services, setServices] = useState<any[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);

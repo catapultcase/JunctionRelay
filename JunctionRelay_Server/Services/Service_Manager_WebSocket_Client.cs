@@ -208,7 +208,7 @@ namespace JunctionRelayServer.Services
                     !string.IsNullOrWhiteSpace(d.UniqueIdentifier)
                 ).ToList();
 
-                Console.WriteLine($"[WebSocket Service] Found {webSocketDevices.Count} WebSocket devices for heartbeat discovery");
+                // Console.WriteLine($"[WebSocket Service] Found {webSocketDevices.Count} WebSocket devices for heartbeat discovery");
 
                 foreach (var device in webSocketDevices)
                 {
@@ -337,6 +337,23 @@ namespace JunctionRelayServer.Services
 
                     // Clear any cached connection status
                     _connectionCache.TryRemove(deviceMac, out _);
+
+                    // Send identification message to Virtual Device so it knows not to echo back to us
+                    try
+                    {
+                        var identifyMessage = JsonSerializer.Serialize(new
+                        {
+                            type = "identify",
+                            role = "server"
+                        });
+                        var identifyBytes = Encoding.UTF8.GetBytes(identifyMessage);
+                        await webSocket.SendAsync(new ArraySegment<byte>(identifyBytes), WebSocketMessageType.Text, true, stoppingToken);
+                        Console.WriteLine($"[WebSocket Client] 📤 Sent identification to {device.Name}");
+                    }
+                    catch (Exception identifyEx)
+                    {
+                        Console.WriteLine($"[WebSocket Client] ⚠️ Failed to send identification to {device.Name}: {identifyEx.Message}");
+                    }
 
                     // Start enhanced receive loop
                     connection.ReceiveTask = Task.Run(async () => await ReceiveMessagesAsync(connection, stoppingToken));

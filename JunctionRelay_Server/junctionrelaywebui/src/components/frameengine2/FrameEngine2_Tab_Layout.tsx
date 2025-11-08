@@ -375,7 +375,9 @@ const FrameEngine2_Tab_Layout: React.FC<FrameEngine2_Tab_LayoutProps> = ({
                             <Select
                                 value={layout.backgroundImageFit || 'cover'}
                                 label="Fit Mode"
-                                onChange={(e) => onLayoutUpdate({ backgroundImageFit: e.target.value as any })}
+                                onChange={(e) => onLayoutUpdate({
+                                    backgroundImageFit: e.target.value as 'cover' | 'contain' | 'fill' | 'tile' | 'stretch' | 'none'
+                                })}
                             >
                                 <MenuItem value="cover">Cover</MenuItem>
                                 <MenuItem value="contain">Contain</MenuItem>
@@ -413,7 +415,9 @@ const FrameEngine2_Tab_Layout: React.FC<FrameEngine2_Tab_LayoutProps> = ({
                             <Select
                                 value={layout.backgroundVideoFit || 'cover'}
                                 label="Fit Mode"
-                                onChange={(e) => onLayoutUpdate({ backgroundVideoFit: e.target.value as any })}
+                                onChange={(e) => onLayoutUpdate({
+                                    backgroundVideoFit: e.target.value as 'cover' | 'contain' | 'fill' | 'stretch' | 'none'
+                                })}
                             >
                                 <MenuItem value="cover">Cover</MenuItem>
                                 <MenuItem value="contain">Contain</MenuItem>

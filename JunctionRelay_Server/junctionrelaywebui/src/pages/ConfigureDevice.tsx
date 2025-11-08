@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ import History from '@mui/icons-material/History';
 
 // Import hooks
 import { useAutoSave, useAutoSaveWithChangeDetection } from '../hooks/useAutoSave';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Import sub-components
 import DeviceInfoPanel from '../components/Device_InfoPanel';
@@ -98,6 +99,9 @@ const ConfigureDevice: React.FC = () => {
     // Basic component state
     const [loading, setLoading] = useState<boolean>(true);
     const [deviceData, setDeviceData] = useState<any>(null);
+
+    // Set page title dynamically based on device name
+    usePageTitle(deviceData?.name || 'Device');
     const [originalDeviceData, setOriginalDeviceData] = useState<any>(null);
     const [newSensors, setNewSensors] = useState<any[]>([]);
     const [error, setError] = useState<string>("");

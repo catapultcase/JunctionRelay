@@ -24,6 +24,7 @@ import {
     FormControlLabel, Paper, Chip, AlertColor,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Icon imports
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -39,6 +40,7 @@ import EventEngineEventSensors from '../components/EventEngine_EventSensors';
 
 // Main EventEngine Component
 const EventEngine = () => {
+    usePageTitle('EventEngine');
     const [services, setServices] = useState<any[]>([]);
     const [loadingService, setLoadingService] = useState<boolean>(false);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);

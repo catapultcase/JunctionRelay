@@ -17,7 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useCallback, memo, useMemo } from 'react';
+import React, { useState, useCallback, memo, useMemo, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -65,6 +65,7 @@ import {
     Apps as AppsIcon,
     Extension as ExtensionIcon,
     CloudUpload as CloudUploadIcon,
+    AccountTree as AccountTreeIcon,
 } from '@mui/icons-material';
 import FrameEngine_Gallery from './FrameEngine_Gallery';
 import FrameEngine_CloudVersionsModal from './FrameEngine_CloudVersionsModal';
@@ -84,6 +85,7 @@ interface FrameLayoutListItem {
     hasThumbnail?: boolean;
     thumbnailPath?: string;
     thumbnailGeneratedAt?: string;
+    cloudSnapshotCount?: number;
 }
 
 interface FrameEngineColumn {
@@ -91,6 +93,29 @@ interface FrameEngineColumn {
     label: string;
     align: "left" | "right" | "center" | "inherit" | "justify";
     sortable?: boolean;
+}
+
+interface Junction {
+    junctionId: number;
+    junctionName: string;
+    layoutIds: {
+        frameLayoutId?: number;
+        screenLayoutId?: number;
+    }[];
+}
+
+interface DeviceScreenDefault {
+    deviceId: number;
+    deviceName: string;
+    screenKey: string;
+    screenDisplayName: string;
+    frameLayoutId?: number;
+    screenLayoutId?: number;
+}
+
+interface LayoutUsageResponse {
+    junctionUsages: Junction[];
+    deviceScreenDefaults: DeviceScreenDefault[];
 }
 
 interface FrameEngineListingSectionProps {
@@ -119,6 +144,7 @@ const defaultFrameEngineColumns: FrameEngineColumn[] = [
     { field: "description", label: "Description", align: "left", sortable: true },
     { field: "dimensions", label: "Dimensions", align: "center", sortable: false },
     { field: "thumbnail", label: "Thumbnail", align: "center", sortable: true },
+    { field: "cloudSnapshots", label: "Cloud Snapshots", align: "center", sortable: true },
 ];
 
 // Helper function to get frame layout type info
@@ -147,6 +173,8 @@ const FrameLayoutTableRow = memo(({
     onClone,
     hasProLicense,
     onShowSnackbar,
+    junctions,
+    deviceScreenDefaults,
 }: {
     frameLayout: FrameLayoutListItem,
     visibleCols: string[],
@@ -156,9 +184,28 @@ const FrameLayoutTableRow = memo(({
     onClone: (e: React.MouseEvent, frameLayout: FrameLayoutListItem) => void,
     hasProLicense?: boolean,
     onShowSnackbar?: (message: string, severity?: "success" | "info" | "warning" | "error") => void,
+    junctions: Junction[],
+    deviceScreenDefaults: DeviceScreenDefault[],
 }) => {
     const navigate = useNavigate();
     const [cloudVersionsModalOpen, setCloudVersionsModalOpen] = React.useState(false);
+
+    // Find junctions that use this frame layout
+    const usedByJunctions = junctions.filter(junction => {
+        return junction.layoutIds.some(layoutIdPair => {
+            const layoutId = layoutIdPair.frameLayoutId;
+            return layoutId && String(layoutId) === String(frameLayout.id);
+        });
+    });
+
+    // Find device screens that have this layout as default
+    const deviceScreensUsingAsDefault = deviceScreenDefaults.filter(ds => {
+        const layoutId = ds.frameLayoutId;
+        return layoutId && String(layoutId) === String(frameLayout.id);
+    });
+
+    // Check if layout is in use (by junctions or as device screen default)
+    const isInUse = usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0;
 
     const getFrameLayoutCell = useCallback((field: string) => {
         switch (field) {
@@ -211,19 +258,32 @@ const FrameLayoutTableRow = memo(({
                         sx={{ fontSize: '0.7rem', height: 20 }}
                     />
                 );
+            case "cloudSnapshots":
+                const count = frameLayout.cloudSnapshotCount || 0;
+                return count > 0 ? (
+                    <Chip
+                        icon={<CloudUploadIcon />}
+                        label={count.toString()}
+                        color="info"
+                        size="small"
+                        sx={{ fontSize: '0.75rem', height: 22 }}
+                    />
+                ) : (
+                    <Typography variant="body2" color="text.secondary">
+                        -
+                    </Typography>
+                );
             case "actions":
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Edit">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => onEdit(e, frameLayout)}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                        <Tooltip title="Edit">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => onEdit(e, frameLayout)}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Clone">
                             <IconButton
                                 size="small"
@@ -245,13 +305,70 @@ const FrameLayoutTableRow = memo(({
                                 </IconButton>
                             </Tooltip>
                         )}
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Delete">
+                        <Tooltip title={isInUse ? "Cannot delete - layout is in use" : "Delete"}>
+                            <span>
                                 <IconButton
                                     size="small"
-                                    onClick={(e) => onDelete(e, frameLayout.id)}
+                                    disabled={isInUse}
+                                    onClick={(e) => {
+                                        if (!isInUse) {
+                                            onDelete(e, frameLayout.id);
+                                        }
+                                    }}
                                 >
                                     <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        {/* In Use Indicator - show next to delete button */}
+                        {isInUse && (
+                            <Tooltip
+                                title={
+                                    <Box>
+                                        {usedByJunctions.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                                                    Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {usedByJunctions.map(j => (
+                                                    <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {j.junctionName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                        {deviceScreensUsingAsDefault.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
+                                                    Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {deviceScreensUsingAsDefault.map(ds => (
+                                                    <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {ds.deviceName}, {ds.screenDisplayName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                    </Box>
+                                }
+                            >
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                    }}
+                                    sx={{
+                                        color: 'success.main',
+                                        border: '1px solid',
+                                        borderColor: 'success.main',
+                                        '&:hover': {
+                                            backgroundColor: 'success.light',
+                                            borderColor: 'success.main'
+                                        }
+                                    }}
+                                >
+                                    <AccountTreeIcon fontSize="small" />
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -260,7 +377,7 @@ const FrameLayoutTableRow = memo(({
             default:
                 return frameLayout[field as keyof FrameLayoutListItem] || "-";
         }
-    }, [frameLayout, onDelete, onEdit, onClone]);
+    }, [frameLayout, onDelete, onEdit, onClone, isInUse, usedByJunctions, deviceScreensUsingAsDefault]);
 
     return (
         <>
@@ -286,6 +403,8 @@ const FrameLayoutTableRow = memo(({
                             return { minWidth: 100, width: 100 };
                         case "thumbnail":
                             return { minWidth: 100, width: 100 };
+                        case "cloudSnapshots":
+                            return { minWidth: 130, width: 130 };
                         case "actions":
                             return { minWidth: 140, width: 140 };
                         default:
@@ -343,6 +462,26 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
     hasProLicense = false
 }) => {
     const [anchorCols, setAnchorCols] = useState<HTMLElement | null>(null);
+    const [junctions, setJunctions] = useState<Junction[]>([]);
+    const [deviceScreenDefaults, setDeviceScreenDefaults] = useState<DeviceScreenDefault[]>([]);
+
+    // Fetch layout usage on mount
+    useEffect(() => {
+        const fetchLayoutUsage = async () => {
+            try {
+                const response = await fetch('/api/junctions/layout-usage');
+                if (response.ok) {
+                    const data: LayoutUsageResponse = await response.json();
+                    setJunctions(data.junctionUsages);
+                    setDeviceScreenDefaults(data.deviceScreenDefaults);
+                }
+            } catch (error) {
+                console.error('Error fetching layout usage:', error);
+            }
+        };
+
+        fetchLayoutUsage();
+    }, []);
 
     // Sort frame layouts
     const sortedFrameLayouts = useMemo(() => {
@@ -611,6 +750,8 @@ const FrameEngineListingSection: React.FC<FrameEngineListingSectionProps> = ({
                                         onClone={onClone}
                                         hasProLicense={hasProLicense}
                                         onShowSnackbar={onShowSnackbar}
+                                        junctions={junctions}
+                                        deviceScreenDefaults={deviceScreenDefaults}
                                     />
                                 ))
                             ) : (

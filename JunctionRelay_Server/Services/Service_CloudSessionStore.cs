@@ -215,7 +215,7 @@ namespace JunctionRelayServer.Services
                 // If we have a valid access token, return it
                 if (!string.IsNullOrEmpty(_encryptedAccessToken) &&
                     _tokenExpiryTime.HasValue &&
-                    _tokenExpiryTime.Value > DateTime.UtcNow.AddMinutes(5))
+                    _tokenExpiryTime.Value > DateTime.UtcNow.AddMinutes(2))
                 {
                     // Console.WriteLine("[CLOUD_SESSION] ✅ Using existing valid access token");
                     return _secretsService.DecryptSecret(_encryptedAccessToken);
@@ -312,6 +312,17 @@ namespace JunctionRelayServer.Services
                     Console.WriteLine("[CLOUD_SESSION] 🗑️ Cleared cloud session (in-memory only)");
                     _authLogger.LogBackendAuthStatus(isAuthenticated: false, userId: null);
                 }
+            }
+        }
+
+        public void InvalidateAccessToken()
+        {
+            lock (_lock)
+            {
+                Console.WriteLine("[CLOUD_SESSION] ⚠️ Access token invalidated by cloud validation failure");
+                _encryptedAccessToken = null;
+                _tokenExpiryTime = null;
+                _refreshTask = null; // Clear any pending refresh to allow new one
             }
         }
 

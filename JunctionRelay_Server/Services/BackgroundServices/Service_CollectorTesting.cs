@@ -148,11 +148,11 @@ namespace JunctionRelayServer.Services.BackgroundServices
 
                 if (collectors.Count == 0)
                 {
-                    Console.WriteLine("[COLLECTOR TESTING] ℹ️ No collectors to test");
+                    // Console.WriteLine("[COLLECTOR TESTING] ℹ️ No collectors to test");
                     return;
                 }
 
-                Console.WriteLine($"[COLLECTOR TESTING] 📊 Testing {collectors.Count} collector(s)...");
+                // Console.WriteLine($"[COLLECTOR TESTING] 📊 Testing {collectors.Count} collector(s)...");
 
                 // Create start notification
                 await notificationService.CreateNotificationAsync(
@@ -168,7 +168,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
 
                 var testedCount = collectors.Count(c => c.Status == "Tested");
                 var errorCount = collectors.Count(c => c.Status == "Error");
-                Console.WriteLine($"[COLLECTOR TESTING] 📈 Results: {testedCount} passed, {errorCount} failed");
+                // Console.WriteLine($"[COLLECTOR TESTING] 📈 Results: {testedCount} passed, {errorCount} failed");
 
                 // Create completion notification
                 var completionType = errorCount > 0 ? NotificationType.Warning : NotificationType.Success;
@@ -202,7 +202,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
 
             try
             {
-                Console.WriteLine($"[COLLECTOR TESTING] 🔍 Testing '{collector.Name}' ({collector.CollectorType})...");
+                // Console.WriteLine($"[COLLECTOR TESTING] 🔍 Testing '{collector.Name}' ({collector.CollectorType})...");
 
                 var dataCollector = dataCollectorFactory(collector);
                 dataCollector.ApplyConfiguration(collector);
@@ -261,7 +261,7 @@ namespace JunctionRelayServer.Services.BackgroundServices
                 if (testSuccessful)
                 {
                     errorMessage = "";
-                    Console.WriteLine($"[COLLECTOR TESTING] ✅ '{collector.Name}' passed - {sensors!.Count} sensors found");
+                    // Console.WriteLine($"[COLLECTOR TESTING] ✅ '{collector.Name}' passed - {sensors!.Count} sensors found");
                 }
 
                 await collectorDb.UpdateLastTestedAsync(collector.Id, DateTime.UtcNow);
@@ -278,8 +278,8 @@ namespace JunctionRelayServer.Services.BackgroundServices
                     0  // lostSensors
                 );
 
-                var emoji = testSuccessful ? "✅" : "❌";
-                Console.WriteLine($"[COLLECTOR TESTING] {emoji} '{collector.Name}': {newStatus}");
+                // var emoji = testSuccessful ? "✅" : "❌";
+                // Console.WriteLine($"[COLLECTOR TESTING] {emoji} '{collector.Name}': {newStatus}");
             }
             catch (Exception ex)
             {

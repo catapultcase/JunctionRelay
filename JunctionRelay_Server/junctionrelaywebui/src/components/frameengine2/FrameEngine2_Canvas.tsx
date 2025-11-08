@@ -22,7 +22,9 @@
 // This is a deliberate architectural choice and does not violate PascalCase - the components ARE PascalCase
 
 import React, { useState, useMemo, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useTheme } from '@mui/material/styles';
+import { deepEqual } from '../../utils/deepEqual';
 import type { FrameLayoutConfig, PlacedElement } from './types/FrameEngine2_LayoutTypes';
 import type {
     SensorProperties,
@@ -108,8 +110,8 @@ interface FrameEngine2_CanvasProps {
     /** Callback to add a new element */
     onAddElement: (element: PlacedElement) => void;
 
-    /** Callback to update an element */
-    onUpdateElement: (elementId: string, updates: Partial<PlacedElement>) => void;
+    /** Callback to update an element (supports both direct and functional updates) */
+    onUpdateElement: (elementId: string, updates: Partial<PlacedElement> | ((current: PlacedElement) => Partial<PlacedElement>)) => void;
 
     /** Currently selected element ID */
     selectedElementId: string | null;
@@ -227,7 +229,9 @@ const DEFAULT_ELEMENT_PROPERTIES: Record<string, SensorProperties | TextProperti
     'media-rive': {
         filename: null,
         autoplay: true,
-        backgroundColor: 'transparent'
+        backgroundColor: 'transparent',
+        riveInputs: {},
+        riveBindings: {}
     },
     ecg: {
         sensorTag: '',
@@ -384,40 +388,89 @@ const FrameEngine2_Canvas = forwardRef<FrameEngine2_CanvasRef, FrameEngine2_Canv
 
     /**
      * Handle Rive discovery from background renderer
+     * OPTIMIZATION: Batches state updates to prevent multiple re-renders
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 1.1 (Batched State Updates)
      */
     const handleBackgroundRiveDiscovery = useCallback((
         machines: DiscoveredRiveStateMachine[],
         bindings: DiscoveredRiveDataBinding[]
     ) => {
-        console.log('[FrameEngine2_Canvas] Background Rive discovery received:', {
-            machines: machines.length,
-            bindings: bindings.length
+        ReactDOM.unstable_batchedUpdates(() => {
+            setBackgroundRiveMachines(machines);
+            setBackgroundRiveBindings(bindings);
         });
-        setBackgroundRiveMachines(machines);
-        setBackgroundRiveBindings(bindings);
     }, []);
 
     /**
      * Handle Rive discovery from element renderers
+     * OPTIMIZATION: Uses functional state updates with empty deps to prevent infinite loops
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 2.2 (Callback Stability)
      */
     const handleElementRiveDiscovery = useCallback((
         elementId: string,
         machines: DiscoveredRiveStateMachine[],
         bindings: DiscoveredRiveDataBinding[]
     ) => {
-        console.log(`[FrameEngine2_Canvas] Element Rive discovery received for ${elementId}:`, {
-            machines: machines.length,
-            bindings: bindings.length
-        });
-        setElementRiveDiscoveries(prev => {
-            const next = new Map(prev);
-            next.set(elementId, { machines, bindings });
-            console.log('[FrameEngine2_Canvas] Element discoveries map updated:', {
-                totalElements: next.size,
-                elementIds: Array.from(next.keys())
+        // OPTIMIZATION: Batch all state updates together (Section 1.1)
+        ReactDOM.unstable_batchedUpdates(() => {
+            // Update local discoveries map
+            setElementRiveDiscoveries(prev => {
+                const next = new Map(prev);
+                next.set(elementId, { machines, bindings });
+                return next;
             });
-            return next;
+
+            // Persist discovered inputs/bindings to element properties
+            // Use functional update to access current elements without dependency
+            onUpdateElement(elementId, (currentElement: PlacedElement) => {
+                if (!currentElement || currentElement.type !== 'media-rive') {
+                    console.warn(`⚠️ [Discovery] Element ${elementId} not found or not media-rive`);
+                    return currentElement;
+                }
+
+                // Get existing properties or initialize empty objects
+                const currentInputs = currentElement.properties.riveInputs || {};
+                const currentBindings = currentElement.properties.riveBindings || {};
+
+                // Build inputs object from discovered state machine inputs
+                const riveInputs: Record<string, any> = { ...currentInputs };
+                machines.forEach(machine => {
+                    machine.inputs.forEach(input => {
+                        // Only add if not already configured (preserve user values)
+                        if (!(input.name in riveInputs)) {
+                            riveInputs[input.name] = input.currentValue !== undefined ? input.currentValue : null;
+                        }
+                    });
+                });
+
+                // Build bindings object from discovered text bindings
+                const riveBindings: Record<string, any> = { ...currentBindings };
+                bindings.forEach(binding => {
+                    // Only add if not already configured (preserve user values)
+                    if (!(binding.name in riveBindings)) {
+                        riveBindings[binding.name] = binding.currentValue !== undefined ? binding.currentValue : null;
+                    }
+                });
+
+                // DEDUPLICATION: Only update if values actually changed (deep comparison)
+                // OPTIMIZATION: Using deepEqual instead of JSON.stringify for better performance
+                const inputsChanged = !deepEqual(currentInputs, riveInputs);
+                const bindingsChanged = !deepEqual(currentBindings, riveBindings);
+
+                if (!inputsChanged && !bindingsChanged) {
+                    return currentElement;
+                }
+
+                return {
+                    properties: {
+                        ...currentElement.properties,
+                        riveInputs,
+                        riveBindings
+                    }
+                };
+            });
         });
+        // Empty deps - uses functional state updates (Section 2.2)
     }, []);
 
     /**

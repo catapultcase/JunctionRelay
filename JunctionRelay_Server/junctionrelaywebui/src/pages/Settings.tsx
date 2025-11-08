@@ -25,6 +25,7 @@ import {
     Chip
 } from "@mui/material";
 import { AlertColor } from "@mui/material/Alert";
+import { usePageTitle } from "../hooks/usePageTitle";
 import SettingsBackupRestoreIcon from '@mui/icons-material/SettingsBackupRestore';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -79,6 +80,7 @@ interface AccordionState {
 }
 
 const Settings: React.FC = () => {
+    usePageTitle('Settings');
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 

@@ -189,51 +189,61 @@ export function useSensorTagManager(params: UseSensorTagManagerParams): UseSenso
     /**
      * Process sensor test values and update inputs
      * Fixed: Use functional setState to avoid stale closure
+     * Supports comma-separated tags (e.g., "tag1,tag2") to update multiple tags with the same value
      */
     const processSensorTestValues = useCallback(() => {
         if (!enabled || !layout.sensorTestValues) return;
 
         setRegistry(prev => {
             const newInputs = new Map(prev.inputs); // Use prev.inputs to avoid stale closure
+            const processedTags = new Set<string>(); // Track all individual tags we've processed
 
             Object.entries(layout.sensorTestValues || {}).forEach(([tag, value]) => {
-                const hasTarget = prev.outputs.has(tag); // Use prev.outputs
                 const now = Date.now();
 
-                if (newInputs.has(tag)) {
-                    // Update existing input
-                    const existing = newInputs.get(tag)!;
-                    newInputs.set(tag, {
-                        ...existing,
-                        value,
-                        lastUpdate: now,
-                        updateCount: existing.updateCount + 1,
-                        hasTarget,
-                        source: 'test'
-                    });
+                // Handle comma-separated tags - split and update each individual tag
+                const tags = tag.includes(',')
+                    ? tag.split(',').map(t => t.trim()).filter(t => t.length > 0)
+                    : [tag];
 
-                    // Track update for rate calculation
-                    updateCounts.current.set(tag, (updateCounts.current.get(tag) || 0) + 1);
-                } else {
-                    // Create new input
-                    newInputs.set(tag, {
-                        tag,
-                        value,
-                        lastUpdate: now,
-                        updateCount: 1,
-                        hasTarget,
-                        source: 'test'
-                    });
+                tags.forEach(individualTag => {
+                    const hasTarget = prev.outputs.has(individualTag); // Use prev.outputs
+                    processedTags.add(individualTag);
 
-                    // Track update for rate calculation
-                    updateCounts.current.set(tag, 1);
-                }
+                    if (newInputs.has(individualTag)) {
+                        // Update existing input
+                        const existing = newInputs.get(individualTag)!;
+                        newInputs.set(individualTag, {
+                            ...existing,
+                            value,
+                            lastUpdate: now,
+                            updateCount: existing.updateCount + 1,
+                            hasTarget,
+                            source: 'test'
+                        });
+
+                        // Track update for rate calculation
+                        updateCounts.current.set(individualTag, (updateCounts.current.get(individualTag) || 0) + 1);
+                    } else {
+                        // Create new input
+                        newInputs.set(individualTag, {
+                            tag: individualTag,
+                            value,
+                            lastUpdate: now,
+                            updateCount: 1,
+                            hasTarget,
+                            source: 'test'
+                        });
+
+                        // Track update for rate calculation
+                        updateCounts.current.set(individualTag, 1);
+                    }
+                });
             });
 
-            // Remove inputs that are no longer in sensorTestValues
-            const testValueTags = new Set(Object.keys(layout.sensorTestValues || {}));
+            // Remove inputs that are no longer in sensorTestValues (check against processed individual tags)
             Array.from(newInputs.keys()).forEach(tag => {
-                if (!testValueTags.has(tag)) {
+                if (!processedTags.has(tag)) {
                     newInputs.delete(tag);
                     updateCounts.current.delete(tag);
                 }
@@ -298,37 +308,47 @@ export function useSensorTagManager(params: UseSensorTagManagerParams): UseSenso
     /**
      * Update a sensor tag value manually
      * Fixed: Use functional setState to avoid stale closure
+     * Supports comma-separated tags (e.g., "tag1,tag2") to update multiple tags with the same value
      */
     const updateSensor = useCallback((tag: string, value: any) => {
         const now = Date.now();
 
+        // Handle comma-separated tags - split and update each individual tag
+        const tags = tag.includes(',')
+            ? tag.split(',').map(t => t.trim()).filter(t => t.length > 0)
+            : [tag];
+
         setRegistry(prev => {
-            const hasTarget = prev.outputs.has(tag); // Use prev.outputs
             const newInputs = new Map(prev.inputs);
 
-            if (newInputs.has(tag)) {
-                const existing = newInputs.get(tag)!;
-                newInputs.set(tag, {
-                    ...existing,
-                    value,
-                    lastUpdate: now,
-                    updateCount: existing.updateCount + 1,
-                    hasTarget,
-                    source: 'live'
-                });
-            } else {
-                newInputs.set(tag, {
-                    tag,
-                    value,
-                    lastUpdate: now,
-                    updateCount: 1,
-                    hasTarget,
-                    source: 'live'
-                });
-            }
+            // Update each individual tag with the same value
+            tags.forEach(individualTag => {
+                const hasTarget = prev.outputs.has(individualTag);
 
-            // Track update for rate calculation
-            updateCounts.current.set(tag, (updateCounts.current.get(tag) || 0) + 1);
+                if (newInputs.has(individualTag)) {
+                    const existing = newInputs.get(individualTag)!;
+                    newInputs.set(individualTag, {
+                        ...existing,
+                        value,
+                        lastUpdate: now,
+                        updateCount: existing.updateCount + 1,
+                        hasTarget,
+                        source: 'live'
+                    });
+                } else {
+                    newInputs.set(individualTag, {
+                        tag: individualTag,
+                        value,
+                        lastUpdate: now,
+                        updateCount: 1,
+                        hasTarget,
+                        source: 'live'
+                    });
+                }
+
+                // Track update for rate calculation
+                updateCounts.current.set(individualTag, (updateCounts.current.get(individualTag) || 0) + 1);
+            });
 
             return {
                 ...prev,
@@ -339,12 +359,21 @@ export function useSensorTagManager(params: UseSensorTagManagerParams): UseSenso
 
     /**
      * Clear a specific sensor tag
+     * Supports comma-separated tags (e.g., "tag1,tag2") to clear multiple tags
      */
     const clearSensor = useCallback((tag: string) => {
+        // Handle comma-separated tags - split and clear each individual tag
+        const tags = tag.includes(',')
+            ? tag.split(',').map(t => t.trim()).filter(t => t.length > 0)
+            : [tag];
+
         setRegistry(prev => {
             const newInputs = new Map(prev.inputs);
-            newInputs.delete(tag);
-            updateCounts.current.delete(tag);
+
+            tags.forEach(individualTag => {
+                newInputs.delete(individualTag);
+                updateCounts.current.delete(individualTag);
+            });
 
             return {
                 ...prev,

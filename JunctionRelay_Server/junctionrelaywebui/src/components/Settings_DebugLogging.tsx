@@ -92,6 +92,9 @@ interface LogFileInfo {
     category: string;
 }
 
+// Event-driven categories that don't use interval-based logging
+const EVENT_DRIVEN_CATEGORIES = ['LoginAndAuthentication'];
+
 const Settings_DebugLogging: React.FC = () => {
     const [loggingSettings, setLoggingSettings] = useState<LoggingSettings[]>([]);
     const [blitModeStatus, setBlitModeStatus] = useState<BlitModeStatus | null>(null);
@@ -600,10 +603,11 @@ const Settings_DebugLogging: React.FC = () => {
                                         value={getFieldValue(setting.id, 'logIntervalMinutes', setting.logIntervalMinutes)}
                                         onChange={(e) => handleFieldChange(setting.id, 'logIntervalMinutes', e.target.value)}
                                         onBlur={() => handleFieldBlur(setting, 'logIntervalMinutes', 1, 1440)}
-                                        disabled={savingCategory === setting.category || !setting.enabled}
+                                        disabled={savingCategory === setting.category || !setting.enabled || EVENT_DRIVEN_CATEGORIES.includes(setting.category)}
                                         size="small"
                                         sx={{ width: 100 }}
                                         inputProps={{ min: 1, max: 1440 }}
+                                        helperText={EVENT_DRIVEN_CATEGORIES.includes(setting.category) ? "Event-driven" : undefined}
                                     />
                                 </TableCell>
                                 <TableCell>

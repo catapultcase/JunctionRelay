@@ -63,6 +63,24 @@ namespace JunctionRelayServer.Services
             return await _sensorsDbManager.AddSensorAsync(newSensor);
         }
 
+        public async Task<List<Model_Sensor>> AddSensorsToCollectorBulkAsync(int collectorId, List<Model_Sensor> newSensors)
+        {
+            // Validate collector exists once (not N times)
+            var collector = await _collectorsDbManager.GetCollectorByIdAsync(collectorId);
+            if (collector == null)
+                throw new Exception($"Collector with ID {collectorId} not found.");
+
+            // Prepare all sensors with collector info
+            foreach (var sensor in newSensors)
+            {
+                sensor.CollectorId = collectorId;
+                sensor.DeviceName = collector.Name;
+            }
+
+            // Bulk insert all sensors in a single database operation
+            return await _sensorsDbManager.AddSensorsBulkAsync(newSensors);
+        }
+
         public async Task CloneSensorsForJunctionAsync(int junctionId, List<Model_Sensor> sensors)
         {
             // Preload existing junction-sensors and build composite keys

@@ -140,7 +140,7 @@ namespace JunctionRelayServer.Services
 
                     try
                     {
-                        var dbEntry = archive.CreateEntry("junction_backup.db");
+                        var dbEntry = archive.CreateEntry("jr_database.db");
                         using (var dbEntryStream = dbEntry.Open())
                         using (var dbFileStream = System.IO.File.OpenRead(tempDbPath))
                         {
@@ -209,7 +209,11 @@ namespace JunctionRelayServer.Services
 
                         if (Directory.Exists(frameEngineDirectory))
                         {
-                            var frameEngineFiles = Directory.GetFiles(frameEngineDirectory, "*", SearchOption.AllDirectories);
+                            // Exclude frameengine/frames/ subdirectory (dynamically generated screenshots)
+                            var frameEngineFiles = Directory.GetFiles(frameEngineDirectory, "*", SearchOption.AllDirectories)
+                                .Where(f => !f.Contains(Path.DirectorySeparatorChar + "frames" + Path.DirectorySeparatorChar) &&
+                                            !f.EndsWith(Path.DirectorySeparatorChar + "frames"))
+                                .ToArray();
 
                             foreach (var frameEngineFile in frameEngineFiles)
                             {
@@ -246,89 +250,6 @@ namespace JunctionRelayServer.Services
                             Console.WriteLine("Included backend ID file in backup");
                             includedComponents.Add("backend identity");
                         }
-                    }
-
-                    // Create README with backup details
-                    var readmeEntry = archive.CreateEntry("README.txt");
-                    using (var readmeStream = readmeEntry.Open())
-                    using (var writer = new StreamWriter(readmeStream))
-                    {
-                        writer.WriteLine("JunctionRelay Backup Package");
-                        writer.WriteLine("============================");
-                        writer.WriteLine();
-                        writer.WriteLine("This backup contains:");
-                        writer.WriteLine("- junction_backup.db: Your JunctionRelay database");
-
-                        if (options.IncludeKeys)
-                        {
-                            writer.WriteLine("- keys/: Encryption keys for decrypting secrets");
-                            writer.WriteLine("- jwt-secret.key: JWT authentication secret");
-                        }
-
-                        if (options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- frameengine/: Frame engine configuration and data files");
-                        }
-
-                        if (options.IncludeIdentity)
-                        {
-                            writer.WriteLine("- backend-id.json: Backend identity (preserves device identity)");
-                        }
-
-                        writer.WriteLine();
-                        writer.WriteLine("Backup type:");
-                        if (options.IncludeKeys && options.IncludeIdentity && options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- COMPLETE FULL BACKUP: Full restore to same backend with all encryption and frame engine");
-                        }
-                        else if (options.IncludeKeys && options.IncludeIdentity && !options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- COMPLETE BACKUP: Full restore to same backend with all encryption");
-                        }
-                        else if (options.IncludeKeys && !options.IncludeIdentity && options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- DATA MIGRATION WITH FRAME ENGINE: Transfer data + encryption + frame engine to new backend");
-                        }
-                        else if (options.IncludeKeys && !options.IncludeIdentity)
-                        {
-                            writer.WriteLine("- DATA MIGRATION: Transfer data + encryption to new backend (new identity will be generated)");
-                        }
-                        else if (!options.IncludeKeys && options.IncludeIdentity && options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- BASIC BACKUP WITH FRAME ENGINE: Database + identity + frame engine (no encryption keys)");
-                        }
-                        else if (!options.IncludeKeys && options.IncludeIdentity)
-                        {
-                            writer.WriteLine("- BASIC BACKUP: Database + identity only (no encryption keys - will generate new JWT secret)");
-                        }
-                        else if (!options.IncludeKeys && !options.IncludeIdentity && options.IncludeFrameEngine)
-                        {
-                            writer.WriteLine("- DATABASE WITH FRAME ENGINE: Basic data + frame engine transfer (new identity, new encryption keys)");
-                        }
-                        else
-                        {
-                            writer.WriteLine("- DATABASE ONLY: Basic data transfer (new identity, new encryption keys)");
-                        }
-
-                        writer.WriteLine();
-                        writer.WriteLine("To restore:");
-                        writer.WriteLine("1. Upload this ZIP file using the 'Upload Database File' button");
-                        writer.WriteLine("2. Available components will be automatically restored");
-                        writer.WriteLine("3. Restart the application to apply changes");
-
-                        if (options.IncludeIdentity)
-                        {
-                            writer.WriteLine("4. Your backend will maintain the same identity after restore");
-                        }
-                        else
-                        {
-                            writer.WriteLine("4. A new backend identity will be generated");
-                        }
-
-                        writer.WriteLine();
-                        writer.WriteLine($"Backup created: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
-                        writer.WriteLine($"Components: {string.Join(", ", includedComponents)}");
-                        writer.WriteLine($"JunctionRelay Version: {typeof(Service_Backups).Assembly.GetName().Version}");
                     }
                 }
 

@@ -182,7 +182,7 @@ interface Junction_EnhancedSensorSelectorProps {
     // Rive inputs for binding status
     riveInputs?: any[];
 
-    // All mapped sensor tags (from both Rive elements and frame sensor tags)
+    // All mapped SensorTags (from both Rive elements and frame SensorTags)
     mappedSensorTags?: string[];
 }
 
@@ -253,7 +253,7 @@ const SensorEditModal: React.FC<{
     // Define editable fields (exclude Id, ExternalId, Value)
     const editableFields = [
         { field: 'name', label: 'Name', type: 'text' },
-        { field: 'sensorTag', label: 'Sensor Tag', type: 'text' },
+        { field: 'sensorTag', label: 'SensorTag', type: 'text' },
         { field: 'componentName', label: 'Component Name', type: 'text' },
         { field: 'sensorType', label: 'Sensor Type', type: 'text' },
         { field: 'category', label: 'Category', type: 'text' },
@@ -604,7 +604,7 @@ const Junction_EnhancedSensorSelector: React.FC<Junction_EnhancedSensorSelectorP
             { field: "source", label: "Source", required: false },
             { field: "collector", label: "Collector", required: false },
             { field: "name", label: "Sensor Name", required: true },
-            { field: "sensorTag", label: "Sensor Tag", required: false },
+            { field: "sensorTag", label: "SensorTag", required: false },
             { field: "binding", label: "Binding", width: "90px", required: false },
             { field: "value", label: "Value", required: true },
             { field: "unit", label: "Unit", required: true },
@@ -1070,27 +1070,27 @@ const Junction_EnhancedSensorSelector: React.FC<Junction_EnhancedSensorSelectorP
                     />
                 );
             case "binding": {
-                // Check if sensor tag is successfully mapped to a FrameEngine binding or sensor tag
+                // Check if SensorTag is successfully mapped to a FrameEngine binding or SensorTag
                 const sensorTag = getSensorTag(sensor);
                 if (!sensorTag) return null;
 
-                // Split sensor tags by comma and trim (sensors can have multiple tags)
+                // Split SensorTags by comma and trim (sensors can have multiple tags)
                 const sensorTags = sensorTag.split(',').map((tag: string) => tag.trim()).filter(Boolean);
 
-                // Check if any of this sensor's tags are in the mapped sensor tags list
-                // This list includes:
-                // 1. Machine inputs and template bindings (from riveInputs)
-                // 2. Frame element sensor tags (sensor/ecg elements with sensorTag property)
-                const hasBinding = mappedSensorTags && mappedSensorTags.length > 0 &&
-                    sensorTags.some(tag => mappedSensorTags.includes(tag));
+                // Count how many of this sensor's tags match the mapped SensorTags list
+                // mappedSensorTags contains ALL SensorTags from selected layouts (extracted from jsonFrameConfig.sensorTestValues)
+                // This includes tags for sensor elements, ECG elements, Rive inputs, and Rive bindings
+                const matchCount = mappedSensorTags && mappedSensorTags.length > 0
+                    ? sensorTags.filter(tag => mappedSensorTags.includes(tag)).length
+                    : 0;
 
-                if (!hasBinding) return null;
+                if (matchCount === 0) return null;
 
                 return (
-                    <Tooltip title="Mapped to FrameEngine input/binding">
+                    <Tooltip title={`Mapped to ${matchCount} FrameEngine input${matchCount > 1 ? 's' : ''}/binding${matchCount > 1 ? 's' : ''}`}>
                         <Chip
                             icon={<LinkIcon />}
-                            label=""
+                            label={matchCount > 1 ? `x${matchCount}` : ''}
                             size="small"
                             color="success"
                             variant="outlined"

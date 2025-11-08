@@ -34,6 +34,9 @@ import { useFeatureFlags } from "../hooks/useFeatureFlags";
 // Import the useAutoSave hook
 import { useAutoSave } from "../hooks/useAutoSave";
 
+// Import the usePageTitle hook
+import { usePageTitle } from "../hooks/usePageTitle";
+
 // Import API services
 import * as junctionService from '../services/junctionApiService';
 
@@ -155,6 +158,9 @@ const ConfigureJunction: React.FC = () => {
     const [junctionData, setJunctionData] = useState<any>({ status: "Loading..." });
     const [originalJunctionData, setOriginalJunctionData] = useState<any>({ status: "Loading..." });
     const [loading, setLoading] = useState<boolean>(true);
+
+    // Set page title dynamically based on junction name
+    usePageTitle(junctionData?.name || 'Junction');
     const [mqttBrokers, setMqttBrokers] = useState<any[]>([]);
     const [selectedMqttBrokerId, setSelectedMqttBrokerId] = useState<string>("");
 
@@ -674,12 +680,13 @@ const ConfigureJunction: React.FC = () => {
     };
 
     // The key function to update screen assignments
-    const handleScreenAssignmentUpdate = async (sensorId: number, deviceId: number, screenIds: number[]) => {
+    const handleScreenAssignmentUpdate = async (sensorId: number, deviceId: number, screenIds: number[], skipTargetCreation = false) => {
         try {
             const targetData = sensorTargets[sensorId]?.find(t => t.deviceId === deviceId);
             const existingScreenIds = targetData?.screenIds || [];
 
-            if (!targetData && screenIds.length > 0) {
+            // Only create target relationship if not skipped and target doesn't exist
+            if (!skipTargetCreation && !targetData && screenIds.length > 0) {
                 try {
                     await junctionService.assignSensorTarget(junctionId, sensorId, deviceId, null);
                 } catch (error) {
@@ -1354,6 +1361,11 @@ const ConfigureJunction: React.FC = () => {
 
                         setSensorTargets(prev => {
                             const existingTargets = prev[sensorId] || [];
+                            // Check again if target already exists in current state to prevent duplicates
+                            const targetExists = existingTargets.some(t => t.deviceId === target.id);
+                            if (targetExists) {
+                                return prev; // No change if already exists
+                            }
                             return {
                                 ...prev,
                                 [sensorId]: [...existingTargets, { deviceId: target.id, screenIds: [] }]
@@ -1402,6 +1414,8 @@ const ConfigureJunction: React.FC = () => {
 
                     if (needsAssignment) {
                         try {
+                            // Let handleScreenAssignmentUpdate check if target exists
+                            // The backend will handle UPDATE-then-INSERT correctly
                             await handleScreenAssignmentUpdate(sensorId, targetAssignment.deviceId, allScreenIds);
                             assignedScreensCount++;
                             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1441,6 +1455,9 @@ const ConfigureJunction: React.FC = () => {
                 // Use the shared auto-assignment logic
                 await autoAssignSensorToAll(sensorId);
             } else {
+                // Clear from auto-assigned ref when deselecting
+                autoAssignedSensorsRef.current.delete(sensorId);
+
                 const sensorTargetAssignments = sensorTargets[sensorId] || [];
 
                 if (sensorTargetAssignments.length > 0) {
@@ -2227,17 +2244,24 @@ const ConfigureJunction: React.FC = () => {
                 onDeviceRemove={async (deviceId) => {
                     if (currentSensor) {
                         await junctionService.removeSensorTarget(junctionId, currentSensor.Id, deviceId);
-                        // Refresh sensor targets
-                        const res = await fetch(`/api/sensors/junction-sensors/by-junction/${junctionId}/targets-grouped`);
-                        if (res.ok) {
-                            const groupedTargets = await res.json();
-                            const allTargets: { [sensorId: number]: { deviceId: number; screenIds: number[] }[] } = {};
-                            Object.entries(groupedTargets).forEach(([sensorIdStr, targetsArray]) => {
-                                const sensorId = parseInt(sensorIdStr, 10);
-                                allTargets[sensorId] = targetsArray as { deviceId: number; screenIds: number[] }[];
-                            });
-                            setSensorTargets(allTargets);
-                        }
+
+                        // Immediately update state optimistically
+                        setSensorTargets(prev => {
+                            const updated = { ...prev };
+                            const sensorEntry = updated[currentSensor.Id];
+
+                            if (sensorEntry) {
+                                // Filter out the removed device
+                                updated[currentSensor.Id] = sensorEntry.filter(t => t.deviceId !== deviceId);
+
+                                // If no targets left, remove sensor entry entirely
+                                if (updated[currentSensor.Id].length === 0) {
+                                    delete updated[currentSensor.Id];
+                                }
+                            }
+
+                            return updated;
+                        });
                     }
                 }}
                 onScreenAssignmentUpdate={(deviceId, screenIds) => {

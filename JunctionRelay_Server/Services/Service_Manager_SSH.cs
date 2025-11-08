@@ -124,7 +124,7 @@ namespace JunctionRelayServer.Services
                     !string.IsNullOrWhiteSpace(d.SshUsername)
                 ).ToList();
 
-                Console.WriteLine($"[SSH Service] Found {sshDevices.Count} SSH devices");
+                // Console.WriteLine($"[SSH Service] Found {sshDevices.Count} SSH devices");
 
                 foreach (var device in sshDevices)
                 {

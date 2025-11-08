@@ -90,7 +90,7 @@ export interface CanvasSettings {
  * Sensor test value structure
  */
 export interface SensorTestValue {
-    value?: string | number;
+    value?: string | number | boolean;
     label?: string;
     unit?: string;
 }
@@ -121,6 +121,8 @@ export interface FrameLayoutConfig {
     riveInputs?: Record<string, any> | null;
     riveBindings?: Record<string, any> | null;
     isTemplate: boolean;
+    cloudTemplateId?: string | null;
+    cloudVariantId?: string | null;
     isDraft?: boolean;
     isPublished?: boolean;
     canvasSettings?: CanvasSettings;

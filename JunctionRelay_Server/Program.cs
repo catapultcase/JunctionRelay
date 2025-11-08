@@ -310,7 +310,10 @@ builder.Services.AddHttpClient<Service_Manager_Services>(client =>
 });
 
 builder.Services.AddScoped<Service_Backups>();
+builder.Services.AddScoped<Service_CloudBackups_Manifest>();
+builder.Services.AddScoped<Service_FrameEngine_CloudVersioning>();
 builder.Services.AddScoped<Service_Layout_Templates>();
+builder.Services.AddSingleton<Service_BackupProgressTracker>();
 builder.Services.AddScoped<Service_Database_Initializer>();
 builder.Services.AddScoped<Service_Database_Manager_Sensors>();
 builder.Services.AddScoped<Service_Database_Manager_Devices>();
@@ -329,6 +332,8 @@ builder.Services.AddScoped<Service_Manager_CloudDevices>();
 builder.Services.AddScoped<Service_Manager_LocalDeviceSync>();
 builder.Services.AddScoped<Service_Database_Manager_FrameEngine>();
 builder.Services.AddScoped<Service_Database_Manager_EventRules>();
+builder.Services.AddScoped<IFrameEngineHashUtility, Service_FrameEngine_HashUtility>();
+builder.Services.AddScoped<IFrameEngineAssetReferenceUpdater, Service_FrameEngine_AssetReferenceUpdater>();
 builder.Services.AddScoped<Service_FrameEngine_Filesystem>();
 builder.Services.AddScoped<Service_Database_Manager_LoggingSettings>();
 builder.Services.AddScoped<Service_Database_Manager_NotificationSettings>();
@@ -348,6 +353,7 @@ builder.Services.AddSingleton<Service_Stream_Manager_COM>();
 builder.Services.AddSingleton<Service_Stream_Manager_Virtual>();
 builder.Services.AddSingleton<Service_FrameEngine>();
 builder.Services.AddSingleton<Service_FrameEngine_Puppeteer>();
+builder.Services.AddSingleton<Service_FrameEngine_AssetPathResolver>();
 builder.Services.AddSingleton<Service_Database_Manager_StreamHistory>();
 builder.Services.AddSingleton<Service_Stream_History_Manager>();
 builder.Services.AddSingleton<StartupSignals>();
@@ -483,6 +489,17 @@ builder.Services.AddControllersWithViews()
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 
+// Configure request size limits for large file uploads (database backups)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 524288000; // 500MB
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 524288000; // 500MB
+});
+
 var app = builder.Build();
 
 app.Lifetime.ApplicationStarted.Register(async () =>
@@ -573,11 +590,13 @@ app.Lifetime.ApplicationStarted.Register(async () =>
                 var frameLayoutService = scope.ServiceProvider.GetRequiredService<Service_Database_Manager_FrameEngine>();
                 var dbPathProvider = scope.ServiceProvider.GetRequiredService<DatabasePathProvider>();
                 var webHostEnvironment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+                var hashUtility = scope.ServiceProvider.GetRequiredService<IFrameEngineHashUtility>();
 
                 var filesystemService = new Service_FrameEngine_Filesystem(
                     frameLayoutService,
                     dbPathProvider,
-                    webHostEnvironment);
+                    webHostEnvironment,
+                    hashUtility);
 
                 var cleanupResult = await filesystemService.CleanupOrphanedFiles();
 

@@ -29,6 +29,7 @@ import { useTheme, useMediaQuery } from "@mui/material";
 // Import our components
 import DevicesTable from '../components/Devices_DevicesTable';
 import { useFeatureFlags } from '../hooks/useFeatureFlags';
+import { usePageTitle } from '../hooks/usePageTitle';
 import DeviceScanModal from '../components/Device_ScanModal';
 import DeviceManagementSection from '../components/Device_ManagementSection';
 import DeviceAddDeviceModal from '../components/Device_AddDeviceModal';
@@ -58,6 +59,8 @@ interface ScanOptions {
 
 // Main Device Component
 const Devices: React.FC = () => {
+    usePageTitle('Devices');
+
     // Configurable refresh rate options
     const REFRESH_INTERVAL_OPTIONS = [
         { value: 0, label: "Disabled" },

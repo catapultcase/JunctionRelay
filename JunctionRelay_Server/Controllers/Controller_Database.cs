@@ -224,6 +224,8 @@ namespace JunctionRelayServer.Controllers
         }
 
         [HttpPost("import-db")]
+        [RequestSizeLimit(524288000)] // 500MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 524288000)]
         public async Task<IActionResult> ImportDb(IFormFile file)
         {
             try
@@ -270,7 +272,7 @@ namespace JunctionRelayServer.Controllers
 
                 foreach (var entry in archive.Entries)
                 {
-                    if (entry.Name == "junction_backup.db")
+                    if (entry.Name == "jr_database.db")
                     {
                         var tempDbPath = _dbPath + ".pending";
                         using var entryStream = entry.Open();

@@ -189,41 +189,67 @@ const ServiceCard = memo(({
                         />
                     </Box>
                 </Box>
-
-                {/* Action Buttons for standard view */}
-                {viewMode === 'standard' && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        <Tooltip title="Edit">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onEdit(e, service);
-                                }}
-                            >
-                                <EditIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete(e, service.id);
-                                }}
-                            >
-                                <DeleteIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                )}
             </CardContent>
+
+            {/* Action Buttons at Bottom - Outside CardContent */}
+            <Box sx={{
+                p: viewMode === 'mini' ? 0.5 : 1,
+                pt: 0,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: viewMode === 'mini' ? 0.5 : 1
+            }}>
+                {/* Left side: Management buttons */}
+                <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                    <Tooltip title="Edit">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onEdit(e, service);
+                            }}
+                            sx={{
+                                padding: viewMode === 'mini' ? '4px' : '6px',
+                                border: '1px solid',
+                                borderColor: 'primary.main',
+                                color: 'primary.main',
+                                '&:hover': {
+                                    backgroundColor: 'primary.main',
+                                    color: 'primary.contrastText'
+                                }
+                            }}
+                        >
+                            <EditIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(e, service.id);
+                            }}
+                            sx={{
+                                padding: viewMode === 'mini' ? '4px' : '6px',
+                                border: '1px solid',
+                                borderColor: 'error.main',
+                                color: 'error.main',
+                                '&:hover': {
+                                    backgroundColor: 'error.main',
+                                    color: 'error.contrastText'
+                                }
+                            }}
+                        >
+                            <DeleteIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+
+                {/* Right side: Reserved for future primary actions */}
+                <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                    {/* Future: Add primary action buttons here if needed */}
+                </Box>
+            </Box>
         </Card>
     );
 });

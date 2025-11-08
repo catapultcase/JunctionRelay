@@ -127,7 +127,7 @@ namespace JunctionRelayServer.Services
                     LastFetchErrorMessage = errorMessage
                 });
 
-                Console.WriteLine($"[FETCH_TRACKING] Updated last fetch info for collector {collectorId}: Success={fetchSuccessful}, Total={totalSensors}, New={newSensors}, Lost={lostSensors}");
+                // Console.WriteLine($"[FETCH_TRACKING] Updated last fetch info for collector {collectorId}: Success={fetchSuccessful}, Total={totalSensors}, New={newSensors}, Lost={lostSensors}");
                 return rowsAffected > 0;
             }
             catch (Exception ex)
@@ -154,7 +154,7 @@ namespace JunctionRelayServer.Services
                     LastTested = lastTested
                 });
 
-                Console.WriteLine($"[TEST_TRACKING] Updated last tested for collector {collectorId}: {lastTested}");
+                // Console.WriteLine($"[TEST_TRACKING] Updated last tested for collector {collectorId}: {lastTested}");
                 return rowsAffected > 0;
             }
             catch (Exception ex)
@@ -173,7 +173,7 @@ namespace JunctionRelayServer.Services
                 var collector = await GetCollectorByIdAsync(collectorId);
                 if (collector?.CollectorType == "EventEngine")
                 {
-                    Console.WriteLine($"[COLLECTOR_STATUS] Skipping status update for EventEngine - always Active");
+                    // Console.WriteLine($"[COLLECTOR_STATUS] Skipping status update for EventEngine - always Active");
                     return true;
                 }
 
@@ -189,7 +189,7 @@ namespace JunctionRelayServer.Services
                     Status = status
                 });
 
-                Console.WriteLine($"[COLLECTOR_STATUS] Updated status for collector {collectorId}: {status}");
+                // Console.WriteLine($"[COLLECTOR_STATUS] Updated status for collector {collectorId}: {status}");
                 return rowsAffected > 0;
             }
             catch (Exception ex)

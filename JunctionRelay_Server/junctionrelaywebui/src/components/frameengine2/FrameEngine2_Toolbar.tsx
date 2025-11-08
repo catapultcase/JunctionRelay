@@ -28,6 +28,9 @@ interface FrameEngine2ToolbarProps {
     zoom?: number;
     elementCount?: number;
     previewMode?: boolean;
+    isTemplate?: boolean;
+    cloudTemplateId?: string;
+    cloudVariantId?: string;
     onQuickSave?: () => void;
     onSave?: () => void;
     onUndo?: () => void;
@@ -46,6 +49,9 @@ const FrameEngine2_Toolbar: React.FC<FrameEngine2ToolbarProps> = ({
     zoom = 1.0,
     elementCount = 0,
     previewMode = false,
+    isTemplate = false,
+    cloudTemplateId,
+    cloudVariantId,
     onQuickSave = () => console.log('Quick Save clicked'),
     onSave = () => console.log('Save clicked'),
     onUndo = () => console.log('Undo clicked'),
@@ -161,51 +167,68 @@ const FrameEngine2_Toolbar: React.FC<FrameEngine2ToolbarProps> = ({
         fontWeight: 500
     }), []);
 
+    const uuidStyle = useMemo(() => ({
+        color: theme.palette.text.secondary,
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        opacity: 0.7
+    }), [theme]);
+
+    // Helper function to truncate UUIDs for display
+    const truncateUuid = (uuid: string | undefined) => {
+        if (!uuid) return null;
+        return uuid.length > 8 ? `${uuid.substring(0, 8)}...` : uuid;
+    };
+
     return (
         <div style={toolbarStyle}>
             {/* Left Section - File Operations */}
             <div style={leftSectionStyle}>
-                <button
-                    onClick={onQuickSave}
-                    style={getButtonStyle('quicksave', 'primary')}
-                    title="Quick Save (Ctrl+S)"
-                    onMouseEnter={() => setHoveredButton('quicksave')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    Quick Save
-                </button>
+                {!previewMode && (
+                    <>
+                        <button
+                            onClick={onQuickSave}
+                            style={getButtonStyle('quicksave', 'primary')}
+                            title="Quick Save (Ctrl+S)"
+                            onMouseEnter={() => setHoveredButton('quicksave')}
+                            onMouseLeave={() => setHoveredButton(null)}
+                        >
+                            Quick Save
+                        </button>
 
-                <button
-                    onClick={onSave}
-                    style={getButtonStyle('save', 'success')}
-                    title="Save & Manage Thumbnail (Ctrl+Shift+S)"
-                    onMouseEnter={() => setHoveredButton('save')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    Save
-                </button>
+                        <button
+                            onClick={onSave}
+                            style={getButtonStyle('save', 'success')}
+                            title="Save & Manage Thumbnail (Ctrl+Shift+S)"
+                            onMouseEnter={() => setHoveredButton('save')}
+                            onMouseLeave={() => setHoveredButton(null)}
+                        >
+                            Save
+                        </button>
 
-                <div style={dividerStyle} />
+                        <div style={dividerStyle} />
 
-                <button
-                    onClick={onUndo}
-                    style={getButtonStyle('undo', 'default')}
-                    title="Undo (Ctrl+Z)"
-                    onMouseEnter={() => setHoveredButton('undo')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    Undo
-                </button>
+                        <button
+                            onClick={onUndo}
+                            style={getButtonStyle('undo', 'default')}
+                            title="Undo (Ctrl+Z)"
+                            onMouseEnter={() => setHoveredButton('undo')}
+                            onMouseLeave={() => setHoveredButton(null)}
+                        >
+                            Undo
+                        </button>
 
-                <button
-                    onClick={onRedo}
-                    style={getButtonStyle('redo', 'default')}
-                    title="Redo (Ctrl+Shift+Z)"
-                    onMouseEnter={() => setHoveredButton('redo')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    Redo
-                </button>
+                        <button
+                            onClick={onRedo}
+                            style={getButtonStyle('redo', 'default')}
+                            title="Redo (Ctrl+Shift+Z)"
+                            onMouseEnter={() => setHoveredButton('redo')}
+                            onMouseLeave={() => setHoveredButton(null)}
+                        >
+                            Redo
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Center Section - Layout Info */}
@@ -222,6 +245,16 @@ const FrameEngine2_Toolbar: React.FC<FrameEngine2ToolbarProps> = ({
                 <div style={infoTextStyle}>
                     {elementCount} {elementCount === 1 ? 'element' : 'elements'}
                 </div>
+                {(cloudTemplateId || cloudVariantId) && (
+                    <>
+                        <div style={dividerStyle} />
+                        <div style={uuidStyle}>
+                            {cloudTemplateId && <span title={`Template ID: ${cloudTemplateId}`}>TID: {truncateUuid(cloudTemplateId)}</span>}
+                            {cloudTemplateId && cloudVariantId && <span> | </span>}
+                            {cloudVariantId && <span title={`Variant ID: ${cloudVariantId}`}>VID: {truncateUuid(cloudVariantId)}</span>}
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Right Section - Actions */}
@@ -246,25 +279,29 @@ const FrameEngine2_Toolbar: React.FC<FrameEngine2ToolbarProps> = ({
                     🎬 GIF
                 </button>
 
-                <button
-                    onClick={onPreview}
-                    style={getButtonStyle('preview', previewMode ? 'primary' : 'success')}
-                    title={previewMode ? "Exit Preview Mode" : "Enter Preview Mode"}
-                    onMouseEnter={() => setHoveredButton('preview')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    {previewMode ? 'Exit Preview' : 'Preview'}
-                </button>
+                {!isTemplate && (
+                    <button
+                        onClick={onPreview}
+                        style={getButtonStyle('preview', previewMode ? 'primary' : 'success')}
+                        title={previewMode ? "Exit Preview Mode" : "Enter Preview Mode"}
+                        onMouseEnter={() => setHoveredButton('preview')}
+                        onMouseLeave={() => setHoveredButton(null)}
+                    >
+                        {previewMode ? 'Exit Preview' : 'Preview'}
+                    </button>
+                )}
 
-                <button
-                    onClick={onExport}
-                    style={getButtonStyle('export', 'default')}
-                    title="Export Layout Package"
-                    onMouseEnter={() => setHoveredButton('export')}
-                    onMouseLeave={() => setHoveredButton(null)}
-                >
-                    Export
-                </button>
+                {!previewMode && (
+                    <button
+                        onClick={onExport}
+                        style={getButtonStyle('export', 'default')}
+                        title="Export Layout Package"
+                        onMouseEnter={() => setHoveredButton('export')}
+                        onMouseLeave={() => setHoveredButton(null)}
+                    >
+                        Export
+                    </button>
+                )}
             </div>
         </div>
     );

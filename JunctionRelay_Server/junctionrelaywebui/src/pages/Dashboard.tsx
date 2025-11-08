@@ -35,6 +35,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import AddIcon from '@mui/icons-material/Add';
 import { useTheme, useMediaQuery } from "@mui/material";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Import icons
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
@@ -52,6 +53,7 @@ import { useDashboardWebSocket } from '../hooks/useDashboardWebSocket';
 
 // Main Dashboard Component
 const Dashboard = () => {
+    usePageTitle('Dashboard');
     const [junctions, setJunctions] = useState<Junction[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [snackMessage, setSnackMessage] = useState<string | null>(null);
@@ -138,7 +140,7 @@ const Dashboard = () => {
     // Refresh junctions data (for after add/clone/delete operations)
     const refreshJunctions = useCallback(async () => {
         try {
-            const response = await fetch("/api/junctions");
+            const response = await fetch("/api/junctions/summary");
             if (!response.ok) {
                 throw new Error("Failed to fetch junctions");
             }
@@ -189,7 +191,7 @@ const Dashboard = () => {
             try {
                 setLoading(true);
 
-                const junctionsResponse = await fetch("/api/junctions");
+                const junctionsResponse = await fetch("/api/junctions/summary");
                 if (!junctionsResponse.ok) {
                     throw new Error("Failed to fetch junctions");
                 }

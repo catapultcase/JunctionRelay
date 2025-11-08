@@ -191,7 +191,10 @@ const FrameEngine2_Element_MediaRive: React.FC<MediaRiveElementProps> = ({
             cancelled = true;
             clearTimeout(timeoutId);
         };
-    }, [rive, resolvedRiveUrl, elementId, onRiveDiscovery]);
+        // FIXED: Removed onRiveDiscovery from deps to prevent infinite loop (FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 5.1)
+        // Discovery should only trigger when rive instance or file changes, not when callback reference changes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rive, resolvedRiveUrl, elementId]);
 
     /**
      * Apply state machine inputs when riveInputs changes

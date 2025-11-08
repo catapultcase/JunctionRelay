@@ -23,7 +23,8 @@ import {
     CircularProgress, Paper, Chip, Divider, Table, TableContainer,
     TableHead, TableRow, TableCell, TableBody, List, ListItem,
     LinearProgress, Select, MenuItem, FormControl, InputLabel, Alert,
-    TablePagination
+    TablePagination, Dialog, DialogTitle, DialogContent, DialogActions,
+    Stepper, Step, StepLabel, Tooltip
 } from "@mui/material";
 import { AlertColor } from "@mui/material/Alert";
 import CloudIcon from '@mui/icons-material/Cloud';
@@ -36,6 +37,7 @@ import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import DownloadIcon from '@mui/icons-material/Download';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 interface CloudUserInfo {
     email?: string;
@@ -51,6 +53,7 @@ interface BackupSettings {
     lastBackup?: Date;
     includeKeys?: boolean;
     includeIdentity?: boolean;
+    includeFrameEngine?: boolean;
 }
 
 interface BackupUsage {
@@ -60,6 +63,8 @@ interface BackupUsage {
     pendingCount: number;
     completedCount: number;
     failedCount: number;
+    templateAssetStorageUsed?: number;
+    totalCombinedStorage?: number;
     maxStorageLimit: number;
     maxBackupLimit: number;
     maxSingleBackupSize: number;
@@ -107,6 +112,39 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
     const [backendId, setBackendId] = useState<string | null>(null);
     const [page, setPage] = useState<number>(0);
     const [rowsPerPage] = useState<number>(7);
+    const [progressModalOpen, setProgressModalOpen] = useState<boolean>(false);
+    const [backupProgress, setBackupProgress] = useState<{
+        stage: string;
+        message: string;
+        currentItem?: number;
+        totalItems?: number;
+        itemName?: string;
+        isComplete: boolean;
+        isFailed: boolean;
+        errorMessage?: string;
+    }>({
+        stage: 'starting',
+        message: 'Starting backup...',
+        isComplete: false,
+        isFailed: false
+    });
+
+    const [downloadProgressModalOpen, setDownloadProgressModalOpen] = useState<boolean>(false);
+    const [downloadProgress, setDownloadProgress] = useState<{
+        stage: string;
+        message: string;
+        currentItem?: number;
+        totalItems?: number;
+        itemName?: string;
+        isComplete: boolean;
+        isFailed: boolean;
+        errorMessage?: string;
+    }>({
+        stage: 'starting',
+        message: 'Starting download...',
+        isComplete: false,
+        isFailed: false
+    });
 
     const formatFileSize = (bytes: number): string => {
         if (bytes === 0) return '0 Bytes';
@@ -256,6 +294,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     retentionDays: data.settings?.retentionDays ?? 30,
                     includeKeys: data.settings?.includeKeys ?? true,
                     includeIdentity: data.settings?.includeIdentity ?? true,
+                    includeFrameEngine: data.settings?.includeFrameEngine ?? true,
                     lastBackup: data.settings?.lastBackup ? new Date(data.settings.lastBackup) : undefined
                 });
                 setBackupUsage(data.usage);
@@ -315,6 +354,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     retentionDays: newSettings.retentionDays ?? backupSettings?.retentionDays ?? 30,
                     includeKeys: newSettings.includeKeys ?? backupSettings?.includeKeys ?? true,
                     includeIdentity: newSettings.includeIdentity ?? backupSettings?.includeIdentity ?? true,
+                    includeFrameEngine: newSettings.includeFrameEngine ?? backupSettings?.includeFrameEngine ?? true,
                 })
             });
 
@@ -335,12 +375,16 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
     const createBackup = async () => {
         if (!cloudUserInfo?.hasValidLicense) return;
 
+        let pollInterval: NodeJS.Timeout | null = null;
+
         try {
             setIsBackingUp(true);
+            setProgressModalOpen(true);
+
             const cloudToken = localStorage.getItem('cloud_proxy_token');
             if (!cloudToken) throw new Error('Not authenticated');
 
-            // Create backup using the dedicated cloud backup endpoint
+            // Start backup - backend returns operation ID immediately
             const backupResponse = await fetch('/api/cloud-backups/create', {
                 method: 'POST',
                 headers: {
@@ -350,25 +394,61 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                 body: JSON.stringify({
                     includeKeys: backupSettings?.includeKeys ?? true,
                     includeIdentity: backupSettings?.includeIdentity ?? true,
+                    includeFrameEngine: backupSettings?.includeFrameEngine ?? true,
                 })
             });
 
             if (!backupResponse.ok) {
                 const error = await backupResponse.json();
-                throw new Error(error.error || 'Failed to create cloud backup');
+                throw new Error(error.error || 'Failed to start cloud backup');
             }
 
-            const result = await backupResponse.json();
+            const { operationId } = await backupResponse.json();
 
-            if (result.success) {
-                showSnackbar('Backup created and uploaded to cloud successfully', 'success');
-                fetchBackups();
-                fetchBackupStatus();
-            } else {
-                throw new Error(result.message || 'Failed to complete backup');
-            }
+            // Poll for progress
+            pollInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`/api/cloud-backups/progress/${operationId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${cloudToken}`,
+                        }
+                    });
+
+                    if (progressResponse.ok) {
+                        const progressData = await progressResponse.json();
+                        setBackupProgress(progressData);
+
+                        // Stop polling if complete or failed
+                        if (progressData.isComplete || progressData.isFailed) {
+                            if (pollInterval) {
+                                clearInterval(pollInterval);
+                            }
+
+                            if (progressData.isComplete) {
+                                showSnackbar('Backup created and uploaded to cloud successfully', 'success');
+                                fetchBackups();
+                                fetchBackupStatus();
+
+                                // Close modal after a brief delay
+                                setTimeout(() => {
+                                    setProgressModalOpen(false);
+                                }, 2000);
+                            } else if (progressData.isFailed) {
+                                throw new Error(progressData.errorMessage || 'Backup failed');
+                            }
+                        }
+                    }
+                } catch (pollError: any) {
+                    console.error('Error polling progress:', pollError);
+                }
+            }, 500); // Poll every 500ms
+
         } catch (error: any) {
             showSnackbar(error.message || 'Error creating cloud backup', 'error');
+            setProgressModalOpen(false);
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
         } finally {
             setIsBackingUp(false);
         }
@@ -377,45 +457,118 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
     const downloadBackup = async (backupId: string) => {
         if (!cloudUserInfo?.hasValidLicense) return;
 
+        let pollInterval: NodeJS.Timeout | null = null;
+
         try {
+            setDownloadProgressModalOpen(true);
+            setDownloadProgress({
+                stage: 'starting',
+                message: 'Starting download...',
+                isComplete: false,
+                isFailed: false
+            });
+
             const cloudToken = localStorage.getItem('cloud_proxy_token');
             if (!cloudToken) throw new Error('Not authenticated');
 
-            // Use the proxied download endpoint instead of direct S3 access
-            const response = await fetch(`/api/cloud-backups/${backupId}/download`, {
+            // Start download - backend returns operation ID immediately
+            const downloadResponse = await fetch(`/api/cloud-backups/${backupId}/download`, {
+                method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${cloudToken}`,
+                    'Content-Type': 'application/json'
                 }
             });
 
-            if (!response.ok) {
-                throw new Error('Failed to download backup');
+            if (!downloadResponse.ok) {
+                const error = await downloadResponse.json();
+                throw new Error(error.error || 'Failed to start download');
             }
 
-            // Get filename from response headers or use a default
-            const contentDisposition = response.headers.get('content-disposition');
-            let filename = `backup_${backupId}.zip`;
-            if (contentDisposition) {
-                const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-                if (filenameMatch) {
-                    filename = filenameMatch[1];
+            const { operationId } = await downloadResponse.json();
+
+            // Poll for progress
+            pollInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`/api/cloud-backups/progress/${operationId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${cloudToken}`,
+                        }
+                    });
+
+                    if (progressResponse.ok) {
+                        const progressData = await progressResponse.json();
+                        setDownloadProgress(progressData);
+
+                        // Stop polling if complete or failed
+                        if (progressData.isComplete || progressData.isFailed) {
+                            if (pollInterval) {
+                                clearInterval(pollInterval);
+                            }
+
+                            if (progressData.isComplete) {
+                                // Download the completed file
+                                const resultResponse = await fetch(`/api/cloud-backups/download-result/${operationId}`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${cloudToken}`,
+                                    }
+                                });
+
+                                if (!resultResponse.ok) {
+                                    throw new Error('Failed to retrieve download result');
+                                }
+
+                                // Get filename from response headers or use a default
+                                const contentDisposition = resultResponse.headers.get('content-disposition');
+                                let filename = `backup-restore-${operationId}.zip`;
+                                if (contentDisposition) {
+                                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                                    if (filenameMatch) {
+                                        filename = filenameMatch[1];
+                                    }
+                                }
+
+                                const blob = await resultResponse.blob();
+                                const url = URL.createObjectURL(blob);
+
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                URL.revokeObjectURL(url);
+
+                                showSnackbar('Backup downloaded successfully', 'success');
+
+                                // Close modal after a brief delay
+                                setTimeout(() => {
+                                    setDownloadProgressModalOpen(false);
+                                }, 2000);
+                            } else if (progressData.isFailed) {
+                                throw new Error(progressData.errorMessage || 'Download failed');
+                            }
+                        }
+                    }
+                } catch (pollError: any) {
+                    console.error('Error polling download progress:', pollError);
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                    }
+                    setDownloadProgress({
+                        ...downloadProgress,
+                        isFailed: true,
+                        errorMessage: pollError.message
+                    });
                 }
-            }
+            }, 500); // Poll every 500ms
 
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-
-            showSnackbar('Backup downloaded successfully', 'success');
         } catch (error: any) {
             showSnackbar(error.message || 'Error downloading backup', 'error');
+            setDownloadProgressModalOpen(false);
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
         }
     };
 
@@ -506,9 +659,10 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
         );
     }
 
-    // Storage usage percentage
+    // Storage usage percentage - use combined storage if available, otherwise fall back to backup storage only
+    const totalStorageForCalculation = backupUsage?.totalCombinedStorage ?? backupUsage?.totalStorageUsed ?? 0;
     const storagePercentage = backupUsage ?
-        Math.round((backupUsage.totalStorageUsed / backupUsage.maxStorageLimit) * 100) : 0;
+        Math.round((totalStorageForCalculation / backupUsage.maxStorageLimit) * 100) : 0;
 
     // Backup count percentage
     const backupCountPercentage = backupUsage ?
@@ -554,6 +708,7 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                     const components = [];
                                     if (backupSettings?.includeKeys !== false) components.push('Keys');
                                     if (backupSettings?.includeIdentity !== false) components.push('Identity');
+                                    if (backupSettings?.includeFrameEngine !== false) components.push('FrameEngine');
                                     return components.length > 0 ? components.join(', ') : 'Database only';
                                 })()}
                             </Typography>
@@ -576,11 +731,11 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                 <>
                                     <Box sx={{ mb: 2 }}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                                            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                                Storage Used
+                                            <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 'medium' }}>
+                                                Total Storage Used
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                                                {formatFileSize(backupUsage.totalStorageUsed)} / {formatFileSize(backupUsage.maxStorageLimit)}
+                                            <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 'medium' }}>
+                                                {formatFileSize(totalStorageForCalculation)} / {formatFileSize(backupUsage.maxStorageLimit)}
                                             </Typography>
                                         </Box>
                                         <LinearProgress
@@ -589,6 +744,23 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                             color={storagePercentage > 90 ? 'error' : storagePercentage > 75 ? 'warning' : 'primary'}
                                             sx={{ height: 6, borderRadius: 3 }}
                                         />
+                                        {/* Storage Breakdown */}
+                                        {backupUsage.totalCombinedStorage !== undefined && (
+                                            <Box sx={{ mt: 1.5, pl: 0.5 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'primary.main' }} />
+                                                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                                                        Database Backups: {formatFileSize(backupUsage.totalStorageUsed)}
+                                                    </Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'info.main' }} />
+                                                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                                                        FrameEngine Snapshots & Files: {formatFileSize(backupUsage.templateAssetStorageUsed || 0)}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
                                     </Box>
                                     <Box sx={{ mb: 2 }}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
@@ -725,6 +897,25 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                                         }
                                         label="Include backend identity"
                                         sx={{ display: 'block', mb: 0.5 }}
+                                    />
+
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={backupSettings?.includeFrameEngine ?? true}
+                                                onChange={(e) => updateBackupSettings({ includeFrameEngine: e.target.checked })}
+                                                disabled={savingSettings}
+                                            />
+                                        }
+                                        label={
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                <span>Include FrameEngine templates</span>
+                                                <Tooltip title="Snapshots all user layouts and uploads unique assets only. Shared assets are deduplicated, and subsequent backups only upload changes." arrow>
+                                                    <InfoIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                                </Tooltip>
+                                            </Box>
+                                        }
+                                        sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}
                                     />
 
                                 </Box>
@@ -967,14 +1158,190 @@ const Settings_CloudBackups: React.FC<SettingsBackupsProps> = ({
                     <InfoIcon sx={{ mr: 1, fontSize: 18 }} />
                     Cloud Backup Information
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    • Backups include your complete database, encryption keys, and backend identity<br />
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                    <strong>Database Backups:</strong><br />
+                    • Includes your complete database, encryption keys, and backend identity<br />
                     • All data is encrypted in transit and at rest using industry-standard encryption<br />
                     • Automatic backups run according to your selected schedule<br />
+                    <br />
+                    <strong>FrameEngine Snapshots (when enabled):</strong><br />
+                    • Snapshots are taken of all your user layouts<br />
+                    • Only unique assets are uploaded - shared assets are deduplicated<br />
+                    • When multiple layouts use the same asset, it's stored only once<br />
+                    • Subsequent backups use diff logic - only changed assets are uploaded<br />
+                    • This significantly reduces storage usage and upload times<br />
+                    <br />
                     • Storage usage and limits are shared across all your backends<br />
                     • You can restore backups by downloading and importing them through Database settings
                 </Typography>
             </Box>
+
+            {/* Backup Progress Modal */}
+            <Dialog
+                open={progressModalOpen}
+                maxWidth="sm"
+                fullWidth
+                disableEscapeKeyDown={!backupProgress.isComplete && !backupProgress.isFailed}
+            >
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CloudUploadIcon />
+                    Cloud Backup Progress
+                </DialogTitle>
+                <DialogContent>
+                    <Stepper activeStep={
+                        backupProgress.stage === 'preparing' || backupProgress.stage === 'analyzing' || backupProgress.stage === 'templates' || backupProgress.stage === 'snapshotting' || backupProgress.stage === 'packaging' ? 0 :
+                        backupProgress.stage === 'uploading' ? 1 :
+                        backupProgress.stage === 'completing' ? 2 : 3
+                    } alternativeLabel sx={{ mb: 3 }}>
+                        <Step completed={backupProgress.stage !== 'preparing' && backupProgress.stage !== 'analyzing' && backupProgress.stage !== 'templates' && backupProgress.stage !== 'snapshotting' && backupProgress.stage !== 'packaging'}>
+                            <StepLabel>Creating Backup</StepLabel>
+                        </Step>
+                        <Step completed={backupProgress.stage === 'completing' || backupProgress.isComplete}>
+                            <StepLabel>Uploading</StepLabel>
+                        </Step>
+                        <Step completed={backupProgress.isComplete}>
+                            <StepLabel>Completing</StepLabel>
+                        </Step>
+                    </Stepper>
+
+                    <Box sx={{ textAlign: 'center', mb: 2 }}>
+                        {backupProgress.isComplete ? (
+                            <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
+                        ) : backupProgress.isFailed ? (
+                            <ErrorIcon sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+                        ) : (
+                            <CircularProgress size={48} sx={{ mb: 1 }} />
+                        )}
+                        <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                            {backupProgress.message}
+                        </Typography>
+
+                        {backupProgress.isFailed && backupProgress.errorMessage && (
+                            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                                {backupProgress.errorMessage}
+                            </Typography>
+                        )}
+
+                        {/* Show detailed progress for templates and user layouts */}
+                        {backupProgress.currentItem !== undefined && backupProgress.totalItems !== undefined && (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {backupProgress.stage === 'templates' && `Adding template ${backupProgress.currentItem} of ${backupProgress.totalItems} to manifest`}
+                                    {backupProgress.stage === 'snapshotting' && `Snapshotting user layout ${backupProgress.currentItem} of ${backupProgress.totalItems}`}
+                                </Typography>
+                                {backupProgress.itemName && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                        {backupProgress.itemName}
+                                    </Typography>
+                                )}
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={(backupProgress.currentItem / backupProgress.totalItems) * 100}
+                                    sx={{ mt: 1, height: 8, borderRadius: 4 }}
+                                />
+                            </Box>
+                        )}
+
+                        {/* Show indeterminate progress for other stages */}
+                        {!backupProgress.isComplete && !backupProgress.isFailed && backupProgress.currentItem === undefined && (
+                            <LinearProgress
+                                variant="indeterminate"
+                                sx={{ mt: 2, height: 8, borderRadius: 4 }}
+                            />
+                        )}
+                    </Box>
+                </DialogContent>
+                {(backupProgress.isComplete || backupProgress.isFailed) && (
+                    <DialogActions>
+                        <Button onClick={() => setProgressModalOpen(false)} variant="contained">
+                            Close
+                        </Button>
+                    </DialogActions>
+                )}
+            </Dialog>
+
+            {/* Download Progress Modal */}
+            <Dialog
+                open={downloadProgressModalOpen}
+                maxWidth="sm"
+                fullWidth
+                disableEscapeKeyDown={!downloadProgress.isComplete && !downloadProgress.isFailed}
+            >
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DownloadIcon />
+                    Backup Download Progress
+                </DialogTitle>
+                <DialogContent>
+                    <Stepper activeStep={
+                        downloadProgress.stage === 'fetching_manifest' ? 0 :
+                        downloadProgress.stage === 'downloading_database' ? 1 :
+                        downloadProgress.stage === 'downloading_templates' || downloadProgress.stage === 'downloading_snapshots' ? 2 :
+                        downloadProgress.stage === 'packaging' ? 3 : 4
+                    } alternativeLabel sx={{ mb: 3 }}>
+                        <Step completed={downloadProgress.stage !== 'fetching_manifest' && downloadProgress.stage !== 'starting'}>
+                            <StepLabel>Fetching Manifest</StepLabel>
+                        </Step>
+                        <Step completed={downloadProgress.stage !== 'fetching_manifest' && downloadProgress.stage !== 'downloading_database' && downloadProgress.stage !== 'starting'}>
+                            <StepLabel>Database</StepLabel>
+                        </Step>
+                        <Step completed={downloadProgress.stage === 'packaging' || downloadProgress.isComplete}>
+                            <StepLabel>Assets</StepLabel>
+                        </Step>
+                        <Step completed={downloadProgress.isComplete}>
+                            <StepLabel>Packaging</StepLabel>
+                        </Step>
+                    </Stepper>
+
+                    <Box sx={{ textAlign: 'center', mb: 2 }}>
+                        {downloadProgress.isComplete ? (
+                            <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
+                        ) : downloadProgress.isFailed ? (
+                            <ErrorIcon sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+                        ) : (
+                            <CircularProgress size={48} sx={{ mb: 1 }} />
+                        )}
+                        <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                            {downloadProgress.message}
+                        </Typography>
+
+                        {downloadProgress.isFailed && downloadProgress.errorMessage && (
+                            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                                {downloadProgress.errorMessage}
+                            </Typography>
+                        )}
+
+                        {/* Show detailed progress for assets */}
+                        {downloadProgress.currentItem !== undefined && downloadProgress.totalItems !== undefined && (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {downloadProgress.stage === 'downloading_templates' && `Downloading template ${downloadProgress.currentItem} of ${downloadProgress.totalItems}`}
+                                    {downloadProgress.stage === 'downloading_snapshots' && `Downloading asset ${downloadProgress.currentItem} of ${downloadProgress.totalItems}`}
+                                </Typography>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={(downloadProgress.currentItem / downloadProgress.totalItems) * 100}
+                                    sx={{ mt: 1, height: 8, borderRadius: 4 }}
+                                />
+                            </Box>
+                        )}
+
+                        {/* Show indeterminate progress for other stages */}
+                        {!downloadProgress.isComplete && !downloadProgress.isFailed && downloadProgress.currentItem === undefined && (
+                            <LinearProgress
+                                variant="indeterminate"
+                                sx={{ mt: 2, height: 8, borderRadius: 4 }}
+                            />
+                        )}
+                    </Box>
+                </DialogContent>
+                {(downloadProgress.isComplete || downloadProgress.isFailed) && (
+                    <DialogActions>
+                        <Button onClick={() => setDownloadProgressModalOpen(false)} variant="contained">
+                            Close
+                        </Button>
+                    </DialogActions>
+                )}
+            </Dialog>
         </>
     );
 };

@@ -35,6 +35,10 @@ namespace JunctionRelayServer.Models
         public string? CreatedBy { get; set; }
         public string? Version { get; set; } = "1.0";
 
+        // Cloud Template Tracking (UUID strings from PostgreSQL)
+        public string? CloudTemplateId { get; set; }
+        public string? CloudVariantId { get; set; }
+
         // Frame Dimensions and Orientation
         public int Width { get; set; } = 800;
         public int Height { get; set; } = 600;

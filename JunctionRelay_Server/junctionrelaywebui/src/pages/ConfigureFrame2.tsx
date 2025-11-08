@@ -22,8 +22,9 @@
 // This is a deliberate architectural choice and does not violate PascalCase - the components ARE PascalCase
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography, Modal, Backdrop, Button, Slider } from '@mui/material';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Box, CircularProgress, Typography, Modal, Backdrop, Button, Slider, Alert } from '@mui/material';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // FrameEngine2 Components
 import FrameEngine2_Toolbar from '../components/frameengine2/FrameEngine2_Toolbar';
@@ -31,15 +32,21 @@ import FrameEngine2_Sidebar_Left from '../components/frameengine2/FrameEngine2_S
 import FrameEngine2_Sidebar_Right from '../components/frameengine2/FrameEngine2_Sidebar_Right';
 import FrameEngine2_Canvas, { type FrameEngine2_CanvasRef } from '../components/frameengine2/FrameEngine2_Canvas';
 import { ColorPickerProvider } from '../components/frameengine2/FrameEngine2_ColorPickerContext';
+import FrameEngine2_GifSettingsModal, { type GifSettings } from '../components/frameengine2/FrameEngine2_GifSettingsModal';
+import FrameEngine2_CaptureProgressModal from '../components/frameengine2/FrameEngine2_CaptureProgressModal';
 
 // FrameEngine2 API & Data
-import { getFrameLayout, updateFrameLayout } from '../components/frameengine2/FrameEngine2_API';
-import { parseFrameLayoutResponse, DEFAULT_CANVAS_SETTINGS } from '../components/frameengine2/FrameEngine2_Data';
+import { cloneFrameLayout } from '../components/frameengine2/FrameEngine2_API';
 
 // FrameEngine2 Hooks
 import { useValueGenerator } from '../components/frameengine2/hooks/FrameEngine2_useValueGenerator';
 import { useScreenshotCapture } from '../components/frameengine2/hooks/FrameEngine2_useScreenshotCapture';
 import { useGifCapture } from '../components/frameengine2/hooks/FrameEngine2_useGifCapture';
+import { useSensorTestValueSync } from '../components/frameengine2/hooks/FrameEngine2_useSensorTestValueSync';
+import { useRiveDiscoveryManager } from '../components/frameengine2/hooks/FrameEngine2_useRiveDiscoveryManager';
+import { useThumbnailManager } from '../components/frameengine2/hooks/FrameEngine2_useThumbnailManager';
+import { useLayoutPersistence } from '../components/frameengine2/hooks/FrameEngine2_useLayoutPersistence';
+import { usePreviewMode } from '../components/frameengine2/hooks/FrameEngine2_usePreviewMode';
 
 // Types
 import type { FrameLayoutConfig, PlacedElement } from '../components/frameengine2/types/FrameEngine2_LayoutTypes';
@@ -50,14 +57,17 @@ import type {
 
 const ConfigureFrame2: React.FC = () => {
     const { id } = useParams<{ id: string }>();
-
-    // Loading & Error states
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const navigate = useNavigate();
 
     // Layout & Elements state (loaded from API)
     const [layout, setLayout] = useState<FrameLayoutConfig | null>(null);
     const [elements, setElements] = useState<PlacedElement[]>([]);
+
+    // Set page title dynamically based on layout name
+    usePageTitle(layout?.displayName || 'Frame Layout');
+
+    // Loading & Error states (other than persistence)
+    const [cloning, setCloning] = useState(false);
 
     // Selected element ID
     const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -68,22 +78,51 @@ const ConfigureFrame2: React.FC = () => {
     // Preview mode (hides editing UI, focuses on bindings/testing)
     const [previewMode, setPreviewMode] = useState<boolean>(false);
 
-    // Store original grid settings before preview mode (to restore later)
-    const previewOriginalGridSettings = useRef<{ showGrid: boolean; showOutlines: boolean } | null>(null);
+    /**
+     * Layout persistence hook
+     * REFACTORED: Extracted layout loading/saving logic into custom hook
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 4.1 (Component Size Limits)
+     */
+    const {
+        loading,
+        error,
+        clearError,
+        saveLayout,
+        previewOriginalGridSettings
+    } = useLayoutPersistence({
+        layoutId: id,
+        layout,
+        elements,
+        onLayoutLoaded: setLayout,
+        onElementsLoaded: setElements,
+        onSetPreviewMode: setPreviewMode
+    });
 
     // Screenshot modal state
     const [screenshotInProgress, setScreenshotInProgress] = useState<boolean>(false);
 
-    // Thumbnail state
-    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-    const [thumbnailLoading, setThumbnailLoading] = useState<boolean>(false);
+    /**
+     * Thumbnail manager hook
+     * REFACTORED: Extracted thumbnail loading/upload logic into custom hook
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 4.1 (Component Size Limits)
+     */
+    const {
+        thumbnailUrl,
+        thumbnailLoading,
+        handleUploadThumbnail,
+        setThumbnailLoading,
+        setThumbnailUrl
+    } = useThumbnailManager({
+        layoutId: id,
+        onSetScreenshotInProgress: setScreenshotInProgress
+    });
 
     // GIF capture state
     const [gifCaptureInProgress, setGifCaptureInProgress] = useState<boolean>(false);
     const [gifCaptureProgress, setGifCaptureProgress] = useState<number>(0);
     const [gifCaptureStage, setGifCaptureStage] = useState<'preparing' | 'frames' | 'encoding' | 'finalizing'>('preparing');
     const [showGifSettings, setShowGifSettings] = useState<boolean>(false);
-    const [gifSettings, setGifSettings] = useState({
+    const [gifSettings, setGifSettings] = useState<GifSettings>({
         duration: 5,
         quality: 15,
         targetFps: 30  // Target FPS to aim for during capture
@@ -95,15 +134,18 @@ const ConfigureFrame2: React.FC = () => {
     // Canvas ref for calling resetView
     const canvasRef = useRef<FrameEngine2_CanvasRef>(null);
 
-    // Rive discovery state - Background
-    const [backgroundRiveMachines, setBackgroundRiveMachines] = useState<DiscoveredRiveStateMachine[]>([]);
-    const [backgroundRiveBindings, setBackgroundRiveBindings] = useState<DiscoveredRiveDataBinding[]>([]);
-
-    // Rive discovery state - Elements (Map of elementId -> discoveries)
-    const [elementRiveDiscoveries, setElementRiveDiscoveries] = useState<Map<string, {
-        machines: DiscoveredRiveStateMachine[];
-        bindings: DiscoveredRiveDataBinding[];
-    }>>(new Map());
+    /**
+     * Rive discovery manager hook
+     * REFACTORED: Extracted Rive discovery state and handlers into custom hook
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 4.1 (Component Size Limits)
+     */
+    const {
+        backgroundRiveMachines,
+        backgroundRiveBindings,
+        elementRiveDiscoveries,
+        handleBackgroundRiveDiscovery,
+        handleElementRiveDiscovery
+    } = useRiveDiscoveryManager();
 
     /**
      * Memoized selected element to avoid expensive find on every render
@@ -136,11 +178,24 @@ const ConfigureFrame2: React.FC = () => {
     /**
      * Update an existing element
      * Wrapped in useCallback to prevent unnecessary re-renders
+     * Supports both direct updates and functional updates for advanced use cases
      */
-    const handleUpdateElement = useCallback((elementId: string, updates: Partial<PlacedElement>) => {
-        setElements(prev => prev.map(el =>
-            el.id === elementId ? { ...el, ...updates } as PlacedElement : el
-        ));
+    const handleUpdateElement = useCallback((
+        elementId: string,
+        updates: Partial<PlacedElement> | ((current: PlacedElement) => Partial<PlacedElement>)
+    ) => {
+        setElements(prev => {
+            const updated = prev.map(el => {
+                if (el.id === elementId) {
+                    // Support functional updates
+                    const resolvedUpdates = typeof updates === 'function' ? updates(el) : updates;
+                    const merged = { ...el, ...resolvedUpdates } as PlacedElement;
+                    return merged;
+                }
+                return el;
+            });
+            return updated;
+        });
     }, []);
 
     /**
@@ -168,104 +223,6 @@ const ConfigureFrame2: React.FC = () => {
         setCurrentZoom(zoom);
     }, []);
 
-    /**
-     * Handle background Rive discovery from canvas
-     * Wrapped in useCallback to prevent unnecessary re-renders
-     */
-    const handleBackgroundRiveDiscovery = useCallback((
-        machines: DiscoveredRiveStateMachine[],
-        bindings: DiscoveredRiveDataBinding[]
-    ) => {
-        console.log('[ConfigureFrame2] Background Rive discovery received:', {
-            machines: machines.length,
-            bindings: bindings.length
-        });
-        setBackgroundRiveMachines(machines);
-        setBackgroundRiveBindings(bindings);
-    }, []);
-
-    /**
-     * Handle element Rive discovery from canvas
-     * Wrapped in useCallback to prevent unnecessary re-renders
-     */
-    const handleElementRiveDiscovery = useCallback((
-        discoveries: Map<string, { machines: DiscoveredRiveStateMachine[]; bindings: DiscoveredRiveDataBinding[] }>
-    ) => {
-        console.log('[ConfigureFrame2] Element Rive discoveries received:', {
-            totalElements: discoveries.size,
-            elementIds: Array.from(discoveries.keys())
-        });
-        setElementRiveDiscoveries(discoveries);
-    }, []);
-
-    /**
-     * Load layout data from API
-     */
-    useEffect(() => {
-        const loadLayout = async () => {
-            if (!id) {
-                setError('No layout ID provided');
-                setLoading(false);
-                return;
-            }
-
-            try {
-                setLoading(true);
-                setError(null);
-
-                const response = await getFrameLayout(id);
-                const { layout: parsedLayout, elements: parsedElements } = parseFrameLayoutResponse(response);
-
-                setLayout(parsedLayout);
-                setElements(parsedElements);
-            } catch (err) {
-                console.error('[FrameEngine2] Failed to load layout:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load layout');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadLayout();
-    }, [id]);
-
-    /**
-     * Load thumbnail on mount
-     */
-    useEffect(() => {
-        if (!id) return;
-
-        const loadThumbnail = async () => {
-            try {
-                // Check if thumbnail exists
-                const response = await fetch(`/api/frameengine/${id}/thumbnail`, { method: 'HEAD' });
-                if (response.ok) {
-                    setThumbnailUrl(`/api/frameengine/${id}/thumbnail?t=${Date.now()}`);
-                }
-            } catch (err) {
-                // No thumbnail exists, that's okay
-                console.log('[FrameEngine2] No thumbnail found');
-            }
-        };
-
-        loadThumbnail();
-    }, [id]);
-
-    /**
-     * Save layout to API (immediate)
-     */
-    const saveLayout = useCallback(async () => {
-        if (!id || !layout) return;
-
-        try {
-            await updateFrameLayout(id, layout, elements);
-            console.log('[FrameEngine2] Layout saved successfully');
-        } catch (err) {
-            console.error('[FrameEngine2] Failed to save layout:', err);
-            setError(err instanceof Error ? err.message : 'Failed to save layout');
-        }
-    }, [id, layout, elements]);
-
     const handleQuickSave = useCallback(() => {
         saveLayout();
     }, [saveLayout]);
@@ -273,6 +230,19 @@ const ConfigureFrame2: React.FC = () => {
     const handleSave = useCallback(() => {
         saveLayout();
     }, [saveLayout]);
+
+    /**
+     * Preview mode manager hook
+     * REFACTORED: Extracted preview mode toggling logic into custom hook
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 4.1 (Component Size Limits)
+     */
+    const { handlePreview } = usePreviewMode({
+        previewOriginalGridSettingsRef: previewOriginalGridSettings,
+        currentPreviewMode: previewMode,
+        onClearSelection: useCallback(() => setSelectedElementId(null), []),
+        onLayoutUpdate: setLayout,
+        onSetPreviewMode: setPreviewMode
+    });
 
     const handleUndo = useCallback(() => {
         console.log('Undo clicked');
@@ -282,69 +252,23 @@ const ConfigureFrame2: React.FC = () => {
         console.log('Redo clicked');
     }, []);
 
-    const handlePreview = useCallback(() => {
-        setPreviewMode(prev => {
-            const newMode = !prev;
+    const handleCloneTemplate = useCallback(async () => {
+        if (!id || !layout) return;
 
-            if (newMode) {
-                // ENTERING preview mode
-                // Clear selection
-                setSelectedElementId(null);
+        try {
+            setCloning(true);
+            const newName = `${layout.displayName} (Copy)`;
+            const clonedId = await cloneFrameLayout(id, newName);
 
-                // Store current grid settings and update layout
-                setLayout(currentLayout => {
-                    if (!currentLayout?.canvasSettings?.grid) return currentLayout;
-
-                    previewOriginalGridSettings.current = {
-                        showGrid: currentLayout.canvasSettings.grid.showGrid,
-                        showOutlines: currentLayout.canvasSettings.grid.showOutlines
-                    };
-
-                    // Force grid settings to false for preview
-                    return {
-                        ...currentLayout,
-                        canvasSettings: {
-                            ...DEFAULT_CANVAS_SETTINGS,
-                            ...currentLayout.canvasSettings,
-                            grid: {
-                                ...DEFAULT_CANVAS_SETTINGS.grid,
-                                ...currentLayout.canvasSettings.grid,
-                                showGrid: false,
-                                showOutlines: false
-                            }
-                        }
-                    };
-                });
-            } else {
-                // EXITING preview mode
-                // Restore original grid settings
-                if (previewOriginalGridSettings.current) {
-                    setLayout(currentLayout => {
-                        if (!currentLayout) return currentLayout;
-
-                        const restored = {
-                            ...currentLayout,
-                            canvasSettings: {
-                                ...DEFAULT_CANVAS_SETTINGS,
-                                ...currentLayout.canvasSettings,
-                                grid: {
-                                    ...DEFAULT_CANVAS_SETTINGS.grid,
-                                    ...(currentLayout.canvasSettings?.grid || {}),
-                                    showGrid: previewOriginalGridSettings.current!.showGrid,
-                                    showOutlines: previewOriginalGridSettings.current!.showOutlines
-                                }
-                            }
-                        };
-                        previewOriginalGridSettings.current = null;
-                        return restored;
-                    });
-                }
-            }
-
-            console.log('[FrameEngine2] Preview mode:', newMode);
-            return newMode;
-        });
-    }, []);
+            // Navigate to the cloned layout
+            navigate(`/configure-frame/${clonedId}`);
+        } catch (err) {
+            console.error('[FrameEngine2] Failed to clone template:', err);
+            alert(err instanceof Error ? err.message : 'Failed to clone template');
+        } finally {
+            setCloning(false);
+        }
+    }, [id, layout, navigate]);
 
     const handleExport = useCallback(async () => {
         if (!id) {
@@ -368,7 +292,7 @@ const ConfigureFrame2: React.FC = () => {
             console.log('[FrameEngine2] Export initiated');
         } catch (err) {
             console.error('[FrameEngine2] Failed to export layout:', err);
-            setError(err instanceof Error ? err.message : 'Failed to export layout');
+            alert(err instanceof Error ? err.message : 'Failed to export layout');
         }
     }, [id, layout?.displayName, saveLayout]);
 
@@ -432,45 +356,6 @@ const ConfigureFrame2: React.FC = () => {
         await captureThumbnail();
     }, [captureThumbnail]);
 
-    /**
-     * Handle thumbnail upload from file
-     */
-    const handleUploadThumbnail = useCallback(async (file: File) => {
-        if (!id) return;
-
-        try {
-            // Show modal overlay
-            setScreenshotInProgress(true);
-            setThumbnailLoading(true);
-
-            // Small delay to ensure modal is visible
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            const formData = new FormData();
-            formData.append('thumbnail', file);
-
-            const response = await fetch(`/api/frameengine/${id}/thumbnail-upload`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
-            }
-
-            // Refresh thumbnail display
-            setThumbnailUrl(`/api/frameengine/${id}/thumbnail?t=${Date.now()}`);
-
-            console.log('[FrameEngine2] Custom thumbnail uploaded successfully');
-        } catch (err) {
-            console.error('[FrameEngine2] Failed to upload custom thumbnail:', err);
-            alert('Failed to upload thumbnail. Please try again.');
-        } finally {
-            setScreenshotInProgress(false);
-
-            setThumbnailLoading(false);
-        }
-    }, [id]);
 
     /**
      * Value Generator hook - handles all random value generation logic
@@ -487,118 +372,18 @@ const ConfigureFrame2: React.FC = () => {
 
     /**
      * Sync Value Generator test values to Rive inputs and bindings
-     * When sensorTestValues changes, update corresponding Rive inputs/bindings
-     * Batches all updates to prevent multiple render cycles
+     * REFACTORED: Extracted 108-line effect into useSensorTestValueSync hook
+     * Following FRAMEENGINE2_ARCHITECTURE_GUIDELINES.md Section 4.1 (Component Size Limits)
      */
-    useEffect(() => {
-        if (!layout?.sensorTestValues) return;
-
-        let hasBackgroundInputUpdates = false;
-        let hasBackgroundBindingUpdates = false;
-        const newRiveInputs = { ...(layout.riveInputs || {}) };
-        const newRiveBindings = { ...(layout.riveBindings || {}) };
-
-        // Check background Rive inputs
-        backgroundRiveMachines.forEach(machine => {
-            machine.inputs.forEach(input => {
-                const testValue = layout.sensorTestValues?.[input.name];
-                if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
-                    const currentValue = layout.riveInputs?.[input.name];
-                    if (currentValue !== testValue.value) {
-                        newRiveInputs[input.name] = testValue.value;
-                        hasBackgroundInputUpdates = true;
-                    }
-                }
-            });
-        });
-
-        // Check background Rive bindings
-        backgroundRiveBindings.forEach(binding => {
-            const testValue = layout.sensorTestValues?.[binding.name];
-            if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
-                const currentValue = layout.riveBindings?.[binding.name];
-                if (currentValue !== testValue.value) {
-                    newRiveBindings[binding.name] = testValue.value;
-                    hasBackgroundBindingUpdates = true;
-                }
-            }
-        });
-
-        // Apply background updates if any (BATCHED - prevents multiple re-renders)
-        if (hasBackgroundInputUpdates || hasBackgroundBindingUpdates) {
-            const updates: any = {};
-            if (hasBackgroundInputUpdates) updates.riveInputs = newRiveInputs;
-            if (hasBackgroundBindingUpdates) updates.riveBindings = newRiveBindings;
-            handleLayoutUpdate(updates);
-        }
-
-        // Check element Rive inputs and bindings
-        // OPTIMIZATION: Collect all updates first, then apply in a single batch
-        const elementUpdates: Array<{ id: string; updates: Partial<PlacedElement> }> = [];
-
-        elementRiveDiscoveries.forEach((discovery, elementId) => {
-            let hasElementInputUpdates = false;
-            let hasElementBindingUpdates = false;
-            const element = elements.find(el => el.id === elementId);
-            if (!element || element.type !== 'media-rive') return;
-
-            const newElementRiveInputs = { ...(element.properties.riveInputs || {}) };
-            const newElementRiveBindings = { ...(element.properties.riveBindings || {}) };
-
-            // Check inputs
-            discovery.machines.forEach(machine => {
-                machine.inputs.forEach(input => {
-                    const testValue = layout.sensorTestValues?.[input.name];
-                    if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
-                        const currentValue = element.properties.riveInputs?.[input.name];
-                        if (currentValue !== testValue.value) {
-                            newElementRiveInputs[input.name] = testValue.value;
-                            hasElementInputUpdates = true;
-                        }
-                    }
-                });
-            });
-
-            // Check bindings
-            discovery.bindings.forEach(binding => {
-                const testValue = layout.sensorTestValues?.[binding.name];
-                if (testValue !== undefined && typeof testValue === 'object' && testValue.value !== undefined) {
-                    const currentValue = element.properties.riveBindings?.[binding.name];
-                    if (currentValue !== testValue.value) {
-                        newElementRiveBindings[binding.name] = testValue.value;
-                        hasElementBindingUpdates = true;
-                    }
-                }
-            });
-
-            // Collect element updates (instead of applying immediately)
-            if (hasElementInputUpdates || hasElementBindingUpdates) {
-                const propertyUpdates: any = { ...element.properties };
-                if (hasElementInputUpdates) {
-                    propertyUpdates.riveInputs = newElementRiveInputs;
-                }
-                if (hasElementBindingUpdates) {
-                    propertyUpdates.riveBindings = newElementRiveBindings;
-                }
-                elementUpdates.push({
-                    id: elementId,
-                    updates: { properties: propertyUpdates }
-                });
-            }
-        });
-
-        // Apply all element updates in a single batch (prevents N re-renders)
-        if (elementUpdates.length > 0) {
-            setElements(prev => prev.map(el => {
-                const update = elementUpdates.find(u => u.id === el.id);
-                return update ? { ...el, ...update.updates } as PlacedElement : el;
-            }));
-        }
-    // FIXED: Removed layout?.riveInputs and layout?.riveBindings from dependencies to prevent infinite loop
-    // The effect reads these values but also modifies them via handleLayoutUpdate
-    // OPTIMIZATION: Removed handleUpdateElement from deps - now using setElements directly for batching
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [layout?.sensorTestValues, backgroundRiveMachines, backgroundRiveBindings, elementRiveDiscoveries, elements, handleLayoutUpdate]);
+    useSensorTestValueSync({
+        layout,
+        elements,
+        backgroundRiveMachines,
+        backgroundRiveBindings,
+        elementRiveDiscoveries,
+        onLayoutUpdate: handleLayoutUpdate,
+        setElements
+    });
 
     // Loading state
     if (loading) {
@@ -689,6 +474,9 @@ const ConfigureFrame2: React.FC = () => {
                         zoom={currentZoom}
                         elementCount={elements.length}
                         previewMode={previewMode}
+                        isTemplate={layout?.isTemplate}
+                        cloudTemplateId={layout?.cloudTemplateId ?? undefined}
+                        cloudVariantId={layout?.cloudVariantId ?? undefined}
                         onQuickSave={handleQuickSave}
                         onSave={handleSave}
                         onUndo={handleUndo}
@@ -732,12 +520,73 @@ const ConfigureFrame2: React.FC = () => {
                     />
 
                     {/* Center Canvas Area */}
-                    <FrameEngine2_Canvas
-                        ref={canvasRef}
-                        layout={layout}
-                        elements={elements}
-                        onLayoutUpdate={handleLayoutUpdate}
-                        onAddElement={handleAddElement}
+                    <Box
+                        sx={{
+                            flex: 1,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            minWidth: 0,
+                            position: 'relative'
+                        }}
+                    >
+                        {/* Template Banner */}
+                        {layout?.isTemplate && (
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 1,
+                                    py: 2,
+                                    px: 3,
+                                    bgcolor: 'info.main',
+                                    color: 'info.contrastText',
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider'
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Typography
+                                        variant="body1"
+                                        sx={{
+                                            fontWeight: 500,
+                                            fontSize: '1rem'
+                                        }}
+                                    >
+                                        Templates cannot be edited - please clone first
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleCloneTemplate}
+                                        disabled={cloning}
+                                        sx={{
+                                            bgcolor: 'background.paper',
+                                            color: 'text.primary',
+                                            fontWeight: 'bold',
+                                            px: 3,
+                                            '&:hover': {
+                                                bgcolor: 'grey.200'
+                                            },
+                                            '&.Mui-disabled': {
+                                                bgcolor: 'grey.300',
+                                                color: 'text.disabled'
+                                            }
+                                        }}
+                                    >
+                                        {cloning ? 'Cloning...' : 'Clone'}
+                                    </Button>
+                                </Box>
+                            </Box>
+                        )}
+
+                        {/* Canvas */}
+                        <FrameEngine2_Canvas
+                            ref={canvasRef}
+                            layout={layout}
+                            elements={elements}
+                            onLayoutUpdate={handleLayoutUpdate}
+                            onAddElement={handleAddElement}
                         onUpdateElement={handleUpdateElement}
                         selectedElementId={selectedElementId}
                         onSelectElement={handleSelectElement}
@@ -746,6 +595,7 @@ const ConfigureFrame2: React.FC = () => {
                         onBackgroundRiveDiscovery={handleBackgroundRiveDiscovery}
                         onElementRiveDiscovery={handleElementRiveDiscovery}
                     />
+                    </Box>
 
                     {/* Right Sidebar - Hidden in preview mode */}
                     {!previewMode && (
@@ -758,202 +608,23 @@ const ConfigureFrame2: React.FC = () => {
                 </Box>
             </Box>
 
-            {/* Screenshot In Progress Modal */}
-            <Modal
+            {/* Screenshot/Capture Progress Modal */}
+            <FrameEngine2_CaptureProgressModal
                 open={screenshotInProgress || gifCaptureInProgress}
-                closeAfterTransition
-                BackdropComponent={Backdrop}
-                BackdropProps={{
-                    timeout: 500,
-                    sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' }
-                }}
-            >
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        bgcolor: 'background.paper',
-                        borderRadius: 2,
-                        boxShadow: 24,
-                        p: 4,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 2,
-                        minWidth: 300
-                    }}
-                >
-                    {gifCaptureInProgress ? (
-                        <>
-                            <CircularProgress
-                                variant={gifCaptureStage === 'encoding' || gifCaptureStage === 'finalizing' ? 'indeterminate' : 'determinate'}
-                                value={gifCaptureProgress}
-                                size={64}
-                                thickness={4}
-                            />
-                            <Typography variant="h6" component="h2">
-                                {gifCaptureStage === 'preparing' && 'Preparing capture...'}
-                                {gifCaptureStage === 'frames' && `Capturing... ${Math.round(gifCaptureProgress / 60 * gifSettings.duration * 10) / 10}s / ${gifSettings.duration}s`}
-                                {gifCaptureStage === 'encoding' && 'Processing frames...'}
-                                {gifCaptureStage === 'finalizing' && 'Finalizing...'}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                {gifCaptureStage === 'frames' && 'Recording real-time animation'}
-                                {gifCaptureStage === 'encoding' && 'Encoding GIF, please wait...'}
-                                {gifCaptureStage === 'finalizing' && 'Almost done...'}
-                            </Typography>
-                            {gifCaptureStage === 'frames' && (
-                                <Typography variant="caption" color="warning.main" sx={{ mt: 1 }}>
-                                    ⚠️ Please keep this window visible during capture
-                                </Typography>
-                            )}
-                        </>
-                    ) : (
-                        <>
-                            <CircularProgress size={48} />
-                            <Typography variant="h6" component="h2">
-                                Taking screenshot...
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Please wait while we capture your layout
-                            </Typography>
-                        </>
-                    )}
-                </Box>
-            </Modal>
+                gifCaptureInProgress={gifCaptureInProgress}
+                gifCaptureStage={gifCaptureStage}
+                gifCaptureProgress={gifCaptureProgress}
+                gifDuration={gifSettings.duration}
+            />
 
             {/* GIF Settings Modal */}
-            <Modal
+            <FrameEngine2_GifSettingsModal
                 open={showGifSettings}
                 onClose={() => setShowGifSettings(false)}
-                closeAfterTransition
-                BackdropComponent={Backdrop}
-                BackdropProps={{
-                    timeout: 500,
-                    sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' }
-                }}
-            >
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        bgcolor: 'background.paper',
-                        borderRadius: 2,
-                        boxShadow: 24,
-                        p: 4,
-                        minWidth: 400,
-                        maxWidth: 500
-                    }}
-                >
-                    <Typography variant="h5" component="h2" sx={{ mb: 3 }}>
-                        GIF Capture Settings
-                    </Typography>
-
-                    {/* Target FPS */}
-                    <Box sx={{ mb: 3 }}>
-                        <Typography gutterBottom>
-                            Target FPS: {gifSettings.targetFps}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                            Higher FPS = smoother animation but larger file size
-                        </Typography>
-                        <Slider
-                            value={gifSettings.targetFps}
-                            onChange={(_, value) => setGifSettings({ ...gifSettings, targetFps: value as number })}
-                            min={10}
-                            max={60}
-                            step={5}
-                            marks={[
-                                { value: 10, label: '10' },
-                                { value: 20, label: '20' },
-                                { value: 30, label: '30' },
-                                { value: 40, label: '40' },
-                                { value: 50, label: '50' },
-                                { value: 60, label: '60' }
-                            ]}
-                        />
-                    </Box>
-
-                    {/* Duration */}
-                    <Box sx={{ mb: 3 }}>
-                        <Typography gutterBottom>
-                            Duration: {gifSettings.duration}s
-                        </Typography>
-                        <Slider
-                            value={gifSettings.duration}
-                            onChange={(_, value) => setGifSettings({ ...gifSettings, duration: value as number })}
-                            min={2}
-                            max={10}
-                            step={1}
-                            marks
-                        />
-                    </Box>
-
-                    {/* Quality */}
-                    <Box sx={{ mb: 3 }}>
-                        <Typography gutterBottom>
-                            Quality: {gifSettings.quality}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                            Higher values = better quality but larger file size
-                        </Typography>
-                        <Slider
-                            value={gifSettings.quality}
-                            onChange={(_, value) => setGifSettings({ ...gifSettings, quality: value as number })}
-                            min={5}
-                            max={25}
-                            step={5}
-                            marks={[
-                                { value: 5, label: 'Fast' },
-                                { value: 15, label: 'Good' },
-                                { value: 25, label: 'Best' }
-                            ]}
-                        />
-                    </Box>
-
-                    {/* File Size Estimate */}
-                    <Box sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                        <Typography variant="body2" color="text.secondary">
-                            Estimated file size: {(() => {
-                                const totalFrames = gifSettings.duration * gifSettings.targetFps;
-                                // Rough estimate: base size + (frames * bytes per frame * quality factor)
-                                // Quality: 5=fast (low colors), 15=good, 25=best (high colors)
-                                const qualityFactor = gifSettings.quality / 10; // 0.5 to 2.5
-                                const bytesPerFrame = 1280 * 720 * 0.1 * qualityFactor; // Rough estimate
-                                const estimatedBytes = totalFrames * bytesPerFrame;
-                                const estimatedMB = estimatedBytes / (1024 * 1024);
-
-                                if (estimatedMB < 1) {
-                                    return `${Math.round(estimatedBytes / 1024)}KB`;
-                                } else {
-                                    return `${estimatedMB.toFixed(1)}MB`;
-                                }
-                            })()}
-                        </Typography>
-                    </Box>
-
-                    {/* Buttons */}
-                    <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4 }}>
-                        <Button
-                            onClick={() => setShowGifSettings(false)}
-                            variant="outlined"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleStartGifCapture}
-                            variant="contained"
-                            color="primary"
-                        >
-                            Start Capture
-                        </Button>
-                    </Box>
-                </Box>
-            </Modal>
+                gifSettings={gifSettings}
+                onGifSettingsChange={setGifSettings}
+                onStartCapture={handleStartGifCapture}
+            />
         </ColorPickerProvider>
     );
 };

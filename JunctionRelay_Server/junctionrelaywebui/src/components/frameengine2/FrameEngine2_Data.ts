@@ -189,6 +189,8 @@ export const parseFrameLayoutResponse = (
         riveFile: response.riveFile || null,
         sensorTestValues: frameEngine2Config.sensorTestValues || {},
         isTemplate: response.isTemplate ?? false,
+        cloudTemplateId: response.cloudTemplateId ?? null,
+        cloudVariantId: response.cloudVariantId ?? null,
         isDraft: response.isDraft ?? true,
         isPublished: response.isPublished ?? false,
         created: response.created,

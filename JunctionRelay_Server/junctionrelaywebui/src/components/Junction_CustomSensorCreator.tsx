@@ -165,7 +165,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
 
     const handleCreate = async () => {
         if (!sensorTag.trim()) {
-            setError('Sensor Tag / ID is required');
+            setError('SensorTag / ID is required');
             return;
         }
 
@@ -233,7 +233,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
 
     const handleEdit = async () => {
         if (!editingSensor || !editSensorTag.trim()) {
-            setError('Sensor tag is required');
+            setError('SensorTag is required');
             return;
         }
 
@@ -367,7 +367,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                 <TableCell sx={{ fontWeight: 'bold' }}>Select</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Order</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Sensor Tag</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>SensorTag</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Binding</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
                                 <TableCell sx={{ fontWeight: 'bold' }}>Value</TableCell>
@@ -504,16 +504,16 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                                     });
 
                                                     if (!response.ok) {
-                                                        throw new Error(`Failed to update sensor tag: ${response.status}`);
+                                                        throw new Error(`Failed to update SensorTag: ${response.status}`);
                                                     }
 
                                                     onSensorsRefresh();
                                                 } catch (error) {
-                                                    console.error('Error updating sensor tag:', error);
-                                                    showSnackbar('Failed to update sensor tag', 'error');
+                                                    console.error('Error updating SensorTag:', error);
+                                                    showSnackbar('Failed to update SensorTag', 'error');
                                                 }
                                             }}
-                                            placeholder="Sensor Tag"
+                                            placeholder="SensorTag"
                                             sx={{ width: "150px" }}
                                             variant="outlined"
                                         />
@@ -523,20 +523,23 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                                             const sensorTag = sensor.sensorTag || '';
                                             if (!sensorTag) return null;
 
-                                            // Split sensor tags by comma and trim (sensors can have multiple tags)
+                                            // Split SensorTags by comma and trim (sensors can have multiple tags)
                                             const sensorTags = sensorTag.split(',').map((tag: string) => tag.trim()).filter(Boolean);
 
-                                            // Check if any of this sensor's tags are in the mapped sensor tags list
-                                            const hasBinding = mappedSensorTags && mappedSensorTags.length > 0 &&
-                                                sensorTags.some(tag => mappedSensorTags.includes(tag));
+                                            // Count how many of this sensor's tags match the mapped SensorTags list
+                                            // mappedSensorTags contains ALL SensorTags from selected layouts (extracted from jsonFrameConfig.sensorTestValues)
+                                            // This includes tags for sensor elements, ECG elements, Rive inputs, and Rive bindings
+                                            const matchCount = mappedSensorTags && mappedSensorTags.length > 0
+                                                ? sensorTags.filter(tag => mappedSensorTags.includes(tag)).length
+                                                : 0;
 
-                                            if (!hasBinding) return null;
+                                            if (matchCount === 0) return null;
 
                                             return (
-                                                <Tooltip title="Mapped to FrameEngine input/binding">
+                                                <Tooltip title={`Mapped to ${matchCount} FrameEngine input${matchCount > 1 ? 's' : ''}/binding${matchCount > 1 ? 's' : ''}`}>
                                                     <Chip
                                                         icon={<LinkIcon />}
-                                                        label=""
+                                                        label={matchCount > 1 ? `x${matchCount}` : ''}
                                                         size="small"
                                                         color="success"
                                                         variant="outlined"
@@ -671,7 +674,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                         )}
 
                         <TextField
-                            label="Sensor Tag / ID"
+                            label="SensorTag / ID"
                             value={sensorTag}
                             onChange={(e) => setSensorTag(e.target.value)}
                             fullWidth
@@ -831,7 +834,7 @@ const Junction_CustomSensorCreator: React.FC<Junction_CustomSensorCreatorProps> 
                         />
 
                         <TextField
-                            label="Sensor Tag"
+                            label="SensorTag"
                             fullWidth
                             value={editSensorTag}
                             onChange={(e) => setEditSensorTag(e.target.value)}

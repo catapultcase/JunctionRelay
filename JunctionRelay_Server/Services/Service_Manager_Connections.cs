@@ -132,10 +132,10 @@ namespace JunctionRelayServer.Services
                     _lastCacheSave.TryRemove(sensorId, out _);
                 }
 
-                if (sensorsToRemove.Count > 0)
-                {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Cleaned up {sensorsToRemove.Count} expired sensors from cache (grace period: {gracePeriodMs}ms, protected: {protectedSensorIds.Count})");
-                }
+                // if (sensorsToRemove.Count > 0)
+                // {
+                //     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Cleaned up {sensorsToRemove.Count} expired sensors from cache (grace period: {gracePeriodMs}ms, protected: {protectedSensorIds.Count})");
+                // }
 
                 // Update cleanup timer interval based on current grace period setting
                 var newIntervalMs = gracePeriodMs;
@@ -169,7 +169,7 @@ namespace JunctionRelayServer.Services
             }
             else
             {
-                Console.WriteLine($"[CONNECTION_MGR] Sensor {sensor.OriginalId}: NEW sensor, value='{sensor.Value}'");
+                // Console.WriteLine($"[CONNECTION_MGR] Sensor {sensor.OriginalId}: NEW sensor, value='{sensor.Value}'");
 
                 // Clone the sensor before adding to cache to prevent shared reference issues
                 var clonedSensor = new Model_Sensor
@@ -225,7 +225,7 @@ namespace JunctionRelayServer.Services
 
         private async Task<bool> AddPeersToGatewayAsync(string gatewayIpAddress, List<Model_Device> targetDevices)
         {
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to HTTP gateway {gatewayIpAddress}");
+            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to HTTP gateway {gatewayIpAddress}");
 
             try
             {
@@ -251,17 +251,17 @@ namespace JunctionRelayServer.Services
 
                         if (response.IsSuccessStatusCode)
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Added peer {device.Name} ({device.UniqueIdentifier}) to gateway");
+                            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Added peer {device.Name} ({device.UniqueIdentifier}) to gateway");
                         }
                         else
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Failed to add peer {device.Name}: {response.StatusCode}");
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to add peer {device.Name}: {response.StatusCode}");
                             allSuccessful = false;
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Error adding peer {device.Name}: {ex.Message}");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error adding peer {device.Name}: {ex.Message}");
                         allSuccessful = false;
                     }
 
@@ -272,14 +272,14 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] HTTP Gateway peer setup failed: {ex.Message}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ HTTP Gateway peer setup failed: {ex.Message}");
                 return false;
             }
         }
 
         private async Task<bool> AddPeersToCOMGatewayAsync(string gatewayComPort, List<Model_Device> targetDevices)
         {
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to COM gateway via {gatewayComPort}");
+            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to COM gateway via {gatewayComPort}");
 
             try
             {
@@ -288,20 +288,20 @@ namespace JunctionRelayServer.Services
 
                 if (!comPortManager.IsPortOpen(gatewayComPort))
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Opening COM gateway port {gatewayComPort}");
+                    // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Opening COM gateway port {gatewayComPort}");
                     comPortManager.OpenConnection(gatewayComPort, 115200);
                     await Task.Delay(500);
 
                     if (!comPortManager.IsPortOpen(gatewayComPort))
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Failed to open COM gateway port {gatewayComPort}");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to open COM gateway port {gatewayComPort}");
                         return false;
                     }
                 }
-                else
-                {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] COM gateway port {gatewayComPort} is already open");
-                }
+                // else
+                // {
+                //     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] COM gateway port {gatewayComPort} is already open");
+                // }
 
                 bool allSuccessful = true;
 
@@ -322,13 +322,13 @@ namespace JunctionRelayServer.Services
 
                         comPortManager.SendData(gatewayComPort, serializedPayload);
 
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Sent add peer command for {device.Name} ({device.UniqueIdentifier}) to COM gateway");
+                        // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Sent add peer command for {device.Name} ({device.UniqueIdentifier}) to COM gateway");
 
                         await Task.Delay(200);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Error adding peer {device.Name} to COM gateway: {ex.Message}");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error adding peer {device.Name} to COM gateway: {ex.Message}");
                         allSuccessful = false;
                     }
                 }
@@ -337,14 +337,14 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] COM Gateway peer setup failed: {ex.Message}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ COM Gateway peer setup failed: {ex.Message}");
                 return false;
             }
         }
 
         private async Task<bool> AddPeersToWebSocketGatewayAsync(string gatewayDeviceMac, List<Model_Device> targetDevices)
         {
-            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to WebSocket gateway {gatewayDeviceMac}");
+            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Adding {targetDevices.Count} peers to WebSocket gateway {gatewayDeviceMac}");
 
             try
             {
@@ -353,7 +353,7 @@ namespace JunctionRelayServer.Services
 
                 if (!webSocketManager.IsDeviceConnected(gatewayDeviceMac))
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] WebSocket gateway {gatewayDeviceMac} is not connected");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ WebSocket gateway {gatewayDeviceMac} is not connected");
                     return false;
                 }
 
@@ -385,11 +385,11 @@ namespace JunctionRelayServer.Services
 
                         if (result.Success)
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Added peer {device.Name} ({device.UniqueIdentifier}) to WebSocket gateway");
+                            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Added peer {device.Name} ({device.UniqueIdentifier}) to WebSocket gateway");
                         }
                         else
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Failed to add peer {device.Name}: {result.ErrorMessage}");
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to add peer {device.Name}: {result.ErrorMessage}");
                             allSuccessful = false;
                         }
 
@@ -399,7 +399,7 @@ namespace JunctionRelayServer.Services
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Error adding peer {device.Name} to WebSocket gateway: {ex.Message}");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error adding peer {device.Name} to WebSocket gateway: {ex.Message}");
                         allSuccessful = false;
                     }
                 }
@@ -408,7 +408,7 @@ namespace JunctionRelayServer.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] WebSocket Gateway peer setup failed: {ex.Message}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ WebSocket Gateway peer setup failed: {ex.Message}");
                 return false;
             }
         }
@@ -581,7 +581,7 @@ namespace JunctionRelayServer.Services
                             if (testSuccessful)
                             {
                                 testsPassed++;
-                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Collector '{collector.Name}' test passed");
+                                // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ✅ Collector '{collector.Name}' test passed");
                             }
                             else
                             {
@@ -621,7 +621,7 @@ namespace JunctionRelayServer.Services
                     else
                     {
                         // Continue despite failures
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Continuing despite collector test failures (AllowStartOnCollectorTestFailure is enabled)");
+                        // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⚠️ Continuing despite collector test failures (AllowStartOnCollectorTestFailure is enabled)");
                         await progressBroadcaster.EmitJunctionProgressAsync(
                             junctionId,
                             junction.Name,
@@ -643,10 +643,10 @@ namespace JunctionRelayServer.Services
                 // Minimum display time for stage visibility
                 await Task.Delay(500, cancellationToken);
             }
-            else if (!junction.EnableTests)
-            {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⏭️ Collector testing disabled for junction {junctionId}");
-            }
+            // else if (!junction.EnableTests)
+            // {
+            //     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ⏭️ Collector testing disabled for junction {junctionId}");
+            // }
 
             // STAGE 4: Registering Sources
             await progressBroadcaster.EmitJunctionProgressAsync(
@@ -734,12 +734,12 @@ namespace JunctionRelayServer.Services
 
                     if (!peersAdded)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Some peers failed to be added to HTTP gateway, continuing anyway...");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Some peers failed to be added to HTTP gateway, continuing anyway...");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] HTTP Gateway junction has no valid gateway destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ HTTP Gateway junction has no valid gateway destination or target devices specified");
                 }
             }
             else if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
@@ -772,12 +772,12 @@ namespace JunctionRelayServer.Services
 
                     if (!peersAdded)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Some peers failed to be added to COM gateway, continuing anyway...");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Some peers failed to be added to COM gateway, continuing anyway...");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] COM Gateway junction has no valid gateway destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ COM Gateway junction has no valid gateway destination or target devices specified");
                 }
             }
             else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
@@ -810,12 +810,12 @@ namespace JunctionRelayServer.Services
 
                     if (!peersAdded)
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Some peers failed to be added to WebSocket gateway, continuing anyway...");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Some peers failed to be added to WebSocket gateway, continuing anyway...");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] WebSocket Gateway junction has no valid gateway destination or target devices specified");
+                    Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ WebSocket Gateway junction has no valid gateway destination or target devices specified");
                 }
 
                 // Minimum display time for stage visibility
@@ -975,18 +975,18 @@ namespace JunctionRelayServer.Services
                         if (!string.IsNullOrEmpty(screenOverride.ScreenLayoutId?.ToString()))
                         {
                             screen.ScreenLayoutId = screenOverride.ScreenLayoutId;
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
+                            // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using screen layout override (ID: {screenOverride.ScreenLayoutId}) for Device {device.Name} Screen {screen.DisplayName}");
                         }
                         else
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Screen layout override has empty ScreenLayoutId for Device {device.Name} Screen {screen.DisplayName} - using original ScreenLayoutId: {screen.ScreenLayoutId}");
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Screen layout override has empty ScreenLayoutId for Device {device.Name} Screen {screen.DisplayName} - using original ScreenLayoutId: {screen.ScreenLayoutId}");
                         }
 
-                        if (isAnyFrameMode && screenOverride.FrameLayoutId.HasValue)
-                        {
-                            string frameType = isBlitMode ? "Blit" : "Composite";
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using frame layout override (ID: {screenOverride.FrameLayoutId}) for {frameType} mode on Device {device.Name} Screen {screen.DisplayName}");
-                        }
+                        // if (isAnyFrameMode && screenOverride.FrameLayoutId.HasValue)
+                        // {
+                        //     string frameType = isBlitMode ? "Blit" : "Composite";
+                        //     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using frame layout override (ID: {screenOverride.FrameLayoutId}) for {frameType} mode on Device {device.Name} Screen {screen.DisplayName}");
+                        // }
                     }
 
                     var assignedSensors = junction.JunctionSensorTargets
@@ -996,7 +996,7 @@ namespace JunctionRelayServer.Services
 
                     if (!assignedSensors.Any())
                     {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] No sensors assigned to Device {device.Name} Screen {screen.DisplayName} - skipping stream");
+                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ No sensors assigned to Device {device.Name} Screen {screen.DisplayName} - skipping stream");
                         continue;
                     }
 
@@ -1004,10 +1004,10 @@ namespace JunctionRelayServer.Services
 
                     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Streaming for Device {device.Name} (ID: {device.Id}) Screen {screen.Id} ({screen.DisplayName}) with {assignedSensors.Count} assigned sensors using {modeDescription} and send rate of {defaultSendRate}ms. LinkId: {link.Id}");
 
-                    if (isGatewayJunction && gatewayDestination != null)
-                    {
-                        Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Current gateway destination for {screenKey}: {gatewayDestination}");
-                    }
+                    // if (isGatewayJunction && gatewayDestination != null)
+                    // {
+                    //     Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Current gateway destination for {screenKey}: {gatewayDestination}");
+                    // }
 
                     if (isBlitMode && virtualMgr != null)
                     {
@@ -1033,12 +1033,12 @@ namespace JunctionRelayServer.Services
                             }
                             else
                             {
-                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Failed to create virtual screen for blit mode: {device.Name} Screen {screen.DisplayName}");
+                                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Failed to create virtual screen for blit mode: {device.Name} Screen {screen.DisplayName}");
                             }
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Error creating virtual screen for blit mode: {device.Name} Screen {screen.DisplayName} - {ex.Message}");
+                            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Error creating virtual screen for blit mode: {device.Name} Screen {screen.DisplayName} - {ex.Message}");
                         }
                     }
 
@@ -1062,14 +1062,14 @@ namespace JunctionRelayServer.Services
         {
             if (!junction.GatewayDeviceId.HasValue)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Gateway junction {junction.Id} has no GatewayDeviceId specified");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway junction {junction.Id} has no GatewayDeviceId specified");
                 return null;
             }
 
             var gatewayDevice = await deviceDb.GetDeviceByIdAsync(junction.GatewayDeviceId.Value);
             if (gatewayDevice == null)
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Gateway device with ID {junction.GatewayDeviceId} not found");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device with ID {junction.GatewayDeviceId} not found");
                 return null;
             }
 
@@ -1078,21 +1078,21 @@ namespace JunctionRelayServer.Services
             if (junction.Type.Equals("Gateway Junction (COM to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
                 destination = gatewayDevice.COMPort;
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using COM port '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+                // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using COM port '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else if (junction.Type.Equals("Gateway Junction (HTTP to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
                 destination = gatewayDevice.IPAddress;
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using IP address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+                // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using IP address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else if (junction.Type.Equals("Gateway Junction (WebSocket to ESP:NOW)", StringComparison.OrdinalIgnoreCase))
             {
                 destination = gatewayDevice.UniqueIdentifier;
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using MAC address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
+                // Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Using MAC address '{destination}' from gateway device '{gatewayDevice.Name}' (ID: {gatewayDevice.Id})");
             }
             else
             {
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Unknown gateway junction type: {junction.Type}");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Unknown gateway junction type: {junction.Type}");
             }
 
             if (string.IsNullOrEmpty(destination))
@@ -1104,7 +1104,7 @@ namespace JunctionRelayServer.Services
                     var t when t.Contains("WebSocket") => "MAC address",
                     _ => "destination"
                 };
-                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Gateway device '{gatewayDevice.Name}' has no {destinationType} configured");
+                Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] ❌ Gateway device '{gatewayDevice.Name}' has no {destinationType} configured");
             }
 
             return destination;
@@ -1195,6 +1195,8 @@ namespace JunctionRelayServer.Services
 
             // Remove junction-to-sensor mappings when junction stops
             _junctionSensorMappings.TryRemove(junctionId, out _);
+
+            Console.WriteLine($"[SERVICE_MANAGER_CONNECTIONS] Junction {junctionId} stopped successfully");
 
             return Model_Operation_Result.Ok("Junction stopped.");
         }

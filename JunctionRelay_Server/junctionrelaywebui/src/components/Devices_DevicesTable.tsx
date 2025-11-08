@@ -437,77 +437,113 @@ const DeviceCard = memo(({
 
 
                 </Box>
+            </CardContent>
 
-                {/* Action Buttons for standard view */}
-                {viewMode === 'standard' && (
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        alignItems: 'center',
-                        mt: 1,
-                        gap: 1
-                    }}>
-                        {/* Resync button for scan results */}
-                        {isScanResults && device.status !== "DEVICE_EXISTS" && onResync &&
-                            resyncedDevices && !resyncedDevices.has(device.macAddress) && (
-                                <Tooltip title="Resync Device">
-                                    <IconButton
-                                        size="small"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onResync(
-                                                device.macAddress || device.MacAddress,
-                                                device.ipAddress || device.IpAddress
-                                            );
-                                        }}
-                                        disabled={isResyncing(device.macAddress, device.ipAddress)}
-                                    >
-                                        {isResyncing(device.macAddress, device.ipAddress) ? (
-                                            <CircularProgress size={16} />
-                                        ) : (
-                                            <SyncIcon fontSize="small" />
-                                        )}
-                                    </IconButton>
-                                </Tooltip>
-                            )}
-
-                        {/* Update button for non-scan results */}
-                        {!isScanResults && updateStatuses[deviceData.id] === true && (
-                            <Tooltip title="Update Firmware">
+            {/* Action Buttons at Bottom - Outside CardContent */}
+            <Box sx={{
+                p: viewMode === 'mini' ? 0.5 : 1,
+                pt: 0,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: viewMode === 'mini' ? 0.5 : 1
+            }}>
+                {/* Left side: Management buttons */}
+                <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                    {/* Resync button for scan results */}
+                    {isScanResults && device.status !== "DEVICE_EXISTS" && onResync &&
+                        resyncedDevices && !resyncedDevices.has(device.macAddress) && (
+                            <Tooltip title="Resync Device">
                                 <IconButton
                                     size="small"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onUpdate(deviceData.id, e);
+                                        onResync(
+                                            device.macAddress || device.MacAddress,
+                                            device.ipAddress || device.IpAddress
+                                        );
                                     }}
-                                    disabled={updatingDevices.has(deviceData.id)}
+                                    disabled={isResyncing(device.macAddress, device.ipAddress)}
+                                    sx={{
+                                        padding: viewMode === 'mini' ? '4px' : '6px',
+                                        border: '1px solid',
+                                        borderColor: 'secondary.main',
+                                        color: 'secondary.main',
+                                        '&:hover': {
+                                            backgroundColor: 'secondary.main',
+                                            color: 'secondary.contrastText'
+                                        }
+                                    }}
                                 >
-                                    {updatingDevices.has(deviceData.id) ? (
+                                    {isResyncing(device.macAddress, device.ipAddress) ? (
                                         <CircularProgress size={16} />
                                     ) : (
-                                        <UpdateIcon fontSize="small" />
+                                        <SyncIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
                                     )}
                                 </IconButton>
                             </Tooltip>
                         )}
 
-                        {/* Delete button - only for non-scan results */}
-                        {!isScanResults && (
-                            <Tooltip title="Delete">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete(e, deviceData.id);
-                                    }}
-                                >
-                                    <DeleteIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
-                )}
-            </CardContent>
+                    {/* Update button for non-scan results */}
+                    {!isScanResults && updateStatuses[deviceData.id] === true && (
+                        <Tooltip title="Update Firmware">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdate(deviceData.id, e);
+                                }}
+                                disabled={updatingDevices.has(deviceData.id)}
+                                sx={{
+                                    padding: viewMode === 'mini' ? '4px' : '6px',
+                                    border: '1px solid',
+                                    borderColor: 'warning.main',
+                                    color: 'warning.main',
+                                    '&:hover': {
+                                        backgroundColor: 'warning.main',
+                                        color: 'warning.contrastText'
+                                    }
+                                }}
+                            >
+                                {updatingDevices.has(deviceData.id) ? (
+                                    <CircularProgress size={16} />
+                                ) : (
+                                    <UpdateIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                )}
+                            </IconButton>
+                        </Tooltip>
+                    )}
+
+                    {/* Delete button - only for non-scan results */}
+                    {!isScanResults && (
+                        <Tooltip title="Delete">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(e, deviceData.id);
+                                }}
+                                sx={{
+                                    padding: viewMode === 'mini' ? '4px' : '6px',
+                                    border: '1px solid',
+                                    borderColor: 'error.main',
+                                    color: 'error.main',
+                                    '&:hover': {
+                                        backgroundColor: 'error.main',
+                                        color: 'error.contrastText'
+                                    }
+                                }}
+                            >
+                                <DeleteIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                </Box>
+
+                {/* Right side: Reserved for future primary actions */}
+                <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                    {/* Future: Add primary action buttons here if needed */}
+                </Box>
+            </Box>
         </Card>
     );
 

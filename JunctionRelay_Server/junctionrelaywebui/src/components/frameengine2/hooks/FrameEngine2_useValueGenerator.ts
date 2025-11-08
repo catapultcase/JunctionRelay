@@ -97,6 +97,11 @@ export function useValueGenerator(params: UseValueGeneratorParams): UseValueGene
     const onLayoutUpdateRef = useRef<(updates: Partial<FrameLayoutConfig>) => void>(onLayoutUpdate);
     const hasSyncedRef = useRef<boolean>(false); // Track if we've synced from saved preferences
 
+    // Refs for Rive discoveries (for type detection)
+    const backgroundRiveMachinesRef = useRef<DiscoveredRiveStateMachine[]>([]);
+    const backgroundRiveBindingsRef = useRef<DiscoveredRiveDataBinding[]>([]);
+    const elementRiveDiscoveriesRef = useRef<Map<string, { machines: DiscoveredRiveStateMachine[]; bindings: DiscoveredRiveDataBinding[] }>>(new Map());
+
     /**
      * Extract all SensorTags from elements, Rive inputs, and Rive data bindings
      * OPTIMIZATION: Memoized to prevent recalculation on every render
@@ -159,6 +164,75 @@ export function useValueGenerator(params: UseValueGeneratorParams): UseValueGene
         onLayoutUpdateRef.current = onLayoutUpdate;
     }, [onLayoutUpdate]);
 
+    useEffect(() => {
+        backgroundRiveMachinesRef.current = backgroundRiveMachines;
+    }, [backgroundRiveMachines]);
+
+    useEffect(() => {
+        backgroundRiveBindingsRef.current = backgroundRiveBindings;
+    }, [backgroundRiveBindings]);
+
+    useEffect(() => {
+        elementRiveDiscoveriesRef.current = elementRiveDiscoveries;
+    }, [elementRiveDiscoveries]);
+
+    /**
+     * Map Rive binding types to UI input types
+     * DiscoveredRiveDataBinding has additional types (image, enum, list) that don't map to input controls
+     */
+    const mapBindingTypeToInputType = useCallback((bindingType: string): 'number' | 'boolean' | 'color' | 'trigger' | 'string' => {
+        switch (bindingType) {
+            case 'color':
+                return 'color';
+            case 'boolean':
+                return 'boolean';
+            case 'number':
+                return 'number';
+            case 'trigger':
+                return 'trigger';
+            // For image, enum, list, unknown - treat as string
+            default:
+                return 'string';
+        }
+    }, []);
+
+    /**
+     * Get the input type for a sensor tag by checking Rive discoveries
+     * This is used to generate appropriate random values for each type
+     */
+    const getInputType = useCallback((sensorTag: string): 'number' | 'boolean' | 'color' | 'trigger' | 'string' => {
+        // Check background Rive inputs
+        for (const machine of backgroundRiveMachinesRef.current) {
+            const input = machine.inputs.find(i => i.name === sensorTag);
+            if (input) {
+                return input.type === 'unknown' ? 'number' : input.type;
+            }
+        }
+
+        // Check background Rive bindings
+        const bgBinding = backgroundRiveBindingsRef.current.find(b => b.name === sensorTag);
+        if (bgBinding) {
+            return mapBindingTypeToInputType(bgBinding.type);
+        }
+
+        // Check element Rive inputs/bindings
+        for (const [elementId, discovery] of elementRiveDiscoveriesRef.current.entries()) {
+            for (const machine of discovery.machines) {
+                const input = machine.inputs.find(i => i.name === sensorTag);
+                if (input) {
+                    return input.type === 'unknown' ? 'number' : input.type;
+                }
+            }
+            const binding = discovery.bindings.find(b => b.name === sensorTag);
+            if (binding) {
+                return mapBindingTypeToInputType(binding.type);
+            }
+        }
+
+        // Default to number for regular sensor tags
+        return 'number';
+    }, [mapBindingTypeToInputType]);
+
     /**
      * Sync state with saved preferences ONCE on mount
      * Prevents infinite loop with save effect
@@ -192,6 +266,7 @@ export function useValueGenerator(params: UseValueGeneratorParams): UseValueGene
      * Generate random test values for included sensor tags
      * MEMOIZED: Stable reference since it only uses refs
      * OPTIMIZATION: Uses refs to access latest values without causing effect restarts
+     * TYPE-AWARE: Generates appropriate values based on input type (color, boolean, number, etc.)
      */
     const generateRandomValues = useCallback(() => {
         const currentLayout = layoutRef.current;
@@ -204,15 +279,35 @@ export function useValueGenerator(params: UseValueGeneratorParams): UseValueGene
         currentTags.forEach(tag => {
             if (includedSensorTagsRef.current.has(tag)) {
                 const existing = newTestValues[tag] || {};
+
+                // Detect input type and generate appropriate value
+                const inputType = getInputType(tag);
+                let generatedValue: string | number | boolean;
+
+                if (inputType === 'color') {
+                    // Generate random hex color
+                    const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+                    generatedValue = randomColor;
+                } else if (inputType === 'boolean') {
+                    // Generate random boolean
+                    generatedValue = Math.random() > 0.5;
+                } else if (inputType === 'trigger') {
+                    // Skip triggers - they are event-based, not value-based
+                    return;
+                } else {
+                    // Default: number 0-100
+                    generatedValue = Math.floor(Math.random() * 101);
+                }
+
                 newTestValues[tag] = {
                     ...existing,
-                    value: Math.floor(Math.random() * 101)
+                    value: generatedValue
                 };
             }
         });
 
         onLayoutUpdateRef.current({ sensorTestValues: newTestValues });
-    }, []); // Empty deps: only uses refs which are stable
+    }, [getInputType]); // Include getInputType dependency
 
     /**
      * Run Value Generator immediately when enabled

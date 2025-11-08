@@ -271,7 +271,7 @@ const defaultJunctionCols: JunctionColumn[] = [
     // { field: "description", label: "Description", align: "left", sortable: true },
     { field: "type", label: "Type", align: "left", sortable: true },
     { field: "renderingMode", label: "Rendering Mode", align: "left", sortable: true },
-    { field: "layouts", label: "Layouts", align: "left", sortable: false, width: 150 },
+    { field: "layouts", label: "Layouts", align: "left", sortable: false },
     { field: "status", label: "Status", align: "left", sortable: true },
     { field: "sources", label: "Sources", align: "left", sortable: false },
     { field: "targets", label: "Targets", align: "left", sortable: false },
@@ -592,33 +592,81 @@ const JunctionTableRow = memo(({
                     />
                 );
             case "layouts":
-                // Only show layouts for frame rendering modes (Blit, Composite)
+                // Determine if we should show layouts based on rendering mode
                 const isFrameMode = junction.renderingMode === "Blit" || junction.renderingMode === "Composite";
-                if (!isFrameMode) {
-                    return <Typography variant="body2" color="text.secondary">N/A</Typography>;
-                }
+                const isPayloadMode = junction.renderingMode === "Payload";
 
-                // Collect all unique layout IDs from device links
-                const layoutIds = new Set<number>();
+                // Collect all unique layouts with their details from device links
+                const layoutMap = new Map<number, { id: number, name: string, type: string }>();
+
                 junction.deviceLinks?.forEach((link: any) => {
                     link.screenLayouts?.forEach((sl: any) => {
-                        if (sl.frameLayoutId) layoutIds.add(sl.frameLayoutId);
-                        if (sl.screenLayoutId) layoutIds.add(sl.screenLayoutId);
+                        // For frame modes (Blit/Composite), show frame layouts
+                        if (isFrameMode && sl.frameLayoutId && !layoutMap.has(sl.frameLayoutId)) {
+                            layoutMap.set(sl.frameLayoutId, {
+                                id: sl.frameLayoutId,
+                                name: sl.frameLayoutName || `Layout #${sl.frameLayoutId}`,
+                                type: 'Frame'
+                            });
+                        }
+                        // For payload mode, show screen layouts
+                        if (isPayloadMode && sl.screenLayoutId && !layoutMap.has(sl.screenLayoutId)) {
+                            layoutMap.set(sl.screenLayoutId, {
+                                id: sl.screenLayoutId,
+                                name: sl.screenLayoutName || `Layout #${sl.screenLayoutId}`,
+                                type: 'Payload'
+                            });
+                        }
                     });
                 });
 
-                if (layoutIds.size === 0) {
+                const layouts = Array.from(layoutMap.values());
+
+                if (layouts.length === 0) {
                     return <Typography variant="body2" color="text.secondary">None</Typography>;
                 }
 
-                return (
-                    <Chip
-                        label={`${layoutIds.size} layout${layoutIds.size > 1 ? 's' : ''}`}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                    />
-                );
+                if (detailedConnections) {
+                    // Detailed view - show each layout individually with name
+                    return (
+                        <>
+                            {layouts.map((layout) => (
+                                <Box
+                                    key={`layout-${layout.id}`}
+                                    sx={{ display: 'flex', alignItems: 'center', mb: 0.5, gap: 0.5 }}
+                                >
+                                    <Chip
+                                        label={layout.type}
+                                        color="primary"
+                                        size="small"
+                                        sx={{
+                                            fontSize: '0.65rem',
+                                            height: 18,
+                                            minWidth: 'auto',
+                                            '& .MuiChip-label': {
+                                                px: 0.5
+                                            }
+                                        }}
+                                    />
+                                    <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                        {layout.name}
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </>
+                    );
+                } else {
+                    // Compact view - show count with icon
+                    return (
+                        <Chip
+                            icon={<ViewModuleIcon fontSize="small" />}
+                            label={`${layouts.length} layout${layouts.length !== 1 ? 's' : ''}`}
+                            size="small"
+                            color="primary"
+                            variant="filled"
+                        />
+                    );
+                }
             case "actions":
                 // Get the alignment from the column definition (which uses the feature flag)
                 const actionColumn = allColumns.find(col => col.field === field);
@@ -872,7 +920,7 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
 
     // Calculate card dimensions based on view mode
     const getCardHeight = () => {
-        return viewMode === 'mini' ? 120 : 200;
+        return viewMode === 'mini' ? 140 : 220;
     };
 
     // Load gateway devices when component mounts
@@ -1667,43 +1715,115 @@ const JunctionsTable: React.FC<JunctionsTableProps> = ({
                                         p: viewMode === 'mini' ? 0.5 : 1,
                                         pt: 0,
                                         display: 'flex',
-                                        justifyContent: 'center',
-                                        gap: 0.5
+                                        justifyContent: 'space-between',
+                                        gap: viewMode === 'mini' ? 0.5 : 1
                                     }}>
-                                        <Button
-                                            variant="contained"
-                                            color="error"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                memoizedStopJunction(junction.id);
-                                            }}
-                                            disabled={junction.status === "Idle"}
-                                            sx={{
-                                                minWidth: viewMode === 'mini' ? 24 : 30,
-                                                p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
-                                                fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
-                                            }}
-                                            size="small"
-                                        >
-                                            <StopIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            color="success"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                memoizedStartJunction(junction.id);
-                                            }}
-                                            disabled={junction.status === "Running"}
-                                            sx={{
-                                                minWidth: viewMode === 'mini' ? 24 : 30,
-                                                p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
-                                                fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
-                                            }}
-                                            size="small"
-                                        >
-                                            <PlayArrowIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
-                                        </Button>
+                                        {/* Left side: Edit, Clone, Delete buttons */}
+                                        <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                                            <Tooltip title="Edit">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/configure-junction/${junction.id}`);
+                                                    }}
+                                                    sx={{
+                                                        padding: viewMode === 'mini' ? '4px' : '6px',
+                                                        border: '1px solid',
+                                                        borderColor: 'primary.main',
+                                                        color: 'primary.main',
+                                                        '&:hover': {
+                                                            backgroundColor: 'primary.main',
+                                                            color: 'primary.contrastText'
+                                                        }
+                                                    }}
+                                                >
+                                                    <EditIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Clone">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onCloneJunction(junction.id);
+                                                    }}
+                                                    sx={{
+                                                        padding: viewMode === 'mini' ? '4px' : '6px',
+                                                        border: '1px solid',
+                                                        borderColor: 'secondary.main',
+                                                        color: 'secondary.main',
+                                                        '&:hover': {
+                                                            backgroundColor: 'secondary.main',
+                                                            color: 'secondary.contrastText'
+                                                        }
+                                                    }}
+                                                >
+                                                    <ContentCopyIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (window.confirm("Are you sure you want to delete this junction?")) {
+                                                            onDeleteJunction(junction.id);
+                                                        }
+                                                    }}
+                                                    sx={{
+                                                        padding: viewMode === 'mini' ? '4px' : '6px',
+                                                        border: '1px solid',
+                                                        borderColor: 'error.main',
+                                                        color: 'error.main',
+                                                        '&:hover': {
+                                                            backgroundColor: 'error.main',
+                                                            color: 'error.contrastText'
+                                                        }
+                                                    }}
+                                                >
+                                                    <DeleteIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+
+                                        {/* Right side: Stop and Play buttons */}
+                                        <Box sx={{ display: 'flex', gap: viewMode === 'mini' ? 0.5 : 1 }}>
+                                            <Button
+                                                variant="contained"
+                                                color="error"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    memoizedStopJunction(junction.id);
+                                                }}
+                                                disabled={junction.status === "Idle"}
+                                                sx={{
+                                                    minWidth: viewMode === 'mini' ? 24 : 30,
+                                                    p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
+                                                    fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
+                                                }}
+                                                size="small"
+                                            >
+                                                <StopIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                            </Button>
+                                            <Button
+                                                variant="contained"
+                                                color="success"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    memoizedStartJunction(junction.id);
+                                                }}
+                                                disabled={junction.status === "Running"}
+                                                sx={{
+                                                    minWidth: viewMode === 'mini' ? 24 : 30,
+                                                    p: viewMode === 'mini' ? "4px 6px" : "6px 10px",
+                                                    fontSize: viewMode === 'mini' ? '0.7rem' : '0.875rem'
+                                                }}
+                                                size="small"
+                                            >
+                                                <PlayArrowIcon sx={{ fontSize: viewMode === 'mini' ? '0.9rem' : '1rem' }} />
+                                            </Button>
+                                        </Box>
                                     </Box>
                                 </Card>
                             );

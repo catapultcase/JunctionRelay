@@ -32,13 +32,19 @@ namespace JunctionRelayServer.Controllers
     {
         private readonly Service_Database_Manager_FrameEngine _frameLayoutService;
         private readonly Service_Database_Manager_JunctionLinks _junctionLinksService;
+        private readonly Service_CloudSessionStore _cloudSessionStore;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         public Controller_FrameEngine_Layouts(
             Service_Database_Manager_FrameEngine frameLayoutService,
-            Service_Database_Manager_JunctionLinks junctionLinksService)
+            Service_Database_Manager_JunctionLinks junctionLinksService,
+            Service_CloudSessionStore cloudSessionStore,
+            IHttpClientFactory httpClientFactory)
         {
             _frameLayoutService = frameLayoutService;
             _junctionLinksService = junctionLinksService;
+            _cloudSessionStore = cloudSessionStore;
+            _httpClientFactory = httpClientFactory;
         }
 
         // ============================================================================
@@ -86,6 +92,19 @@ namespace JunctionRelayServer.Controllers
             {
                 var frameLayouts = await _frameLayoutService.GetAllFrameLayoutsAsync();
                 var dtos = frameLayouts.Select(MapToFrameLayoutDto).ToList();
+
+                // Try to fetch cloud snapshot counts for each template
+                var snapshotCounts = await GetCloudSnapshotCountsAsync(dtos.Select(d => int.Parse(d.Id)).ToList());
+
+                // Populate snapshot counts
+                foreach (var dto in dtos)
+                {
+                    if (snapshotCounts.TryGetValue(int.Parse(dto.Id), out var count))
+                    {
+                        dto.CloudSnapshotCount = count;
+                    }
+                }
+
                 return Ok(dtos);
             }
             catch (Exception ex)
@@ -312,9 +331,6 @@ namespace JunctionRelayServer.Controllers
                 if (frameLayout == null)
                     return NotFound(new { message = $"Frame layout with ID {id} not found" });
 
-                if (frameLayout.IsTemplate)
-                    return BadRequest(new { message = "Cannot delete template frame layouts" });
-
                 // Check if layout is in use
                 var isInUse = await IsFrameLayoutInUse(id);
                 if (isInUse)
@@ -382,6 +398,8 @@ namespace JunctionRelayServer.Controllers
                 Description = frameLayout.Description,
                 LayoutType = frameLayout.LayoutType,
                 IsTemplate = frameLayout.IsTemplate,
+                CloudTemplateId = frameLayout.CloudTemplateId,
+                CloudVariantId = frameLayout.CloudVariantId,
                 IsDraft = frameLayout.IsDraft,
                 IsPublished = frameLayout.IsPublished,
                 Width = frameLayout.Width,
@@ -408,6 +426,79 @@ namespace JunctionRelayServer.Controllers
                 ThumbnailGeneratedAt = frameLayout.ThumbnailGeneratedAt,
                 ThumbnailOverride = frameLayout.ThumbnailOverride
             };
+        }
+
+        private async Task<Dictionary<int, int>> GetCloudSnapshotCountsAsync(List<int> frameIds)
+        {
+            var counts = new Dictionary<int, int>();
+
+            try
+            {
+                // Check if we have a valid cloud session
+                var token = await _cloudSessionStore.GetValidAccessTokenAsync();
+                if (string.IsNullOrEmpty(token))
+                {
+                    return counts; // Return empty counts if not authenticated
+                }
+
+                // Fetch layouts to get CloudVariantId for each frameId
+                var frameIdToVariantId = new Dictionary<int, string>();
+                foreach (var frameId in frameIds)
+                {
+                    var layout = await _frameLayoutService.GetFrameLayoutByIdAsync(frameId);
+                    if (layout != null && !string.IsNullOrEmpty(layout.CloudVariantId))
+                    {
+                        frameIdToVariantId[frameId] = layout.CloudVariantId;
+                    }
+                }
+
+                if (frameIdToVariantId.Count == 0)
+                {
+                    return counts; // No layouts with CloudVariantId
+                }
+
+                var cloudBaseUrl = Environment.GetEnvironmentVariable("CLOUD_BACKEND_URL") ?? "https://api.junctionrelay.com";
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                // Fetch snapshot counts using CloudVariantId
+                var tasks = frameIdToVariantId.Select(async kvp =>
+                {
+                    var frameId = kvp.Key;
+                    var cloudVariantId = kvp.Value;
+
+                    try
+                    {
+                        var response = await httpClient.GetAsync(
+                            $"{cloudBaseUrl.TrimEnd('/')}/api/template-versions/{cloudVariantId}/snapshots");
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var json = await response.Content.ReadAsStringAsync();
+                            var snapshots = JsonSerializer.Deserialize<List<JsonElement>>(json);
+                            return (frameId, count: snapshots?.Count ?? 0);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore errors for individual frames
+                    }
+                    return (frameId, count: 0);
+                });
+
+                var results = await Task.WhenAll(tasks);
+                foreach (var (frameId, count) in results)
+                {
+                    counts[frameId] = count;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FRAMEENGINE_LAYOUTS] Error fetching cloud snapshot counts: {ex.Message}");
+            }
+
+            return counts;
         }
 
         private static List<string> ValidateFrameLayout(
@@ -510,6 +601,8 @@ namespace JunctionRelayServer.Controllers
         public string LayoutType { get; set; } = string.Empty;
 
         public bool IsTemplate { get; set; }
+        public string? CloudTemplateId { get; set; }
+        public string? CloudVariantId { get; set; }
         public bool IsDraft { get; set; }
         public bool IsPublished { get; set; }
 
@@ -543,6 +636,7 @@ namespace JunctionRelayServer.Controllers
         public string? ThumbnailPath { get; set; }
         public DateTime? ThumbnailGeneratedAt { get; set; }
         public bool ThumbnailOverride { get; set; } = false;
+        public int CloudSnapshotCount { get; set; } = 0;
     }
 
     public class CreateFrameLayoutRequest

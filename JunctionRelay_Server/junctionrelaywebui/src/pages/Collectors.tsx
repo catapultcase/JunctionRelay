@@ -61,6 +61,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BiotechIcon from '@mui/icons-material/Biotech';
 import { useTheme, useMediaQuery } from "@mui/material";
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Import sub-components
 import CollectorCard from '../components/Collectors_CollectorCard';
@@ -112,6 +113,8 @@ const frequencyOptions = [
 
 // Main Collectors Component
 const Collectors = () => {
+    usePageTitle('Collectors');
+
     const [collectors, setCollectors] = useState<any[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [addCollectorModalOpen, setAddCollectorModalOpen] = useState(false);
@@ -627,7 +630,9 @@ const Collectors = () => {
             )}
 
             {/* Warnings Card - shows collectors with errors */}
-            <CollectorsWarningsCard collectors={collectors} />
+            <Box sx={{ mb: 3 }}>
+                <CollectorsWarningsCard collectors={collectors} />
+            </Box>
 
             {/* Table header with view mode toggle and column selector */}
             <Box display="flex" alignItems="center" mb={1} flexWrap="wrap" gap={2}>

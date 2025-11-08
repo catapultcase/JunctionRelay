@@ -1,7 +1,7 @@
 /*
  * This file is part of JunctionRelay.
  *
- * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ * Copyright (C) 2024ï¿½present Jonathan Mills, CatapultCase
  *
  * JunctionRelay is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@ import {
     Paper,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // Import icons
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -71,6 +72,9 @@ const ConfigureService = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [serviceData, setServiceData] = useState<any>(null);
+
+    // Set page title dynamically based on service name
+    usePageTitle(serviceData?.name || 'Service');
     const [originalService, setOriginalService] = useState<any>(null);
     const [newSensors, setNewSensors] = useState<any[]>([]);
     const [error, setError] = useState("");

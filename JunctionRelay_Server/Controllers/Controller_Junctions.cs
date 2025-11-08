@@ -33,17 +33,23 @@ namespace JunctionRelayServer.Controllers
         private readonly Service_Database_Manager_Devices _deviceDb;
         private readonly Service_Database_Manager_Collectors _collectorDb;
         private readonly Service_Manager_Connections _connectionManager;
+        private readonly Service_Database_Manager_Layouts _layoutDb;
+        private readonly Service_Database_Manager_FrameEngine _frameEngineDb;
 
         public Controller_Junctions(
             Service_Database_Manager_Junctions junctionDb,
             Service_Database_Manager_Devices deviceDb,
             Service_Database_Manager_Collectors collectorDb,
-            Service_Manager_Connections connectionManager)
+            Service_Manager_Connections connectionManager,
+            Service_Database_Manager_Layouts layoutDb,
+            Service_Database_Manager_FrameEngine frameEngineDb)
         {
             _junctionDb = junctionDb;
             _deviceDb = deviceDb;
             _collectorDb = collectorDb;
             _connectionManager = connectionManager;
+            _layoutDb = layoutDb;
+            _frameEngineDb = frameEngineDb;
         }
 
         // GET: /api/junctions
@@ -94,6 +100,10 @@ namespace JunctionRelayServer.Controllers
             var allDevices = await _deviceDb.GetAllDevicesAsync();
             var allCollectors = await _collectorDb.GetAllCollectorsAsync();
 
+            // Fetch all layouts once for efficient lookup
+            var allScreenLayouts = (await _layoutDb.GetAllTemplatesAsync()).ToList();
+            var allFrameLayouts = (await _frameEngineDb.GetAllFrameLayoutsAsync()).ToList();
+
             var summaries = junctions.Select(j => new JunctionSummaryDto
             {
                 Id = j.Id,
@@ -117,7 +127,13 @@ namespace JunctionRelayServer.Controllers
                     ScreenLayouts = dl.ScreenLayouts.Select(sl => new ScreenLayoutSummaryDto
                     {
                         FrameLayoutId = sl.FrameLayoutId,
-                        ScreenLayoutId = sl.ScreenLayoutId
+                        ScreenLayoutId = sl.ScreenLayoutId,
+                        FrameLayoutName = sl.FrameLayoutId.HasValue
+                            ? allFrameLayouts.FirstOrDefault(fl => fl.Id == sl.FrameLayoutId)?.DisplayName
+                            : null,
+                        ScreenLayoutName = sl.ScreenLayoutId.HasValue
+                            ? allScreenLayouts.FirstOrDefault(scl => scl.Id == sl.ScreenLayoutId)?.DisplayName
+                            : null
                     }).ToList()
                 }).ToList(),
                 CollectorLinks = j.CollectorLinks.Select(cl => new CollectorLinkSummaryDto
@@ -171,6 +187,8 @@ namespace JunctionRelayServer.Controllers
         {
             public int? FrameLayoutId { get; set; }
             public int? ScreenLayoutId { get; set; }
+            public string? FrameLayoutName { get; set; }
+            public string? ScreenLayoutName { get; set; }
         }
 
         // GET: /api/junctions/layout-usage
@@ -178,7 +196,6 @@ namespace JunctionRelayServer.Controllers
         public async Task<ActionResult<LayoutUsageResponseDto>> GetJunctionLayoutUsage()
         {
             var junctions = await _junctionDb.GetAllJunctionsAsync();
-            var allDevices = await _deviceDb.GetAllDevicesAsync();
 
             // Get junction usage
             var junctionUsages = junctions.Select(j => new JunctionLayoutUsageDto
@@ -197,19 +214,29 @@ namespace JunctionRelayServer.Controllers
                     .ToList()
             }).ToList();
 
-            // Get device screen defaults
-            var deviceScreenDefaults = allDevices
-                .SelectMany(device => device.Screens.Select(screen => new DeviceScreenDefaultDto
+            // Get device screen defaults - query directly from DeviceScreens table for efficiency
+            var allDevices = await _deviceDb.GetAllDevicesAsync();
+            var deviceScreenDefaults = new List<DeviceScreenDefaultDto>();
+
+            foreach (var device in allDevices)
+            {
+                var screens = await _deviceDb.GetDeviceScreensAsync(device.Id);
+                foreach (var screen in screens)
                 {
-                    DeviceId = device.Id,
-                    DeviceName = device.Name,
-                    ScreenKey = screen.ScreenKey,
-                    ScreenDisplayName = screen.DisplayName ?? screen.ScreenKey,
-                    FrameLayoutId = screen.FrameLayoutId,
-                    ScreenLayoutId = screen.ScreenLayoutId
-                }))
-                .Where(ds => ds.FrameLayoutId.HasValue || ds.ScreenLayoutId.HasValue)
-                .ToList();
+                    if (screen.FrameLayoutId.HasValue || screen.ScreenLayoutId.HasValue)
+                    {
+                        deviceScreenDefaults.Add(new DeviceScreenDefaultDto
+                        {
+                            DeviceId = device.Id,
+                            DeviceName = device.Name,
+                            ScreenKey = screen.ScreenKey,
+                            ScreenDisplayName = screen.DisplayName ?? screen.ScreenKey,
+                            FrameLayoutId = screen.FrameLayoutId,
+                            ScreenLayoutId = screen.ScreenLayoutId
+                        });
+                    }
+                }
+            }
 
             return Ok(new LayoutUsageResponseDto
             {

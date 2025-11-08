@@ -46,6 +46,7 @@ import {
     Dashboard as DashboardIcon,
     CloudUpload as CloudUploadIcon,
     AccountTree as AccountTreeIcon,
+    Star as StarIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -61,6 +62,7 @@ interface FrameLayoutListItem {
     hasThumbnail?: boolean;
     thumbnailPath?: string;
     thumbnailGeneratedAt?: string;
+    cloudSnapshotCount?: number;
 }
 
 interface Junction {
@@ -230,16 +232,19 @@ const GalleryCard = memo(({
     // Find junctions that use this frame layout
     const usedByJunctions = junctions.filter(junction => {
         return junction.layoutIds.some(layoutIdPair => {
-            const layoutId = layoutIdPair.frameLayoutId || layoutIdPair.screenLayoutId;
+            const layoutId = layoutIdPair.frameLayoutId;
             return layoutId && String(layoutId) === String(frameLayout.id);
         });
     });
 
     // Find device screens that have this layout as default
     const deviceScreensUsingAsDefault = deviceScreenDefaults.filter(ds => {
-        const layoutId = ds.frameLayoutId || ds.screenLayoutId;
+        const layoutId = ds.frameLayoutId;
         return layoutId && String(layoutId) === String(frameLayout.id);
     });
+
+    // Check if layout is in use (by junctions or as device screen default)
+    const isInUse = usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0;
 
     const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
@@ -348,7 +353,7 @@ const GalleryCard = memo(({
                     </Typography>
                 )}
 
-                {/* Type Chip, Dimensions, Template Status, and Actions */}
+                {/* Type Chip and Dimensions */}
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 'auto' }}>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                         <Chip
@@ -370,45 +375,30 @@ const GalleryCard = memo(({
                                 }}
                             />
                         )}
-                        {frameLayout.isTemplate && (
-                            <Chip
-                                label="TEMPLATE"
-                                color="success"
-                                size="small"
-                                sx={{
-                                    fontSize: '0.7rem',
-                                    height: 24,
-                                    fontWeight: 'bold',
-                                    textTransform: 'uppercase'
-                                }}
-                            />
-                        )}
                     </Box>
 
                     {/* Action Buttons */}
-                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Edit Frame Layout">
-                                <IconButton
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEdit(e, frameLayout);
-                                    }}
-                                    sx={{
-                                        color: 'primary.main',
-                                        border: '1px solid',
-                                        borderColor: 'primary.main',
-                                        '&:hover': {
-                                            backgroundColor: 'primary.main',
-                                            color: 'primary.contrastText'
-                                        }
-                                    }}
-                                >
-                                    <EditIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start', alignItems: 'center' }}>
+                        <Tooltip title="Edit Frame Layout">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit(e, frameLayout);
+                                }}
+                                sx={{
+                                    color: 'primary.main',
+                                    border: '1px solid',
+                                    borderColor: 'primary.main',
+                                    '&:hover': {
+                                        backgroundColor: 'primary.main',
+                                        color: 'primary.contrastText'
+                                    }
+                                }}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Clone Frame Layout">
                             <IconButton
                                 size="small"
@@ -429,31 +419,86 @@ const GalleryCard = memo(({
                                 <ContentCopyIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
-                        {!frameLayout.isTemplate && (
-                            <Tooltip title="Delete Frame Layout">
+                        <Tooltip title={isInUse ? "Cannot delete - layout is in use" : "Delete Frame Layout"}>
+                            <span>
                                 <IconButton
                                     size="small"
+                                    disabled={isInUse}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onDelete(e, frameLayout.id);
+                                        if (!isInUse) {
+                                            onDelete(e, frameLayout.id);
+                                        }
                                     }}
                                     sx={{
-                                        color: 'error.main',
+                                        color: isInUse ? 'text.disabled' : 'error.main',
                                         border: '1px solid',
-                                        borderColor: 'error.main',
+                                        borderColor: isInUse ? 'text.disabled' : 'error.main',
                                         '&:hover': {
-                                            backgroundColor: 'error.main',
-                                            color: 'error.contrastText'
+                                            backgroundColor: isInUse ? 'transparent' : 'error.main',
+                                            color: isInUse ? 'text.disabled' : 'error.contrastText'
                                         }
                                     }}
                                 >
                                     <DeleteIcon fontSize="small" />
                                 </IconButton>
+                            </span>
+                        </Tooltip>
+                        {/* In Use Indicator - show next to delete button */}
+                        {isInUse && (
+                            <Tooltip
+                                title={
+                                    <Box>
+                                        {usedByJunctions.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                                                    Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {usedByJunctions.map(j => (
+                                                    <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {j.junctionName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                        {deviceScreensUsingAsDefault.length > 0 && (
+                                            <>
+                                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
+                                                    Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
+                                                </Typography>
+                                                {deviceScreensUsingAsDefault.map(ds => (
+                                                    <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
+                                                        • {ds.deviceName}, {ds.screenDisplayName}
+                                                    </Typography>
+                                                ))}
+                                            </>
+                                        )}
+                                    </Box>
+                                }
+                            >
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                    }}
+                                    sx={{
+                                        color: 'success.main',
+                                        border: '1px solid',
+                                        borderColor: 'success.main',
+                                        '&:hover': {
+                                            backgroundColor: 'success.light',
+                                            borderColor: 'success.main'
+                                        }
+                                    }}
+                                >
+                                    <AccountTreeIcon fontSize="small" />
+                                </IconButton>
                             </Tooltip>
                         )}
                     </Box>
                 </Box>
-                {/* Absolutely positioned indicators - Junction Usage and Cloud Versions */}
+                {/* Absolutely positioned indicators - Template or Cloud Versions */}
                 <Box
                     sx={{
                         position: 'absolute',
@@ -465,38 +510,9 @@ const GalleryCard = memo(({
                         alignItems: 'center'
                     }}
                 >
-                    {/* Junction Usage Indicator */}
-                    {(usedByJunctions.length > 0 || deviceScreensUsingAsDefault.length > 0) && (
-                        <Tooltip
-                            title={
-                                <Box>
-                                    {usedByJunctions.length > 0 && (
-                                        <>
-                                            <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                                                Used by {usedByJunctions.length} junction{usedByJunctions.length > 1 ? 's' : ''}:
-                                            </Typography>
-                                            {usedByJunctions.map(j => (
-                                                <Typography key={j.junctionId} variant="caption" sx={{ display: 'block', ml: 1 }}>
-                                                    • {j.junctionName}
-                                                </Typography>
-                                            ))}
-                                        </>
-                                    )}
-                                    {deviceScreensUsingAsDefault.length > 0 && (
-                                        <>
-                                            <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: usedByJunctions.length > 0 ? 1 : 0, mb: 0.5 }}>
-                                                Set as default for {deviceScreensUsingAsDefault.length} device screen{deviceScreensUsingAsDefault.length > 1 ? 's' : ''}:
-                                            </Typography>
-                                            {deviceScreensUsingAsDefault.map(ds => (
-                                                <Typography key={`${ds.deviceId}-${ds.screenKey}`} variant="caption" sx={{ display: 'block', ml: 1 }}>
-                                                    • {ds.deviceName}, {ds.screenDisplayName}
-                                                </Typography>
-                                            ))}
-                                        </>
-                                    )}
-                                </Box>
-                            }
-                        >
+                    {frameLayout.isTemplate ? (
+                        /* Template Indicator */
+                        <Tooltip title="Template">
                             <IconButton
                                 size="small"
                                 onClick={(e) => {
@@ -510,42 +526,46 @@ const GalleryCard = memo(({
                                     borderColor: 'success.main',
                                     boxShadow: 2,
                                     '&:hover': {
-                                        backgroundColor: 'success.main',
-                                        color: 'success.contrastText',
+                                        backgroundColor: 'success.light',
+                                        borderColor: 'success.main',
                                         boxShadow: 4
                                     }
                                 }}
                             >
-                                <AccountTreeIcon fontSize="small" />
+                                <StarIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
-                    )}
-
-                    {/* Cloud Versions Button - only for non-templates */}
-                    {!frameLayout.isTemplate && (
-                        <Tooltip title="Cloud Versions (Pro)">
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    setCloudVersionsModalOpen(true);
-                                }}
-                                sx={{
-                                    color: 'info.main',
-                                    backgroundColor: 'background.paper',
-                                    border: '1px solid',
-                                    borderColor: 'info.main',
-                                    boxShadow: 2,
-                                    '&:hover': {
-                                        backgroundColor: 'info.main',
-                                        color: 'info.contrastText',
-                                        boxShadow: 4
-                                    }
-                                }}
+                    ) : (
+                        /* Cloud Versions Button - only for non-templates */
+                        <Tooltip title={`Cloud Versions (${frameLayout.cloudSnapshotCount || 0} snapshots)`}>
+                            <Badge
+                                badgeContent={frameLayout.cloudSnapshotCount || 0}
+                                color="info"
+                                max={99}
                             >
-                                <CloudUploadIcon fontSize="small" />
-                            </IconButton>
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setCloudVersionsModalOpen(true);
+                                    }}
+                                    sx={{
+                                        color: 'info.main',
+                                        backgroundColor: 'background.paper',
+                                        border: '1px solid',
+                                        borderColor: 'info.main',
+                                        boxShadow: 2,
+                                        '&:hover': {
+                                            backgroundColor: 'info.main',
+                                            color: 'info.contrastText',
+                                            boxShadow: 4
+                                        }
+                                    }}
+                                >
+                                    <CloudUploadIcon fontSize="small" />
+                                </IconButton>
+                            </Badge>
                         </Tooltip>
                     )}
                 </Box>
