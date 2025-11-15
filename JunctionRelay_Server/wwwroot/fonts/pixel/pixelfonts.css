@@ -1,0 +1,65 @@
+/*
+ * This file is part of JunctionRelay.
+ *
+ * Copyright (C) 2024–present Jonathan Mills, CatapultCase
+ *
+ * JunctionRelay is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JunctionRelay is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * Pixel Fonts for FrameEngine2 Text Elements
+ *
+ * Simplified list - only includes easily downloadable fonts without conversion needed.
+ * All fonts use permissive licenses suitable for commercial use.
+ *
+ * Full license texts are available in: D:\Dev\JunctionRelay_Dev\LICENSES-THIRD-PARTY.txt
+ */
+
+/* =============================================================================
+   Tom Thumb - Ultra-tiny 4x6 pixel font (CC-BY 3.0)
+   Perfect for: Tiny displays, retro hardware emulation
+   Source: https://fontstruct.com/fontstructions/show/1656341/tom-thumb
+   Download: Available as OTF from FontStruct
+   ============================================================================= */
+@font-face {
+    font-family: 'Tom Thumb';
+    src: url('./tom-thumb.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
+
+/* =============================================================================
+   Press Start 2P - Classic arcade/NES style (SIL OFL)
+   Perfect for: Retro gaming, arcade aesthetics
+   Source: https://fonts.google.com/specimen/Press+Start+2P
+   Note: This is a Google Font - loaded via loadGoogleFont() function instead
+         of local files. Pixel fonts use this function for Google-hosted fonts.
+   ============================================================================= */
+/* Press Start 2P is loaded dynamically via FrameEngine2_FontLoader.ts */
+
+/* =============================================================================
+   Pixel Operator - Clean 8x8 pixel font (Free License)
+   Perfect for: General pixel art, readability
+   Source: https://www.dafont.com/pixel-operator.font
+   Download: Available as TTF from DaFont
+   Note: Using web-safe monospace fallback until font files are added
+   ============================================================================= */
+@font-face {
+    font-family: 'Pixel Operator';
+    src: local('Courier New'), local('Courier'), local('monospace');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
