@@ -1,0 +1,9 @@
+{
+  "name": "cdp-screencast-capture",
+  "version": "1.0.0",
+  "description": "CDP screencast capture for JunctionRelay high-performance MJPEG streaming",
+  "main": "cdp_screencast_capture.js",
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

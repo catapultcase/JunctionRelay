@@ -1,0 +1,616 @@
+================================================================================
+JunctionRelay - Third-Party Software Licenses
+================================================================================
+
+This file contains the licenses for third-party software used in JunctionRelay,
+specifically for components used in the Frame Engine visual effects system and
+throughout the application.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+CORE DEPENDENCIES (Detailed Licenses):
+1. @rive-app/react-canvas (MIT License)
+2. react-gauge-component (MIT License)
+3. three.js (MIT License)
+4. react-fontpicker-ts (MIT License)
+5. html2canvas-pro (MIT License)
+6. @clerk/clerk-react (MIT License)
+7. @mui/material (MIT License)
+8. jszip (MIT License - chosen from dual MIT/GPL-3.0 license)
+9. modern-gif (MIT License)
+
+PIXEL FONTS (Used in FrameEngine Text and Sensor Elements):
+10. Tom Thumb (Creative Commons Attribution 3.0)
+11. Press Start 2P (SIL Open Font License 1.1)
+12. Pixel Operator (Free License)
+
+ADDITIONAL DEPENDENCIES (Summary)
+
+APACHE 2.0 LICENSED DEPENDENCIES
+
+LICENSE CHOICE NOTICES
+
+================================================================================
+
+
+================================================================================
+1. @rive-app/react-canvas
+================================================================================
+
+MIT License
+
+Copyright (c) 2021 Rive
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/rive-app/rive-react
+Version: 4.23.1
+Used in: FrameEngine_Element_MediaRive.tsx (Rive Animation Element)
+
+
+================================================================================
+2. react-gauge-component
+================================================================================
+
+MIT License
+
+Copyright (c) 2023 antoniolago
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/antoniolago/react-gauge-component
+Version: 1.2.64
+Used in: FrameEngine_Element_Gauge.tsx (Gauge Element)
+
+
+================================================================================
+3. three.js
+================================================================================
+
+The MIT License
+
+Copyright © 2010-2025 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/mrdoob/three.js
+Version: 0.128.0
+Used in: FrameEngine_Element_Tunnel.tsx, FrameEngine_Element_Weather.tsx
+
+
+================================================================================
+4. react-fontpicker-ts
+================================================================================
+
+MIT License
+
+Copyright (c) 2023 ae9is
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/ae9is/react-fontpicker
+Version: 1.2.0
+Used in: FrameEngine_ElementProperties_Shared.tsx (Google Fonts Selector)
+
+
+================================================================================
+5. html2canvas-pro
+================================================================================
+
+MIT License
+
+Copyright (c) 2024-present yorickshan and html2canvas-pro contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/yorickshan/html2canvas-pro
+Version: 1.5.13
+Used in: FrameEngine_useScreenshotCapture.ts, FrameEngine_useGifCapture.ts
+(Screenshot and GIF capture functionality with enhanced object-fit support)
+
+
+================================================================================
+6. @clerk/clerk-react
+================================================================================
+
+MIT License
+
+Copyright (c) 2022 Clerk
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/clerk/javascript
+Version: 5.32.2
+Used in: Authentication system throughout the application
+
+NOTE: While the @clerk/clerk-react SDK is MIT licensed and free to use, Clerk's
+authentication service itself has usage-based pricing for commercial
+applications beyond the free tier.
+
+
+================================================================================
+7. @mui/material (Material-UI)
+================================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2014 Call-Em-All
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/mui/material-ui
+Packages: @mui/material (v6.4.12), @mui/icons-material (v6.4.12),
+          @mui/x-charts (v8.15.0)
+Used in: UI framework throughout the application
+
+
+================================================================================
+8. jszip
+================================================================================
+
+DUAL LICENSE: MIT OR GPL-3.0-or-later
+
+JunctionRelay uses jszip under the MIT License option.
+
+MIT License
+
+Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger,
+António Afonso
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/Stuk/jszip
+Version: 3.10.1
+Used in: ZIP file creation and manipulation for template exports
+
+
+================================================================================
+9. modern-gif
+================================================================================
+
+MIT License
+
+Copyright (c) 2022 Matt DesLauriers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository: https://github.com/mattdesl/modern-gif
+Version: 2.0.4
+Used in: FrameEngine_useGifCapture.ts (GIF encoding functionality)
+
+
+================================================================================
+10. Tom Thumb Font
+================================================================================
+
+Creative Commons Attribution 3.0 License
+
+The FontStruction "Tom Thumb" (https://fontstruct.com/fontstructions/show/1656341)
+by "Lord Nightmare" is licensed under a Creative Commons Attribution license
+(http://creativecommons.org/licenses/by/3.0/).
+
+Based on work by Brian Swetland and Robey Pointer.
+
+LICENSE TERMS (CC-BY 3.0):
+You are free to:
+- Share: copy and redistribute the material in any medium or format
+- Adapt: remix, transform, and build upon the material for any purpose, even commercially
+
+Under the following terms:
+- Attribution: You must give appropriate credit, provide a link to the license,
+  and indicate if changes were made. You may do so in any reasonable manner,
+  but not in any way that suggests the licensor endorses you or your use.
+
+Full license text: http://creativecommons.org/licenses/by/3.0/
+
+Repository: https://fontstruct.com/fontstructions/show/1656341
+Version: August 13, 2019
+Used in: FrameEngine Text and Sensor Elements (Pixel font option - ultra-tiny 4x6 pixel font)
+
+
+================================================================================
+11. Pixel Operator Font
+================================================================================
+
+Free License
+
+Copyright (c) 2009 Jayvee Enaguas (HarvettFox96)
+
+This font is free for personal and commercial use. You may:
+- Use the font in any project (personal or commercial)
+- Distribute the font provided this license is included
+- Modify the font for personal use
+
+You may not:
+- Sell the font as a standalone product
+- Claim original authorship
+
+Repository: https://www.dafont.com/pixel-operator.font
+Version: 1.5.3
+Used in: FrameEngine Text and Sensor Elements (Pixel font option - clean 8x8 pixel font)
+
+
+================================================================================
+12. Press Start 2P Font
+================================================================================
+
+Copyright (c) 2012, Cody "CodeMan38" Boisclair (cody@zone38.net)
+with Reserved Font Name "Press Start 2P"
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+Repository: https://fonts.google.com/specimen/Press+Start+2P
+Version: Latest
+Used in: FrameEngine2 Text and Sensor Elements (Pixel font option - arcade/NES style font)
+
+
+================================================================================
+ADDITIONAL DEPENDENCIES (MIT Licensed)
+================================================================================
+
+JunctionRelay also uses the following MIT licensed libraries throughout the
+application:
+
+CORE FRAMEWORK:
+- React (v19.1.0) - https://github.com/facebook/react
+- React DOM (v19.1.0) - https://github.com/facebook/react
+- React Router DOM (v7.6.3) - https://github.com/remix-run/react-router
+
+UI COMPONENTS & STYLING:
+- @emotion/react (v11.14.0) - https://github.com/emotion-js/emotion
+- @emotion/styled (v11.14.1) - https://github.com/emotion-js/emotion
+- react-color (v2.19.3) - https://github.com/casesandberg/react-color
+- react-colorful (v5.6.1) - https://github.com/omgovich/react-colorful
+- react-icons (v5.5.0) - https://github.com/react-icons/react-icons
+- react-moveable (v0.56.0) - https://github.com/daybrush/moveable
+- react-resizable-panels (v3.0.6) - https://github.com/bvaughn/react-resizable-panels
+
+CHARTING & VISUALIZATION:
+- Recharts (v2.15.4) - https://github.com/recharts/recharts
+
+UTILITIES:
+- Axios (v1.10.0) - https://github.com/axios/axios
+- qrcode (v1.5.4) - https://github.com/soldair/node-qrcode
+
+DEVELOPMENT:
+- react-scripts (v5.0.1) - https://github.com/facebook/create-react-app
+- react-app-rewired (v2.2.1) - https://github.com/timarney/react-app-rewired
+
+TESTING:
+- @testing-library/react (v16.2.0) - https://github.com/testing-library/react-testing-library
+- @testing-library/jest-dom (v6.6.3) - https://github.com/testing-library/jest-dom
+- @testing-library/user-event (v13.5.0) - https://github.com/testing-library/user-event-testing-library
+- @testing-library/dom (v10.4.0) - https://github.com/testing-library/dom-testing-library
+
+
+================================================================================
+APACHE 2.0 LICENSED DEPENDENCIES
+================================================================================
+
+The following dependencies are licensed under the Apache License 2.0:
+
+1. TypeScript (v4.9.5)
+   Repository: https://github.com/microsoft/TypeScript
+   License: Apache License 2.0
+   Used in: TypeScript compilation throughout the project
+
+2. web-vitals (v2.1.4)
+   Repository: https://github.com/GoogleChrome/web-vitals
+   License: Apache License 2.0
+   Used in: Performance monitoring
+
+Apache License 2.0 Summary:
+The Apache License 2.0 is a permissive free software license that allows use
+for commercial purposes. It requires preservation of copyright and license
+notices, provides an express grant of patent rights, and requires stating
+significant changes made to the code.
+
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
+
+================================================================================
+LICENSE CHOICE NOTICES
+================================================================================
+
+JSZIP DUAL LICENSE:
+JunctionRelay uses jszip under the MIT License option. jszip is dual-licensed
+under MIT OR GPL-3.0-or-later. For commercial use and distribution flexibility,
+this project has chosen to use jszip under the MIT License terms, which is
+explicitly permitted by the dual-licensing structure.
+
+
+================================================================================
+TYPE DEFINITIONS
+================================================================================
+
+JunctionRelay uses TypeScript type definitions from DefinitelyTyped (@types/*
+packages), all of which are MIT licensed:
+
+- @types/html2canvas (v0.5.35)
+- @types/jest (v27.5.2)
+- @types/jszip (v3.4.0)
+- @types/node (v16.18.126)
+- @types/react (v19.0.10)
+- @types/react-color (v3.0.13)
+- @types/react-dom (v19.0.4)
+- @types/qrcode (v1.5.5)
+- @types/three (v0.128.0)
+
+Repository: https://github.com/DefinitelyTyped/DefinitelyTyped
+
+
+================================================================================
+NOTES
+================================================================================
+
+LICENSE COMPLIANCE:
+All third-party software used in JunctionRelay is licensed under permissive
+open-source licenses (primarily MIT, with some Apache-2.0) that allow for
+commercial use, modification, and distribution, provided that the original
+copyright notices and license terms are retained.
+
+COMMERCIAL USE:
+All dependencies listed in this file are safe for commercial use. There are
+no GPL-only, AGPL, or restrictive "non-commercial only" licenses in use.
+
+ATTRIBUTION REQUIREMENT:
+This notice serves to fulfill the attribution requirements of these licenses.
+All licenses require that copyright notices and license terms be retained in
+any distribution of the software.
+
+SERVICE COSTS:
+While all software libraries are freely licensed, some services (such as
+Clerk authentication) may have usage-based pricing for commercial deployments.
+These are service costs, not software licensing restrictions.
+
+PACKAGE UPDATES:
+For a complete and current list of all dependencies and their exact versions,
+please refer to the package.json file and run `npm list` in the
+junctionrelaywebui directory.
+
+CONTACT:
+For questions or concerns about licensing, please contact:
+Jonathan Mills - CatapultCase
+https://github.com/CatapultCase/JunctionRelay
+
+================================================================================
+
+Last Updated: November 12, 2025
+
+================================================================================

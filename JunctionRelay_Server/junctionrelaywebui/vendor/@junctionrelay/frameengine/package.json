@@ -1,0 +1,60 @@
+{
+  "name": "@junctionrelay/frameengine",
+  "version": "1.0.0",
+  "description": "FrameEngine - JunctionRelay's proprietary rendering engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": true,
+  "license": "PROPRIETARY",
+  "scripts": {
+    "build": "vite build && node scripts/obfuscate-dist.js",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0",
+    "react-router-dom": "^6.0.0 || ^7.0.0"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.11",
+    "@mui/material": "^6.4.6",
+    "@mui/x-charts": "^8.18.0",
+    "@rive-app/react-canvas": "^4.23.1",
+    "axios": "^1.8.1",
+    "html2canvas-pro": "^1.5.13",
+    "jszip": "^3.10.1",
+    "modern-gif": "^2.0.4",
+    "qrcode": "^1.5.4",
+    "react-color": "^2.19.3",
+    "react-colorful": "^5.6.1",
+    "react-fontpicker-ts": "^1.2.0",
+    "react-gauge-component": "^1.2.64",
+    "react-icons": "^5.5.0",
+    "react-moveable": "^0.56.0",
+    "react-resizable-panels": "^3.0.6",
+    "recharts": "^2.15.1",
+    "three": "^0.128.0"
+  },
+  "devDependencies": {
+    "@types/html2canvas": "^0.5.35",
+    "@types/jszip": "^3.4.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.10",
+    "@types/react-color": "^3.0.13",
+    "@types/react-dom": "^19.0.4",
+    "@types/three": "^0.128.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "javascript-obfuscator": "^4.1.1",
+    "terser": "^5.44.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "vite-plugin-dts": "^3.7.0",
+    "vite-plugin-javascript-obfuscator": "^3.1.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

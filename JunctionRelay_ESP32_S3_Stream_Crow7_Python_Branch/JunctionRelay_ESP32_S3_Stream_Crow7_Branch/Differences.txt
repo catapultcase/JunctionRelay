@@ -1,0 +1,37 @@
+Unique device files:
+- devices/Device_CrowPanel5.h
+- devices/Device_CrowPanel5.cpp
+  * Removed LVGL display driver (lv_disp_drv_t, lv_indev_drv_t) and callbacks
+  * Removed initLVGLHelper() method
+  * Added getDisplay() for direct LovyanGFX access
+  * Added initializeHardware() helper method
+
+- devices/Device_CrowPanel7.h
+- devices/Device_CrowPanel7.cpp
+  * Same changes as CrowPanel5
+
+Shared files but modified:
+- DeviceConfig.h
+  * Removed LVGL includes and initLVGLHelper() virtual method
+  * Added getDisplay() virtual method for native rendering
+  * Simplified setRotation() (no LVGL driver updates)
+
+- Helper_StartupScheduler.h
+- Helper_StartupScheduler.cpp
+  * Replaced Display_Manager_LVGL with Display_Manager_Native
+  * Added Display_Manager_Blit support
+  * Added setupBlitManager() and startBlitTasks() methods
+  * Always creates blit manager (not conditional on hasOnboardScreen)
+  * Modified startup order: external displays initialize before blit manager
+
+- Helper_Utils.h
+  * Version changed from "v0.8.8" to "v0.8.9_Blit"
+
+- Manager_Matrix.h
+  * Added getMatrix() method for blit renderer access to Adafruit_Protomatter
+
+- Manager_Charlieplex.h
+- Manager_Charlieplex.cpp
+  * Added getDisplay(address) method for blit renderer access to Adafruit_IS31FL3731
+  * Added setBlitMode(bool) method to pause scrolling text during blit rendering
+  * Added blitModeActive flag to prevent flickering between blit frames and home screen

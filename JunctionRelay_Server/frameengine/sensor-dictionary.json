@@ -1,0 +1,408 @@
+[
+  {
+    "category": "system",
+    "sensor": "hostname",
+    "sensorTag": "system_hostname",
+    "value": "DESKTOP-PC",
+    "unit": "text"
+  },
+  {
+    "category": "system",
+    "sensor": "platform",
+    "sensorTag": "system_platform",
+    "value": "win32",
+    "unit": "text"
+  },
+  {
+    "category": "system",
+    "sensor": "uptime",
+    "sensorTag": "system_uptime",
+    "value": 86400,
+    "unit": "seconds"
+  },
+  {
+    "category": "system",
+    "sensor": "shutdown",
+    "sensorTag": "system_shutdown",
+    "value": false,
+    "unit": "boolean"
+  },
+  {
+    "category": "cpu",
+    "sensor": "name",
+    "sensorTag": "cpu_name",
+    "value": "Intel Core i5-14600K",
+    "unit": "text"
+  },
+  {
+    "category": "cpu",
+    "sensor": "usage_total",
+    "sensorTag": "cpu_usage_total",
+    "value": 8.6,
+    "unit": "%"
+  },
+  {
+    "category": "cpu",
+    "sensor": "frequency",
+    "sensorTag": "cpu_frequency",
+    "value": 3500,
+    "unit": "MHz"
+  },
+  {
+    "category": "cpu",
+    "sensor": "temperature",
+    "sensorTag": "cpu_temperature",
+    "value": 45,
+    "unit": "°C"
+  },
+  {
+    "category": "cpu",
+    "sensor": "core_count",
+    "sensorTag": "cpu_core_count",
+    "value": 14,
+    "unit": "cores"
+  },
+  {
+    "category": "cpu",
+    "sensor": "thread_count",
+    "sensorTag": "cpu_thread_count",
+    "value": 20,
+    "unit": "threads"
+  },
+  {
+    "category": "gpu",
+    "sensor": "name",
+    "sensorTag": "gpu_name",
+    "value": "NVIDIA GeForce RTX 4070 SUPER",
+    "unit": "text"
+  },
+  {
+    "category": "gpu",
+    "sensor": "usage",
+    "sensorTag": "gpu_usage",
+    "value": 10,
+    "unit": "%"
+  },
+  {
+    "category": "gpu",
+    "sensor": "temperature",
+    "sensorTag": "gpu_temperature",
+    "value": 51,
+    "unit": "°C"
+  },
+  {
+    "category": "gpu",
+    "sensor": "vram_used",
+    "sensorTag": "gpu_vram_used",
+    "value": 1720,
+    "unit": "MB"
+  },
+  {
+    "category": "gpu",
+    "sensor": "vram_total",
+    "sensorTag": "gpu_vram_total",
+    "value": 12282,
+    "unit": "MB"
+  },
+  {
+    "category": "gpu",
+    "sensor": "vram_available",
+    "sensorTag": "gpu_vram_available",
+    "value": 10562,
+    "unit": "MB"
+  },
+  {
+    "category": "gpu",
+    "sensor": "vram_usage_percent",
+    "sensorTag": "gpu_vram_usage_percent",
+    "value": 14,
+    "unit": "%"
+  },
+  {
+    "category": "gpu",
+    "sensor": "frequency",
+    "sensorTag": "gpu_frequency",
+    "value": 2100,
+    "unit": "MHz"
+  },
+  {
+    "category": "gpu",
+    "sensor": "power_draw",
+    "sensorTag": "gpu_power_draw",
+    "value": 35,
+    "unit": "W"
+  },
+  {
+    "category": "gpu",
+    "sensor": "fan_speed_percent",
+    "sensorTag": "gpu_fan_speed_percent",
+    "value": 30,
+    "unit": "%"
+  },
+  {
+    "category": "memory",
+    "sensor": "used",
+    "sensorTag": "memory_used",
+    "value": 26227,
+    "unit": "MB"
+  },
+  {
+    "category": "memory",
+    "sensor": "total",
+    "sensorTag": "memory_total",
+    "value": 98045,
+    "unit": "MB"
+  },
+  {
+    "category": "memory",
+    "sensor": "available",
+    "sensorTag": "memory_available",
+    "value": 71817,
+    "unit": "MB"
+  },
+  {
+    "category": "memory",
+    "sensor": "usage_percent",
+    "sensorTag": "memory_usage_percent",
+    "value": 26.8,
+    "unit": "%"
+  },
+  {
+    "category": "memory",
+    "sensor": "swap_used",
+    "sensorTag": "memory_swap_used",
+    "value": 1024,
+    "unit": "MB"
+  },
+  {
+    "category": "memory",
+    "sensor": "swap_total",
+    "sensorTag": "memory_swap_total",
+    "value": 6144,
+    "unit": "MB"
+  },
+  {
+    "category": "disk",
+    "sensor": "used",
+    "sensorTag": "disk_used",
+    "value": 850,
+    "unit": "GB"
+  },
+  {
+    "category": "disk",
+    "sensor": "total",
+    "sensorTag": "disk_total",
+    "value": 1000,
+    "unit": "GB"
+  },
+  {
+    "category": "disk",
+    "sensor": "free",
+    "sensorTag": "disk_free",
+    "value": 150,
+    "unit": "GB"
+  },
+  {
+    "category": "disk",
+    "sensor": "usage_percent",
+    "sensorTag": "disk_usage_percent",
+    "value": 85,
+    "unit": "%"
+  },
+  {
+    "category": "disk",
+    "sensor": "read_speed",
+    "sensorTag": "disk_read_speed",
+    "value": 150,
+    "unit": "MB/s"
+  },
+  {
+    "category": "disk",
+    "sensor": "write_speed",
+    "sensorTag": "disk_write_speed",
+    "value": 100,
+    "unit": "MB/s"
+  },
+  {
+    "category": "network",
+    "sensor": "download_speed",
+    "sensorTag": "network_download_speed",
+    "value": 25,
+    "unit": "MB/s"
+  },
+  {
+    "category": "network",
+    "sensor": "upload_speed",
+    "sensorTag": "network_upload_speed",
+    "value": 5,
+    "unit": "MB/s"
+  },
+  {
+    "category": "network",
+    "sensor": "bytes_sent",
+    "sensorTag": "network_bytes_sent",
+    "value": 490889999,
+    "unit": "bytes"
+  },
+  {
+    "category": "network",
+    "sensor": "bytes_received",
+    "sensorTag": "network_bytes_received",
+    "value": 971140771,
+    "unit": "bytes"
+  },
+  {
+    "category": "battery",
+    "sensor": "percent",
+    "sensorTag": "battery_percent",
+    "value": 100,
+    "unit": "%"
+  },
+  {
+    "category": "battery",
+    "sensor": "is_charging",
+    "sensorTag": "battery_is_charging",
+    "value": true,
+    "unit": "boolean"
+  },
+  {
+    "category": "battery",
+    "sensor": "is_plugged_in",
+    "sensorTag": "battery_is_plugged_in",
+    "value": true,
+    "unit": "boolean"
+  },
+  {
+    "category": "battery",
+    "sensor": "time_remaining",
+    "sensorTag": "battery_time_remaining",
+    "value": -1,
+    "unit": "seconds"
+  },
+  {
+    "category": "gaming",
+    "sensor": "current_game",
+    "sensorTag": "gaming_current_game",
+    "value": "",
+    "unit": "text"
+  },
+  {
+    "category": "gaming",
+    "sensor": "app_id",
+    "sensorTag": "gaming_app_id",
+    "value": "",
+    "unit": "text"
+  },
+  {
+    "category": "gaming",
+    "sensor": "header_image",
+    "sensorTag": "gaming_header_image",
+    "value": "",
+    "unit": "text"
+  },
+  {
+    "category": "gaming",
+    "sensor": "is_playing",
+    "sensorTag": "gaming_is_playing",
+    "value": false,
+    "unit": "boolean"
+  },
+  {
+    "category": "gaming",
+    "sensor": "session_duration",
+    "sensorTag": "gaming_session_duration",
+    "value": 0,
+    "unit": "seconds"
+  },
+  {
+    "category": "gaming",
+    "sensor": "fps",
+    "sensorTag": "gaming_fps",
+    "value": 60,
+    "unit": "fps"
+  },
+  {
+    "category": "gaming",
+    "sensor": "fps_99",
+    "sensorTag": "gaming_fps_99",
+    "value": 55,
+    "unit": "fps"
+  },
+  {
+    "category": "gaming",
+    "sensor": "fps_1",
+    "sensorTag": "gaming_fps_1",
+    "value": 45,
+    "unit": "fps"
+  },
+  {
+    "category": "gaming",
+    "sensor": "frame_time",
+    "sensorTag": "gaming_frame_time",
+    "value": 16.6,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "frame_time_99",
+    "sensorTag": "gaming_frame_time_99",
+    "value": 18.2,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "frame_time_1",
+    "sensorTag": "gaming_frame_time_1",
+    "value": 22.2,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "cpu_busy",
+    "sensorTag": "gaming_cpu_busy",
+    "value": 8.5,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "cpu_wait",
+    "sensorTag": "gaming_cpu_wait",
+    "value": 2.1,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "gpu_latency",
+    "sensorTag": "gaming_gpu_latency",
+    "value": 12.3,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "gpu_time",
+    "sensorTag": "gaming_gpu_time",
+    "value": 10.5,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "gpu_busy",
+    "sensorTag": "gaming_gpu_busy",
+    "value": 9.8,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "gpu_wait",
+    "sensorTag": "gaming_gpu_wait",
+    "value": 1.5,
+    "unit": "ms"
+  },
+  {
+    "category": "gaming",
+    "sensor": "display_latency",
+    "sensorTag": "gaming_display_latency",
+    "value": 25.5,
+    "unit": "ms"
+  }
+]

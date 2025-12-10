@@ -1,0 +1,11 @@
+================================================================================
+THIRD-PARTY SOFTWARE LICENSES
+JunctionRelay Server
+================================================================================
+
+This document contains the licenses for third-party software used in this project.
+Licenses are listed alphabetically by package name.
+
+(No third-party licenses currently documented)
+
+================================================================================
