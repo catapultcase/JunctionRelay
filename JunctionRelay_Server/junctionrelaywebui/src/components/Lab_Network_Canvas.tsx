@@ -21,7 +21,7 @@ import { Box, IconButton, Paper, Typography, useTheme } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
-    anchorOf, computeGeometry, GRID, Geometry, Graph, isSide, Layout, layoutProblem, lineColour, mediaTxt, MODULE_ORANGE,
+    anchorOf, computeGeometry, GRID, Geometry, Graph, isSide, Layout, lineColour, mediaTxt, MODULE_ORANGE,
     NetLink, NetNode, NetPort, Point, Rect, SFP_BLUE, Side, snap, speedTxt, TAB_H, TAB_W, ZONE_BAND, ZONE_RED, zoneKindTxt,
 } from "./Lab_Network_Model";
 import { pathD, routeLinks } from "./Lab_Network_Router";
@@ -29,7 +29,7 @@ import type { useCanvasViewport } from "../hooks/useCanvasViewport";
 
 // The Network page's canvas: frames, zones, links, device cards and port tabs on a pan/zoom stage. With
 // Edit layout on, a card drags on the 20px grid, a frame drags by its handle (and takes everything in it
-// along), and a port tab drags to any edge of its card. A move that would overlap snaps back with the reason.
+// along), and a port tab drags to any edge of its card. Placement is the user's call: nothing is refused.
 
 const TAB_TXT = { display: "block", color: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "clip", px: "1px" } as const;
 const HANDLE_H = 30;
@@ -51,10 +51,9 @@ interface Props {
     onLink: (id: number) => void;
     onEditNode: (n: NetNode) => void;
     onLayout: (next: Layout) => void;
-    onProblem: (text: string) => void;
 }
 
-const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected, armed, pendingPort, onPort, onLink, onEditNode, onLayout, onProblem }: Props) => {
+const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected, armed, pendingPort, onPort, onLink, onEditNode, onLayout }: Props) => {
     const theme = useTheme();
     const linked = useMemo(() => {
         const s = new Set<number>();
@@ -68,7 +67,6 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
     const [dragLayout, setDragLayout] = useState<Layout | null>(null);
     const shown = dragLayout ?? layout;
     const geo = useMemo(() => computeGeometry(graph, shown, visible), [graph, shown, visible]);
-    const problem = useMemo(() => (dragLayout ? layoutProblem(graph, geo) : null), [dragLayout, graph, geo]);
 
     const portById = useMemo(() => new Map(graph.ports.map(p => [p.id, p])), [graph.ports]);
     const sideOf = (p: NetPort): Side => shown.edge.get(p.id)?.side ?? (isSide(p.side) ? p.side : "bottom");
@@ -170,8 +168,6 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
             return !d.tray && a && b && a.x === b.x && a.y === b.y;
         });
         if (unchanged) return;
-        const why = layoutProblem(graph, computeGeometry(graph, next, visible));
-        if (why) { onProblem(why); return; }
         onLayout(next);
     };
 
@@ -211,12 +207,11 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         const all = graph.ports.filter(p => p.nodeId === n.id);
         const freeCount = all.filter(p => !linked.has(p.id)).length;
         const planned = n.status === "planned";
-        const bad = !!problem && !!moving?.has(n.id);
         return (
             <Paper key={`n${n.id}`} elevation={moving?.has(n.id) ? 8 : 2} onPointerDown={e => startNodes(e, [n.id])} sx={{
                 position: "absolute", left: r.x, top: r.y, width: r.w, height: r.h, zIndex: moving?.has(n.id) ? 5 : 2, p: "8px 10px",
-                border: `1.5px ${planned ? "dashed" : "solid"} ${bad ? "#d32f2f" : theme.palette.text.primary}`, borderRadius: "6px",
-                outline: bad ? "3px solid #d32f2f" : "none", cursor: editing ? "grab" : "default", touchAction: "none", userSelect: "none",
+                border: `1.5px ${planned ? "dashed" : "solid"} ${theme.palette.text.primary}`, borderRadius: "6px",
+                cursor: editing ? "grab" : "default", touchAction: "none", userSelect: "none",
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 0.25,
             }}>
                 <IconButton size="small" title="Edit this device and its ports" onPointerDown={e => e.stopPropagation()} onClick={() => onEditNode(n)}
@@ -324,11 +319,6 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
                     return t ? portTab(p, t) : null;
                 })}
             </Box>
-            {problem && (
-                <Box sx={{ position: "absolute", left: 12, bottom: 12, px: 1.25, py: 0.5, borderRadius: 1, bgcolor: "#d32f2f", color: "#fff", fontSize: 12.5, pointerEvents: "none" }}>
-                    {problem}
-                </Box>
-            )}
         </Box>
     );
 };

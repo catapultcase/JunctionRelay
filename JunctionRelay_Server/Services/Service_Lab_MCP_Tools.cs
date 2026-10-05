@@ -262,7 +262,7 @@ namespace JunctionRelayServer.Services
                      "motherboard, a placeholder's portsSpec (grammar: '4x RJ45 2.5G, 2x SFP+ 10G'). Its frame is the Lab " +
                      "Space it is placed in unless space is given. Where it is drawn: x/y, the card's top-left in canvas " +
                      "pixels on a 20px grid (lab_network shows each device's 'at x,y'); its frame is drawn around its devices, " +
-                     "so keep a device clear of other devices and of other frames. A new device without x/y goes on a free " +
+                     "keep a device clear of other devices and frames unless asked otherwise. A new device without x/y goes on a free " +
                      "spot below the map. Pass id (from lab_network) to change one: only the fields " +
                      "you pass change; syncPorts=true adds spec ports it lacks (never removes). Empty string clears a text field.")]
         public async Task<string> LabSetNetworkNodeAsync(

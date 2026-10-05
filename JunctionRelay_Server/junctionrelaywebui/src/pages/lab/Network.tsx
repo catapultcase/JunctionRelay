@@ -192,6 +192,7 @@ const HomelabNetwork = () => {
                         (lab_network, lab_set_network_node, lab_set_network_port, lab_connect).
                     </Typography>
                 </Box>
+                <FormControlLabel control={<Switch size="small" checked={showFree} onChange={e => setShowFree(e.target.checked)} />} label="Show free ports" />
                 {editing ? (
                     <>
                         <Typography sx={{ fontSize: 12.5, color: "text.secondary", maxWidth: 360 }}>
@@ -203,7 +204,6 @@ const HomelabNetwork = () => {
                     </>
                 ) : (
                     <>
-                        <FormControlLabel control={<Switch size="small" checked={showFree} onChange={e => setShowFree(e.target.checked)} />} label="Show free ports" />
                         <Button size="small" variant={connectMode ? "contained" : "outlined"}
                             onClick={() => { setConnectMode(!connectMode); setArmed(null); setPending(null); if (!connectMode) setShowFree(true); }}>
                             {connectMode ? (pending ? "Confirm below" : armed != null ? "Pick the other port…" : "Connect: pick a port") : "Connect"}
@@ -265,10 +265,10 @@ const HomelabNetwork = () => {
                     </Typography>
                 </Paper>
             ) : (
-                <LabNetworkCanvas graph={graph} layout={layout} editing={editing} showFree={showFree || editing} viewport={viewport}
+                <LabNetworkCanvas graph={graph} layout={layout} editing={editing} showFree={showFree} viewport={viewport}
                     selected={selected} armed={armed} pendingPort={pending?.b ?? null}
                     onPort={onPort} onLink={id => { setSelected({ link: id }); setActionError(null); }} onEditNode={setEditNode}
-                    onLayout={onLayout} onProblem={setProblem} />
+                    onLayout={onLayout} />
             )}
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2, mt: 2 }}>

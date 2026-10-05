@@ -19,7 +19,7 @@
 
 // The Network page's data and geometry - no React here. A device's card sits at its stored x/y (canvas
 // pixels on a 20px grid); its size follows its ports; frames (Lab Spaces) are DRAWN AROUND their devices,
-// so moving a frame means moving its devices. Port tabs are centred on 10px grid lines so the link router
+// so moving a frame means moving its devices. Where things go is the user's call - nothing is refused. Port tabs are centred on 10px grid lines so the link router
 // (Lab_Network_Router) can run lines straight out of them.
 
 export interface NetNode {
@@ -180,34 +180,6 @@ export function computeGeometry(g: Graph, lay: Layout, visible: (p: NetPort) => 
     const everything = [...cards.values(), ...frames, ...(tray ? [tray] : [])].map(r => withTabs(r));
     const bounds = everything.length ? boxAround(everything, 80, 0) : { x: 0, y: 0, w: 1200, h: 600 };
     return { cards, tabs, frames, zones, tray, unplaced, bounds };
-}
-
-const overlaps = (a: Rect, b: Rect, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
-
-// What is wrong with a layout, or null. Cards (with their port tabs) keep clear of each other; frames at the
-// same level keep clear of each other; a device keeps out of frames it does not belong to. The tray is exempt.
-export function layoutProblem(g: Graph, geo: Geometry): string | null {
-    const name = (id: number) => g.nodes.find(n => n.id === id)?.displayName ?? `#${id}`;
-    const ids = [...geo.cards.keys()].filter(id => !geo.unplaced.has(id));
-    const padded = (id: number) => {
-        const r = geo.cards.get(id) ?? { x: 0, y: 0, w: 0, h: 0 };
-        return { x: r.x - TAB_W, y: r.y - TAB_H, w: r.w + TAB_W * 2, h: r.h + TAB_H * 2 };
-    };
-    for (let i = 0; i < ids.length; i++)
-        for (let j = i + 1; j < ids.length; j++)
-            if (overlaps(padded(ids[i]), padded(ids[j]), 20)) return `${name(ids[i])} and ${name(ids[j])} would overlap.`;
-    for (let i = 0; i < geo.frames.length; i++)
-        for (let j = i + 1; j < geo.frames.length; j++) {
-            const a = geo.frames[i], b = geo.frames[j];
-            if (a.parentKey === b.parentKey && overlaps(a, b, 20)) return `The ${a.name} and ${b.name} frames would overlap.`;
-        }
-    for (const id of ids) {
-        const r = geo.cards.get(id);
-        if (!r) continue;
-        for (const f of geo.frames)
-            if (!f.nodeIds.includes(id) && overlaps(r, f)) return `${name(id)} would sit inside ${f.name}, which it is not in.`;
-    }
-    return null;
 }
 
 // Every line leaves its tab straight out, from the tab's outer edge.
