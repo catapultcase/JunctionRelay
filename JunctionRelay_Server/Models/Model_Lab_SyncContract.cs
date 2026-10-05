@@ -58,6 +58,8 @@ namespace JunctionRelayServer.Models
 
     public class Model_Lab_SyncSnapshot
     {
+        // v7: a placement carries OnPlacementId - it sits on a shelf, drawer or tray and shares its U.
+        //
         // v6: Shared - what the user chose to share, per category and feature
         // (Model_Lab_CloudShare); whatever is not shared travels empty, so the cloud says
         // "not shared" instead of "none". Benchmark results travel when shared (without
@@ -78,7 +80,7 @@ namespace JunctionRelayServer.Models
         // actually held; reference scores and fit verdicts sync at all - without
         // them a remote agent sees a model's speed but not what it scores or
         // where it refuses to load, which is half the discussion.
-        public const int CurrentSchemaVersion = 6;
+        public const int CurrentSchemaVersion = 7;
 
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
         public DateTime GeneratedAt { get; set; }
@@ -222,6 +224,7 @@ namespace JunctionRelayServer.Models
         public int? ComponentId { get; set; }
         public int? PositionU { get; set; }
         public int? HeightU { get; set; }
+        public int? OnPlacementId { get; set; }          // v7: sits on this shelf/drawer/tray
         public string? Face { get; set; }
         public string Status { get; set; } = "installed";
         public DateTime? CreatedAt { get; set; }

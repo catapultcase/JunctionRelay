@@ -163,6 +163,23 @@ namespace JunctionRelayServer.Services
             var space = await GetSpaceByIdAsync(placement.SpaceId);
             if (space == null) return $"no space with id {placement.SpaceId}";
 
+            // On a carrier (a shelf, drawer, tray): no U of its own, so no overlap - it shares the carrier's.
+            if (placement.OnPlacementId is int onId)
+            {
+                if (onId == placement.Id) return "a placement cannot sit on itself";
+                var carrier = await GetPlacementByIdAsync(onId);
+                if (carrier == null) return $"no placement with id {onId} to sit on";
+                if (carrier.SpaceId != placement.SpaceId) return $"'{carrier.OccupantLabel}' is in {carrier.SpaceName}, not this space";
+                if (carrier.OnPlacementId != null) return $"'{carrier.OccupantLabel}' itself sits on something - only one level";
+                if (placement.Id != 0 && await _db.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM Lab_Placements WHERE OnPlacementId = @Id", new { placement.Id }) > 0)
+                    return "it holds other things - take them off it first";
+                placement.PositionU = null;
+                placement.HeightU = null;
+                placement.Face = carrier.Face;
+                return null;
+            }
+
             // Non-rack spaces (a desk, a room) carry no U geometry, so nothing to check.
             if (placement.PositionU == null) return null;
 
@@ -201,9 +218,9 @@ namespace JunctionRelayServer.Services
             placement.UpdatedAt = DateTime.UtcNow;
 
             const string sql = @"
-                INSERT INTO Lab_Placements (SpaceId, MachineId, ComponentId, PositionU, HeightU,
+                INSERT INTO Lab_Placements (SpaceId, MachineId, ComponentId, PositionU, HeightU, OnPlacementId,
                                             Face, Rotation, Status, Notes, CreatedAt, UpdatedAt)
-                VALUES (@SpaceId, @MachineId, @ComponentId, @PositionU, @HeightU,
+                VALUES (@SpaceId, @MachineId, @ComponentId, @PositionU, @HeightU, @OnPlacementId,
                         @Face, @Rotation, @Status, @Notes, @CreatedAt, @UpdatedAt);
                 SELECT last_insert_rowid();";
 
@@ -219,10 +236,12 @@ namespace JunctionRelayServer.Services
             const string sql = @"
                 UPDATE Lab_Placements SET
                     SpaceId = @SpaceId, MachineId = @MachineId, ComponentId = @ComponentId,
-                    PositionU = @PositionU, HeightU = @HeightU, Face = @Face, Rotation = @Rotation,
-                    Status = @Status, Notes = @Notes, UpdatedAt = @UpdatedAt
+                    PositionU = @PositionU, HeightU = @HeightU, OnPlacementId = @OnPlacementId, Face = @Face,
+                    Rotation = @Rotation, Status = @Status, Notes = @Notes, UpdatedAt = @UpdatedAt
                 WHERE Id = @Id";
             var ok = await _db.ExecuteAsync(sql, placement) > 0;
+            // what sits on a carrier goes where it goes, and takes its face
+            await _db.ExecuteAsync("UPDATE Lab_Placements SET SpaceId = @SpaceId, Face = @Face, UpdatedAt = @UpdatedAt WHERE OnPlacementId = @Id", placement);
             // installed <-> planned, or a different part: both ends' status follows their use
             await Service_Database_Manager_Lab_Components.SyncStandaloneStatusAsync(_db, placement.ComponentId);
             if (before?.ComponentId != placement.ComponentId)
@@ -233,6 +252,8 @@ namespace JunctionRelayServer.Services
         public async Task<bool> DeletePlacementAsync(int id)
         {
             var before = await GetPlacementByIdAsync(id);
+            // whatever sat on it stays in the space, off the shelf (no U until placed again)
+            await _db.ExecuteAsync("UPDATE Lab_Placements SET OnPlacementId = NULL, UpdatedAt = @Now WHERE OnPlacementId = @Id", new { Id = id, Now = DateTime.UtcNow });
             var ok = await _db.ExecuteAsync("DELETE FROM Lab_Placements WHERE Id = @Id", new { Id = id }) > 0;
             await Service_Database_Manager_Lab_Components.SyncStandaloneStatusAsync(_db, before?.ComponentId);
             return ok;

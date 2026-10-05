@@ -33,6 +33,10 @@
 // the labels came out sideways, and the rack rendered visibly SMALLER than its neighbours. A
 // rotated picture of a vertical rack is not a picture of a horizontal rack.
 //
+// A SHELF, DRAWER OR TRAY CARRIES THINGS: a placement with onPlacementId sits on that carrier,
+// takes no U of its own, and is drawn inside the carrier's block, side by side with whatever else
+// is on it (two Sparks on one 1U shelf).
+//
 // 🔑 ONE SCALE FOR BOTH AXES, so a rack keeps its real size at any angle. A rack unit is 1.75
 // inches by definition, so U converts to inches and everything is drawn in inches: a 3U 10-inch
 // rack is 5.25 x 10 upright and 10 x 5.25 on its end - the same object, turned.
@@ -50,6 +54,7 @@ export interface ElevationPlacement {
     status: string;
     occupantLabel?: string | null;
     occupantKind?: string | null;
+    onPlacementId?: number | null;
 }
 
 interface Props {
@@ -91,7 +96,10 @@ const LabRackElevation = ({
         [placements, face]);
 
     const positioned = visible.filter(p => p.positionU != null);
-    const floating = visible.filter(p => p.positionU == null);
+    // what sits on a shelf/drawer/tray, by carrier; a carrier that is not drawn leaves them floating
+    const carried = (id: number) => visible.filter(p => p.onPlacementId === id);
+    const drawnIds = new Set(positioned.map(p => p.id));
+    const floating = visible.filter(p => p.positionU == null && !(p.onPlacementId != null && drawnIds.has(p.onPlacementId)));
 
     if (kind !== 'Rack') {
         return (
@@ -191,11 +199,13 @@ const LabRackElevation = ({
                         const off = offsetOf(anchorU(p));
                         const len = Math.round(span * uPx) - 3;
                         const installed = p.status === 'installed';
+                        const onIt = carried(p.id);
 
                         return (
                             <Tooltip key={p.id} title={`${p.occupantLabel ?? 'placement'} — U${p.positionU}${
                                 span > 1 ? `–U${p.positionU! + span - 1}` : ''} — ${p.status}${
-                                p.rotation ? ` — mounted ${p.rotation}°` : ''}`}>
+                                p.rotation ? ` — mounted ${p.rotation}°` : ''}${
+                                onIt.length ? ` — holds ${onIt.map(c => c.occupantLabel ?? 'placement').join(', ')}` : ''}`}>
                                 <Box
                                     onClick={() => onSelect?.(p.id)}
                                     sx={{
@@ -216,6 +226,7 @@ const LabRackElevation = ({
                                         outline: selectedId === p.id ? `2px solid ${theme.palette.primary.main}` : 'none',
                                     }}
                                 >
+                                    {onIt.length === 0 ? (
                                     <Box sx={{
                                         overflow: 'hidden', textOverflow: 'ellipsis',
                                         fontWeight: 500, whiteSpace: 'nowrap',
@@ -227,6 +238,27 @@ const LabRackElevation = ({
                                     }}>
                                         {p.occupantLabel ?? '—'}
                                     </Box>
+                                    ) : (
+                                    // the carrier's block holds its items side by side, across the rails
+                                    <Box sx={{ display: 'flex', flexDirection: horizontal ? 'column' : 'row', gap: '3px', width: '100%', height: '100%', py: horizontal ? 0 : '2px', px: horizontal ? '2px' : 0 }}>
+                                        {onIt.map(c => (
+                                            <Tooltip key={c.id} title={`${c.occupantLabel ?? 'placement'} — on ${p.occupantLabel ?? 'the shelf'} — ${c.status}`}>
+                                                <Box onClick={e => { e.stopPropagation(); onSelect?.(c.id); }} sx={{
+                                                    flex: 1, minWidth: 0, minHeight: 0, borderRadius: 0.5,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                                                    bgcolor: c.status === 'installed' ? (dark ? '#2b5a2e' : '#a5d6a7') : (dark ? '#2a2620' : '#fffaf0'),
+                                                    border: c.status === 'installed' ? `1px solid ${dark ? '#43a047' : '#66bb6a'}` : `1px dashed ${dark ? '#7a6a3a' : '#c8a951'}`,
+                                                    outline: selectedId === c.id ? `2px solid ${theme.palette.primary.main}` : 'none',
+                                                }}>
+                                                    <Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500,
+                                                        ...(horizontal ? { writingMode: 'vertical-rl', textOrientation: 'mixed', maxHeight: '100%' } : { maxWidth: '100%' }) }}>
+                                                        {c.occupantLabel ?? '—'}
+                                                    </Box>
+                                                </Box>
+                                            </Tooltip>
+                                        ))}
+                                    </Box>
+                                    )}
                                 </Box>
                             </Tooltip>
                         );

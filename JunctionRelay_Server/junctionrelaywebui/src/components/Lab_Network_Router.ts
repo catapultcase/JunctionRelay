@@ -21,7 +21,8 @@ import { LANE_GRID, Point, Rect, Side } from "./Lab_Network_Model";
 // Orthogonal link routing for the Network page: an A* search on a 10px grid. Cards and their port tabs are
 // walls; a cell a line already runs along is (all but) closed to a line running the same way, so no two
 // lines share a run, and a cell beside one costs a little, so parallel lines keep a lane apart. Crossing a
-// line is allowed at a small cost. Bends cost more than distance, so lines stay simple.
+// line is allowed but costs about thirty steps, so a line takes a slightly longer lane rather than
+// cut across another. Bends cost more than distance, so lines stay simple.
 
 export interface RouteEnd { anchor: Point; side: Side; card: Rect }
 export interface RouteRequest { id: number; a: RouteEnd; b: RouteEnd }
@@ -29,7 +30,7 @@ export interface RouteRequest { id: number; a: RouteEnd; b: RouteEnd }
 const G = LANE_GRID;
 const CARD_CLEAR = 50;              // walls reach this far past a card's edge: past its tabs, plus a lane
 const STUB = 60;                    // a line first leaves its card this far, straight out
-const STEP = 1, BEND = 8, CROSS = 4, BESIDE = 2, SHARED = 400;
+const STEP = 1, BEND = 8, CROSS = 30, BESIDE = 2, SHARED = 400;
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];             // 0 right, 1 down, 2 left, 3 up
 const OUT: Record<Side, number> = { right: 0, bottom: 1, left: 2, top: 3 };
 
@@ -111,8 +112,17 @@ export function routeLinks(reqs: RouteRequest[], bounds: Rect): Map<number, Poin
         if (!ea || !eb) continue;
         const s = cell(ea.stub), t = cell(eb.stub);
         if (!inside(s.cx, s.cy) || !inside(t.cx, t.cy)) continue;
-        // the stubs' own cells are this link's to use
-        const own = new Set([s.cy * W + s.cx, t.cy * W + t.cx]);
+        // the cells between each stub and its tab are this link's own: free to use, never a crossing,
+        // and the line may join b's run anywhere along it (no jog to reach the stub's exact cell)
+        const runOf = (stub: Point, anchor: Point) => {
+            const a = cell(stub), b = cell(anchor), out: number[] = [];
+            const n = Math.max(Math.abs(b.cx - a.cx), Math.abs(b.cy - a.cy));
+            for (let i = 0; i < n; i++) out.push((a.cy + Math.sign(b.cy - a.cy) * i) * W + a.cx + Math.sign(b.cx - a.cx) * i);
+            return out;
+        };
+        const aRun = runOf(ea.stub, r.a.anchor), bRun = runOf(eb.stub, r.b.anchor);
+        const own = new Set([...aRun, ...bRun]);
+        const target = new Set(bRun);
         cost.fill(Infinity); prev.fill(-1);
         const heap = new Heap();
         const startDir = OUT[r.a.side], endDir = (OUT[r.b.side] + 2) % 4;      // arrive heading into b's card
@@ -122,7 +132,7 @@ export function routeLinks(reqs: RouteRequest[], bounds: Rect): Map<number, Poin
         while (heap.size) {
             const st = heap.pop();
             const c = st >> 2, d = st & 3, cx = c % W, cy = (c / W) | 0;
-            if (cx === t.cx && cy === t.cy) { goal = st; break; }
+            if (target.has(c)) { goal = st; break; }
             const base = cost[st];
             for (let nd = 0; nd < 4; nd++) {
                 if (nd === (d + 2) % 4) continue;                                  // no U-turns
@@ -139,7 +149,7 @@ export function routeLinks(reqs: RouteRequest[], bounds: Rect): Map<number, Poin
                     const lane = horiz ? usedH : usedV;
                     if ((side1 >= 0 && lane[side1]) || (side2 < N && lane[side2])) step += BESIDE;
                 }
-                if (nx === t.cx && ny === t.cy && nd !== endDir) step += BEND;
+                if (target.has(nc) && nd !== endDir) step += BEND;
                 const ns = nc * 4 + nd, nk = base + step;
                 if (nk < cost[ns]) {
                     cost[ns] = nk; prev[ns] = st;

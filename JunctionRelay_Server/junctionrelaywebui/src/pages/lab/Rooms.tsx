@@ -30,6 +30,7 @@ interface Space { id: number; name: string; kind: string; parentSpaceId: number 
 interface Placement {
     id: number; spaceId: number; machineId: number | null; componentId: number | null; positionU: number | null; heightU: number | null;
     face: string; status: string; occupantLabel: string | null; occupantKind: string | null;
+    onPlacementId: number | null;       // sits on this shelf/drawer/tray
 }
 interface Machine { id: number; name: string; kind: string | null; role: string | null; status: string; location: string | null; componentCount: number }
 interface Component { id: number; name: string | null; manufacturer: string | null; model: string | null; type: string; status: string; currentMachineId: number | null; nickname: string | null }
@@ -38,7 +39,13 @@ type Sel = { path: string[]; name: string; kind: "machine" | "component" | "spac
 
 const RETIRED = ["sold", "dead", "damaged", "lost", "disposed"];
 const compName = (c: Component) => c.name || [c.manufacturer, c.model].filter(Boolean).join(" ") || `#${c.id}`;
-const uText = (p: Placement) => (p.positionU == null ? "-" : (p.heightU ?? 1) > 1 ? `U${p.positionU}-${p.positionU + (p.heightU ?? 1) - 1}` : `U${p.positionU}`);
+const uText = (p: Placement, all: Placement[]) => {
+    if (p.onPlacementId != null) return `on ${all.find(x => x.id === p.onPlacementId)?.occupantLabel ?? "a shelf"}`;
+    return p.positionU == null ? "-" : (p.heightU ?? 1) > 1 ? `U${p.positionU}-${p.positionU + (p.heightU ?? 1) - 1}` : `U${p.positionU}`;
+};
+// a thing on a shelf sorts with the shelf (just under it)
+const effectiveU = (p: Placement, all: Placement[]) =>
+    p.onPlacementId != null ? (all.find(x => x.id === p.onPlacementId)?.positionU ?? -1) - 0.5 : p.positionU ?? -1;
 
 const HomelabRooms = () => {
     usePageTitle("Homelab Rooms");
@@ -125,7 +132,7 @@ const HomelabRooms = () => {
     const toggleParts = (id: number) => setOpenParts(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
     const spaceCard = (s: Space, depth = 0): React.ReactElement => {
-        const mine = placements.filter(p => p.spaceId === s.id).sort((a, b) => (b.positionU ?? -1) - (a.positionU ?? -1) || a.id - b.id);
+        const mine = placements.filter(p => p.spaceId === s.id).sort((a, b) => effectiveU(b, placements) - effectiveU(a, placements) || a.id - b.id);
         const used = mine.filter(p => p.face !== "rear").reduce((t, p) => t + (p.positionU != null ? p.heightU ?? 1 : 0), 0);
         const kids = childrenOf(s.id);
         const isRoom = s.kind === "Room";
@@ -139,9 +146,9 @@ const HomelabRooms = () => {
             return (
                 <Box key={p.id} sx={{ borderTop: "1px solid", borderColor: "divider", py: 0.4 }}>
                     <Box sx={{ display: "grid", gridTemplateColumns: "62px minmax(0,1fr) auto", gap: 1, alignItems: "baseline" }}>
-                        <Typography sx={{ fontFamily: "monospace", fontSize: 11, color: "text.secondary" }}>{uText(p)}</Typography>
+                        <Typography sx={{ fontFamily: "monospace", fontSize: 11, color: "text.secondary" }}>{uText(p, placements)}</Typography>
                         <Typography component="button" type="button"
-                            onClick={() => setSel({ path: [...pathOf(s.id), uText(p)].filter(x => x !== "-"), name, kind: isM ? "machine" : "component",
+                            onClick={() => setSel({ path: [...pathOf(s.id), uText(p, placements)].filter(x => x !== "-"), name, kind: isM ? "machine" : "component",
                                 id: (isM ? p.machineId : p.componentId) ?? 0, status: m?.status ?? c?.status, parts: m?.componentCount })}
                             sx={{ textAlign: "left", border: 0, bgcolor: "transparent", p: 0, cursor: "pointer", font: "inherit", fontSize: 12.5,
                                 fontWeight: isM ? 700 : 400, color: isM ? "primary.main" : "text.primary", overflowWrap: "anywhere" }}>

@@ -54,6 +54,7 @@ type Placement = {
     id: number; spaceId: number; machineId?: number | null; componentId?: number | null;
     positionU?: number | null; heightU?: number | null; face: string; rotation?: number | null; status: string;
     notes?: string | null; occupantLabel?: string | null; occupantKind?: string | null;
+    onPlacementId?: number | null;      // sits on this shelf/drawer/tray - no U of its own
 };
 
 type Machine = { id: number; name: string };
@@ -466,7 +467,9 @@ const HomelabSpaces = () => {
                                                                     {rows.map(p => (
                                                                         <TableRow key={p.id}>
                                                                             <TableCell>
-                                                                                {p.positionU == null
+                                                                                {p.onPlacementId != null
+                                                                                    ? `on ${rows.find(x => x.id === p.onPlacementId)?.occupantLabel ?? 'a shelf'}`
+                                                                                    : p.positionU == null
                                                                                     ? <Typography variant="body2" color="warning.main">not placed</Typography>
                                                                                     : (p.heightU ?? 1) > 1
                                                                                         ? `U${p.positionU}–U${p.positionU + (p.heightU ?? 1) - 1}`
@@ -602,12 +605,24 @@ const HomelabSpaces = () => {
                         <MenuItem value="">— none —</MenuItem>
                         {componentMenuItems()}
                     </TextField>
+                    {/* Several things share a U by sitting ON a shelf, drawer or tray placed in this space:
+                        then it has no U of its own and is drawn inside the shelf, side by side. */}
+                    <TextField select label="Sits on" value={placementDialog?.onPlacementId ?? ''} sx={{ gridColumn: '1 / -1' }}
+                        helperText="A shelf, drawer or tray in this space - things on it share its U, side by side"
+                        onChange={e => setPlacementDialog(d => ({ ...d, onPlacementId: e.target.value ? Number(e.target.value) : null }))}>
+                        <MenuItem value="">— its own U —</MenuItem>
+                        {(placements[placementDialog?.spaceId ?? -1] ?? [])
+                            .filter(x => x.onPlacementId == null && x.id !== placementDialog?.id && x.positionU != null)
+                            .map(x => <MenuItem key={x.id} value={x.id}>{x.occupantLabel ?? `placement ${x.id}`} (U{x.positionU})</MenuItem>)}
+                    </TextField>
+                    {placementDialog?.onPlacementId == null && (<>
                     <TextField label="Bottom U" type="number" value={placementDialog?.positionU ?? ''}
                         helperText="U1 is the bottom of the rack"
                         onChange={e => setPlacementDialog(d => ({ ...d, positionU: e.target.value ? Number(e.target.value) : null }))} />
                     <TextField label="Height (U)" type="number" value={placementDialog?.heightU ?? ''}
                         helperText="How many U it occupies"
                         onChange={e => setPlacementDialog(d => ({ ...d, heightU: e.target.value ? Number(e.target.value) : null }))} />
+                    </>)}
 
                     {/* 🔑 A position on its own says nothing - what you are actually choosing is a
                         RANGE, and it is the height that decides how far it reaches. Showing the
@@ -618,6 +633,13 @@ const HomelabSpaces = () => {
                             const space = spaces.find(s => s.id === placementDialog?.spaceId);
                             const start = placementDialog?.positionU;
                             const h = placementDialog?.heightU ?? 1;
+                            if (placementDialog?.onPlacementId != null) {
+                                return (
+                                    <Typography variant="caption" color="text.secondary">
+                                        Shares that shelf&apos;s U and face, side by side with anything else on it.
+                                    </Typography>
+                                );
+                            }
                             if (!start) {
                                 return (
                                     <Typography variant="caption" color="text.secondary">

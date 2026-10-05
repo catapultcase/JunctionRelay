@@ -200,7 +200,7 @@ namespace JunctionRelayServer.Services
                     {
                         Id = p.Id, SpaceId = p.SpaceId, MachineId = p.MachineId,
                         ComponentId = p.ComponentId, PositionU = p.PositionU, HeightU = p.HeightU,
-                        Face = p.Face, Status = p.Status,
+                        OnPlacementId = p.OnPlacementId, Face = p.Face, Status = p.Status,
                         CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
                     }).ToList(),
                     Attachments = attachments.Select(a => new SyncLabAttachment

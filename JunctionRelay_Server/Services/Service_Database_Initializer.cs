@@ -860,6 +860,7 @@ namespace JunctionRelayServer.Services
                     ComponentId INTEGER,
                     PositionU INTEGER,
                     HeightU INTEGER,
+                    OnPlacementId INTEGER,
                     Face TEXT NOT NULL DEFAULT 'front',
                     Rotation INTEGER NOT NULL DEFAULT 0,
                     Status TEXT NOT NULL DEFAULT 'planned',

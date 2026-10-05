@@ -962,7 +962,8 @@ namespace JunctionRelayServer.Services
             // U-numbered spaces read top down; anything else is just a list.
             var racked = placements.Where(x => x.PositionU.HasValue)
                                    .OrderByDescending(x => x.PositionU).ToList();
-            var loose = placements.Where(x => !x.PositionU.HasValue).ToList();
+            var onShelf = placements.Where(x => x.OnPlacementId.HasValue).ToList();
+            var loose = placements.Where(x => !x.PositionU.HasValue && !x.OnPlacementId.HasValue).ToList();
 
             if (racked.Count > 0)
             {
@@ -979,6 +980,10 @@ namespace JunctionRelayServer.Services
                     if (!string.Equals(pl.Status, "installed", StringComparison.OrdinalIgnoreCase))
                         bits.Add(pl.Status);
                     sb.AppendLine($"  {slot,-9} {label}  [{string.Join(", ", bits)}]");
+                    // side by side on this shelf, drawer or tray
+                    foreach (var on in onShelf.Where(x => x.OnPlacementId == pl.Id))
+                        sb.AppendLine($"  {"",-9}   └ on it: {on.OccupantLabel ?? $"placement {on.Id}"}  [{on.OccupantKind ?? "?"}" +
+                                      (string.Equals(on.Status, "installed", StringComparison.OrdinalIgnoreCase) ? "" : $", {on.Status}") + "]");
                 }
             }
 
@@ -2893,7 +2898,10 @@ namespace JunctionRelayServer.Services
         [Description("Place a machine or component in a space (rack, desk, shelf), or update its placement - " +
                      "pass exactly one of machine or componentId. A new positionU moves it; status 'installed' " +
                      "marks planned kit fitted. U-overlap is refused and names the occupant - remove it first " +
-                     "with lab_remove_from_space. Say what went where.")]
+                     "with lab_remove_from_space. Several things can share a U by sitting ON a shelf, drawer or " +
+                     "tray that is placed in the same space: pass onShelf (that occupant's name, or its component " +
+                     "id) and no positionU - they take the shelf's U and sit side by side. onShelf='' takes it " +
+                     "off the shelf. Say what went where.")]
         public async Task<string> LabPlaceInSpaceAsync(
             [Description("Space name, full or partial; must match one space.")]
             string space,
@@ -2908,10 +2916,14 @@ namespace JunctionRelayServer.Services
             [Description("front, rear or both. Default front.")]
             string? face = null,
             [Description("planned or installed. New placements default to planned.")]
-            string? status = null)
+            string? status = null,
+            [Description("What it sits on in that space - a shelf, drawer or tray already placed there, by its name or component id. Empty string takes it off. Not with positionU.")]
+            string? onShelf = null)
         {
             if ((machine == null) == (componentId == null))
                 return "Pass exactly one of machine or componentId. Nothing was placed.";
+            if (!string.IsNullOrWhiteSpace(onShelf) && positionU.HasValue)
+                return "Pass onShelf or positionU, not both - on a shelf it takes the shelf's U. Nothing was placed.";
 
             if (!string.IsNullOrWhiteSpace(face))
             {
@@ -2962,6 +2974,26 @@ namespace JunctionRelayServer.Services
                        string.Join(", ", existing.Select(p => p.SpaceName)) +
                        $") - remove the wrong one with lab_remove_from_space first. Nothing was changed.";
 
+            // the shelf, drawer or tray it sits on, among what is already placed in the target space
+            int? carrierId = null;
+            string? carrierLabel = null;
+            if (!string.IsNullOrWhiteSpace(onShelf))
+            {
+                var here = (await spacesDb.GetPlacementsAsync(targetSpace.Id)).Where(x => x.OnPlacementId == null).ToList();
+                var want = onShelf.Trim();
+                var hits = int.TryParse(want, out var cid)
+                    ? here.Where(x => x.ComponentId == cid).ToList()
+                    : here.Where(x => string.Equals(x.OccupantLabel, want, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (hits.Count == 0 && !int.TryParse(want, out _))
+                    hits = here.Where(x => (x.OccupantLabel ?? "").Contains(want, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (hits.Count != 1)
+                    return (hits.Count == 0 ? $"Nothing in {targetSpace.Name} matches '{want}' to sit on."
+                                            : $"'{want}' matches {string.Join(", ", hits.Select(x => x.OccupantLabel))} in {targetSpace.Name} - be exact.") +
+                           " Nothing was placed.";
+                carrierId = hits[0].Id;
+                carrierLabel = hits[0].OccupantLabel;
+            }
+
             var changes = new List<string>();
             Model_Lab_Placement placement;
             if (current == null)
@@ -2975,6 +3007,7 @@ namespace JunctionRelayServer.Services
                     HeightU = heightU,
                     Face = face ?? "front",
                     Status = status ?? "planned",
+                    OnPlacementId = carrierId,
                 };
             }
             else
@@ -3005,6 +3038,16 @@ namespace JunctionRelayServer.Services
                     changes.Add($"status {placement.Status} -> {status}");
                     placement.Status = status;
                 }
+                if (onShelf != null && carrierId != placement.OnPlacementId)
+                {
+                    changes.Add(carrierId.HasValue ? $"now on {carrierLabel}" : "off the shelf (no U until placed)");
+                    placement.OnPlacementId = carrierId;
+                }
+                else if (positionU.HasValue && placement.OnPlacementId.HasValue)
+                {
+                    changes.Add("off the shelf");
+                    placement.OnPlacementId = null;
+                }
                 if (changes.Count == 0)
                     return $"{label} is already placed exactly like that in {targetSpace.Name} - " +
                            $"nothing was changed.";
@@ -3014,7 +3057,8 @@ namespace JunctionRelayServer.Services
             if (problem != null) return $"Not placed: {problem}. Nothing was written.";
 
             var h = placement.HeightU ?? 1;
-            var at = placement.PositionU is int p
+            var at = placement.OnPlacementId.HasValue ? $" on {carrierLabel ?? "its shelf"}"
+                : placement.PositionU is int p
                 ? (h > 1 ? $" at U{p}-U{p + h - 1}" : $" at U{p}")
                 : "";
 
