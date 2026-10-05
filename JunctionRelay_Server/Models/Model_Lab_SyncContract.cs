@@ -58,6 +58,11 @@ namespace JunctionRelayServer.Models
 
     public class Model_Lab_SyncSnapshot
     {
+        // v6: Shared - what the user chose to share, per category and feature
+        // (Model_Lab_CloudShare); whatever is not shared travels empty, so the cloud says
+        // "not shared" instead of "none". Benchmark results travel when shared (without
+        // ConfigJson, which is free-form). Fit verdicts still never leave.
+        //
         // v5: a reference score carries WHAT MAKES IT COMPARABLE as
         // fields - provenance, evaluated precision, scaffold, context. They were a
         // sentence in Notes, which never leaves the box, so a remote agent could not
@@ -73,14 +78,38 @@ namespace JunctionRelayServer.Models
         // actually held; reference scores and fit verdicts sync at all - without
         // them a remote agent sees a model's speed but not what it scores or
         // where it refuses to load, which is half the discussion.
-        public const int CurrentSchemaVersion = 5;
+        public const int CurrentSchemaVersion = 6;
 
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
         public DateTime GeneratedAt { get; set; }
         public string? SourceHost { get; set; }          // machine NAME only
+        public SyncShared Shared { get; set; } = new();
 
         public SyncLab Lab { get; set; } = new();
         public SyncModels Models { get; set; } = new();
+    }
+
+    // v6: the share choices themselves (the same flags as Model_Lab_CloudShare) - KEEP IN LOCKSTEP
+    // with JunctionRelay_Cloud SyncShared.
+    public class SyncShared
+    {
+        public HomelabShared Homelab { get; set; } = new();
+        public ModelsShared Models { get; set; } = new();
+        public class HomelabShared
+        {
+            public bool Enabled { get; set; }
+            public bool Movements { get; set; }
+            public bool Purchases { get; set; }
+            public bool Spaces { get; set; }
+            public bool Attachments { get; set; }
+        }
+        public class ModelsShared
+        {
+            public bool Enabled { get; set; }
+            public bool Serving { get; set; }
+            public bool Scores { get; set; }
+            public bool Benchmarks { get; set; }
+        }
     }
 
     public class SyncLab
@@ -333,7 +362,7 @@ namespace JunctionRelayServer.Models
         // excluded it by analogy to SpecJson; the analogy was wrong - this
         // is measured product data, and it is the heart of the story the
         // cloud mirror exists to tell).
-        public string? ConfigJson { get; set; }
+        // ConfigJson (free-form spillover) is NOT synced - like SpecJson, it can hold anything
 
         public DateTime? CreatedAt { get; set; }
     }

@@ -17,6 +17,7 @@
  * along with JunctionRelay. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using JunctionRelayServer.Models;
 using JunctionRelayServer.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -50,7 +51,7 @@ namespace JunctionRelayServer.Controllers
             {
                 return Ok(new
                 {
-                    enabled = await _push.IsEnabledAsync(),
+                    share = await _push.GetShareAsync(),
                     intervalMinutes = await _push.IntervalMinutesAsync(),
                     cloudAuthenticated = _cloudSessionStore.IsAuthenticated,
                     lastAttemptAt = _push.LastAttemptAt,
@@ -68,7 +69,6 @@ namespace JunctionRelayServer.Controllers
 
         public class UpdateSettingsRequest
         {
-            public bool? Enabled { get; set; }
             public int? IntervalMinutes { get; set; }
             public string? SourceName { get; set; }
         }
@@ -79,11 +79,6 @@ namespace JunctionRelayServer.Controllers
         {
             try
             {
-                if (req.Enabled.HasValue)
-                    await _settings.SetSettingAsync(Service_Lab_CloudSyncPush.EnabledKey,
-                        req.Enabled.Value ? "true" : "false",
-                        "Push the allowlisted Lab/Models snapshot to JunctionRelay Cloud");
-
                 if (req.IntervalMinutes.HasValue)
                 {
                     if (req.IntervalMinutes.Value < 1 || req.IntervalMinutes.Value > 1440)
@@ -127,24 +122,41 @@ namespace JunctionRelayServer.Controllers
 
         // The allowlist, straight from the DTO types — the UI's "review what
         // leaves this machine" table can never drift from the serializer.
+        // What is shared: the categories and the features inside them. Turning anything OFF pushes at once,
+        // so the cloud mirror drops it now rather than at the next interval.
+        [HttpPut("share")]
+        public async Task<IActionResult> SetShare([FromBody] Model_Lab_CloudShare share)
+        {
+            try
+            {
+                var before = await _push.GetShareAsync();
+                await _push.SetShareAsync(share);
+                var narrowed = (before.Homelab.Enabled && !share.Homelab.Enabled) || (before.Models.Enabled && !share.Models.Enabled)
+                    || (before.Homelab.Movements && !share.Homelab.Movements) || (before.Homelab.Purchases && !share.Homelab.Purchases)
+                    || (before.Homelab.Spaces && !share.Homelab.Spaces) || (before.Homelab.Attachments && !share.Homelab.Attachments)
+                    || (before.Models.Serving && !share.Models.Serving) || (before.Models.Scores && !share.Models.Scores)
+                    || (before.Models.Benchmarks && !share.Models.Benchmarks);
+                string? pushed = null;
+                if (narrowed && _cloudSessionStore.HasPersistedSession)
+                {
+                    var (ok, message) = await _push.PushSnapshotAsync(HttpContext.RequestAborted);
+                    pushed = ok ? "The cloud copy was updated." : $"The cloud copy could not be updated yet: {message}";
+                }
+                return Ok(new { share, pushed });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LAB_CLOUDSYNC] {Request.Method} {Request.Path} failed: {ex.Message}");
+                return StatusCode(500, $"Error saving what is shared: {ex.Message}");
+            }
+        }
+
         [HttpGet("contract")]
         public IActionResult GetContract()
         {
             try
             {
-                return Ok(new
-                {
-                    schemaVersion = Models.Model_Lab_SyncSnapshot.CurrentSchemaVersion,
-                    entities = Service_Lab_CloudSyncPush.GetContractSummary(),
-                    excluded = new[]
-                    {
-                        "IP addresses", "hostnames", "serial numbers",
-                        "all notes fields", "spec JSON key/values",
-                        "attachment files and file paths (metadata only)",
-                        "machine/space locations", "model storage locations",
-                        "serving endpoint ports"
-                    }
-                });
+                return Ok(Service_Lab_CloudSyncPush.GetShareContract());
             }
             catch (Exception ex)
             {

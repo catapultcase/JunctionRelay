@@ -30,10 +30,11 @@ namespace JunctionRelayServer.Services
     // Builds the allowlisted projection (Model_Lab_SyncContract.cs — the DTOs
     // ARE the allowlist; entities are never serialized) and POSTs it to the
     // cloud, which wipe-replaces this user's mirror. Off by default
-    // (Lab.CloudSync.Enabled), Pro-gated cloud-side.
+    // (Lab.CloudSync.Share: a category, then features inside it, each opted
+    // into on its own - Model_Lab_CloudShare), Pro-gated cloud-side.
     public class Service_Lab_CloudSyncPush
     {
-        public const string EnabledKey = "Lab.CloudSync.Enabled";
+        public const string ShareKey = "Lab.CloudSync.Share";
         public const string IntervalMinutesKey = "Lab.CloudSync.IntervalMinutes";
         public const string SourceNameKey = "Lab.CloudSync.SourceName";
 
@@ -66,8 +67,24 @@ namespace JunctionRelayServer.Services
         private static string CloudBaseUrl =>
             Environment.GetEnvironmentVariable("CLOUD_BACKEND_URL") ?? "https://api.junctionrelay.com";
 
-        public async Task<bool> IsEnabledAsync() =>
-            string.Equals(await _settings.GetSettingAsync(EnabledKey), "true", StringComparison.OrdinalIgnoreCase);
+        public async Task<Model_Lab_CloudShare> GetShareAsync()
+        {
+            var raw = await _settings.GetSettingAsync(ShareKey);
+            if (string.IsNullOrWhiteSpace(raw)) return new Model_Lab_CloudShare();
+            try { return JsonSerializer.Deserialize<Model_Lab_CloudShare>(raw, JsonOpts) ?? new Model_Lab_CloudShare(); }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"[LAB_CLOUDSYNC] Unreadable share setting, sharing nothing: {ex.Message}");
+                return new Model_Lab_CloudShare();
+            }
+        }
+
+        public Task SetShareAsync(Model_Lab_CloudShare share) =>
+            _settings.SetSettingAsync(ShareKey, JsonSerializer.Serialize(share, JsonOpts),
+                "What is shared with JunctionRelay Cloud: categories and the features opted into inside them");
+
+        // Pushing runs while anything is shared.
+        public async Task<bool> IsEnabledAsync() => (await GetShareAsync()).Any;
 
         public async Task<int> IntervalMinutesAsync()
         {
@@ -84,6 +101,9 @@ namespace JunctionRelayServer.Services
         {
             using var scope = _scopeFactory.CreateScope();
             var sp = scope.ServiceProvider;
+            var share = await GetShareAsync();
+            var lab = share.Homelab.Enabled ? share.Homelab : new Model_Lab_CloudShare.HomelabShare();
+            var mod = share.Models.Enabled ? share.Models : new Model_Lab_CloudShare.ModelsShare();
 
             var machines = (await sp.GetRequiredService<Service_Database_Manager_Lab_Machines>().GetAllMachinesAsync()).ToList();
             var components = (await sp.GetRequiredService<Service_Database_Manager_Lab_Components>().GetAllComponentsAsync()).ToList();
@@ -98,14 +118,27 @@ namespace JunctionRelayServer.Services
             var modelsCatalog = (await sp.GetRequiredService<Service_Database_Manager_Models_Catalog>().GetAllAsync()).ToList();
             var modelsServing = (await sp.GetRequiredService<Service_Database_Manager_Models_Serving>().GetAllAsync()).ToList();
 
-            // ⛔ THE BENCHMARK LEDGER AND THE FIT VERDICTS DO NOT LEAVE THIS MACHINE.
-            // The cloud has no Benchmarks/Reports pages and its MCP does not answer
-            // for them. The contract keeps the two lists, which travel EMPTY; speed and
-            // refusals are read on the local server (its pages and its MCP head).
-            //
-            // v3: cited scores are catalog-domain facts about the checkpoint and still
-            // travel.
+            // Fit verdicts never leave this machine; benchmark results leave only when the user shares
+            // them (v6). Cited reference scores are catalog facts about the checkpoint.
             var referenceScores = (await sp.GetRequiredService<Service_Database_Manager_Models_ReferenceScores>().GetAllAsync()).ToList();
+            var benchmarks = (await sp.GetRequiredService<Service_Database_Manager_Models_Benchmarks>().GetAllAsync()).ToList();
+
+            // What is not shared travels empty. With Homelab off but the serving map on, the
+            // machines that serve a model go up by id and NAME only, so the map can be read.
+            if (!mod.Enabled) { modelsCatalog.Clear(); modelsServing.Clear(); referenceScores.Clear(); benchmarks.Clear(); }
+            if (!mod.Benchmarks) benchmarks.Clear();
+            if (!mod.Serving) modelsServing.Clear();
+            if (!mod.Scores) referenceScores.Clear();
+            if (!lab.Enabled)
+            {
+                var serving = modelsServing.Select(s => s.MachineId).ToHashSet();
+                machines = machines.Where(m => serving.Contains(m.Id)).ToList();
+                components.Clear(); types.Clear(); groups.Clear();
+            }
+            if (!lab.Movements) movements.Clear();
+            if (!lab.Spaces) { spaces.Clear(); placements.Clear(); }
+            if (!lab.Attachments) attachments.Clear();
+            if (!lab.Purchases) marketValues.Clear();
 
             var sourceName = await _settings.GetSettingAsync(SourceNameKey);
 
@@ -115,13 +148,20 @@ namespace JunctionRelayServer.Services
                 GeneratedAt = DateTime.UtcNow,
                 // A display NAME, never a hostname. Defaults to the product name.
                 SourceHost = string.IsNullOrWhiteSpace(sourceName) ? "junctionrelay" : sourceName.Trim(),
+                Shared = new SyncShared
+                {
+                    Homelab = { Enabled = lab.Enabled, Movements = lab.Movements, Purchases = lab.Purchases, Spaces = lab.Spaces, Attachments = lab.Attachments },
+                    Models = { Enabled = mod.Enabled, Serving = mod.Serving, Scores = mod.Scores, Benchmarks = mod.Benchmarks },
+                },
                 Lab = new SyncLab
                 {
                     Machines = machines.Select(m => new SyncLabMachine
                     {
-                        Id = m.Id, Name = m.Name, Kind = m.Kind, Role = m.Role, Status = m.Status,
-                        OS = m.OS, AlwaysOn = m.AlwaysOn, LinkedDeviceId = m.LinkedDeviceId,
-                        CreatedAt = m.CreatedAt, UpdatedAt = m.UpdatedAt
+                        Id = m.Id, Name = m.Name,
+                        Kind = lab.Enabled ? m.Kind : null, Role = lab.Enabled ? m.Role : null,
+                        Status = lab.Enabled ? m.Status : "active", OS = lab.Enabled ? m.OS : null,
+                        AlwaysOn = lab.Enabled && m.AlwaysOn, LinkedDeviceId = lab.Enabled ? m.LinkedDeviceId : null,
+                        CreatedAt = lab.Enabled ? m.CreatedAt : null, UpdatedAt = lab.Enabled ? m.UpdatedAt : null
                     }).ToList(),
                     Components = components.Select(c => new SyncLabComponent
                     {
@@ -129,9 +169,12 @@ namespace JunctionRelayServer.Services
                         Model = c.Model, Nickname = c.Nickname, Sku = c.Sku, Spec = c.Spec,
                         Status = c.Status, CurrentMachineId = c.CurrentMachineId,
                         ParentComponentId = c.ParentComponentId, ReleaseDate = c.ReleaseDate,
-                        Msrp = c.Msrp, ListPrice = c.ListPrice, ListPriceDate = c.ListPriceDate,
-                        PurchasePrice = c.PurchasePrice, AcquiredAt = c.AcquiredAt,
-                        Source = c.Source, Vendor = c.Vendor, WarrantyYears = c.WarrantyYears,
+                        // Purchases & prices: only when that feature is opted into
+                        Msrp = lab.Purchases ? c.Msrp : null, ListPrice = lab.Purchases ? c.ListPrice : null,
+                        ListPriceDate = lab.Purchases ? c.ListPriceDate : null,
+                        PurchasePrice = lab.Purchases ? c.PurchasePrice : null, AcquiredAt = lab.Purchases ? c.AcquiredAt : null,
+                        Source = lab.Purchases ? c.Source : null, Vendor = lab.Purchases ? c.Vendor : null,
+                        WarrantyYears = lab.Purchases ? c.WarrantyYears : null,
                         CreatedAt = c.CreatedAt, UpdatedAt = c.UpdatedAt
                     }).ToList(),
                     Movements = movements.Select(mv => new SyncLabComponentMovement
@@ -200,7 +243,15 @@ namespace JunctionRelayServer.Services
                         WeightsGb = s.WeightsGb,
                         CreatedAt = s.CreatedAt, UpdatedAt = s.UpdatedAt
                     }).ToList(),
-                    Benchmarks = new List<SyncModelsBenchmark>(),   // never synced
+                    // Speeds measured here - only when the user shares benchmark results.
+                    Benchmarks = benchmarks.Select(b => new SyncModelsBenchmark
+                    {
+                        Id = b.Id, ModelName = b.ModelName, ModelId = b.ModelId, MachineId = b.MachineId,
+                        Metric = b.Metric, Value = b.Value, Quant = b.Quant, ContextTokens = b.ContextTokens,
+                        Slots = b.Slots, KvPrecision = b.KvPrecision, Mtp = b.Mtp, Vision = b.Vision,
+                        Engine = b.Engine, WeightsGb = b.WeightsGb, CapturedAt = b.CapturedAt,
+                        Source = b.Source, Scenario = b.Scenario, CreatedAt = b.CreatedAt
+                    }).ToList(),
                     ReferenceScores = referenceScores.Select(r => new SyncModelsReferenceScore
                     {
                         Id = r.Id, ModelId = r.ModelId, Benchmark = r.Benchmark,
@@ -313,30 +364,68 @@ namespace JunctionRelayServer.Services
         // UI's "review what leaves this machine" table can never drift from
         // the code that actually serializes.
         // ------------------------------------------------------------------
-        public static Dictionary<string, List<string>> GetContractSummary()
-        {
-            var entityTypes = new (string Name, Type Type)[]
-            {
-                ("Machines", typeof(SyncLabMachine)),
-                ("Components", typeof(SyncLabComponent)),
-                ("Movements", typeof(SyncLabComponentMovement)),
-                ("ComponentTypes", typeof(SyncLabComponentType)),
-                ("Spaces", typeof(SyncLabSpace)),
-                ("Placements", typeof(SyncLabPlacement)),
-                ("Attachments (metadata only)", typeof(SyncLabAttachment)),
-                ("MarketValues", typeof(SyncLabMarketValue)),
-                ("MachineGroups", typeof(SyncLabMachineGroup)),
-                ("Models.Catalog", typeof(SyncModelsCatalogEntry)),
-                ("Models.Serving", typeof(SyncModelsServingAssignment)),
-                // Models.Benchmarks and Models.FitVerdicts are NOT in this list on
-                // purpose: they stopped leaving the machine.
-            };
+        // The share page's categories and features with the exact fields each sends, read off the
+        // contract DTOs so the page can never list less (or more) than what leaves.
+        private static readonly string[] PurchaseFields =
+            { "Msrp", "ListPrice", "ListPriceDate", "PurchasePrice", "AcquiredAt", "Source", "Vendor", "WarrantyYears" };
+        private static List<string> FieldsOf(Type t, Func<string, bool>? keep = null) =>
+            t.GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name)
+             .Where(n => n is not ("Id" or "CreatedAt" or "UpdatedAt") && (keep == null || keep(n))).ToList();
 
-            return entityTypes.ToDictionary(
-                e => e.Name,
-                e => e.Type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                          .Select(p => p.Name)
-                          .ToList());
-        }
+        public static Model_Lab_ShareContract GetShareContract() => new()
+        {
+            SchemaVersion = Model_Lab_SyncSnapshot.CurrentSchemaVersion,
+            Categories =
+            {
+                new()
+                {
+                    Key = "homelab", Label = "Homelab",
+                    Features =
+                    {
+                        new() { Key = "base", Label = "Inventory",
+                            Description = "Your machines and the parts in them: names, what each part is (make, model, size), whether it is in use or on the shelf, and which machine it is in. No prices, no serial numbers.",
+                            Fields = { ["Machines"] = FieldsOf(typeof(SyncLabMachine)),
+                                       ["Components"] = FieldsOf(typeof(SyncLabComponent), n => !PurchaseFields.Contains(n)),
+                                       ["Component types"] = FieldsOf(typeof(SyncLabComponentType)),
+                                       ["Machine groups"] = FieldsOf(typeof(SyncLabMachineGroup)) } },
+                        new() { Key = "movements", Label = "Part history",
+                            Description = "When a part moved from one machine to another, or to the shelf, and which slot it went into.",
+                            Fields = { ["Movements"] = FieldsOf(typeof(SyncLabComponentMovement)) } },
+                        new() { Key = "purchases", Label = "Purchases & prices",
+                            Description = "What you paid for each part, the shop you bought it from, when, its warranty, its launch and list price, and the market prices you have recorded over time.",
+                            Fields = { ["Components"] = FieldsOf(typeof(SyncLabComponent), n => PurchaseFields.Contains(n)),
+                                       ["Market values"] = FieldsOf(typeof(SyncLabMarketValue)) } },
+                        new() { Key = "spaces", Label = "Spaces & racks",
+                            Description = "The names of your rooms, racks and desks, and which machine sits where (rack positions). Not where your home is.",
+                            Fields = { ["Spaces"] = FieldsOf(typeof(SyncLabSpace)), ["Placements"] = FieldsOf(typeof(SyncLabPlacement)) } },
+                        new() { Key = "attachments", Label = "Attachment details",
+                            Description = "The file name, type and size of invoices and documents you attached. The files themselves never leave this machine.",
+                            Fields = { ["Attachments"] = FieldsOf(typeof(SyncLabAttachment)) } },
+                    },
+                    NeverShared = { "IP addresses", "hostnames", "serial numbers", "your notes", "detailed spec values",
+                                    "attached files and where they are stored", "physical and storage locations", "the network map", "backups", "observations" },
+                },
+                new()
+                {
+                    Key = "models", Label = "Models",
+                    Features =
+                    {
+                        new() { Key = "base", Label = "Catalog",
+                            Description = "The AI models you keep: their names, family, size, quantisations and context length.",
+                            Fields = { ["Catalog"] = FieldsOf(typeof(SyncModelsCatalogEntry)) } },
+                        new() { Key = "serving", Label = "Serving map",
+                            Description = "Which machine runs which model, and its settings (quant, context, slots). This also shares the names of those machines, even if Homelab is not shared.",
+                            Fields = { ["Serving"] = FieldsOf(typeof(SyncModelsServingAssignment)), ["Machines"] = new() { "Name" } } },
+                        new() { Key = "scores", Label = "Reference scores",
+                            Description = "Published benchmark scores you have cited for each model, with the link to where they were published.",
+                            Fields = { ["Reference scores"] = FieldsOf(typeof(SyncModelsReferenceScore)) } },
+                        new() { Key = "benchmarks", Label = "Benchmark results",
+                            Description = "The speeds you measured on your own machines (tokens per second, time to first token) and the setup each was measured with.",
+                            Fields = { ["Benchmarks"] = FieldsOf(typeof(SyncModelsBenchmark)) } },
+                    },
+                    NeverShared = { "fit verdicts (what will not load where)", "benchmark notes and raw run settings", "where model files are stored", "serving ports and addresses" },
+                },
+            },
+        };
     }
 }
