@@ -44,7 +44,7 @@ namespace JunctionRelayServer.Services
                    COALESCE(NULLIF(c.Name, ''), COALESCE(NULLIF(TRIM(COALESCE(c.Manufacturer, '') || ' ' || COALESCE(c.Model, '')), ''), c.Nickname)) AS ComponentLabel,
                    (SELECT COUNT(*) FROM Lab_Placements p WHERE p.SpaceId = s.Id) AS PlacementCount,
                    (SELECT COALESCE(SUM(COALESCE(p.HeightU, 0)), 0) FROM Lab_Placements p
-                     WHERE p.SpaceId = s.Id AND p.Face <> 'rear' AND p.OnPlacementId IS NULL) AS UsedU
+                     WHERE p.SpaceId = s.Id AND p.PositionU IS NOT NULL AND p.Face <> 'rear' AND p.OnPlacementId IS NULL) AS UsedU
               FROM Lab_Spaces s
               LEFT JOIN Lab_Components c ON c.Id = s.ComponentId ";
 
@@ -110,6 +110,8 @@ namespace JunctionRelayServer.Services
                 return $"blocked: {nested} space(s) sit inside this one - move them first";
 
             var rows = await _db.ExecuteAsync("DELETE FROM Lab_Spaces WHERE Id = @Id", new { Id = id });
+            // its network-page frame's grown edges go with it
+            await _db.ExecuteAsync("DELETE FROM Lab_Network_Margins WHERE Key = @Key", new { Key = $"space:{id}" });
             return rows > 0 ? "deleted" : "not found";
         }
 

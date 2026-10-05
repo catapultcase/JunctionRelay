@@ -823,8 +823,7 @@ namespace JunctionRelayServer.Services
             // ComponentId links to the component that WAS BOUGHT rather than restating its
             // price and paperwork here. A rack that is planned but not purchased is a row with
             // ComponentId NULL. ParentSpaceId nests a rack inside a room.
-            // ⚠️ No geometry columns yet, on purpose: the table UI has to prove the model
-            // before a canvas is worth building, and SQLite takes ADD COLUMN cleanly later.
+            // Geometry (HeightU, WidthInches, Rotation) is the rack's; what sits in it is Lab_Placements.
             Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Spaces (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1129,8 +1128,8 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            // Zones on the network page: a dmz or untrusted part of the network, drawn around its devices.
-            // A device is in at most one zone, so the membership table is keyed by NodeId.
+            // How far a network-page frame or zone outline is grown past its devices, per edge (the Edit
+            // layout's edge drags). Key space:<id> or zone:<id>; no row = drawn tight.
             Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Margins (
                     Key TEXT PRIMARY KEY,
@@ -1139,6 +1138,8 @@ namespace JunctionRelayServer.Services
                     UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
+            // Zones on the network page: a dmz or untrusted part of the network, drawn around its devices.
+            // A device is in at most one zone, so the membership table is keyed by NodeId.
             Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Zones (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,

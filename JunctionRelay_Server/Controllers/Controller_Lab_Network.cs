@@ -84,7 +84,7 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex) { return Fail("updating a device", ex); }
         }
 
-        // The Edit layout Save: { nodes: [{ id, x, y }], ports: [{ id, side, position }] }, one transaction.
+        // The Edit layout Save: { nodes: [{ id, x, y }], ports: [{ id, side, position }], margins: [{ key, growLeft, growTop, growRight, growBottom }] }, one transaction.
         [HttpPut("layout")]
         public async Task<IActionResult> SaveLayout([FromBody] Model_Lab_NetworkLayout layout)
         {
