@@ -36,7 +36,9 @@ const TAB_TXT = { display: "block", color: "inherit", whiteSpace: "nowrap", over
 const HANDLE_H = 30;
 
 type Drag =
-    | { kind: "nodes"; ids: number[]; start: Point; from: Map<number, Point>; tray: boolean }
+    // pinned: the outlines (frames, zones) that hold the dragged device, as they were when the drag
+    // began - they stay put and their grown edges absorb the move. Empty for a whole-frame drag.
+    | { kind: "nodes"; ids: number[]; start: Point; from: Map<number, Point>; tray: boolean; pinned: Map<string, Rect> }
     | { kind: "port"; id: number; nodeId: number; start: Point; moved: boolean; at: Point }
     | { kind: "edge"; growKey: string; side: Side; base: Rect };
 const EDGE = 14;     // the grab strip along a frame or zone edge, canvas pixels
@@ -100,14 +102,41 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         e.currentTarget.setPointerCapture(e.pointerId);
         setDrag(d);
     };
-    const startNodes = (e: ReactPointerEvent, ids: number[]) => {
+    const startNodes = (e: ReactPointerEvent, ids: number[], wholeFrame = false) => {
         if (!editing) return;
         const start = viewport.toCanvas(e.clientX, e.clientY);
         const from = new Map(ids.map(id => {
             const r = geo.cards.get(id);
             return [id, { x: r?.x ?? 0, y: r?.y ?? 0 }];
         }));
-        begin(e, { kind: "nodes", ids, start, from, tray: ids.some(id => geo.unplaced.has(id)) });
+        const pinned = new Map<string, Rect>();
+        if (!wholeFrame) {
+            for (const f of geo.frames) if (f.nodeIds.some(id => ids.includes(id))) pinned.set(f.growKey, { x: f.x, y: f.y, w: f.w, h: f.h });
+            for (const z of geo.zones) if (z.zone.nodeIds.some(id => ids.includes(id))) pinned.set(z.growKey, { x: z.x, y: z.y, w: z.w, h: z.h });
+        }
+        begin(e, { kind: "nodes", ids, start, from, tray: ids.some(id => geo.unplaced.has(id)), pinned });
+    };
+    // Keep pinned outlines where they were: each one's grown edges become the gap between its
+    // outline and the box around its devices after the move (never negative - a device dragged
+    // past an edge pushes it out). Two passes, because a room's box includes its racks' grown edges.
+    const pinOutlines = (next: Layout, pinned: Map<string, Rect>): Layout => {
+        if (pinned.size === 0) return next;
+        let cur = next;
+        for (let pass = 0; pass < 2; pass++) {
+            const g = computeGeometry(graph, cur, visible);
+            const grow = new Map(cur.grow);
+            for (const item of [...g.frames, ...g.zones]) {
+                const o = pinned.get(item.growKey);
+                if (!o) continue;
+                const b = item.base;
+                grow.set(item.growKey, {
+                    left: Math.max(0, b.x - o.x), top: Math.max(0, b.y - o.y),
+                    right: Math.max(0, o.x + o.w - (b.x + b.w)), bottom: Math.max(0, o.y + o.h - (b.y + b.h)),
+                });
+            }
+            cur = { ...cur, grow };
+        }
+        return cur;
     };
     const startPort = (e: ReactPointerEvent, p: NetPort) => {
         const start = viewport.toCanvas(e.clientX, e.clientY);
@@ -121,7 +150,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
             const dx = snap(at.x - drag.start.x), dy = snap(at.y - drag.start.y);
             const next = new Map(layout.at);
             drag.from.forEach((p, id) => next.set(id, { x: snap(p.x + dx), y: snap(p.y + dy) }));
-            setDragLayout({ at: next, edge: layout.edge, grow: layout.grow });
+            setDragLayout(pinOutlines({ at: next, edge: layout.edge, grow: layout.grow }, drag.pinned));
         } else if (drag.kind === "edge") {
             const b = drag.base, g = { ...(layout.grow.get(drag.growKey) ?? NO_GROW) };
             if (drag.side === "left") g.left = Math.max(0, b.x - snap(at.x));
@@ -298,7 +327,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
                             fontSize: f.sub ? 13 : 15, fontWeight: f.sub ? 600 : 700, letterSpacing: f.sub ? 0 : "0.06em",
                             textTransform: f.sub ? "none" : "uppercase" }}>{f.name}</Typography>
                         {editing && (
-                            <Box onPointerDown={e => startNodes(e, f.nodeIds.filter(id => !geo.unplaced.has(id)))} title={`Drag to move ${f.name} and everything in it`}
+                            <Box onPointerDown={e => startNodes(e, f.nodeIds.filter(id => !geo.unplaced.has(id)), true)} title={`Drag to move ${f.name} and everything in it`}
                                 sx={{ position: "absolute", left: 0, right: 0, top: 0, height: HANDLE_H, pointerEvents: "auto", cursor: "grab", touchAction: "none",
                                     bgcolor: theme.palette.action.hover, borderBottom: `1px dashed ${theme.palette.divider}`,
                                     display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, color: "text.secondary", userSelect: "none" }}>
