@@ -1,0 +1,115 @@
+# =============================
+# ESP32 Arduino CLI Build Artifacts
+# =============================
+Stash/Compile_ESP32/builds/
+
+# =============================
+# Build zips
+# =============================
+Stash/Github_Releases/publish/
+Stash/Github_Releases/Archived/
+Stash/Github_Releases/build-staging/
+Stash/Github_Releases/build-staging-*/
+Stash/Github_Releases/steamcmd/
+Stash/Github_Releases/dumps/
+Stash/Github_Releases/steam/output/
+Stash/Github_Releases/cache/
+
+# =============================
+# Build results
+# =============================
+bin/
+obj/
+out/
+
+# =============================
+# Visual Studio
+# =============================
+.vs/
+*.user
+*.suo
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# =============================
+# JetBrains Rider
+# =============================
+.idea/
+
+# =============================
+# ASP.NET / .NET-specific
+# =============================
+project.lock.json
+project.fragment.lock.json
+*.pdb
+*.cache
+*.dll
+*.exe
+
+# =============================
+# User-specific + OS artifacts
+# =============================
+*.swp
+*.bak
+*.tmp
+*.log
+*.orig
+*.DS_Store
+Thumbs.db
+
+# =============================
+# IIS + VS launch settings
+# =============================
+*.publishsettings
+Properties/launchSettings.json
+
+# =============================
+# Frontend (Node/NPM)
+# =============================
+**/node_modules/
+**/bower_components/
+npm-debug.log
+
+# =============================
+# Frontend Build Outputs
+# =============================
+JunctionRelay_Server/wwwroot/static/
+JunctionRelay_Server/wwwroot/asset-manifest.json
+**/wwwroot/static/js/
+**/wwwroot/static/css/
+**/wwwroot/static/media/
+build/
+dist/
+
+# =============================
+# FrameEngine Build Artifacts (copied from FE package at build time)
+# =============================
+JunctionRelay_Server/frameengine/sensor-dictionary.json
+JunctionRelay_Server/frameengine/defaultTransitionRules.json
+
+# =============================
+# Docker
+# =============================
+docker-compose.*
+.dockerignore
+
+# =============================
+# Databases / Tools
+# =============================
+*.dbmdl
+*.jfm
+
+# =============================
+# Environment/Secrets
+# =============================
+*.env
+secrets.dev.yaml
+values.dev.yaml
+Stash/Waveform3_Linux/
+Stash/Waveform3_Linux.tar.gz
+
+# =============================
+# Claude Code (per-machine local settings)
+# =============================
+.claude/settings.local.json

@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "react": "/vendor/react.js",
+    "react-dom": "/vendor/react-dom.js",
+    "react/jsx-runtime": "/vendor/react--jsx-runtime.js",
+    "@mui/material": "/vendor/mui--material.js",
+    "@mui/icons-material": "/vendor/mui--icons-material.js",
+    "@emotion/react": "/vendor/emotion--react.js",
+    "@emotion/styled": "/vendor/emotion--styled.js",
+    "@junctionrelay/element-sdk": "/vendor/junctionrelay--element-sdk.js"
+  }
+}
