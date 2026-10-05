@@ -28,7 +28,8 @@ import { pathD, routeLinks } from "./Lab_Network_Router";
 import type { useCanvasViewport } from "../hooks/useCanvasViewport";
 
 // The Network page's canvas: frames, zones, links, device cards and port tabs on a pan/zoom stage. With
-// Edit layout on, a card drags on the 20px grid, a frame drags by its handle (and takes everything in it
+// Edit layout on, a card drags on the 20px grid - or lines up with the port it is linked to when it comes
+// close (a guide shows it), so a link between facing tabs can run dead straight - a frame drags by its handle (and takes everything in it
 // along), a port tab drags to any edge of its card, and any edge of a frame or zone outline drags to grow
 // or shrink it (never inside its devices). Placement is the user's call: nothing is refused.
 
@@ -38,10 +39,15 @@ const HANDLE_H = 30;
 type Drag =
     // pinned: the outlines (frames, zones) that hold the dragged device, as they were when the drag
     // began - they stay put and their grown edges absorb the move. Empty for a whole-frame drag.
-    | { kind: "nodes"; ids: number[]; start: Point; from: Map<number, Point>; tray: boolean; pinned: Map<string, Rect> }
+    // aligns: for each link from a dragged device to one that stays, between facing tabs, the move
+    // that would put the two tabs in line
+    | { kind: "nodes"; ids: number[]; start: Point; from: Map<number, Point>; tray: boolean; pinned: Map<string, Rect>; aligns: Align[] }
     | { kind: "port"; id: number; nodeId: number; start: Point; moved: boolean; at: Point }
     | { kind: "edge"; growKey: string; side: Side; base: Rect };
 const EDGE = 14;     // the grab strip along a frame or zone edge, canvas pixels
+const ALIGN_PULL = 12; // screen pixels: how close a linked tab must come to line up before the card snaps to it
+type Align = { axis: "x" | "y"; delta: number; own: Point; other: Point };
+const FACING: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };
 
 interface Props {
     graph: Graph;
@@ -70,6 +76,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
     // while dragging, the page is drawn from a moved copy of the layout
     const [drag, setDrag] = useState<Drag | null>(null);
     const [dragLayout, setDragLayout] = useState<Layout | null>(null);
+    const [guides, setGuides] = useState<{ a: Point; b: Point }[]>([]);
     const shown = dragLayout ?? layout;
     const geo = useMemo(() => computeGeometry(graph, shown, visible), [graph, shown, visible]);
 
@@ -114,7 +121,18 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
             for (const f of geo.frames) if (f.nodeIds.some(id => ids.includes(id))) pinned.set(f.growKey, { x: f.x, y: f.y, w: f.w, h: f.h });
             for (const z of geo.zones) if (z.zone.nodeIds.some(id => ids.includes(id))) pinned.set(z.growKey, { x: z.x, y: z.y, w: z.w, h: z.h });
         }
-        begin(e, { kind: "nodes", ids, start, from, tray: ids.some(id => geo.unplaced.has(id)), pinned });
+        const tray = ids.some(id => geo.unplaced.has(id));
+        const aligns: Align[] = [];
+        if (!tray) for (const l of graph.links) {
+            const pa = portById.get(l.portAId), pb = portById.get(l.portBId);
+            if (!pa || !pb || ids.includes(pa.nodeId) === ids.includes(pb.nodeId)) continue;
+            const [own, other] = ids.includes(pa.nodeId) ? [pa, pb] : [pb, pa];
+            const o = endOf(own, geo), t = endOf(other, geo);
+            if (!o || !t || FACING[o.side] !== t.side) continue;
+            const axis = o.side === "left" || o.side === "right" ? "y" : "x";
+            aligns.push({ axis, delta: t.anchor[axis] - o.anchor[axis], own: o.anchor, other: t.anchor });
+        }
+        begin(e, { kind: "nodes", ids, start, from, tray, pinned, aligns });
     };
     // Keep pinned outlines where they were: each one's grown edges become the gap between its
     // outline and the box around its devices after the move (never negative - a device dragged
@@ -147,9 +165,22 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         if (!drag) return;
         const at = viewport.toCanvas(e.clientX, e.clientY);
         if (drag.kind === "nodes") {
-            const dx = snap(at.x - drag.start.x), dy = snap(at.y - drag.start.y);
+            const raw = { x: at.x - drag.start.x, y: at.y - drag.start.y };
+            // the nearest line-up within reach on each axis wins over the grid
+            const pull = ALIGN_PULL / viewport.view.scale;
+            const lineUp = (axis: "x" | "y") => drag.aligns.filter(a => a.axis === axis && Math.abs(a.delta - raw[axis]) <= pull)
+                .sort((a, b) => Math.abs(a.delta - raw[axis]) - Math.abs(b.delta - raw[axis]))[0];
+            const ax = lineUp("x"), ay = lineUp("y");
+            // a lone card snaps to the grid; a group keeps its spacing (a lined-up card may sit off the grid)
+            const onGrid = (v: number, r: number) => (drag.ids.length === 1 ? snap(v + r) : v + snap(r));
             const next = new Map(layout.at);
-            drag.from.forEach((p, id) => next.set(id, { x: snap(p.x + dx), y: snap(p.y + dy) }));
+            drag.from.forEach((p, id) => next.set(id, {
+                x: ax ? p.x + ax.delta : onGrid(p.x, raw.x),
+                y: ay ? p.y + ay.delta : onGrid(p.y, raw.y),
+            }));
+            const moved = (pt: Point, d: Point) => ({ x: pt.x + d.x, y: pt.y + d.y });
+            const d = { x: ax ? ax.delta : snap(raw.x), y: ay ? ay.delta : snap(raw.y) };
+            setGuides([ax, ay].flatMap(a => a ? [{ a: moved(a.own, d), b: a.other }] : []));
             setDragLayout(pinOutlines({ at: next, edge: layout.edge, grow: layout.grow }, drag.pinned));
         } else if (drag.kind === "edge") {
             const b = drag.base, g = { ...(layout.grow.get(drag.growKey) ?? NO_GROW) };
@@ -195,6 +226,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         if (!drag) return;
         const d = drag;
         setDrag(null);
+        setGuides([]);
         if (d.kind === "port") {
             if (!d.moved) { onPort(d.id); return; }
             const next = portDrop(d);
@@ -374,6 +406,11 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
                         );
                     })}
                 </svg>
+                {guides.length > 0 && (
+                    <svg width={1} height={1} style={{ position: "absolute", left: 0, top: 0, overflow: "visible", zIndex: 6, pointerEvents: "none" }}>
+                        {guides.map((g, i) => <line key={i} x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} stroke="#e91e63" strokeWidth={1.5} strokeDasharray="6 4" />)}
+                    </svg>
+                )}
                 {graph.nodes.map(nodeCard)}
                 {graph.ports.filter(visible).map(p => {
                     const t = geo.tabs.get(p.id);
