@@ -42,7 +42,7 @@ namespace JunctionRelayServer.Services
 
         public void EnsureTableExists()
         {
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS LayoutSubscriptions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ServerUrl TEXT NOT NULL,

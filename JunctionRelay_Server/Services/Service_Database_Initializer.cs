@@ -56,7 +56,7 @@ namespace JunctionRelayServer.Services
         {
             _db.Open();
 
-            // STEP 1: Create all base tables (declared in their final form - no migrations)
+            // STEP 1: Create every table, and add to existing ones any column their CREATE TABLE gained since (Service_Database_Schema)
             await CreateTablesAsync();
 
             // STEP 2: Seed screen layout templates
@@ -100,7 +100,7 @@ namespace JunctionRelayServer.Services
         private async Task CreateTablesAsync()
         {
             // Create Settings Table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Settings (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Key TEXT NOT NULL,
@@ -110,7 +110,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Devices Table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Devices (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -213,7 +213,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Services table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Services (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -249,7 +249,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create MqttSubscriptions table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS MqttSubscriptions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ServiceId INTEGER NOT NULL,
@@ -262,7 +262,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create DeviceScreens table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS DeviceScreens (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     DeviceId INTEGER NOT NULL,
@@ -284,7 +284,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create JunctionScreenLayouts table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS JunctionScreenLayouts (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     JunctionId INTEGER NOT NULL,
@@ -309,7 +309,7 @@ namespace JunctionRelayServer.Services
             // Notifications table removed - now using WebSocket-only push notifications with in-memory cache
 
             // Create NotificationSettings table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS NotificationSettings (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Category TEXT NOT NULL UNIQUE,
@@ -320,7 +320,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create DeviceI2CDevices table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS DeviceI2CDevices (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     DeviceId INTEGER NOT NULL,
@@ -334,7 +334,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create DeviceI2CDeviceEndpoints table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS DeviceI2CDeviceEndpoints (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     I2CDeviceId INTEGER NOT NULL,
@@ -347,7 +347,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create ScreenLayouts table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS ScreenLayouts (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     DisplayName TEXT,
@@ -457,7 +457,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create FrameLayouts table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS FrameLayouts (
                     -- Core Properties
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -520,7 +520,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create LayoutSubscriptions table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS LayoutSubscriptions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ServerUrl TEXT NOT NULL,
@@ -550,7 +550,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create EventRules table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS EventRules (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -569,7 +569,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create EventTriggers table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS EventTriggers (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     EventRuleId INTEGER NOT NULL,
@@ -591,7 +591,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create EventActions table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS EventActions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     EventRuleId INTEGER NOT NULL,
@@ -649,7 +649,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create TransitionRules table (global transition rules for XSD Mode 3)
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS TransitionRules (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT,
@@ -680,7 +680,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create TransitionRuleSensorConditions table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS TransitionRuleSensorConditions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     RuleId INTEGER NOT NULL,
@@ -692,7 +692,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create TransitionRuleDynamicOverrides table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS TransitionRuleDynamicOverrides (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     RuleId INTEGER NOT NULL,
@@ -725,7 +725,7 @@ namespace JunctionRelayServer.Services
             // ============================================================
 
             // Create Lab_Machines table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Machines (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -746,7 +746,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Lab_Components table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Components (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Type TEXT NOT NULL,
@@ -779,7 +779,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Lab_ComponentMovements table (append-only ledger)
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_ComponentMovements (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ComponentId INTEGER NOT NULL,
@@ -801,7 +801,7 @@ namespace JunctionRelayServer.Services
             // is a vocabulary, not a constraint: retiring "Printer" must not orphan or hide the
             // printer, and adding a type must never require touching component rows. This table
             // drives pickers, section order and typed fields only.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_ComponentTypes (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL UNIQUE,
@@ -825,7 +825,7 @@ namespace JunctionRelayServer.Services
             // ComponentId NULL. ParentSpaceId nests a rack inside a room.
             // ⚠️ No geometry columns yet, on purpose: the table UI has to prove the model
             // before a canvas is worth building, and SQLite takes ADD COLUMN cleanly later.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Spaces (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -852,7 +852,7 @@ namespace JunctionRelayServer.Services
             // components alike (a PDU, a patch panel, a blank panel). Status planned|installed
             // is what makes this a planner rather than a map - lay a rack out before the parts
             // arrive, then flip rows as they go in.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Placements (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     SpaceId INTEGER NOT NULL,
@@ -878,7 +878,7 @@ namespace JunctionRelayServer.Services
 
             // Create Lab_Attachments table — files (invoice PDFs, manuals, photos) stored
             // under <dataDir>/lab/attachments, linked to a component or machine
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Attachments (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ComponentId INTEGER,
@@ -901,7 +901,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Lab_MachineGroups table (user-defined machine grouping, ordered)
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_MachineGroups (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -919,7 +919,7 @@ namespace JunctionRelayServer.Services
             // property of the component at all, it is an observation with a date, so it gets
             // rows rather than a column. Never updated, never deleted: the series is the
             // point, and one overwritten number cannot answer "has it held its value".
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_MarketValues (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ComponentId INTEGER NOT NULL,
@@ -945,7 +945,7 @@ namespace JunctionRelayServer.Services
             // 🔑 Snapshot is the WHOLE component as JSON. A deletion is only ever justified
             // afterwards by what was actually removed, and a few columns chosen today are the
             // ones you will wish you had kept.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_ComponentDeletions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ComponentId INTEGER NOT NULL,
@@ -988,7 +988,7 @@ namespace JunctionRelayServer.Services
             // ============================================================
 
             // Create Models_Catalog table — the archived weights.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Catalog (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -1015,7 +1015,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Models_Serving table — which box holds which model.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Serving (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ModelId INTEGER NOT NULL,
@@ -1055,7 +1055,7 @@ namespace JunctionRelayServer.Services
             // Create Models_Serving_Design table — the serving page's boxes, clients and rules as
             // data, editable over MCP and from the page. Empty on a new install: the
             // page invites you to add a box. See Model_Models_ServingDesign.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Serving_Design (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Kind TEXT NOT NULL DEFAULT 'box',
@@ -1071,7 +1071,7 @@ namespace JunctionRelayServer.Services
             // Create Lab_Backup_Design table — the Homelab backups page as data: where data
             // lives (a location on a Lab machine), the copy jobs between locations, and rules. Empty on a
             // new install. See Model_Lab_BackupDesign.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Backup_Design (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Kind TEXT NOT NULL DEFAULT 'location',
@@ -1088,7 +1088,7 @@ namespace JunctionRelayServer.Services
             // The Homelab NETWORK page: devices (a Lab machine, a Lab component or a placeholder for
             // something not bought yet), their ports and the links between ports. Soft references only, like the
             // rest of the Lab. Empty on a new install - see Model_Lab_Network.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Nodes (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     MachineId INTEGER, ComponentId INTEGER,
@@ -1101,7 +1101,7 @@ namespace JunctionRelayServer.Services
                     UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Ports (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     NodeId INTEGER NOT NULL,
@@ -1117,7 +1117,7 @@ namespace JunctionRelayServer.Services
                     UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Links (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     PortAId INTEGER NOT NULL, PortBId INTEGER NOT NULL,
@@ -1130,7 +1130,7 @@ namespace JunctionRelayServer.Services
 
             // Zones on the network page: a dmz or untrusted part of the network, drawn around its devices.
             // A device is in at most one zone, so the membership table is keyed by NodeId.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Zones (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -1140,7 +1140,7 @@ namespace JunctionRelayServer.Services
                     UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_ZoneNodes (
                     NodeId INTEGER PRIMARY KEY,
                     ZoneId INTEGER NOT NULL
@@ -1149,7 +1149,7 @@ namespace JunctionRelayServer.Services
 
             // Create Models_Benchmarks table (append-only measurement ledger,
             // the Lab_MarketValues discipline: the SERIES is the value).
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Benchmarks (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ModelName TEXT NOT NULL,
@@ -1181,7 +1181,7 @@ namespace JunctionRelayServer.Services
             // figures for known models (SWE-bench, Aider…), cited from online
             // sources. Catalog-domain facts about the checkpoint itself; their
             // own table so citations never mix with fleet measurements.
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Reference_Scores (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ModelId INTEGER NOT NULL,
@@ -1206,7 +1206,7 @@ namespace JunctionRelayServer.Services
             // on this machine', with the evidence. A verdict is not a
             // measurement (parked in the ledger as a fake metric, a delete aimed
             // at one verdict could destroy measurements).
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Models_Fit_Verdicts (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ModelId INTEGER NOT NULL,
@@ -1234,7 +1234,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Collectors table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Collectors (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL UNIQUE,
@@ -1261,7 +1261,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Junctions table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Junctions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,
@@ -1301,7 +1301,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create Sensors table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Sensors (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     OriginalId INTEGER,
@@ -1351,7 +1351,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create JunctionSensors table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS JunctionSensors (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,     
                     OriginalId INTEGER,                        
@@ -1401,7 +1401,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create JunctionSensorTargets table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS JunctionSensorTargets (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     JunctionId INTEGER NOT NULL,
@@ -1418,7 +1418,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create JunctionDeviceLinks table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS JunctionDeviceLinks (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     JunctionId INTEGER NOT NULL,
@@ -1439,7 +1439,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create JunctionCollectorLinks table
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS JunctionCollectorLinks (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     JunctionId INTEGER NOT NULL,
@@ -1459,7 +1459,7 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS StreamHistoryConfiguration (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     RetentionHours REAL NOT NULL DEFAULT 24,
@@ -1470,7 +1470,7 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS AuthUsers (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Username TEXT NOT NULL UNIQUE,
@@ -1482,7 +1482,7 @@ namespace JunctionRelayServer.Services
                 );
             ");
 
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS CloudSessions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     UserId TEXT NOT NULL,
@@ -1495,7 +1495,7 @@ namespace JunctionRelayServer.Services
             ");
 
             // Create LoggingSettings table for debug and logging configuration
-            _db.Execute(@"
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS LoggingSettings (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Category TEXT NOT NULL UNIQUE,
