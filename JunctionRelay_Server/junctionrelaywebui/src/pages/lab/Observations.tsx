@@ -65,9 +65,18 @@ interface ObservationRow {
     }[];
 }
 
-// One shared column template for every day's table — see the colgroup below.
-// Order: Component, Type, Vendor, MSRP, Paid, Prior, New, Delta, Trend, actions.
-const COLUMN_WIDTHS = ["26%", "8%", "10%", "8%", "8%", "11%", "11%", "8%", "112px", "56px"];
+// Column widths are MEASURED from the rows on screen (the timeframe and filters), once, and
+// shared by every day's table, so the grid lines up down the page and no cell wraps or
+// overruns its neighbour. Component takes whatever width is left.
+const CELL_PAD = 32 + 4;            // MUI small cell: 16px each side, plus a little air
+const SORT_ICON = 22, FILTER_ICON = 30, CHIP = 40, TREND = 112, ACTIONS = 56, COMPONENT_MIN = 220;
+let measureCtx: CanvasRenderingContext2D | null = null;
+const textWidth = (text: string, font: string): number => {
+    if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+    if (!measureCtx) return text.length * 8;
+    measureCtx.font = font;
+    return Math.ceil(measureCtx.measureText(text).width);
+};
 
 type SortKey = "component" | "type" | "vendor" | "msrp" | "paid" | "prior" | "value" | "delta";
 
@@ -300,6 +309,37 @@ const Observations = () => {
         () => rows.filter(r => passesFilters(r, filters, cellText)),
         [rows, filters, cellText]);
 
+    // One set of column widths for every day's table, from everything in view.
+    const columnWidths = useMemo(() => {
+        const family = theme.typography.fontFamily ?? "Roboto, sans-serif";
+        const body = `400 14px ${family}`, bold = `500 14px ${family}`, head = `500 14px ${family}`, cap = `400 12px ${family}`;
+        const widest = (texts: { t: string; f: string }[]) => Math.max(0, ...texts.map(x => textWidth(x.t, x.f)));
+        const header = (label: string, filterable: boolean) => textWidth(label, head) + SORT_ICON + (filterable ? FILTER_ICON : 0);
+        const col = (label: string, filterable: boolean, cells: { t: string; f: string }[]) =>
+            Math.max(header(label, filterable), widest(cells)) + CELL_PAD;
+        const deltaTexts = (r: ObservationRow) => {
+            const d = deltaOf(r), paid = r.purchasePrice;
+            if (d === null || paid === null || paid === undefined) return [{ t: "—", f: body }];
+            const sign = d > 0 ? "+" : "";
+            return [{ t: `${sign}${money(d)}`, f: bold }, { t: `${paid !== 0 ? `${sign}${((d / paid) * 100).toFixed(1)}% ` : ""}vs paid`, f: cap }];
+        };
+        return [
+            null,   // Component: the rest
+            col("Type", true, filtered.map(r => ({ t: r.componentType || "—", f: body }))),
+            col("Vendor", true, filtered.map(r => ({ t: r.vendor || "—", f: body }))),
+            col("MSRP", false, filtered.map(r => ({ t: money(r.msrp), f: body }))),
+            col("Paid", false, filtered.flatMap(r => [{ t: money(r.purchasePrice), f: body }, { t: day(r.acquiredAt) ?? "", f: cap }])),
+            col("Prior Observation", false, filtered.flatMap(r => [{ t: money(r.priorValue), f: body }, { t: localDay(r.priorCapturedAt) ?? "", f: cap }])),
+            col("New Observation", false, filtered.flatMap(r => [
+                { t: money(r.value), f: bold }, { t: localDay(r.capturedAt) ?? "", f: cap },
+                ...(r.alternates ?? []).map(a => ({ t: money(a.value), f: body }))])) + (filtered.some(r => (r.alternates?.length ?? 0) > 0) ? CHIP : 0),
+            col("Delta", false, filtered.flatMap(deltaTexts)),
+            TREND + CELL_PAD,
+            ACTIONS,
+        ];
+    }, [filtered, theme.typography.fontFamily]);
+    const tableMinWidth = COMPONENT_MIN + columnWidths.reduce<number>((t, w) => t + (w ?? 0), 0);
+
     // API is already newest-first; bucket by capture day, preserving that order.
     const byDay = useMemo(() => {
         const groups: { day: string; rows: ObservationRow[] }[] = [];
@@ -362,9 +402,9 @@ const Observations = () => {
                             {/* Each day is its own table, so the columns would size themselves
                                 independently and stagger down the page. A fixed layout plus one
                                 shared colgroup makes every day's grid identical. */}
-                            <Table size="small" sx={{ tableLayout: "fixed", minWidth: 1100 }}>
+                            <Table size="small" sx={{ tableLayout: "fixed", minWidth: tableMinWidth, "& th, & td": { whiteSpace: "nowrap" }, "& td:first-of-type": { whiteSpace: "normal" } }}>
                                 <colgroup>
-                                    {COLUMN_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}
+                                    {columnWidths.map((w, i) => <col key={i} style={w == null ? undefined : { width: w }} />)}
                                 </colgroup>
                                 <TableHead>
                                     <TableRow sx={{ bgcolor: "action.hover" }}>
