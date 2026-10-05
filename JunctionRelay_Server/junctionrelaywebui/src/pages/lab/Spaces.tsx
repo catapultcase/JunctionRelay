@@ -623,6 +623,11 @@ const HomelabSpaces = () => {
                         helperText="How many U it occupies"
                         onChange={e => setPlacementDialog(d => ({ ...d, heightU: e.target.value ? Number(e.target.value) : null }))} />
                     </>)}
+                    {placementDialog?.onPlacementId != null && (
+                        <TextField label="Height on the shelf (U)" type="number" value={placementDialog?.heightU ?? 1}
+                            helperText="How tall it stands on the shelf - drawn only, never counted as used U"
+                            onChange={e => setPlacementDialog(d => ({ ...d, heightU: e.target.value ? Number(e.target.value) : 1 }))} />
+                    )}
 
                     {/* 🔑 A position on its own says nothing - what you are actually choosing is a
                         RANGE, and it is the height that decides how far it reaches. Showing the

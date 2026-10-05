@@ -35,7 +35,7 @@
 //
 // A SHELF, DRAWER OR TRAY CARRIES THINGS: a placement with onPlacementId sits on that carrier,
 // takes no U of its own, and is drawn inside the carrier's block, side by side with whatever else
-// is on it (two Sparks on one 1U shelf).
+// is on it (two Sparks on one 1U shelf), standing on the shelf at its own height (heightU, default 1).
 //
 // 🔑 ONE SCALE FOR BOTH AXES, so a rack keeps its real size at any angle. A rack unit is 1.75
 // inches by definition, so U converts to inches and everything is drawn in inches: a 3U 10-inch
@@ -240,11 +240,17 @@ const LabRackElevation = ({
                                     </Box>
                                     ) : (
                                     // the carrier's block holds its items side by side, across the rails
-                                    <Box sx={{ display: 'flex', flexDirection: horizontal ? 'column' : 'row', gap: '3px', width: '100%', height: '100%', py: horizontal ? 0 : '2px', px: horizontal ? '2px' : 0 }}>
-                                        {onIt.map(c => (
-                                            <Tooltip key={c.id} title={`${c.occupantLabel ?? 'placement'} — on ${p.occupantLabel ?? 'the shelf'} — ${c.status}`}>
+                                    <Box sx={{ display: 'flex', flexDirection: horizontal ? 'column' : 'row', gap: '3px', width: '100%', height: '100%',
+                                        // things stand on the shelf: bottom-aligned in an upright rack
+                                        alignItems: horizontal ? 'flex-start' : 'flex-end', py: horizontal ? 0 : '2px', px: horizontal ? '2px' : 0 }}>
+                                        {onIt.map(c => {
+                                            const tall = Math.max(1, Math.min(c.heightU ?? 1, span));
+                                            const along = Math.round(tall * uPx) - 7;
+                                            return (
+                                            <Tooltip key={c.id} title={`${c.occupantLabel ?? 'placement'} — on ${p.occupantLabel ?? 'the shelf'}, ${c.heightU ?? 1}U tall — ${c.status}`}>
                                                 <Box onClick={e => { e.stopPropagation(); onSelect?.(c.id); }} sx={{
                                                     flex: 1, minWidth: 0, minHeight: 0, borderRadius: 0.5,
+                                                    ...(horizontal ? { width: along } : { height: along }),
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                                                     bgcolor: c.status === 'installed' ? (dark ? '#2b5a2e' : '#a5d6a7') : (dark ? '#2a2620' : '#fffaf0'),
                                                     border: c.status === 'installed' ? `1px solid ${dark ? '#43a047' : '#66bb6a'}` : `1px dashed ${dark ? '#7a6a3a' : '#c8a951'}`,
@@ -256,7 +262,8 @@ const LabRackElevation = ({
                                                     </Box>
                                                 </Box>
                                             </Tooltip>
-                                        ))}
+                                            );
+                                        })}
                                     </Box>
                                     )}
                                 </Box>

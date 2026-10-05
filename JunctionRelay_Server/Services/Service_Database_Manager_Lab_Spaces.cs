@@ -44,7 +44,7 @@ namespace JunctionRelayServer.Services
                    COALESCE(NULLIF(c.Name, ''), COALESCE(NULLIF(TRIM(COALESCE(c.Manufacturer, '') || ' ' || COALESCE(c.Model, '')), ''), c.Nickname)) AS ComponentLabel,
                    (SELECT COUNT(*) FROM Lab_Placements p WHERE p.SpaceId = s.Id) AS PlacementCount,
                    (SELECT COALESCE(SUM(COALESCE(p.HeightU, 0)), 0) FROM Lab_Placements p
-                     WHERE p.SpaceId = s.Id AND p.Face <> 'rear') AS UsedU
+                     WHERE p.SpaceId = s.Id AND p.Face <> 'rear' AND p.OnPlacementId IS NULL) AS UsedU
               FROM Lab_Spaces s
               LEFT JOIN Lab_Components c ON c.Id = s.ComponentId ";
 
@@ -175,7 +175,8 @@ namespace JunctionRelayServer.Services
                         "SELECT COUNT(*) FROM Lab_Placements WHERE OnPlacementId = @Id", new { placement.Id }) > 0)
                     return "it holds other things - take them off it first";
                 placement.PositionU = null;
-                placement.HeightU = null;
+                // how tall it stands on the shelf - drawn, never counted against the rack's U
+                placement.HeightU = placement.HeightU is int hu && hu >= 1 ? hu : 1;
                 placement.Face = carrier.Face;
                 return null;
             }

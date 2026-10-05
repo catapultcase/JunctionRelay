@@ -982,7 +982,7 @@ namespace JunctionRelayServer.Services
                     sb.AppendLine($"  {slot,-9} {label}  [{string.Join(", ", bits)}]");
                     // side by side on this shelf, drawer or tray
                     foreach (var on in onShelf.Where(x => x.OnPlacementId == pl.Id))
-                        sb.AppendLine($"  {"",-9}   └ on it: {on.OccupantLabel ?? $"placement {on.Id}"}  [{on.OccupantKind ?? "?"}" +
+                        sb.AppendLine($"  {"",-9}   └ on it: {on.OccupantLabel ?? $"placement {on.Id}"} ({on.HeightU ?? 1}U tall)  [{on.OccupantKind ?? "?"}" +
                                       (string.Equals(on.Status, "installed", StringComparison.OrdinalIgnoreCase) ? "" : $", {on.Status}") + "]");
                 }
             }
@@ -2900,7 +2900,8 @@ namespace JunctionRelayServer.Services
                      "marks planned kit fitted. U-overlap is refused and names the occupant - remove it first " +
                      "with lab_remove_from_space. Several things can share a U by sitting ON a shelf, drawer or " +
                      "tray that is placed in the same space: pass onShelf (that occupant's name, or its component " +
-                     "id) and no positionU - they take the shelf's U and sit side by side. onShelf='' takes it " +
+                     "id) and no positionU - they take the shelf's U and sit side by side; heightU is then how tall " +
+                     "it stands on the shelf (default 1, never counted as used U). onShelf='' takes it " +
                      "off the shelf. Say what went where.")]
         public async Task<string> LabPlaceInSpaceAsync(
             [Description("Space name, full or partial; must match one space.")]

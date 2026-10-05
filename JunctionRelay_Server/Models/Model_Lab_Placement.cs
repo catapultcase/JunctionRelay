@@ -36,8 +36,9 @@ namespace JunctionRelayServer.Models
         public int? PositionU { get; set; }                 // bottom-most U, 1-based; NULL off-rack
         public int? HeightU { get; set; }                   // how many U it consumes
         // Sits ON another placement in the same space - a shelf, drawer or tray (its carrier) - side by
-        // side with whatever else is on it. It takes no U of its own: PositionU/HeightU are NULL and its
-        // U and face are the carrier's. One level only (nothing sits on something that sits on a shelf).
+        // side with whatever else is on it. It takes no U of its own: PositionU is NULL, its U and face are
+        // the carrier's, and HeightU is only how tall it stands on the shelf (drawn, never counted as used
+        // U; default 1). One level only (nothing sits on something that sits on a shelf).
         public int? OnPlacementId { get; set; }
         public string Face { get; set; } = "front";         // front | rear | both
 
