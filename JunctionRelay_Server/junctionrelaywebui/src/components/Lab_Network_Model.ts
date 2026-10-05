@@ -37,7 +37,8 @@ export interface NetPort {
 export interface NetLink { id: number; portAId: number; portBId: number; status: string; notes: string | null; speedGb: number | null }
 export interface NetZone { id: number; name: string; kind: string; notes: string | null; nodeIds: number[] }
 export interface NetCheck { level: string; text: string }
-export interface Graph { nodes: NetNode[]; ports: NetPort[]; links: NetLink[]; zones: NetZone[]; checks: NetCheck[] }
+export interface NetMargin { key: string; growLeft: number; growTop: number; growRight: number; growBottom: number }
+export interface Graph { nodes: NetNode[]; ports: NetPort[]; links: NetLink[]; zones: NetZone[]; margins?: NetMargin[]; checks: NetCheck[] }
 export interface LabMachine { id: number; name: string; os: string | null }
 export interface LabComponent { id: number; name: string | null; manufacturer: string | null; model: string | null; type: string; status: string }
 export interface LabSpace { id: number; name: string; sortOrder?: number; status?: string }
@@ -68,21 +69,29 @@ export const snap = (v: number) => roundTo(v, GRID);
 
 // The editable layout: where each device is and which edge/order each port has. The page keeps a draft of
 // this while Edit layout is on; Save sends the difference.
+// How far a frame or zone outline is grown past its devices, per edge ("space:8", "zone:3").
+export type Grow = { left: number; top: number; right: number; bottom: number };
+export const NO_GROW: Grow = { left: 0, top: 0, right: 0, bottom: 0 };
 export interface Layout {
     at: Map<number, Point>;                                        // node id -> card top-left (placed nodes only)
     edge: Map<number, { side: Side; position: number }>;           // port id -> its edge and order
+    grow: Map<string, Grow>;                                       // frame/zone key -> grown edges
 }
 export const layoutOf = (g: Graph): Layout => ({
     at: new Map(g.nodes.filter(n => n.x != null && n.y != null).map(n => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }])),
     edge: new Map(g.ports.map(p => [p.id, { side: isSide(p.side) ? p.side : "bottom", position: p.position }])),
+    grow: new Map((g.margins ?? []).map(m => [m.key, { left: m.growLeft, top: m.growTop, right: m.growRight, bottom: m.growBottom }])),
 });
+const grown = (r: Rect, g: Grow | undefined): Rect =>
+    g ? { x: r.x - g.left, y: r.y - g.top, w: r.w + g.left + g.right, h: r.h + g.top + g.bottom } : r;
 
-export interface Frame extends Rect { key: string; spaceId: number; name: string; sub: boolean; parentKey: string | null; nodeIds: number[] }
+// base: the box around its members before any grown edges - what an edge drag measures from.
+export interface Frame extends Rect { key: string; growKey: string; base: Rect; spaceId: number; name: string; sub: boolean; parentKey: string | null; nodeIds: number[] }
 export interface Geometry {
     cards: Map<number, Rect>;               // every node, placed or in the tray
     tabs: Map<number, Rect>;                // visible ports only
     frames: Frame[];                        // rooms first, then the racks/desks inside them
-    zones: (Rect & { key: string; zone: NetZone })[];
+    zones: (Rect & { key: string; growKey: string; base: Rect; zone: NetZone })[];
     tray: Rect | null;                      // where devices that are not placed yet wait
     unplaced: Set<number>;
     bounds: Rect;
@@ -126,13 +135,15 @@ export function computeGeometry(g: Graph, lay: Layout, visible: (p: NetPort) => 
         const subs: Frame[] = [];
         for (const sid of [...new Set(members.map(n => n.subSpaceId).filter((x): x is number => x != null))]) {
             const inSub = members.filter(n => n.subSpaceId === sid);
-            const box = boxAround(inSub.map(n => withTabs(cards.get(n.id) ?? { x: 0, y: 0, w: 0, h: 0 })), SUB_PAD - TAB_H, SUB_LABEL);
-            subs.push({ key: `s${sid}`, spaceId: sid, name: inSub[0]?.subSpaceName ?? "", sub: true, parentKey: `f${rid}`, nodeIds: inSub.map(n => n.id), ...box });
+            const base = boxAround(inSub.map(n => withTabs(cards.get(n.id) ?? { x: 0, y: 0, w: 0, h: 0 })), SUB_PAD - TAB_H, SUB_LABEL);
+            const growKey = `space:${sid}`;
+            subs.push({ key: `s${sid}`, growKey, base, spaceId: sid, name: inSub[0]?.subSpaceName ?? "", sub: true, parentKey: `f${rid}`, nodeIds: inSub.map(n => n.id), ...grown(base, lay.grow.get(growKey)) });
         }
         const loose = members.filter(n => n.subSpaceId == null).map(n => withTabs(cards.get(n.id) ?? { x: 0, y: 0, w: 0, h: 0 }));
-        const box = boxAround([...loose, ...subs], FRAME_PAD - TAB_H, FRAME_LABEL);
-        frames.push({ key: `f${rid}`, spaceId: rid, name: members[0]?.frameSpaceName ?? members[0]?.resolvedSpaceName ?? `Space #${rid}`,
-            sub: false, parentKey: null, nodeIds: members.map(n => n.id), ...box });
+        const base = boxAround([...loose, ...subs], FRAME_PAD - TAB_H, FRAME_LABEL);
+        const growKey = `space:${rid}`;
+        frames.push({ key: `f${rid}`, growKey, base, ...grown(base, lay.grow.get(growKey)), spaceId: rid, name: members[0]?.frameSpaceName ?? members[0]?.resolvedSpaceName ?? `Space #${rid}`,
+            sub: false, parentKey: null, nodeIds: members.map(n => n.id) });
         frames.push(...subs);
     }
 
@@ -173,7 +184,8 @@ export function computeGeometry(g: Graph, lay: Layout, visible: (p: NetPort) => 
         const members = placed.filter(n => z.nodeIds.includes(n.id));
         for (const f of [...new Set(members.map(n => frameIdOf(n) ?? -1))]) {
             const rs = members.filter(n => (frameIdOf(n) ?? -1) === f).map(n => withTabs(cards.get(n.id) ?? { x: 0, y: 0, w: 0, h: 0 }));
-            zones.push({ key: `z${z.id}f${f}`, zone: z, ...boxAround(rs, ZONE_PAD - TAB_H, 0) });
+            const base = boxAround(rs, ZONE_PAD - TAB_H, 0), growKey = `zone:${z.id}`;
+            zones.push({ key: `z${z.id}f${f}`, growKey, base, zone: z, ...grown(base, lay.grow.get(growKey)) });
         }
     }
 

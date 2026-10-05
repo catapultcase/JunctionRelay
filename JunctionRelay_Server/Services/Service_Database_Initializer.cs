@@ -1131,6 +1131,14 @@ namespace JunctionRelayServer.Services
             // Zones on the network page: a dmz or untrusted part of the network, drawn around its devices.
             // A device is in at most one zone, so the membership table is keyed by NodeId.
             Service_Database_Schema.CreateOrAmendTable(_db, @"
+                CREATE TABLE IF NOT EXISTS Lab_Network_Margins (
+                    Key TEXT PRIMARY KEY,
+                    GrowLeft INTEGER NOT NULL DEFAULT 0, GrowTop INTEGER NOT NULL DEFAULT 0,
+                    GrowRight INTEGER NOT NULL DEFAULT 0, GrowBottom INTEGER NOT NULL DEFAULT 0,
+                    UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+            Service_Database_Schema.CreateOrAmendTable(_db, @"
                 CREATE TABLE IF NOT EXISTS Lab_Network_Zones (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL,

@@ -113,10 +113,16 @@ const HomelabNetwork = () => {
         const ports = [...draft.edge.entries()]
             .filter(([id, e]) => { const o = committed.edge.get(id); return !o || o.side !== e.side || o.position !== e.position; })
             .map(([id, e]) => ({ id, side: e.side, position: e.position }));
+        const keys = new Set([...draft.grow.keys(), ...committed.grow.keys()]);
+        const margins = [...keys].flatMap(key => {
+            const g = draft.grow.get(key), o = committed.grow.get(key);
+            const same = (g?.left ?? 0) === (o?.left ?? 0) && (g?.top ?? 0) === (o?.top ?? 0) && (g?.right ?? 0) === (o?.right ?? 0) && (g?.bottom ?? 0) === (o?.bottom ?? 0);
+            return same ? [] : [{ key, growLeft: g?.left ?? 0, growTop: g?.top ?? 0, growRight: g?.right ?? 0, growBottom: g?.bottom ?? 0 }];
+        });
         setSaving(true);
         try {
-            if (nodes.length || ports.length) {
-                const res = await putJson("/api/lab/network/layout", "PUT", { nodes, ports });
+            if (nodes.length || ports.length || margins.length) {
+                const res = await putJson("/api/lab/network/layout", "PUT", { nodes, ports, margins });
                 if (!res.ok) throw new Error(await res.text());
                 await load();
             }
@@ -196,7 +202,7 @@ const HomelabNetwork = () => {
                 {editing ? (
                     <>
                         <Typography sx={{ fontSize: 12.5, color: "text.secondary", maxWidth: 360 }}>
-                            Drag devices, frames (by their top bar) and port tabs. Ctrl+Z undoes.
+                            Drag devices, frames (by their top bar), port tabs, and frame or zone edges to resize. Ctrl+Z undoes.
                         </Typography>
                         <Button size="small" onClick={undoOne} disabled={undo.length === 0}>Undo</Button>
                         <Button size="small" onClick={cancelEdit} disabled={saving}>Cancel</Button>

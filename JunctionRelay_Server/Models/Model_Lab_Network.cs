@@ -113,11 +113,24 @@ namespace JunctionRelayServer.Models
         public DateTime UpdatedAt { get; set; }
     }
 
-    // One Save of the page's Edit layout: device positions and port edges, written in one transaction.
+    // How far a frame or a zone outline is grown past the box drawn around its devices, per edge, in canvas
+    // pixels - set by dragging the edge in Edit layout. Key "space:{SpaceId}" (a room, rack or desk frame) or
+    // "zone:{ZoneId}". All zero = no row.
+    public class Model_Lab_NetworkMargin
+    {
+        public string Key { get; set; } = string.Empty;
+        public int GrowLeft { get; set; }
+        public int GrowTop { get; set; }
+        public int GrowRight { get; set; }
+        public int GrowBottom { get; set; }
+    }
+
+    // One Save of the page's Edit layout: device positions, port edges and frame/zone margins, in one transaction.
     public class Model_Lab_NetworkLayout
     {
         public List<NodeAt> Nodes { get; set; } = new();
         public List<PortAt> Ports { get; set; } = new();
+        public List<Model_Lab_NetworkMargin> Margins { get; set; } = new();
         public class NodeAt { public int Id { get; set; } public int X { get; set; } public int Y { get; set; } }
         public class PortAt { public int Id { get; set; } public string Side { get; set; } = "bottom"; public int Position { get; set; } }
     }
@@ -129,6 +142,7 @@ namespace JunctionRelayServer.Models
         public List<Model_Lab_NetworkPort> Ports { get; set; } = new();
         public List<Model_Lab_NetworkLink> Links { get; set; } = new();
         public List<Model_Lab_NetworkZone> Zones { get; set; } = new();
+        public List<Model_Lab_NetworkMargin> Margins { get; set; } = new();
         public List<Model_Lab_NetworkCheck> Checks { get; set; } = new();
     }
 

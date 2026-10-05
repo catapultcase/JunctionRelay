@@ -246,6 +246,12 @@ namespace JunctionRelayServer.Services
                     sb.AppendLine($"  #{z.Id} {z.Name} | {z.Kind} | {(z.NodeIds.Count == 0 ? "no devices" : string.Join(", ", z.NodeIds.Select(id => $"#{id} {nodes.GetValueOrDefault(id)?.DisplayName ?? "?"}")))}" +
                                   (string.IsNullOrWhiteSpace(z.Notes) ? "" : $" - {z.Notes}"));
             }
+            if (g.Margins.Count > 0)
+            {
+                // frames and zone outlines grown past their devices by dragging an edge in Edit layout
+                sb.AppendLine("GROWN EDGES (px, left/top/right/bottom):");
+                foreach (var m in g.Margins) sb.AppendLine($"  {m.Key}: {m.GrowLeft}/{m.GrowTop}/{m.GrowRight}/{m.GrowBottom}");
+            }
             if (g.Checks.Count > 0)
             {
                 sb.AppendLine("CHECKS:");

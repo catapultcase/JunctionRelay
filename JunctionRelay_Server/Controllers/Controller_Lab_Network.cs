@@ -92,6 +92,8 @@ namespace JunctionRelayServer.Controllers
             {
                 if (layout.Ports.FirstOrDefault(p => !Service_Database_Manager_Lab_Network.Sides.Contains(p.Side)) is { } bad)
                     return BadRequest($"Port #{bad.Id}: side must be left, right, top or bottom.");
+                if (layout.Margins.FirstOrDefault(m => !System.Text.RegularExpressions.Regex.IsMatch(m.Key, @"^(space|zone):\d+$")) is { } badKey)
+                    return BadRequest($"Margin key '{badKey.Key}' must be space:<id> or zone:<id>.");
                 await _db.SaveLayoutAsync(layout);
                 return Ok();
             }

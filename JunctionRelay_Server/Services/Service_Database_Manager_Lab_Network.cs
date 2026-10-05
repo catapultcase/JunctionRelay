@@ -243,7 +243,8 @@ namespace JunctionRelayServer.Services
 
         public async Task<Model_Lab_NetworkGraph> GetGraphAsync()
         {
-            var g = new Model_Lab_NetworkGraph { Nodes = await GetNodesAsync(), Ports = await GetPortsAsync(), Links = await GetLinksAsync(), Zones = await GetZonesAsync() };
+            var g = new Model_Lab_NetworkGraph { Nodes = await GetNodesAsync(), Ports = await GetPortsAsync(), Links = await GetLinksAsync(), Zones = await GetZonesAsync(),
+                Margins = (await _db.QueryAsync<Model_Lab_NetworkMargin>("SELECT Key, GrowLeft, GrowTop, GrowRight, GrowBottom FROM Lab_Network_Margins")).ToList() };
             var ports = g.Ports.ToDictionary(p => p.Id);
             var nodes = g.Nodes.ToDictionary(n => n.Id);
             string Where(Model_Lab_NetworkPort p) => $"{(nodes.TryGetValue(p.NodeId, out var n) ? n.DisplayName : $"node #{p.NodeId}")} {p.Name}";
@@ -351,6 +352,7 @@ namespace JunctionRelayServer.Services
             try
             {
                 await _db.ExecuteAsync("DELETE FROM Lab_Network_ZoneNodes WHERE ZoneId = @Id", new { Id = id }, tx);
+                await _db.ExecuteAsync("DELETE FROM Lab_Network_Margins WHERE Key = @Key", new { Key = $"zone:{id}" }, tx);
                 var deleted = await _db.ExecuteAsync("DELETE FROM Lab_Network_Zones WHERE Id = @Id", new { Id = id }, tx) > 0;
                 tx.Commit();
                 return deleted;
@@ -510,6 +512,15 @@ namespace JunctionRelayServer.Services
                     await _db.ExecuteAsync("UPDATE Lab_Network_Nodes SET X = @X, Y = @Y, UpdatedAt = @Now WHERE Id = @Id", new { n.Id, n.X, n.Y, Now = now }, tx);
                 foreach (var p in layout.Ports)
                     await _db.ExecuteAsync("UPDATE Lab_Network_Ports SET Side = @Side, Position = @Position, UpdatedAt = @Now WHERE Id = @Id", new { p.Id, p.Side, p.Position, Now = now }, tx);
+                foreach (var m in layout.Margins)
+                {
+                    if (m.GrowLeft == 0 && m.GrowTop == 0 && m.GrowRight == 0 && m.GrowBottom == 0)
+                        await _db.ExecuteAsync("DELETE FROM Lab_Network_Margins WHERE Key = @Key", new { m.Key }, tx);
+                    else
+                        await _db.ExecuteAsync(@"INSERT OR REPLACE INTO Lab_Network_Margins (Key, GrowLeft, GrowTop, GrowRight, GrowBottom, UpdatedAt)
+                            VALUES (@Key, @GrowLeft, @GrowTop, @GrowRight, @GrowBottom, @Now)",
+                            new { m.Key, GrowLeft = Math.Max(0, m.GrowLeft), GrowTop = Math.Max(0, m.GrowTop), GrowRight = Math.Max(0, m.GrowRight), GrowBottom = Math.Max(0, m.GrowBottom), Now = now }, tx);
+                }
                 tx.Commit();
             }
             catch

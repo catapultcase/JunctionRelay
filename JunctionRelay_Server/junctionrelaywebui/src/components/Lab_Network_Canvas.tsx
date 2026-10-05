@@ -21,7 +21,7 @@ import { Box, IconButton, Paper, Typography, useTheme } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
-    anchorOf, computeGeometry, GRID, Geometry, Graph, isSide, Layout, lineColour, mediaTxt, MODULE_ORANGE,
+    anchorOf, computeGeometry, GRID, Geometry, Graph, isSide, Layout, lineColour, NO_GROW, mediaTxt, MODULE_ORANGE,
     NetLink, NetNode, NetPort, Point, Rect, SFP_BLUE, Side, snap, speedTxt, TAB_H, TAB_W, ZONE_BAND, ZONE_RED, zoneKindTxt,
 } from "./Lab_Network_Model";
 import { pathD, routeLinks } from "./Lab_Network_Router";
@@ -29,14 +29,17 @@ import type { useCanvasViewport } from "../hooks/useCanvasViewport";
 
 // The Network page's canvas: frames, zones, links, device cards and port tabs on a pan/zoom stage. With
 // Edit layout on, a card drags on the 20px grid, a frame drags by its handle (and takes everything in it
-// along), and a port tab drags to any edge of its card. Placement is the user's call: nothing is refused.
+// along), a port tab drags to any edge of its card, and any edge of a frame or zone outline drags to grow
+// or shrink it (never inside its devices). Placement is the user's call: nothing is refused.
 
 const TAB_TXT = { display: "block", color: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "clip", px: "1px" } as const;
 const HANDLE_H = 30;
 
 type Drag =
     | { kind: "nodes"; ids: number[]; start: Point; from: Map<number, Point>; tray: boolean }
-    | { kind: "port"; id: number; nodeId: number; start: Point; moved: boolean; at: Point };
+    | { kind: "port"; id: number; nodeId: number; start: Point; moved: boolean; at: Point }
+    | { kind: "edge"; growKey: string; side: Side; base: Rect };
+const EDGE = 14;     // the grab strip along a frame or zone edge, canvas pixels
 
 interface Props {
     graph: Graph;
@@ -118,7 +121,16 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
             const dx = snap(at.x - drag.start.x), dy = snap(at.y - drag.start.y);
             const next = new Map(layout.at);
             drag.from.forEach((p, id) => next.set(id, { x: snap(p.x + dx), y: snap(p.y + dy) }));
-            setDragLayout({ at: next, edge: layout.edge });
+            setDragLayout({ at: next, edge: layout.edge, grow: layout.grow });
+        } else if (drag.kind === "edge") {
+            const b = drag.base, g = { ...(layout.grow.get(drag.growKey) ?? NO_GROW) };
+            if (drag.side === "left") g.left = Math.max(0, b.x - snap(at.x));
+            if (drag.side === "right") g.right = Math.max(0, snap(at.x) - (b.x + b.w));
+            if (drag.side === "top") g.top = Math.max(0, b.y - snap(at.y));
+            if (drag.side === "bottom") g.bottom = Math.max(0, snap(at.y) - (b.y + b.h));
+            const grow = new Map(layout.grow);
+            grow.set(drag.growKey, g);
+            setDragLayout({ at: layout.at, edge: layout.edge, grow });
         } else {
             const moved = drag.moved || Math.hypot(at.x - drag.start.x, at.y - drag.start.y) > 6;
             setDrag({ ...drag, moved, at });
@@ -148,7 +160,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
             mine.filter(p => edge.get(p.id)?.side === oldSide)
                 .sort((a, b) => (edge.get(a.id)?.position ?? 0) - (edge.get(b.id)?.position ?? 0))
                 .forEach((p, i) => edge.set(p.id, { side: oldSide, position: i + 1 }));
-        return { at: layout.at, edge };
+        return { at: layout.at, edge, grow: layout.grow };
     };
     const onUp = () => {
         if (!drag) return;
@@ -163,6 +175,11 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         const next = dragLayout;
         setDragLayout(null);
         if (!next) return;
+        if (d.kind === "edge") {
+            const a = layout.grow.get(d.growKey) ?? NO_GROW, b = next.grow.get(d.growKey) ?? NO_GROW;
+            if (a.left !== b.left || a.top !== b.top || a.right !== b.right || a.bottom !== b.bottom) onLayout(next);
+            return;
+        }
         const unchanged = d.ids.every(id => {
             const a = next.at.get(id), b = d.from.get(id);
             return !d.tray && a && b && a.x === b.x && a.y === b.y;
@@ -236,6 +253,19 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
         );
     };
 
+    // the four grab strips on a frame or zone outline, in edit mode
+    const edgeHandles = (key: string, r: Rect, growKey: string, base: Rect) => !editing ? null : (["left", "right", "top", "bottom"] as const).map(side => {
+        const horiz = side === "top" || side === "bottom";
+        return (
+            <Box key={`${key}-${side}`} title="Drag to resize"
+                onPointerDown={e => begin(e, { kind: "edge", growKey, side, base })}
+                sx={{ position: "absolute", zIndex: 4, touchAction: "none", cursor: horiz ? "ns-resize" : "ew-resize",
+                    left: side === "right" ? r.x + r.w - EDGE / 2 : r.x - (horiz ? 0 : EDGE / 2),
+                    top: side === "bottom" ? r.y + r.h - EDGE / 2 : r.y - (horiz ? EDGE / 2 : 0),
+                    width: horiz ? r.w : EDGE, height: horiz ? EDGE : r.h,
+                    "&:hover": { bgcolor: "rgba(25,118,210,0.25)" } }} />
+        );
+    });
     const b = geo.bounds;
     const stageRef = useRef<HTMLDivElement>(null);
     const { view } = viewport;
@@ -277,6 +307,8 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
                         )}
                     </Box>
                 ))}
+                {geo.frames.flatMap(f => edgeHandles(f.key, f, f.growKey, f.base) ?? [])}
+                {geo.zones.flatMap(z => edgeHandles(z.key, z, z.growKey, z.base) ?? [])}
                 {geo.tray && (
                     <Box sx={{ position: "absolute", left: geo.tray.x, top: geo.tray.y, width: geo.tray.w, height: geo.tray.h, pointerEvents: "none",
                         border: `2px dashed ${theme.palette.warning.main}`, borderRadius: "6px" }}>
