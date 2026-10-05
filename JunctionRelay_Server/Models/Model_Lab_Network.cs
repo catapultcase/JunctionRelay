@@ -25,7 +25,8 @@ namespace JunctionRelayServer.Models
     // as a unit):
     //   node - a device on the page: a Lab machine, a Lab component (a switch, a modem) or a PLACEHOLDER for
     //          something not bought yet (a label and a typed port list; always planned). Its frame is the Lab
-    //          Space it is placed in, unless SpaceId overrides it; Row/Position order it inside the frame.
+    //          Space it is placed in, unless SpaceId overrides it; X/Y is where it is drawn (frames are drawn
+    //          around their devices, so moving a frame moves its devices).
     //   port - one port of a node: name, media (rj45 | sfp | sfp28 | qsfp | other), speed in Gb/s, the card
     //          edge it is drawn on, an optional module fitted in the cage (an inventory part - an SFP+ to RJ45
     //          transceiver) and the component that provides it (the NIC in a machine).
@@ -44,8 +45,11 @@ namespace JunctionRelayServer.Models
         public string? PortsSpec { get; set; }          // a placeholder's port list, same grammar as the spec field
         public string Status { get; set; } = "live";    // live | planned (placeholders are always planned)
         public int? SpaceId { get; set; }               // NULL = the Space the record is placed in; none = outside every frame
-        public int Row { get; set; } = 1;               // within its frame (or outside: row <= 1 above the frames, >= 2 below)
-        public int Position { get; set; }
+        // X/Y: where it is drawn - the card's top-left in canvas pixels, on the page's 20px grid, set by
+        // dragging it in Edit layout (or lab_set_network_node x/y). A new device without them is put on a
+        // free spot below the map; NULL shows it in the page's "not placed yet" tray.
+        public int? X { get; set; }
+        public int? Y { get; set; }
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -107,6 +111,15 @@ namespace JunctionRelayServer.Models
         public List<int> NodeIds { get; set; } = new();    // its devices; saving a zone replaces the list
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+    }
+
+    // One Save of the page's Edit layout: device positions and port edges, written in one transaction.
+    public class Model_Lab_NetworkLayout
+    {
+        public List<NodeAt> Nodes { get; set; } = new();
+        public List<PortAt> Ports { get; set; } = new();
+        public class NodeAt { public int Id { get; set; } public int X { get; set; } public int Y { get; set; } }
+        public class PortAt { public int Id { get; set; } public string Side { get; set; } = "bottom"; public int Position { get; set; } }
     }
 
     // The whole page in one read, plus the checks worked out from it.

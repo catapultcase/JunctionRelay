@@ -212,14 +212,14 @@ namespace JunctionRelayServer.Services
                          .OrderBy(x => x.Key == "(not in a Space)").ThenBy(x => x.Key))
             {
                 sb.AppendLine($"{grp.Key.ToUpperInvariant()}:");
-                foreach (var n in grp.OrderBy(n => n.Row).ThenBy(n => n.Position))
+                foreach (var n in grp.OrderBy(n => n.Y ?? int.MaxValue).ThenBy(n => n.X ?? int.MaxValue))
                 {
                     var bits = new List<string> { $"#{n.Id} {n.DisplayName}", $"[{n.RefLine}]" };
                     if (n.Status == "planned") bits.Add("PLANNED");
                     if (n.Missing) bits.Add("LAB RECORD GONE");
                     if (n.PlacementNote != null) bits.Add(n.PlacementNote);
                     if (zoneOf.TryGetValue(n.Id, out var nz)) bits.Add($"zone #{nz.Id} {nz.Name} ({nz.Kind})");
-                    bits.Add($"row {n.Row} pos {n.Position}");
+                    bits.Add(n.X.HasValue && n.Y.HasValue ? $"at {n.X},{n.Y}" : "not placed yet");
                     if (n.SpaceId.HasValue) bits.Add("space set by hand");
                     if (!string.IsNullOrWhiteSpace(n.Notes)) bits.Add($"- {n.Notes}");
                     sb.AppendLine("  " + string.Join(" | ", bits));
@@ -260,7 +260,10 @@ namespace JunctionRelayServer.Services
                      "PLACEHOLDER for something not in the Lab yet - always planned - with portsSpec). A new device gets its " +
                      "ports from the Lab straight away: a component's 'ports' spec field, a machine's installed NICs and " +
                      "motherboard, a placeholder's portsSpec (grammar: '4x RJ45 2.5G, 2x SFP+ 10G'). Its frame is the Lab " +
-                     "Space it is placed in unless space is given. Pass id (from lab_network) to change one: only the fields " +
+                     "Space it is placed in unless space is given. Where it is drawn: x/y, the card's top-left in canvas " +
+                     "pixels on a 20px grid (lab_network shows each device's 'at x,y'); its frame is drawn around its devices, " +
+                     "so keep a device clear of other devices and of other frames. A new device without x/y goes on a free " +
+                     "spot below the map. Pass id (from lab_network) to change one: only the fields " +
                      "you pass change; syncPorts=true adds spec ports it lacks (never removes). Empty string clears a text field.")]
         public async Task<string> LabSetNetworkNodeAsync(
             [Description("Node id to change; omit to create.")] int? id = null,
@@ -270,8 +273,8 @@ namespace JunctionRelayServer.Services
             [Description("Placeholder only: its ports, e.g. '4x SFP+ 10G'.")] string? portsSpec = null,
             [Description("live or planned.")] string? status = null,
             [Description("A Lab Space name or id to draw it in, overriding its placement; empty string = back to its placement.")] string? space = null,
-            [Description("Row inside its frame (outside every frame: 1 or less draws above the frames, 2 or more below).")] int? row = null,
-            [Description("Order within the row.")] int? position = null,
+            [Description("Canvas x of the card's top-left, in pixels (rounded to the 20px grid).")] int? x = null,
+            [Description("Canvas y of the card's top-left, in pixels (rounded to the 20px grid).")] int? y = null,
             [Description("Notes.")] string? notes = null,
             [Description("true: add the ports its spec has and it lacks.")] bool? syncPorts = null)
         {
@@ -310,8 +313,8 @@ namespace JunctionRelayServer.Services
             n.PortsSpec = T(portsSpec, n.PortsSpec);
             n.Notes = T(notes, n.Notes);
             if (status != null) n.Status = status.Trim();
-            if (row.HasValue) n.Row = row.Value;
-            if (position.HasValue) n.Position = position.Value;
+            if (x.HasValue) n.X = (int)Math.Round(x.Value / 20.0) * 20;
+            if (y.HasValue) n.Y = (int)Math.Round(y.Value / 20.0) * 20;
             if (space != null)
             {
                 if (space.Trim() == "") n.SpaceId = null;

@@ -84,6 +84,20 @@ namespace JunctionRelayServer.Controllers
             catch (Exception ex) { return Fail("updating a device", ex); }
         }
 
+        // The Edit layout Save: { nodes: [{ id, x, y }], ports: [{ id, side, position }] }, one transaction.
+        [HttpPut("layout")]
+        public async Task<IActionResult> SaveLayout([FromBody] Model_Lab_NetworkLayout layout)
+        {
+            try
+            {
+                if (layout.Ports.FirstOrDefault(p => !Service_Database_Manager_Lab_Network.Sides.Contains(p.Side)) is { } bad)
+                    return BadRequest($"Port #{bad.Id}: side must be left, right, top or bottom.");
+                await _db.SaveLayoutAsync(layout);
+                return Ok();
+            }
+            catch (Exception ex) { return Fail("saving the layout", ex); }
+        }
+
         [HttpPost("nodes/{id}/sync-ports")]
         public async Task<IActionResult> SyncPorts(int id)
         {

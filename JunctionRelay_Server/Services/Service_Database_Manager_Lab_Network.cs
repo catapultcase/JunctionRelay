@@ -158,7 +158,7 @@ namespace JunctionRelayServer.Services
                 FROM Lab_Network_Nodes n
                 LEFT JOIN Lab_Machines m ON m.Id = n.MachineId
                 LEFT JOIN Lab_Components c ON c.Id = n.ComponentId
-                ORDER BY n.Row, n.Position, n.Id")).ToList();
+                ORDER BY n.Id")).ToList();
             var places = (await _db.QueryAsync<PlaceRow>(@"
                 SELECT p.SpaceId, s.Name AS SpaceName, p.MachineId, p.ComponentId, p.PositionU, p.HeightU
                 FROM Lab_Placements p JOIN Lab_Spaces s ON s.Id = p.SpaceId")).ToList();
@@ -456,6 +456,13 @@ namespace JunctionRelayServer.Services
         {
             n.CreatedAt = n.UpdatedAt = DateTime.UtcNow;
             if (!n.MachineId.HasValue && !n.ComponentId.HasValue) n.Status = "planned";
+            // Not placed: a free spot below everything already on the map (the 20px grid; cards are ~110 tall).
+            if (!n.X.HasValue || !n.Y.HasValue)
+            {
+                var bottom = await _db.ExecuteScalarAsync<int?>("SELECT MAX(Y) FROM Lab_Network_Nodes WHERE Y IS NOT NULL");
+                n.X = 40;
+                n.Y = bottom.HasValue ? bottom.Value + 240 : 80;
+            }
             // Ports are worked out before the transaction: every command inside one must carry it.
             var (ports, error) = withPorts ? await PortsFromSpecAsync(n) : (new List<Model_Lab_NetworkPort>(), null);
             using (var tx = _db.BeginTransaction())
@@ -463,8 +470,8 @@ namespace JunctionRelayServer.Services
                 try
                 {
                     n.Id = await _db.ExecuteScalarAsync<int>(@"
-                        INSERT INTO Lab_Network_Nodes (MachineId, ComponentId, Label, PortsSpec, Status, SpaceId, Row, Position, Notes, CreatedAt, UpdatedAt)
-                        VALUES (@MachineId, @ComponentId, @Label, @PortsSpec, @Status, @SpaceId, @Row, @Position, @Notes, @CreatedAt, @UpdatedAt);
+                        INSERT INTO Lab_Network_Nodes (MachineId, ComponentId, Label, PortsSpec, Status, SpaceId, X, Y, Notes, CreatedAt, UpdatedAt)
+                        VALUES (@MachineId, @ComponentId, @Label, @PortsSpec, @Status, @SpaceId, @X, @Y, @Notes, @CreatedAt, @UpdatedAt);
                         SELECT last_insert_rowid();", n, tx);
                     foreach (var p in ports) { p.NodeId = n.Id; await CreatePortAsync(p, tx); }
                     tx.Commit();
@@ -486,9 +493,30 @@ namespace JunctionRelayServer.Services
             if (!n.MachineId.HasValue && !n.ComponentId.HasValue) n.Status = "planned";
             await _db.ExecuteAsync(@"
                 UPDATE Lab_Network_Nodes SET MachineId = @MachineId, ComponentId = @ComponentId, Label = @Label, PortsSpec = @PortsSpec,
-                    Status = @Status, SpaceId = @SpaceId, Row = @Row, Position = @Position, Notes = @Notes, UpdatedAt = @UpdatedAt
+                    Status = @Status, SpaceId = @SpaceId, X = @X, Y = @Y, Notes = @Notes, UpdatedAt = @UpdatedAt
                 WHERE Id = @Id", n);
             await SyncComponentStatusAsync(n.ComponentId);
+        }
+
+        // The Edit layout Save: every moved device and re-edged port in one transaction, so a half-saved
+        // layout never shows. Unknown ids are skipped (a device removed meanwhile).
+        public async Task SaveLayoutAsync(Model_Lab_NetworkLayout layout)
+        {
+            var now = DateTime.UtcNow;
+            using var tx = _db.BeginTransaction();
+            try
+            {
+                foreach (var n in layout.Nodes)
+                    await _db.ExecuteAsync("UPDATE Lab_Network_Nodes SET X = @X, Y = @Y, UpdatedAt = @Now WHERE Id = @Id", new { n.Id, n.X, n.Y, Now = now }, tx);
+                foreach (var p in layout.Ports)
+                    await _db.ExecuteAsync("UPDATE Lab_Network_Ports SET Side = @Side, Position = @Position, UpdatedAt = @Now WHERE Id = @Id", new { p.Id, p.Side, p.Position, Now = now }, tx);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
 
         // Adds the spec's ports this node does not have yet (by name). Never deletes: a port that went away

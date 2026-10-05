@@ -1095,7 +1095,7 @@ namespace JunctionRelayServer.Services
                     Label TEXT, PortsSpec TEXT,
                     Status TEXT NOT NULL DEFAULT 'live',
                     SpaceId INTEGER,
-                    Row INTEGER NOT NULL DEFAULT 1, Position INTEGER NOT NULL DEFAULT 0,
+                    X INTEGER, Y INTEGER,
                     Notes TEXT,
                     CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                     UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
