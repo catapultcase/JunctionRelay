@@ -27,7 +27,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanvasViewport } from "../../hooks/useCanvasViewport";
 import {
     computeGeometry, Graph, LabComponent, LabMachine, LabSpace, Layout, layoutOf, mediaTxt, MODULE_ORANGE, NetLink, NetNode,
-    NetPort, SFP_BLUE, speedTxt, ZONE_RED,
+    NetPort, QSFP_PURPLE, SFP_BLUE, speedTxt, ZONE_RED,
 } from "../../components/Lab_Network_Model";
 import LabNetworkCanvas from "../../components/Lab_Network_Canvas";
 import { AddDeviceDialog, EditDeviceDialog, putJson, ZonesDialog } from "../../components/Lab_Network_Dialogs";
@@ -235,12 +235,12 @@ const HomelabNetwork = () => {
             )}
 
             <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center", mb: 1.5, fontSize: 12, color: "text.secondary" }}>
-                {[["RJ45", theme.palette.background.paper], ["SFP+", SFP_BLUE], ["SFP+ with RJ45 module", MODULE_ORANGE]].map(([l, c]) => (
+                {[["RJ45", theme.palette.background.paper], ["SFP+", SFP_BLUE], ["QSFP", QSFP_PURPLE], ["SFP+ with RJ45 module", MODULE_ORANGE]].map(([l, c]) => (
                     <Box key={l} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <Box sx={{ width: 18, height: 13, bgcolor: c, border: `1.5px solid ${theme.palette.text.primary}`, borderRadius: "3px" }} />{l}
                     </Box>
                 ))}
-                {([["10G", "#1e6fd9", false], ["2.5G", "#2e7d32", false], ["1G or less", "#78909c", false], ["planned", "#78909c", true]] as const).map(([l, c, d]) => (
+                {([["100G+", QSFP_PURPLE, false], ["10G", "#1e6fd9", false], ["2.5G", "#2e7d32", false], ["1G or less", "#78909c", false], ["planned", "#78909c", true]] as const).map(([l, c, d]) => (
                     <Box key={l} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <Box sx={{ width: 22, borderTop: `3px ${d ? "dashed" : "solid"} ${c}` }} />{l}
                     </Box>

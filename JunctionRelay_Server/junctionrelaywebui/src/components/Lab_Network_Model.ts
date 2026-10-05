@@ -57,9 +57,11 @@ export const ZONE_PAD = 56, ZONE_BAND = 9, ZONE_RED = "#d32f2f";
 export const ZONE_KINDS = [["untrusted", "Untrusted"], ["dmz", "DMZ"]] as const;
 export const zoneKindTxt = (k: string) => ZONE_KINDS.find(x => x[0] === k)?.[1] ?? k;
 export const MEDIA = [["rj45", "RJ45"], ["sfp", "SFP+"], ["sfp28", "SFP28"], ["qsfp", "QSFP"], ["other", "Other"]] as const;
-export const SFP_BLUE = "#4a8fe0", MODULE_ORANGE = "#f0892c";
+export const SFP_BLUE = "#4a8fe0", QSFP_PURPLE = "#9c4dcc", MODULE_ORANGE = "#f0892c";
 export const speedTxt = (g: number | null | undefined) => (g == null ? "?" : g >= 1 ? `${+g.toFixed(2)}G` : `${Math.round(g * 1000)}M`);
-export const lineColour = (g: number | null | undefined) => (g == null ? "#78909c" : g >= 10 ? "#1e6fd9" : g >= 2.5 ? "#2e7d32" : "#78909c");
+// 100G+ (Spark pair DACs, QSFP), 10G, 2.5G, 1G or less
+export const lineColour = (g: number | null | undefined) =>
+    (g == null ? "#78909c" : g >= 100 ? QSFP_PURPLE : g >= 10 ? "#1e6fd9" : g >= 2.5 ? "#2e7d32" : "#78909c");
 export const mediaTxt = (m: string) => MEDIA.find(x => x[0] === m)?.[1] ?? m;
 export const compName = (c: LabComponent) => c.name || [c.manufacturer, c.model].filter(Boolean).join(" ") || `#${c.id}`;
 

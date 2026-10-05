@@ -22,7 +22,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
     anchorOf, computeGeometry, GRID, Geometry, Graph, isSide, Layout, lineColour, NO_GROW, mediaTxt, MODULE_ORANGE,
-    NetLink, NetNode, NetPort, Point, Rect, SFP_BLUE, Side, snap, speedTxt, TAB_H, TAB_W, ZONE_BAND, ZONE_RED, zoneKindTxt,
+    NetLink, NetNode, NetPort, Point, QSFP_PURPLE, Rect, SFP_BLUE, Side, snap, speedTxt, TAB_H, TAB_W, ZONE_BAND, ZONE_RED, zoneKindTxt,
 } from "./Lab_Network_Model";
 import { pathD, routeLinks } from "./Lab_Network_Router";
 import type { useCanvasViewport } from "../hooks/useCanvasViewport";
@@ -192,7 +192,7 @@ const LabNetworkCanvas = ({ graph, layout, editing, showFree, viewport, selected
     const portTab = (p: NetPort, t: Rect) => {
         const hasModule = p.moduleComponentId != null || !!p.moduleLabel;
         const sfp = p.media !== "rj45" && p.media !== "other";
-        const bg = hasModule ? MODULE_ORANGE : sfp ? SFP_BLUE : theme.palette.background.paper;
+        const bg = hasModule ? MODULE_ORANGE : p.media === "qsfp" ? QSFP_PURPLE : sfp ? SFP_BLUE : theme.palette.background.paper;
         const fg = hasModule || sfp ? "#fff" : theme.palette.text.primary;
         const free = !linked.has(p.id);
         const isSel = selected?.port === p.id;
